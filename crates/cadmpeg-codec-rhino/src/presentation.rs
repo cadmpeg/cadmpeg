@@ -2038,9 +2038,9 @@ fn parse_light_record_attributes(
         let child = attributes
             .as_ref()
             .and_then(|value| value.rendering_range.clone());
-        let direct = direct_checksum_ranges(&item.body(), child.as_slice())?;
+        let direct = direct_checksum_ranges(ctx, &item.body(), child.as_slice())?;
         if let ChecksumStatus::Mismatch { expected, actual } =
-            verify_checksum_ranges(data, item, &direct)?
+            verify_checksum_ranges(ctx, data, item, &direct)?
         {
             warnings.push_coded_admitted(
                 ctx,
@@ -2824,21 +2824,17 @@ fn disambiguate_group_ids(
         if let Some(count) = counts.get_mut(group.id.as_str()) {
             *count += 1;
         } else {
-            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                &str,
-                usize,
-            )>()))?;
-            ctx.reserve_map(&mut counts, 1, "Rhino group identity counts")?;
+            workspace
+                .with_storage(|| ctx.reserve_map(&mut counts, 1, "Rhino group identity counts"))?;
             counts.insert(group.id.as_str(), 1);
         }
     }
     let mut duplicate_indices = Vec::new();
     for (order, group) in groups.iter().enumerate() {
         if counts.get(group.id.as_str()).copied() != Some(1) {
-            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                usize,
-            >()))?;
-            ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")?;
+            workspace.with_storage(|| {
+                ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")
+            })?;
             duplicate_indices.push(order);
         }
     }

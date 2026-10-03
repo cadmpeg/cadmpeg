@@ -58,7 +58,7 @@ pub(crate) fn index_rows(
             index_tokens.map(|token| token.atom.into()),
             start,
         ) {
-            ctx.push_retained_vec(&mut rows, row, "NX index rows")?;
+            ctx.push_vec(&mut rows, row, "NX index rows")?;
         }
         start = end;
     }
@@ -149,7 +149,7 @@ pub(crate) fn linked_rows(
             mode,
             start,
         ) {
-            ctx.push_retained_vec(&mut rows, row, "NX linked rows")?;
+            ctx.push_vec(&mut rows, row, "NX linked rows")?;
         }
         start = end;
     }
@@ -212,7 +212,7 @@ pub(crate) fn target_rows(
             mode,
             start,
         ) {
-            ctx.push_retained_vec(&mut rows, row, "NX target rows")?;
+            ctx.push_vec(&mut rows, row, "NX target rows")?;
         }
         start = end;
     }

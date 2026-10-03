@@ -22,20 +22,23 @@ pub(in super::super) fn feature_dependencies(
     feature_id: u32,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) -> Result<Vec<IrFeatureId>, CodecError> {
-    let native = native_feature_dependency_ids(
-        ctx,
-        &scan.features.affected_ids,
-        &scan.features.operations,
-        &scan.features.entity_tables,
-        &scan.features.surface_merge_replay_affected_ids,
-        &scan.surfaces.rows,
-        (
-            feature_id,
-            prototype_dependencies
-                .get(&feature_id)
-                .map_or(&[], Vec::as_slice),
-        ),
-    )?;
+    let mut native_storage = ctx.reserve_scoped(0, "Creo native dependency lookup storage")?;
+    let native = native_storage.with_storage(|| {
+        native_feature_dependency_ids(
+            ctx,
+            &scan.features.affected_ids,
+            &scan.features.operations,
+            &scan.features.entity_tables,
+            &scan.features.surface_merge_replay_affected_ids,
+            &scan.surfaces.rows,
+            (
+                feature_id,
+                prototype_dependencies
+                    .get(&feature_id)
+                    .map_or(&[], Vec::as_slice),
+            ),
+        )
+    })?;
     let mut dependencies = Vec::new();
     for dependency in native {
         let text = ctx.format_retained(
@@ -62,20 +65,27 @@ pub(in super::super) fn native_feature_dependency_ids(
     feature: (u32, &[u32]),
 ) -> Result<Vec<u32>, CodecError> {
     let (feature_id, prototype_dependencies) = feature;
+    let mut input_storage = ctx.reserve_scoped(0, "Creo dependency input vectors")?;
 
-    let transition_dependencies =
-        surface_transition_dependencies(ctx, feature_id, entity_tables, surface_rows)?;
-    let parents = agreed_feature_parent_ids(ctx, affected_ids, feature_id)?;
-    let merged = surface_merge_entity_dependencies(
-        ctx,
-        affected_ids,
-        surface_merge_replay_affected_ids,
-        entity_tables,
-        feature_id,
-    )?;
-    let entity_dependencies = feature_entity_dependencies(ctx, entity_tables, feature_id)?;
-    let surface_dependencies =
-        feature_output_surface_dependencies(ctx, entity_tables, surface_rows, feature_id)?;
+    let transition_dependencies = input_storage.with_storage(|| {
+        surface_transition_dependencies(ctx, feature_id, entity_tables, surface_rows)
+    })?;
+    let parents =
+        input_storage.with_storage(|| agreed_feature_parent_ids(ctx, affected_ids, feature_id))?;
+    let merged = input_storage.with_storage(|| {
+        surface_merge_entity_dependencies(
+            ctx,
+            affected_ids,
+            surface_merge_replay_affected_ids,
+            entity_tables,
+            feature_id,
+        )
+    })?;
+    let entity_dependencies = input_storage
+        .with_storage(|| feature_entity_dependencies(ctx, entity_tables, feature_id))?;
+    let surface_dependencies = input_storage.with_storage(|| {
+        feature_output_surface_dependencies(ctx, entity_tables, surface_rows, feature_id)
+    })?;
     let mut dependencies = Vec::new();
     for dependency in parents
         .into_iter()
@@ -100,6 +110,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
 ) -> Result<Vec<u32>, CodecError> {
+    let mut owned_storage = ctx.reserve_scoped(0, "Creo owned dependency entities")?;
     let mut owned_entities = BTreeSet::new();
     for entry in tables
         .iter()
@@ -107,11 +118,13 @@ pub(in super::super) fn feature_output_surface_dependencies(
         .flat_map(|table| &table.entries)
         .filter(|entry| entry.source_entity_id() == Some(feature_id))
     {
-        ctx.insert_btree_set(
-            &mut owned_entities,
-            entry.entity_id,
-            "creo output surface owned entity nodes",
-        )?;
+        owned_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut owned_entities,
+                entry.entity_id,
+                "creo output surface owned entity nodes",
+            )
+        })?;
     }
     let mut dependencies = Vec::new();
     for entry in tables
@@ -436,6 +449,7 @@ pub(in super::super) fn reconcile_feature_links(
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "Creo feature reconciliation storage")?;
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -451,7 +465,9 @@ pub(in super::super) fn reconcile_feature_links(
             ctx,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
-        ctx.reserve_vec(&mut output_updates, 1, "creo reconciled output update rows")?;
+        lookup_storage.with_storage(|| {
+            ctx.reserve_vec(&mut output_updates, 1, "creo reconciled output update rows")
+        })?;
         output_updates.push((index, outputs));
     }
     let mut emitted = BTreeSet::new();
@@ -459,11 +475,13 @@ pub(in super::super) fn reconcile_feature_links(
         if emitted.contains(&feature.id) {
             continue;
         }
-        let id = IrFeatureId::mint(
-            ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")?,
-        )
+        let id = IrFeatureId::mint(lookup_storage.with_storage(|| {
+            ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")
+        })?)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        ctx.insert_btree_set(&mut emitted, id, "creo emitted feature identity nodes")?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut emitted, id, "creo emitted feature identity nodes")
+        })?;
     }
     let mut regeneration_edges = Vec::new();
     let mut updates = output_updates.into_iter();
@@ -487,20 +505,22 @@ pub(in super::super) fn reconcile_feature_links(
             pending = updates.next();
         }
         let mut native_dependencies = Vec::new();
-        for dependency in native_feature_dependency_ids(
-            ctx,
-            &scan.features.affected_ids,
-            &scan.features.operations,
-            &scan.features.entity_tables,
-            &scan.features.surface_merge_replay_affected_ids,
-            &scan.surfaces.rows,
-            (
-                feature_id,
-                prototype_dependencies
-                    .get(&feature_id)
-                    .map_or(&[], Vec::as_slice),
-            ),
-        )? {
+        for dependency in lookup_storage.with_storage(|| {
+            native_feature_dependency_ids(
+                ctx,
+                &scan.features.affected_ids,
+                &scan.features.operations,
+                &scan.features.entity_tables,
+                &scan.features.surface_merge_replay_affected_ids,
+                &scan.surfaces.rows,
+                (
+                    feature_id,
+                    prototype_dependencies
+                        .get(&feature_id)
+                        .map_or(&[], Vec::as_slice),
+                ),
+            )
+        })? {
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",
@@ -515,8 +535,9 @@ pub(in super::super) fn reconcile_feature_links(
                 native_dependencies.push(id);
             }
         }
-        let generated_dependencies =
-            feature_generated_dependencies(ctx, feature.evaluation.definition())?;
+        let generated_dependencies = lookup_storage.with_storage(|| {
+            feature_generated_dependencies(ctx, feature.evaluation.definition())
+        })?;
         let mut generated_ids = Vec::new();
         for dependency in generated_dependencies {
             let id = IrFeatureId::mint(ctx.copy_retained_text(
@@ -555,7 +576,9 @@ pub(in super::super) fn reconcile_feature_links(
                     ctx.copy_retained_text(feature.id.as_str(), "creo regeneration child IDs")?,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-                ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")?;
+                lookup_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")
+                })?;
                 regeneration_edges.push((child, parent));
             }
         }
@@ -565,18 +588,22 @@ pub(in super::super) fn reconcile_feature_links(
             .set_feature_regeneration_parent(ctx, &child, &parent)?;
     }
     let mut remaining = Vec::new();
-    ctx.reserve_vec(
-        &mut remaining,
-        ir.model.features.len(),
-        "creo remaining feature order",
-    )?;
+    lookup_storage.with_storage(|| {
+        ctx.reserve_vec(
+            &mut remaining,
+            ir.model.features.len(),
+            "creo remaining feature order",
+        )
+    })?;
     remaining.extend(0..ir.model.features.len());
     let mut ordered = Vec::new();
-    ctx.reserve_vec(
-        &mut ordered,
-        remaining.len(),
-        "creo ordered feature indices",
-    )?;
+    lookup_storage.with_storage(|| {
+        ctx.reserve_vec(
+            &mut ordered,
+            remaining.len(),
+            "creo ordered feature indices",
+        )
+    })?;
     let mut preceding = BTreeSet::new();
     while !remaining.is_empty() {
         let Some(position) = remaining.iter().position(|index| {
@@ -590,11 +617,13 @@ pub(in super::super) fn reconcile_feature_links(
             break;
         };
         let index = remaining.remove(position);
-        ctx.insert_btree_set(
-            &mut preceding,
-            &ir.model.features[index].id,
-            "creo preceding feature identity nodes",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut preceding,
+                &ir.model.features[index].id,
+                "creo preceding feature identity nodes",
+            )
+        })?;
         ordered.push(index);
     }
     ordered.extend(remaining);

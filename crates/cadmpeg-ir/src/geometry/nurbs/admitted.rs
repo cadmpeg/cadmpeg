@@ -66,7 +66,7 @@ impl super::NurbsAdmission for DecodeContext<'_> {
             self.reserve_scoped_vec(storage, values, 1, operation)
                 .map_err(Into::into)
         } else {
-            self.reserve_retained_vec(values, 1, operation)
+            self.reserve_vec(values, 1, operation)
                 .map_err(Into::into)
         }
     }

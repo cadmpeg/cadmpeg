@@ -89,17 +89,8 @@ pub(super) fn segment_index_rows(
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "nx segment index rows")?;
     ctx.charge_entities(count_u64, "nx segment index rows")?;
-    let slot_bytes = count
-        .checked_mul(std::mem::size_of::<SegmentIndexRow>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx segment index rows", 0, count_u64))?;
-    ctx.charge_retained(slot_bytes, "nx segment index rows")?;
     let mut rows = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut rows,
-        count,
-        "nx segment index rows",
-    )?;
+    ctx.reserve_capacity(&mut rows, count, "nx segment index rows")?;
     for (ordinal, row) in index.rows().enumerate() {
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx segment index ordinal", 0, count_u64))?;
@@ -368,19 +359,22 @@ fn terminal_feature_body_indices(
         ctx.reserve_scoped(0, "NX terminal offset-store references")?;
     let mut offset_store_references = BTreeSet::new();
     for use_ in data_block_uses {
-        offset_store_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
-            &mut offset_store_references,
-            use_.feature_body_reference.as_str(),
-            "NX terminal offset-store references",
-        )?;
+        offset_store_reservation.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut offset_store_references,
+                use_.feature_body_reference.as_str(),
+                "NX terminal offset-store references",
+            )
+        })?;
     }
-    let offset_store_operations =
-        crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)?;
-    let unique_references =
-        crate::native::features::unique_feature_body_references(ctx, references)?;
+    let (offset_store_operations, _offset_store_operations_storage) = ctx
+        .with_scoped_storage("NX local offset_store_operations storage", || {
+            crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)
+        })?;
+    let (unique_references, _unique_references_storage) = ctx
+        .with_scoped_storage("NX local unique_references storage", || {
+            crate::native::features::unique_feature_body_references(ctx, references)
+        })?;
     let mut object_reservation = ctx.reserve_scoped(0, "NX terminal body object references")?;
     let mut object_references = Vec::new();
     for (_, reference) in unique_references {
@@ -400,58 +394,63 @@ fn terminal_feature_body_indices(
     if object_references.is_empty() && bindings.is_empty() {
         return Ok(None);
     }
-    let chronological_labels =
-        crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
+    let (chronological_labels, _chronological_labels_storage) = ctx
+        .with_scoped_storage("NX local chronological_labels storage", || {
+            crate::native::features::feature_operation_chronological_labels(ctx, labels)
+        })?;
     let mut positions_reservation = ctx.reserve_scoped(0, "NX terminal label positions")?;
     let mut positions = BTreeMap::new();
     for (position, label) in chronological_labels.iter().enumerate() {
-        positions_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(&str, usize)>() * 4,
-        ))?;
-        ctx.insert_btree_map(
-            &mut positions,
-            label.id.as_str(),
-            position,
-            "NX terminal label positions",
-        )?;
+        positions_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut positions,
+                label.id.as_str(),
+                position,
+                "NX terminal label positions",
+            )
+        })?;
     }
-    let aliases = body_alias_roots(ctx, bindings)?;
+    let (aliases, _aliases_storage) = ctx
+        .with_scoped_storage("NX local aliases storage", || {
+            body_alias_roots(ctx, bindings)
+        })?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let segment_boolean_operations = segment_boolean_operation_labels(ctx, booleans, data_blocks)?;
+    let (segment_boolean_operations, _segment_boolean_storage) = ctx
+        .with_scoped_storage("NX segment Boolean operation labels", || {
+            segment_boolean_operation_labels(ctx, booleans, data_blocks)
+        })?;
     let mut kinds_reservation = ctx.reserve_scoped(0, "NX terminal operation kinds")?;
     let mut operation_kinds = BTreeMap::new();
     for label in &chronological_labels {
-        kinds_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(&str, &str)>() * 4,
-        ))?;
-        ctx.insert_btree_map(
-            &mut operation_kinds,
-            label.id.as_str(),
-            label.value.as_str(),
-            "NX terminal operation kinds",
-        )?;
+        kinds_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut operation_kinds,
+                label.id.as_str(),
+                label.value.as_str(),
+                "NX terminal operation kinds",
+            )
+        })?;
     }
     let mut writers_reservation = ctx.reserve_scoped(0, "NX terminal last writers")?;
     let mut last_writers = BTreeMap::<u32, Option<usize>>::new();
     for binding in bindings {
         for identity in [binding.body_object_index, binding.body_alias_object_index] {
-            writers_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(u32, Option<usize>)>() * 4,
-            ))?;
-            ctx.insert_btree_map(
-                &mut last_writers,
-                canonical(identity),
-                None,
-                "NX terminal last writers",
-            )?;
+            writers_reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut last_writers,
+                    canonical(identity),
+                    None,
+                    "NX terminal last writers",
+                )
+            })?;
         }
     }
     {
         let mut record_writer = |body, position| -> Result<(), cadmpeg_core::CodecError> {
-            ctx.admit_btree_entry(&last_writers, &body, "NX terminal last writers")?;
-            writers_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(u32, Option<usize>)>() * 4,
-            ))?;
+            writers_reservation.with_storage(|| {
+                ctx.admit_btree_entry(&last_writers, &body, "NX terminal last writers")
+            })?;
+
             let writer = last_writers.entry(body).or_default();
             if writer.is_none_or(|writer| writer < position) {
                 *writer = Some(position);
@@ -492,10 +491,9 @@ fn terminal_feature_body_indices(
                 .get(&tool)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
-                consumed_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<u32>() * 4,
-                ))?;
-                ctx.insert_btree_set(&mut consumed, tool, "NX consumed segment bodies")?;
+                consumed_reservation.with_storage(|| {
+                    ctx.insert_btree_set(&mut consumed, tool, "NX consumed segment bodies")
+                })?;
             }
         }
     }
@@ -509,10 +507,9 @@ fn terminal_feature_body_indices(
                 .get(&body)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
-                consumed_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<u32>() * 4,
-                ))?;
-                ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")?;
+                consumed_reservation.with_storage(|| {
+                    ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
+                })?;
             }
         }
     }
@@ -536,10 +533,9 @@ fn terminal_feature_body_indices(
             .get(&body)
             .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
         {
-            consumed_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>() * 4,
-            ))?;
-            ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")?;
+            consumed_reservation.with_storage(|| {
+                ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
+            })?;
         }
     }
     let mut terminal = BTreeSet::new();
@@ -556,10 +552,7 @@ fn terminal_feature_body_indices(
         if !last_writers.contains_key(&root) || consumed.contains(&root) {
             continue;
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>() * 4),
-            "NX terminal segment bodies",
-        )?;
+
         ctx.insert_btree_set(&mut terminal, identity, "NX terminal segment bodies")?;
     }
     Ok(Some(terminal))
@@ -570,7 +563,10 @@ pub(super) fn segment_body_lineage_statuses(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body_lineage_inputs: &BodyLineageInputs<'_>,
 ) -> Result<Option<Vec<SegmentBodyLineageStatus>>, cadmpeg_core::CodecError> {
-    let terminal = terminal_feature_body_indices(ctx, body_lineage_inputs)?;
+    let (terminal, _terminal_storage) = ctx
+        .with_scoped_storage("NX local terminal storage", || {
+            terminal_feature_body_indices(ctx, body_lineage_inputs)
+        })?;
     let Some(terminal) = terminal else {
         return Ok(None);
     };
@@ -596,7 +592,7 @@ pub(super) fn segment_body_lineage_statuses(
         let mut segment_body_binding =
             ctx.retained_string(binding.id.len(), "NX segment lineage binding identity")?;
         segment_body_binding.push_str(&binding.id);
-        ctx.reserve_retained_vec(&mut output, 1, "NX segment lineage statuses")?;
+        ctx.reserve_vec(&mut output, 1, "NX segment lineage statuses")?;
         output.push(SegmentBodyLineageStatus {
             id,
             segment_body_binding,
@@ -704,7 +700,7 @@ fn segment_boolean_operation_labels(
     data_blocks: &[DataBlock],
 ) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
     let mut labels = BTreeSet::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX segment Boolean operation labels")?;
+
     for operation in booleans {
         if !matches!(
             boolean_offset_store_resolution(ctx, operation, data_blocks)?,
@@ -712,12 +708,9 @@ fn segment_boolean_operation_labels(
         ) {
             continue;
         }
-        let bytes = (std::mem::size_of::<String>() * 4)
-            .checked_add(operation.operation_label.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX segment Boolean operation labels", 0, 1))?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+
         let mut label = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut label,
             operation.operation_label.len(),
             "allocate NX segment Boolean operation label",
@@ -737,21 +730,42 @@ pub(super) fn body_alias_roots(
     let mut adjacency_reservation = ctx.reserve_scoped(0, "NX segment alias adjacency")?;
     for binding in bindings {
         ctx.charge_collection_items(2, "NX segment alias identities")?;
-        adjacency_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(u32, BTreeSet<u32>)>() * 8,
-        ))?;
-        adjacency
-            .entry(binding.body_object_index)
-            .or_default()
-            .insert(binding.body_alias_object_index);
+
+        adjacency_reservation.with_storage(|| {
+            if !adjacency.contains_key(&binding.body_object_index) {
+                ctx.admit_btree_node_storage::<u32, BTreeSet<u32>>(
+                    adjacency.len(),
+                    "NX segment alias identities",
+                )?;
+            }
+            let neighbors = adjacency.entry(binding.body_object_index).or_default();
+            if !neighbors.contains(&binding.body_alias_object_index) {
+                ctx.admit_btree_node_storage::<u32, ()>(
+                    neighbors.len(),
+                    "NX segment alias identities",
+                )?;
+            }
+            neighbors.insert(binding.body_alias_object_index);
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })?;
         ctx.charge_collection_items(2, "NX segment alias links")?;
-        adjacency_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<u32>() * 8,
-        ))?;
-        adjacency
-            .entry(binding.body_alias_object_index)
-            .or_default()
-            .insert(binding.body_object_index);
+
+        adjacency_reservation.with_storage(|| {
+            if !adjacency.contains_key(&binding.body_alias_object_index) {
+                ctx.admit_btree_node_storage::<u32, BTreeSet<u32>>(
+                    adjacency.len(),
+                    "NX segment alias links",
+                )?;
+            }
+            let neighbors = adjacency
+                .entry(binding.body_alias_object_index)
+                .or_default();
+            if !neighbors.contains(&binding.body_object_index) {
+                ctx.admit_btree_node_storage::<u32, ()>(neighbors.len(), "NX segment alias links")?;
+            }
+            neighbors.insert(binding.body_object_index);
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })?;
     }
     let work = bindings
         .len()
@@ -778,10 +792,9 @@ pub(super) fn body_alias_roots(
         )?;
         pending.push(identity);
         while let Some(member) = pending.pop() {
-            component_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>() * 4,
-            ))?;
-            if !ctx.insert_btree_set(&mut component, member, "NX segment alias component")? {
+            if !component_reservation.with_storage(|| {
+                ctx.insert_btree_set(&mut component, member, "NX segment alias component")
+            })? {
                 continue;
             }
             for neighbor in adjacency.get(&member).into_iter().flatten() {
@@ -799,10 +812,6 @@ pub(super) fn body_alias_roots(
         }
         let root = component.iter().copied().fold(identity, u32::min);
         for member in component {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, u32)>() * 4),
-                "NX segment alias roots",
-            )?;
             ctx.insert_btree_map(&mut roots, member, root, "NX segment alias roots")?;
         }
     }
@@ -853,10 +862,12 @@ pub(super) fn segment_om_links(
             let Some(relative_u64) = u64::try_from(relative).ok() else {
                 continue;
             };
-            let separated_marker = entry_offset
-                .checked_add(relative_u64)
-                .and_then(|offset| container.bounded_entry_bytes(offset, 4))
-                .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]);
+            let separated_marker = match entry_offset.checked_add(relative_u64) {
+                Some(offset) => container
+                    .bounded_entry_bytes(ctx, offset, 4)?
+                    .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]),
+                None => false,
+            };
             let role_at = |offset| {
                 sections
                     .iter()
@@ -884,7 +895,7 @@ pub(super) fn segment_om_links(
             }) else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut links, 1, "NX segment OM links")?;
+            ctx.reserve_vec(&mut links, 1, "NX segment OM links")?;
             let id = segment_link_identity(ctx, "nx:segment-om-links:link#", links.len())?;
             let row = segment_link_identity(ctx, "nx:segment-index:row#", row_ordinal)?;
             links.push(SegmentOmLink {
@@ -939,10 +950,7 @@ pub(super) fn segment_stream_links(
             .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper offset", 0, u64::MAX))?;
         ctx.charge_collection_items(1, "nx segment stream links")?;
         ctx.charge_entities(1, "nx segment stream links")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentStreamLink>()),
-            "nx segment stream links",
-        )?;
+        ctx.reserve_capacity(&mut links, 1, "nx segment stream links")?;
         let mut id = ctx.retained_string(id_len, "nx segment stream link identity")?;
         write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
@@ -951,11 +959,6 @@ pub(super) fn segment_stream_links(
                 cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut links,
-            1,
-            "nx segment stream links",
-        )?;
         links.push(SegmentStreamLink {
             id,
             row: candidate.wrapper.row_ordinal,
@@ -1050,24 +1053,10 @@ pub(super) fn segment_body_bindings(
             .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
         ctx.charge_collection_items(1, "nx segment body bindings")?;
         ctx.charge_entities(1, "nx segment body bindings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentBodyBinding>()),
-            "nx segment body bindings",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "nx segment body binding identity",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(link_len),
-            "nx segment body stream link identity",
-        )?;
+        ctx.reserve_capacity(&mut bindings, 1, "nx segment body bindings")?;
+
         let mut id = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
-            &mut id,
-            id_len,
-            "nx segment body binding identity",
-        )?;
+        ctx.try_reserve_retained_text(&mut id, id_len, "nx segment body binding identity")?;
         write!(&mut id, "{binding_prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment body binding identity",
@@ -1076,7 +1065,7 @@ pub(super) fn segment_body_bindings(
             )
         })?;
         let mut stream_link = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        ctx.try_reserve_retained_text(
             &mut stream_link,
             link_len,
             "nx segment body stream link identity",
@@ -1088,11 +1077,6 @@ pub(super) fn segment_body_bindings(
                 cadmpeg_core::decode::u64_from_index(link_len),
             )
         })?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut bindings,
-            1,
-            "nx segment body bindings",
-        )?;
         bindings.push(SegmentBodyBinding {
             id,
             stream_link,
@@ -1257,7 +1241,7 @@ mod tests {
         let container =
             crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
                 .expect("valid segment-index container");
-        let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
+        let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
 
         crate::test_support::with_decode_context_over(
@@ -1287,7 +1271,7 @@ mod tests {
         let container =
             crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
                 .expect("valid segment-index container");
-        let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
+        let row_slots = 4 * std::mem::size_of::<super::SegmentIndexRow>();
         let first_id = "nx:segment-index:row#0";
         let source_entry = "/Root/UG_PART/UG_PART";
 
@@ -1414,7 +1398,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&file);
 
                 let scan = crate::decode::scan(scan_ctx, root).expect("valid stream wrapper");
-                let slot = std::mem::size_of::<super::SegmentStreamLink>();
+                let slot = 4 * std::mem::size_of::<super::SegmentStreamLink>();
                 let id = "nx:segment-stream-links:link#0";
 
                 crate::test_support::with_decode_context_over(
@@ -1520,7 +1504,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&file);
 
                 let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-                let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+                let binding_slot = 4 * std::mem::size_of::<super::SegmentBodyBinding>();
                 let first_id = "nx:segment-body-bindings:binding#0";
 
                 crate::test_support::with_decode_context_over(
@@ -1561,7 +1545,7 @@ mod tests {
                 let root = cadmpeg_core::decode::View::over_retained(&file);
 
                 let scan = crate::decode::scan(scan_ctx, root).expect("valid partition stream");
-                let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+                let binding_slot = 4 * std::mem::size_of::<super::SegmentBodyBinding>();
                 let binding_id = "nx:segment-body-bindings:binding#0";
                 let stream_link = "nx:segment-stream-links:link#0";
 

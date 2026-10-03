@@ -1366,7 +1366,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
 }
 
 #[test]
-fn feature_name_index_refuses_caller_retained_limit() {
+fn feature_name_index_refuses_caller_scoped_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut ir = CadIr::empty();
@@ -1390,16 +1390,16 @@ fn feature_name_index_refuses_caller_retained_limit() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
-        .expect_err("feature identity and name require retained bytes");
+        .expect_err("feature identity and name require scoped bytes");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "index SLDPRT feature names"
     ));
 }
@@ -1444,7 +1444,7 @@ fn evaluated_feature_states_refuse_caller_collection_limit() {
 }
 
 #[test]
-fn global_parameter_owner_refuses_caller_retained_limit() {
+fn global_parameter_owner_refuses_caller_scoped_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut ir = CadIr::empty();
@@ -1468,16 +1468,16 @@ fn global_parameter_owner_refuses_caller_retained_limit() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
-        .expect_err("equations owner identity requires retained bytes");
+        .expect_err("equations owner identity requires scoped bytes");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "index SLDPRT global parameter owners"
     ));
 }

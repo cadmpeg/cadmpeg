@@ -38,11 +38,7 @@ pub(super) fn parse_configuration_payload(
     entry_name: &str,
     bytes: &[u8],
 ) -> Result<Value, CodecError> {
-    let _scratch = ctx.reserve_scoped(
-        u64::try_from(bytes.len())
-            .map_err(|_| ctx.refuse_codec_limit("f3d configuration JSON", 0, 1))?,
-        "f3d configuration JSON",
-    )?;
+    let _scratch = crate::design::json_value::reserve_json_scratch(ctx, bytes.len(), "f3d configuration JSON")?;
     let mut refusal = None;
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let parsed = ValueSeed {

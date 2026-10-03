@@ -469,10 +469,11 @@ fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(),
 }
 
 fn checksum_warning(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     chunk: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    match verify_checksum(bytes, chunk)? {
+    match verify_checksum(ctx, bytes, chunk)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode
@@ -482,12 +483,13 @@ fn checksum_warning(
 }
 
 fn checksum_warning_excluding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body(), children)?;
-    match verify_checksum_ranges(bytes, chunk, &direct)? {
+    let direct = direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    match verify_checksum_ranges(ctx, bytes, chunk, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode
@@ -539,7 +541,7 @@ fn scan_class_wrapper(
     )?;
     require_long(&uuid_chunk, CLASS_UUID)?;
     let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
-    if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
+    if let Some(note) = checksum_warning(ctx, bytes, &uuid_chunk)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -623,7 +625,7 @@ pub(crate) fn parse_userdata(
         let transform_range = transform_start..reader.position();
         let payload = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
-        if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
+        if let Some(note) = checksum_warning_excluding(ctx, bytes, wrapper, &[payload.range()])? {
             warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::IntegrityFailure,
@@ -651,7 +653,7 @@ pub(crate) fn parse_userdata(
     }
     let header = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
-    if let Some(note) = checksum_warning(bytes, &header)? {
+    if let Some(note) = checksum_warning(ctx, bytes, &header)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -696,7 +698,7 @@ pub(crate) fn parse_userdata(
     reader.skip(payload.next_offset() - reader.position())?;
     reader.skip_remaining()?;
     if let Some(note) =
-        checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
+        checksum_warning_excluding(ctx, bytes, wrapper, &[header.range(), payload.range()])?
     {
         warnings.push_coded_admitted(
             ctx,
@@ -1480,6 +1482,7 @@ pub(crate) fn parse_attribute_userdata(
                         .map_err(crate::chunks::FramingError::from)?;
                     result.push(AttributeUserdataDescriptor::Unknown { range });
                 }
+                Err(error @ FramingError::Resource(_)) => return Err(error),
                 Err(error) => warnings.push_admitted(
                     ctx,
                     format_args!(
@@ -1800,7 +1803,7 @@ pub(crate) fn parse_object_record(
     let uuid_chunk = chunk_at(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
     let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
-    if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
+    if let Some(note) = checksum_warning(ctx, bytes, &uuid_chunk)? {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
@@ -1873,16 +1876,19 @@ pub(crate) fn parse_object_record(
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
                 let descriptor = parse_history(bytes, &item, archive)?;
                 let checksum = match (&descriptor.header_range, &descriptor.data_range) {
-                    (Some(header), Some(data)) => {
-                        checksum_warning_excluding(bytes, &item, &[header.clone(), data.clone()])?
-                    }
+                    (Some(header), Some(data)) => checksum_warning_excluding(
+                        ctx,
+                        bytes,
+                        &item,
+                        &[header.clone(), data.clone()],
+                    )?,
                     (Some(header), None) => {
-                        checksum_warning_excluding(bytes, &item, std::slice::from_ref(header))?
+                        checksum_warning_excluding(ctx, bytes, &item, std::slice::from_ref(header))?
                     }
                     (None, Some(data)) => {
-                        checksum_warning_excluding(bytes, &item, std::slice::from_ref(data))?
+                        checksum_warning_excluding(ctx, bytes, &item, std::slice::from_ref(data))?
                     }
-                    (None, None) => checksum_warning_excluding(bytes, &item, &[])?,
+                    (None, None) => checksum_warning_excluding(ctx, bytes, &item, &[])?,
                 };
                 if let Some(note) = checksum {
                     warnings.push_coded_admitted(
@@ -1946,7 +1952,7 @@ pub(crate) fn parse_object_record(
             .parsed()
             .and_then(|value| value.rendering_range.clone());
         let children = rendering_range.as_slice();
-        if let Some(note) = checksum_warning_excluding(bytes, item, children)? {
+        if let Some(note) = checksum_warning_excluding(ctx, bytes, item, children)? {
             warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::IntegrityFailure,

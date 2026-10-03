@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
-    StandardTopology,
+    StandardTopologyDraft,
 };
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
@@ -445,7 +445,11 @@ fn incidence_choice_components<'storage>(
             if rank > 0 && face == edge_faces[edge][0] {
                 continue;
             }
-            fixed_incidence.union(point_nodes[&(face, pair[0])], point_nodes[&(face, pair[1])]);
+            fixed_incidence.union(
+                ctx,
+                point_nodes[&(face, pair[0])],
+                point_nodes[&(face, pair[1])],
+            )?;
         }
     }
     let mut owner = HashMap::<(usize, usize), usize>::new();
@@ -462,9 +466,9 @@ fn incidence_choice_components<'storage>(
                 continue;
             }
             for point in choices[edge].iter().flatten().copied() {
-                let point = fixed_incidence.find(point_nodes[&(face, point)]);
+                let point = fixed_incidence.find(ctx, point_nodes[&(face, point)])?;
                 if let Some(&previous) = owner.get(&(face, point)) {
-                    union.union(previous, edge);
+                    union.union(ctx, previous, edge)?;
                 } else {
                     ctx.insert_hash_map(
                         &mut owner,
@@ -490,7 +494,7 @@ fn incidence_choice_components<'storage>(
             });
             if let Some(first) = ambiguous.next() {
                 for edge in ambiguous {
-                    union.union(first, edge);
+                    union.union(ctx, first, edge)?;
                 }
             }
             Ok(())
@@ -535,10 +539,10 @@ fn incidence_choice_components<'storage>(
             let mut owner = HashMap::<usize, usize>::new();
             for &edge in &ambiguous {
                 for port in [edge * 2, edge * 2 + 1] {
-                    let root = mesh_quotient.root(port);
+                    let root = mesh_quotient.root(ctx, port)?;
                     for point in mesh_quotient.domains()[root].iter().copied() {
                         if let Some(&previous) = owner.get(&point) {
-                            union.union(previous, edge);
+                            union.union(ctx, previous, edge)?;
                         } else {
                             ctx.insert_hash_map(
                                 &mut owner,
@@ -554,7 +558,7 @@ fn incidence_choice_components<'storage>(
     }
     let mut by_root = HashMap::<usize, Vec<usize>>::new();
     for edge in ambiguous {
-        let root = union.find(edge);
+        let root = union.find(ctx, edge)?;
         if let Some(group) = by_root.get_mut(&root) {
             ctx.push_vec(group, edge, "catia_incidence_component_edges")?;
         } else {
@@ -613,14 +617,14 @@ fn join_incidence_components_by_coupling(
             continue;
         };
         if let Some(owner) = coupled_owner {
-            union.union(owner, component);
+            union.union(ctx, owner, component)?;
         } else {
             coupled_owner = Some(component);
         }
     }
     let mut joined = HashMap::<usize, (usize, Vec<usize>)>::new();
     for (index, component) in components.into_iter().enumerate() {
-        let root = union.find(index);
+        let root = union.find(ctx, index)?;
         if let Some(entry) = joined.get_mut(&root) {
             entry.0 = entry.0.min(index);
             ctx.reserve_vec(
@@ -932,6 +936,7 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) coordinate_propagation_budget: &'a WorkBudget<'a>,
     pub(crate) boundary_propagation_budget: &'a WorkBudget<'a>,
     pub(crate) state: IncidenceSearchState,
+    search_storage: RefCell<cadmpeg_core::decode::ScopedReservation<'a>>,
 }
 
 enum IncidenceBranch {
@@ -2059,7 +2064,7 @@ pub(super) fn compact_boundary_domain_viable(
                 degrees[node] += 1;
             }
             if nodes[0] != nodes[1] {
-                components.union(nodes[0], nodes[1]);
+                components.union(ctx, nodes[0], nodes[1])?;
             }
         }
         let mut open_components = HashSet::new();
@@ -2067,14 +2072,17 @@ pub(super) fn compact_boundary_domain_viable(
             if degree < 2 {
                 ctx.insert_hash_set(
                     &mut open_components,
-                    components.find(node),
+                    components.find(ctx, node)?,
                     "catia_compact_boundary_open_components",
                 )?;
             }
         }
-        return Ok(
-            (0..components.len()).all(|node| open_components.contains(&components.find(node)))
-        );
+        for node in 0..components.len() {
+            if !open_components.contains(&components.find(ctx, node)?) {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
     }
     let mut complete_pairs = Vec::new();
     for pair in selected_pairs {
@@ -2361,7 +2369,7 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                         )?;
                     }
                     let Some(work) = candidate
-                        .signature_work()
+                        .signature_work(ctx)?
                         .and_then(|work| work.checked_add(work_units(next_oriented.len())))
                     else {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
@@ -2546,15 +2554,19 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         witness: (usize, [usize; 2]),
     ) -> Result<(), CodecError> {
         let mut witnesses = self.degree_support_witnesses.borrow_mut();
-        self.ctx.admit_hash_map_entry(
-            &mut witnesses,
-            &(face, point),
-            "catia_incidence_witness_keys",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.admit_hash_map_entry(
+                &mut witnesses,
+                &(face, point),
+                "catia_incidence_witness_keys",
+            )
+        })?;
         let entry = witnesses.entry((face, point)).or_default();
         if !entry.contains(&witness) {
-            self.ctx
-                .push_vec(entry, witness, "catia_incidence_witness_pairs")?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx
+                    .push_vec(entry, witness, "catia_incidence_witness_pairs")
+            })?;
         }
         Ok(())
     }
@@ -2949,7 +2961,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         face: usize,
         point: usize,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-        limit: usize,
+        limit: Option<usize>,
         viability: &mut HashMap<MeshEndpointPair, bool>,
     ) -> Result<IncidenceConstraintOptions, CodecError> {
         let mut any_viable = false;
@@ -2966,12 +2978,14 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                     let viable = self.candidate_fits_in(edge, pair, coordinate_domains)?
                         && coordinate_domains
                             .is_none_or(|domains| domains.supports_edge_candidate(edge, pair));
-                    self.ctx.insert_hash_map(
-                        viability,
-                        (edge, pair),
-                        viable,
-                        "catia incidence constraint viability",
-                    )?;
+                    self.search_storage.borrow_mut().with_storage(|| {
+                        self.ctx.insert_hash_map(
+                            viability,
+                            (edge, pair),
+                            viable,
+                            "catia incidence constraint viability",
+                        )
+                    })?;
                     viable
                 };
                 if !viable {
@@ -2981,12 +2995,14 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 if !self.branch_edge_ready(edge) {
                     continue;
                 }
-                self.ctx.insert_hash_set(
-                    &mut options,
-                    (edge, pair),
-                    "catia incidence constraint options",
-                )?;
-                if options.len() == limit {
+                self.search_storage.borrow_mut().with_storage(|| {
+                    self.ctx.insert_hash_set(
+                        &mut options,
+                        (edge, pair),
+                        "catia incidence constraint options",
+                    )
+                })?;
+                if limit == Some(options.len()) {
                     return Ok(IncidenceConstraintOptions::AtLeastLimit);
                 }
             }
@@ -2998,11 +3014,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             return Ok(IncidenceConstraintOptions::Deferred);
         }
         let mut ordered = Vec::new();
-        self.ctx.reserve_vec(
-            &mut ordered,
-            options.len(),
-            "catia incidence ordered constraint options",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.reserve_vec(
+                &mut ordered,
+                options.len(),
+                "catia incidence ordered constraint options",
+            )
+        })?;
         ordered.extend(options);
         self.ctx.sort_unstable_by(
             &mut ordered,
@@ -3034,11 +3052,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             } else {
                 self.choices[edge].len()
             };
-            self.ctx.push_vec(
-                &mut ordered_edges,
-                (edge, width),
-                "catia_incidence_branch_edge_widths",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.push_vec(
+                    &mut ordered_edges,
+                    (edge, width),
+                    "catia_incidence_branch_edge_widths",
+                )
+            })?;
         }
         self.ctx.stable_sort_by(
             &mut ordered_edges,
@@ -3060,16 +3080,18 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 }
                 continue;
             }
-            let limit = best.as_ref().map_or(usize::MAX, |(_, width, _)| *width);
+            let limit = best.as_ref().map(|(_, width, _)| *width);
             let mut options = Vec::new();
             for pair in self.choices[edge].iter().copied() {
                 if viable(edge, pair)? {
-                    self.ctx.push_vec(
-                        &mut options,
-                        (edge, pair),
-                        "catia_incidence_branch_options",
-                    )?;
-                    if options.len() == limit {
+                    self.search_storage.borrow_mut().with_storage(|| {
+                        self.ctx.push_vec(
+                            &mut options,
+                            (edge, pair),
+                            "catia_incidence_branch_options",
+                        )
+                    })?;
+                    if limit == Some(options.len()) {
                         continue 'edges;
                     }
                 }
@@ -3104,7 +3126,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             if self.degree(face, point) != 1 {
                 continue;
             }
-            let limit = constrained.as_ref().map_or(usize::MAX, Vec::len);
+            let limit = constrained.as_ref().map(Vec::len);
             let options =
                 self.constraint_options(face, point, coordinate_domains, limit, &mut viability)?;
             match options {
@@ -3148,11 +3170,21 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 .all(|&edge| self.assignment[edge].is_some())
         {
             let mut complete = Vec::new();
-            self.ctx.reserve_vec(
-                &mut complete,
-                self.edges.len(),
-                "catia incidence complete branch",
-            )?;
+            if self.solution_visitor.is_some() {
+                self.search_storage.borrow_mut().with_storage(|| {
+                    self.ctx.reserve_vec(
+                        &mut complete,
+                        self.edges.len(),
+                        "catia incidence complete branch",
+                    )
+                })?;
+            } else {
+                self.ctx.reserve_vec(
+                    &mut complete,
+                    self.edges.len(),
+                    "catia incidence complete branch",
+                )?;
+            }
             complete.extend(
                 self.edges
                     .iter()
@@ -3169,7 +3201,9 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     }
 
     fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> Result<IncidenceDegreeUndo, CodecError> {
-        adjust_incidence_degrees(self.ctx, &mut self.degrees, self.edge_faces, edge, pair)
+        self.search_storage.borrow_mut().with_storage(|| {
+            adjust_incidence_degrees(self.ctx, &mut self.degrees, self.edge_faces, edge, pair)
+        })
     }
 
     fn restore_adjustment(&mut self, undo: IncidenceDegreeUndo) {
@@ -3186,11 +3220,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         };
         let mut faces_collection = Vec::new();
         for face in faces {
-            self.ctx.push_vec(
-                &mut faces_collection,
-                face,
-                "catia_incidence_advanced_faces",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.push_vec(
+                    &mut faces_collection,
+                    face,
+                    "catia_incidence_advanced_faces",
+                )
+            })?;
         }
         let mut faces = faces_collection;
         self.ctx.sort_unstable_by(
@@ -3276,8 +3312,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 .refuse_codec_limit("catia incidence component faces", u64::MAX, u64::MAX)
         })?;
         let mut faces = Vec::new();
-        self.ctx
-            .reserve_vec(&mut faces, count, "catia incidence component faces")?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx
+                .reserve_vec(&mut faces, count, "catia incidence component faces")
+        })?;
         faces.extend(self.edges.iter().flat_map(|edge| self.edge_faces[*edge]));
         self.ctx.sort_unstable_by(
             &mut faces,
@@ -3308,11 +3346,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             .as_ref()
             .and_then(|factors| factors.active.as_ref());
         let mut faces = Vec::new();
-        self.ctx.reserve_vec(
-            &mut faces,
-            component_faces.len(),
-            "catia face option candidates",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.reserve_vec(
+                &mut faces,
+                component_faces.len(),
+                "catia face option candidates",
+            )
+        })?;
         faces.extend(component_faces.iter().copied().filter_map(|face| {
             let domain = mesh_assignments.get(face)?;
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
@@ -3375,11 +3415,14 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                     {
                         continue;
                     }
-                    let copy = self
-                        .ctx
-                        .copy_slice(configuration, "catia face option configuration pairs")?;
-                    self.ctx
-                        .push_vec(&mut selected, copy, "catia face option configurations")?;
+                    let copy = self.search_storage.borrow_mut().with_storage(|| {
+                        self.ctx
+                            .copy_slice(configuration, "catia face option configuration pairs")
+                    })?;
+                    self.search_storage.borrow_mut().with_storage(|| {
+                        self.ctx
+                            .push_vec(&mut selected, copy, "catia face option configurations")
+                    })?;
                 }
                 selected
             } else {
@@ -3403,25 +3446,31 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 let mut projection = Vec::new();
                 for pair in configuration {
                     if self.active[pair.0] && self.assignment[pair.0].is_none() {
-                        self.ctx.push_vec(
-                            &mut projection,
-                            pair,
-                            "catia face option projected pairs",
-                        )?;
+                        self.search_storage.borrow_mut().with_storage(|| {
+                            self.ctx.push_vec(
+                                &mut projection,
+                                pair,
+                                "catia face option projected pairs",
+                            )
+                        })?;
                     }
                 }
-                self.ctx.insert_hash_set(
-                    &mut unique,
-                    projection,
-                    "catia face option projected configurations",
-                )?;
+                self.search_storage.borrow_mut().with_storage(|| {
+                    self.ctx.insert_hash_set(
+                        &mut unique,
+                        projection,
+                        "catia face option projected configurations",
+                    )
+                })?;
             }
             let mut projected = Vec::new();
-            self.ctx.reserve_vec(
-                &mut projected,
-                unique.len(),
-                "catia face option ordered projections",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.reserve_vec(
+                    &mut projected,
+                    unique.len(),
+                    "catia face option ordered projections",
+                )
+            })?;
             projected.extend(unique);
             self.ctx.sort_unstable_by(
                 &mut projected,
@@ -3436,15 +3485,17 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 continue;
             }
             let forced = projected.len() == 1;
-            self.ctx.push_vec(
-                &mut domains,
-                FaceConfigurationDomain {
-                    width,
-                    face,
-                    configurations: projected,
-                },
-                "catia face option domains",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.push_vec(
+                    &mut domains,
+                    FaceConfigurationDomain {
+                        width,
+                        face,
+                        configurations: projected,
+                    },
+                    "catia face option domains",
+                )
+            })?;
             if forced {
                 break;
             }
@@ -3457,11 +3508,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             .all(|domain| domain.configurations.len() != 1)
         {
             let mut configuration_domains = Vec::new();
-            self.ctx.reserve_vec(
-                &mut configuration_domains,
-                domains.len(),
-                "catia face option configuration domains",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.reserve_vec(
+                    &mut configuration_domains,
+                    domains.len(),
+                    "catia face option configuration domains",
+                )
+            })?;
             configuration_domains.extend(
                 domains
                     .iter_mut()
@@ -3536,20 +3589,24 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let mut assigned = Vec::new();
         let mut affected_faces = Vec::new();
         let mut next_coordinate_domains = coordinate_domains.cloned();
-        self.ctx.reserve_vec(
-            &mut assigned,
-            option.len(),
-            "catia face applied assignments",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.reserve_vec(
+                &mut assigned,
+                option.len(),
+                "catia face applied assignments",
+            )
+        })?;
         let affected_count = option.len().checked_mul(2).ok_or_else(|| {
             self.ctx
                 .refuse_codec_limit("catia face affected faces", u64::MAX, u64::MAX)
         })?;
-        self.ctx.reserve_vec(
-            &mut affected_faces,
-            affected_count,
-            "catia face affected faces",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.reserve_vec(
+                &mut affected_faces,
+                affected_count,
+                "catia face affected faces",
+            )
+        })?;
         for (edge, pair) in option {
             if !self.active[edge] || self.assignment[edge].is_some() {
                 continue;
@@ -3597,11 +3654,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             return Ok(None);
         }
         let mut assigned_pairs = Vec::new();
-        self.ctx.reserve_vec(
-            &mut assigned_pairs,
-            assigned.len(),
-            "catia face factor assigned pairs",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.reserve_vec(
+                &mut assigned_pairs,
+                assigned.len(),
+                "catia face factor assigned pairs",
+            )
+        })?;
         assigned_pairs.extend(assigned.iter().map(|(edge, pair, _)| (*edge, *pair)));
         let factor_checkpoint = match &mut self.face_configuration_domains {
             Some(factors) => match factors.refine_edges(self.ctx, &assigned_pairs)? {
@@ -3656,11 +3715,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             if factor_checkpoint.is_none() {
                 factor_checkpoint = applied_factor_checkpoint;
             }
-            self.ctx.reserve_vec(
-                &mut assigned,
-                applied.assigned.len(),
-                "catia forced face assignments",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.reserve_vec(
+                    &mut assigned,
+                    applied.assigned.len(),
+                    "catia forced face assignments",
+                )
+            })?;
             assigned.extend(applied.assigned);
             states = next_states;
             domains = applied.coordinate_domains;
@@ -3734,11 +3795,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             return Ok(());
         }
         let mut state = Vec::new();
-        self.ctx.reserve_vec(
-            &mut state,
-            self.edges.len(),
-            "catia incidence dead state key",
-        )?;
+        self.search_storage.borrow_mut().with_storage(|| {
+            self.ctx.reserve_vec(
+                &mut state,
+                self.edges.len(),
+                "catia incidence dead state key",
+            )
+        })?;
         state.extend(self.edges.iter().map(|&edge| self.assignment[edge]));
         if self.dead_states.contains(&state) {
             return Ok(());
@@ -3746,11 +3809,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let solutions_before = self.solutions.len();
         self.search_state(quotient_states, coordinate_domains, component_faces)?;
         if self.state == IncidenceSearchState::Open && self.solutions.len() == solutions_before {
-            self.ctx.insert_hash_set(
-                &mut self.dead_states,
-                state,
-                "catia incidence dead states",
-            )?;
+            self.search_storage.borrow_mut().with_storage(|| {
+                self.ctx.insert_hash_set(
+                    &mut self.dead_states,
+                    state,
+                    "catia incidence dead states",
+                )
+            })?;
         }
         Ok(())
     }
@@ -4076,12 +4141,15 @@ pub(super) fn deferred_boundary_assignment(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred incident edges", u64::MAX, u64::MAX)
         })?;
+    let mut temporary = ctx.reserve_scoped(0, "catia deferred boundary workspace")?;
     let mut incident = Vec::new();
-    ctx.reserve_vec(
-        &mut incident,
-        incident_count,
-        "catia deferred incident edges",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_vec(
+            &mut incident,
+            incident_count,
+            "catia deferred incident edges",
+        )
+    })?;
     incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
@@ -4096,18 +4164,22 @@ pub(super) fn deferred_boundary_assignment(
         "catia deferred incident edges sort",
     )?;
     incident.dedup();
-    let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
+    let Some(incidence) =
+        temporary.with_storage(|| incidence_cycles(ctx, &incident, edge_points))?
+    else {
         return Ok(None);
     };
     if incidence.len() != domain.cycles.len() {
         return Ok(None);
     }
     let mut missing = HashSet::new();
-    ctx.reserve_set(
-        &mut missing,
-        domain.missing_edges.len(),
-        "catia deferred missing edges",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_set(
+            &mut missing,
+            domain.missing_edges.len(),
+            "catia deferred missing edges",
+        )
+    })?;
     missing.extend(domain.missing_edges.iter().copied());
     let compatibility_count = domain
         .cycles
@@ -4117,58 +4189,71 @@ pub(super) fn deferred_boundary_assignment(
             ctx.refuse_codec_limit("catia deferred compatibility cells", u64::MAX, u64::MAX)
         })?;
     let mut compatible = Vec::new();
-    ctx.reserve_vec(
-        &mut compatible,
-        domain.cycles.len(),
-        "catia deferred compatibility rows",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_vec(
+            &mut compatible,
+            domain.cycles.len(),
+            "catia deferred compatibility rows",
+        )
+    })?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred compatibility cells",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut row,
-            incidence.len(),
-            "catia deferred compatibility cells",
-        )?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut row,
+                incidence.len(),
+                "catia deferred compatibility cells",
+            )
+        })?;
         for candidate in &incidence {
-            row.push(deferred_boundary_cycle_assignment(
-                ctx, mesh, candidate, &missing,
-            )?);
+            row.push(temporary.with_storage(|| {
+                deferred_boundary_cycle_assignment(ctx, mesh, candidate, &missing)
+            })?);
         }
         compatible.push(row);
     }
     let mut boolean_compatible = Vec::new();
-    ctx.reserve_vec(
-        &mut boolean_compatible,
-        domain.cycles.len(),
-        "catia deferred matching rows",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_vec(
+            &mut boolean_compatible,
+            domain.cycles.len(),
+            "catia deferred matching rows",
+        )
+    })?;
     ctx.charge_collection_items(
         u64_from_index(compatibility_count),
         "catia deferred matching cells",
     )?;
     for cycles in &compatible {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut row,
-            cycles.len(),
-            "catia deferred matching cells",
-        )?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(&mut row, cycles.len(), "catia deferred matching cells")
+        })?;
         row.extend(cycles.iter().map(Option::is_some));
         boolean_compatible.push(row);
     }
-    let mut matched_mesh = ctx.alloc_filled(incidence.len(), None, "catia_deferred_match")?;
+    let (mut matched_mesh, _matched_mesh_storage) =
+        ctx.temporary_vec(incidence.len(), "catia_deferred_match")?;
+    for _ in 0..incidence.len() {
+        matched_mesh.push(None);
+    }
     for mesh in 0..domain.cycles.len() {
-        let mut visited = ctx.alloc_filled(incidence.len(), false, "catia_deferred_visit")?;
+        let (mut visited, _visited_storage) =
+            ctx.temporary_vec(incidence.len(), "catia_deferred_visit")?;
+        visited.extend(std::iter::repeat_n(false, incidence.len()));
         if !augment_cycle_matching(mesh, &boolean_compatible, &mut visited, &mut matched_mesh) {
             return Ok(None);
         }
     }
-    let mut boundaries =
-        ctx.alloc_filled(domain.cycles.len(), None, "catia_deferred_boundaries")?;
+    let (mut boundaries, _boundaries_storage) =
+        ctx.temporary_vec(domain.cycles.len(), "catia_deferred_boundaries")?;
+    for _ in 0..domain.cycles.len() {
+        boundaries.push(None);
+    }
     for (incidence, mesh) in matched_mesh.into_iter().enumerate() {
         let Some(mesh) = mesh else {
             return Ok(None);
@@ -4209,12 +4294,15 @@ fn deferred_boundary_closes(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred close incident edges", u64::MAX, u64::MAX)
         })?;
+    let mut temporary = ctx.reserve_scoped(0, "catia deferred close boundary workspace")?;
     let mut incident = Vec::new();
-    ctx.reserve_vec(
-        &mut incident,
-        incident_count,
-        "catia deferred close incident edges",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_vec(
+            &mut incident,
+            incident_count,
+            "catia deferred close incident edges",
+        )
+    })?;
     incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
@@ -4229,18 +4317,22 @@ fn deferred_boundary_closes(
         "catia deferred close incident edges sort",
     )?;
     incident.dedup();
-    let Some(incidence) = incidence_cycles(ctx, &incident, edge_points)? else {
+    let Some(incidence) =
+        temporary.with_storage(|| incidence_cycles(ctx, &incident, edge_points))?
+    else {
         return Ok(false);
     };
     if incidence.len() != domain.cycles.len() {
         return Ok(false);
     }
     let mut missing = HashSet::new();
-    ctx.reserve_set(
-        &mut missing,
-        domain.missing_edges.len(),
-        "catia deferred close missing edges",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_set(
+            &mut missing,
+            domain.missing_edges.len(),
+            "catia deferred close missing edges",
+        )
+    })?;
     missing.extend(domain.missing_edges.iter().copied());
     let cells = domain
         .cycles
@@ -4254,22 +4346,26 @@ fn deferred_boundary_closes(
             )
         })?;
     let mut compatible = Vec::new();
-    ctx.reserve_vec(
-        &mut compatible,
-        domain.cycles.len(),
-        "catia deferred close compatibility rows",
-    )?;
+    temporary.with_storage(|| {
+        ctx.reserve_vec(
+            &mut compatible,
+            domain.cycles.len(),
+            "catia deferred close compatibility rows",
+        )
+    })?;
     ctx.charge_collection_items(
         u64_from_index(cells),
         "catia deferred close compatibility cells",
     )?;
     for mesh in &domain.cycles {
         let mut row = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut row,
-            incidence.len(),
-            "catia deferred close compatibility cells",
-        )?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut row,
+                incidence.len(),
+                "catia deferred close compatibility cells",
+            )
+        })?;
         for candidate in &incidence {
             row.push(deferred_boundary_cycle_matches(
                 ctx, mesh, candidate, &missing,
@@ -4277,9 +4373,15 @@ fn deferred_boundary_closes(
         }
         compatible.push(row);
     }
-    let mut matched_mesh = ctx.alloc_filled(incidence.len(), None, "catia_deferred_close_match")?;
+    let (mut matched_mesh, _matched_mesh_storage) =
+        ctx.temporary_vec(incidence.len(), "catia_deferred_close_match")?;
+    for _ in 0..incidence.len() {
+        matched_mesh.push(None);
+    }
     for mesh in 0..domain.cycles.len() {
-        let mut visited = ctx.alloc_filled(incidence.len(), false, "catia_deferred_close_visit")?;
+        let (mut visited, _visited_storage) =
+            ctx.temporary_vec(incidence.len(), "catia_deferred_close_visit")?;
+        visited.extend(std::iter::repeat_n(false, incidence.len()));
         if !augment_cycle_matching(mesh, &compatible, &mut visited, &mut matched_mesh) {
             return Ok(false);
         }
@@ -4838,6 +4940,7 @@ where
             solution_visitor,
         } = inputs;
 
+        let mut component_storage = ctx.reserve_scoped(0, "CATIA component incidence workspace")?;
         let mut active = ctx.alloc_filled(choices.len(), false, "catia incidence active edges")?;
         let mut constraints = HashSet::<(usize, usize)>::new();
         let mut point_support_edges = ctx.alloc_filled(
@@ -4853,11 +4956,13 @@ where
                 if rank > 0 && face == faces[0] {
                     continue;
                 }
-                ctx.insert_hash_set(
-                    &mut component_faces,
-                    face,
-                    "catia_incidence_component_faces",
-                )?;
+                component_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut component_faces,
+                        face,
+                        "catia_incidence_component_faces",
+                    )
+                })?;
                 let candidate_points = if let Some(domains) =
                     coordinate_domains.filter(|_| choices[edge].is_empty())
                 {
@@ -4870,7 +4975,9 @@ where
                 } else {
                     let mut points = Vec::new();
                     for point in choices[edge].iter().flatten().copied() {
-                        ctx.push_vec(&mut points, point, "catia_incidence_candidate_points")?;
+                        component_storage.with_storage(|| {
+                            ctx.push_vec(&mut points, point, "catia_incidence_candidate_points")
+                        })?;
                     }
                     points
                 };
@@ -4882,31 +4989,39 @@ where
                 )?;
                 points.dedup();
                 for point in points {
-                    ctx.insert_hash_set(
-                        &mut constraints,
-                        (face, point),
-                        "catia_incidence_point_constraints",
-                    )?;
+                    component_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut constraints,
+                            (face, point),
+                            "catia_incidence_point_constraints",
+                        )
+                    })?;
                     if !point_support_edges[face].contains_key(&point) {
-                        ctx.insert_hash_map(
-                            &mut point_support_edges[face],
-                            point,
-                            Vec::new(),
-                            "catia_incidence_point_support_keys",
-                        )?;
+                        component_storage.with_storage(|| {
+                            ctx.insert_hash_map(
+                                &mut point_support_edges[face],
+                                point,
+                                Vec::new(),
+                                "catia_incidence_point_support_keys",
+                            )
+                        })?;
                     }
                     if let Some(support) = point_support_edges[face].get_mut(&point) {
-                        ctx.push_vec(support, edge, "catia_incidence_point_support_entries")?;
+                        component_storage.with_storage(|| {
+                            ctx.push_vec(support, edge, "catia_incidence_point_support_entries")
+                        })?;
                     }
                 }
             }
         }
         let mut sorted_constraints = Vec::new();
-        ctx.reserve_vec(
-            &mut sorted_constraints,
-            constraints.len(),
-            "catia_incidence_sorted_constraints",
-        )?;
+        component_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut sorted_constraints,
+                constraints.len(),
+                "catia_incidence_sorted_constraints",
+            )
+        })?;
         sorted_constraints.extend(constraints);
         let mut constraints = sorted_constraints;
         ctx.sort_unstable_by(
@@ -4916,11 +5031,13 @@ where
             "catia_incidence_sorted_constraints_sort",
         )?;
         let mut explicit_point_supports = Vec::new();
-        ctx.reserve_vec(
-            &mut explicit_point_supports,
-            choices.len(),
-            "catia_incidence_explicit_support_rows",
-        )?;
+        component_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut explicit_point_supports,
+                choices.len(),
+                "catia_incidence_explicit_support_rows",
+            )
+        })?;
         for pairs in choices {
             let mut supports = HashMap::<usize, Vec<[usize; 2]>>::new();
             for &pair in pairs {
@@ -4928,16 +5045,20 @@ where
                     .into_iter()
                     .flatten()
                 {
-                    ctx.admit_hash_map_entry(
-                        &mut supports,
-                        &point,
-                        "catia_incidence_explicit_support_keys",
-                    )?;
-                    ctx.push_vec(
-                        supports.entry(point).or_default(),
-                        pair,
-                        "catia_incidence_explicit_support_pairs",
-                    )?;
+                    component_storage.with_storage(|| {
+                        ctx.admit_hash_map_entry(
+                            &mut supports,
+                            &point,
+                            "catia_incidence_explicit_support_keys",
+                        )
+                    })?;
+                    component_storage.with_storage(|| {
+                        ctx.push_vec(
+                            supports.entry(point).or_default(),
+                            pair,
+                            "catia_incidence_explicit_support_pairs",
+                        )
+                    })?;
                 }
             }
             explicit_point_supports.push(supports);
@@ -4950,7 +5071,8 @@ where
             &active,
         )?;
         let filter = |solution: &[MeshEndpointPair]| -> Result<bool, CodecError> {
-            let mut completed = ctx.copy_slice(assignment, "catia_incidence_filter_assignment")?;
+            let (mut completed, _filter_storage) =
+                ctx.copy_temporary_slice(assignment, "catia_incidence_filter_assignment")?;
             for &(edge, pair) in solution {
                 completed[edge] = Some(pair);
             }
@@ -4988,6 +5110,7 @@ where
         let degree_support_budget = budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = IncidenceComponentSearch {
             ctx,
+            search_storage: RefCell::new(ctx.reserve_scoped(0, "catia incidence search storage")?),
             choices,
             explicit_point_supports,
             point_support_edges,
@@ -5000,8 +5123,9 @@ where
             active,
             edges: component,
             constraints,
-            assignment: ctx.copy_slice(assignment, "catia_incidence_search_assignment")?,
-            degrees: copy_incidence_degree_rows(ctx, degrees)?,
+            assignment: component_storage
+                .with_storage(|| ctx.copy_slice(assignment, "catia_incidence_search_assignment"))?,
+            degrees: component_storage.with_storage(|| copy_incidence_degree_rows(ctx, degrees))?,
             solutions: Vec::new(),
             solution_filter: Some(&filter),
             solution_visitor,
@@ -5178,7 +5302,7 @@ where
                     return Ok(visitor(&pairs)?);
                 };
                 let Some(closure_limit) =
-                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)
+                    quotient.coordinate_domain_preparation_limit(ctx, point_count, &singleton)?
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
@@ -5216,8 +5340,11 @@ where
             return Ok(visitor(&pairs)?);
         };
 
-        let base_assignment = ctx.copy_slice(assignment, "catia_incidence_base_assignment")?;
-        let base_degrees = copy_incidence_degree_rows(ctx, degrees)?;
+        let mut base_storage = ctx.reserve_scoped(0, "catia incidence component snapshots")?;
+        let base_assignment = base_storage
+            .with_storage(|| ctx.copy_slice(assignment, "catia_incidence_base_assignment"))?;
+        let base_degrees =
+            base_storage.with_storage(|| copy_incidence_degree_rows(ctx, degrees))?;
         let mut downstream_control = Ok(ControlFlow::Continue(()));
         let mut visit_solution =
             |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
@@ -5225,31 +5352,41 @@ where
                     downstream_control = Err(IncidenceVisitError::Exhausted);
                     return Ok(ControlFlow::Break(()));
                 }
+                let mut solution_storage =
+                    ctx.reserve_scoped(0, "catia incidence component solution workspace")?;
                 let mut degree_undo = Vec::new();
-                ctx.reserve_vec(
-                    &mut degree_undo,
-                    solution.len(),
-                    "catia_incidence_degree_undo",
-                )?;
+                solution_storage.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut degree_undo,
+                        solution.len(),
+                        "catia_incidence_degree_undo",
+                    )
+                })?;
                 for &(edge, pair) in solution {
                     assignment[edge] = Some(pair);
                     degree_undo.push((
                         edge,
-                        adjust_incidence_degrees(ctx, degrees, edge_faces, edge, pair)?,
+                        solution_storage.with_storage(|| {
+                            adjust_incidence_degrees(ctx, degrees, edge_faces, edge, pair)
+                        })?,
                     ));
                 }
                 let candidates = if coordinate_domains.is_some() {
                     let mut candidates = Vec::new();
-                    ctx.reserve_vec(
-                        &mut candidates,
-                        assignment.len(),
-                        "catia_incidence_candidate_rows",
-                    )?;
+                    solution_storage.with_storage(|| {
+                        ctx.reserve_vec(
+                            &mut candidates,
+                            assignment.len(),
+                            "catia_incidence_candidate_rows",
+                        )
+                    })?;
                     for (edge, pair) in assignment.iter().enumerate() {
                         candidates.push(if let Some(pair) = pair {
                             ctx.alloc_filled(1, *pair, "catia_incidence_fixed_candidate")?
                         } else {
-                            ctx.copy_slice(&choices[edge], "catia_incidence_open_candidates")?
+                            solution_storage.with_storage(|| {
+                                ctx.copy_slice(&choices[edge], "catia_incidence_open_candidates")
+                            })?
                         });
                     }
                     Some(candidates)
@@ -5367,6 +5504,7 @@ where
         session_budget,
     } = inputs;
 
+    let mut choice_storage = ctx.reserve_scoped(0, "catia incidence choice snapshots")?;
     let mut exhausted = false;
     let mut ambiguous = false;
     let mut visited = 0usize;
@@ -5386,7 +5524,7 @@ where
             if let Some(quotient) = mesh_quotient {
                 let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(preparation_limit) =
-                    quotient.coordinate_domain_preparation_limit(point_count, choices)
+                    quotient.coordinate_domain_preparation_limit(ctx, point_count, choices)?
                 else {
                     return Ok(None);
                 };
@@ -5409,18 +5547,22 @@ where
         } else {
             None
         };
-        let base_choices = ctx.copy_retained_rows(
-            coordinate_domains
-                .as_ref()
-                .map_or(choices, MeshCoordinateRootDomains::edge_candidates),
-            "catia_incidence_base_choice_rows",
-            "catia_incidence_base_choice_pairs",
-        )?;
-        let mut narrowed_choices = ctx.copy_retained_rows(
-            &base_choices,
-            "catia_incidence_narrow_choice_rows",
-            "catia_incidence_narrow_choice_pairs",
-        )?;
+        let base_choices = choice_storage.with_storage(|| {
+            ctx.copy_retained_rows(
+                coordinate_domains
+                    .as_ref()
+                    .map_or(choices, MeshCoordinateRootDomains::edge_candidates),
+                "catia_incidence_base_choice_rows",
+                "catia_incidence_base_choice_pairs",
+            )
+        })?;
+        let mut narrowed_choices = choice_storage.with_storage(|| {
+            ctx.copy_retained_rows(
+                &base_choices,
+                "catia_incidence_narrow_choice_rows",
+                "catia_incidence_narrow_choice_pairs",
+            )
+        })?;
         if let Some(domains) = mesh_assignments {
             let implicit_support_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -5440,17 +5582,21 @@ where
                 return Ok(None);
             }
             if implicit_support_budget.exhausted() {
-                narrowed_choices = ctx.copy_retained_rows(
-                    &base_choices,
-                    "catia_incidence_restore_choice_rows",
-                    "catia_incidence_restore_choice_pairs",
-                )?;
+                narrowed_choices = choice_storage.with_storage(|| {
+                    ctx.copy_retained_rows(
+                        &base_choices,
+                        "catia_incidence_restore_choice_rows",
+                        "catia_incidence_restore_choice_pairs",
+                    )
+                })?;
             }
-            let implicit_choices = ctx.copy_retained_rows(
-                &narrowed_choices,
-                "catia_incidence_implicit_choice_rows",
-                "catia_incidence_implicit_choice_pairs",
-            )?;
+            let implicit_choices = choice_storage.with_storage(|| {
+                ctx.copy_retained_rows(
+                    &narrowed_choices,
+                    "catia_incidence_implicit_choice_rows",
+                    "catia_incidence_implicit_choice_pairs",
+                )
+            })?;
             let face_support_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
@@ -5469,19 +5615,23 @@ where
                     session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
                 match domains.refine_candidates(ctx, &narrowed_choices, Some(&refinement_budget))? {
                     Some(refined) => {
-                        narrowed_choices = ctx.copy_retained_rows(
-                            refined.edge_candidates(),
-                            "catia_incidence_refined_choice_rows",
-                            "catia_incidence_refined_choice_pairs",
-                        )?;
+                        narrowed_choices = choice_storage.with_storage(|| {
+                            ctx.copy_retained_rows(
+                                refined.edge_candidates(),
+                                "catia_incidence_refined_choice_rows",
+                                "catia_incidence_refined_choice_pairs",
+                            )
+                        })?;
                         coordinate_domains = Some(refined);
                     }
                     None if refinement_budget.exhausted() => {
-                        narrowed_choices = ctx.copy_retained_rows(
-                            &base_choices,
-                            "catia_incidence_restore_choice_rows",
-                            "catia_incidence_restore_choice_pairs",
-                        )?;
+                        narrowed_choices = choice_storage.with_storage(|| {
+                            ctx.copy_retained_rows(
+                                &base_choices,
+                                "catia_incidence_restore_choice_rows",
+                                "catia_incidence_restore_choice_pairs",
+                            )
+                        })?;
                         coordinate_domains = Some(domains);
                     }
                     None => {
@@ -5569,7 +5719,7 @@ where
                 let singleton = singleton_incidence_pairs(ctx, &pairs)?;
                 let mut quotient = quotient.clone_charged(ctx)?;
                 let Some(closure_limit) =
-                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)
+                    quotient.coordinate_domain_preparation_limit(ctx, point_count, &singleton)?
                 else {
                     return Ok(None);
                 };
@@ -5779,7 +5929,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     endpoints: IncidenceEndpointDomains<'_>,
     face_count: usize,
     budget: &WorkBudget<'_>,
-) -> Result<Option<StandardTopology>, CodecError> {
+) -> Result<Option<StandardTopologyDraft>, CodecError> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
     let IncidenceEndpointDomains {
@@ -5862,8 +6012,7 @@ pub(crate) fn reconstruct_incidence_candidates(
                     }
                     return Ok(ControlFlow::Continue(()));
                 }
-                solution_pairs =
-                    Some(ctx.copy_retained_slice(pairs, "catia_incidence_solution_pairs")?);
+                solution_pairs = Some(ctx.copy_slice(pairs, "catia_incidence_solution_pairs")?);
                 Ok(ControlFlow::Continue(()))
             },
         },
@@ -5877,7 +6026,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     reconstruct_incidence(
         ctx,
         copy_incidence_edge_rows(ctx, edge_rows)?,
-        ctx.copy_retained_slice(vertex_points, "catia_incidence_vertex_points")?,
+        ctx.copy_slice(vertex_points, "catia_incidence_vertex_points")?,
         edge_faces,
         &solution_pairs,
         face_count,
@@ -6027,11 +6176,14 @@ where
         visitor,
     } = inputs;
 
-    let mut choices = ctx.copy_retained_rows(
-        edge_candidates,
-        "catia incidence choice rows",
-        "catia incidence choice pairs",
-    )?;
+    let mut choice_storage = ctx.reserve_scoped(0, "catia endpoint choice snapshots")?;
+    let mut choices = choice_storage.with_storage(|| {
+        ctx.copy_retained_rows(
+            edge_candidates,
+            "catia incidence choice rows",
+            "catia incidence choice pairs",
+        )
+    })?;
     for candidates in &mut choices {
         for pair in candidates.iter_mut() {
             ctx.sort_unstable_by(pair, Ord::cmp, |_| 0, "catia incidence choice pair sort")?;
@@ -6086,7 +6238,7 @@ where
         Ok(reconstruct_incidence(
             ctx,
             copy_incidence_edge_rows(ctx, edge_rows)?,
-            ctx.copy_retained_slice(vertex_points, "catia_incidence_validation_points")?,
+            ctx.copy_slice(vertex_points, "catia_incidence_validation_points")?,
             edge_faces,
             points,
             face_count,

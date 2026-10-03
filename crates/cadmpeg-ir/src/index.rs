@@ -342,7 +342,7 @@ impl IndexStorage for DecodeStorage<'_, '_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), Self::Error> {
-        self.0.reserve_retained_vec_limit(values, 1, operation)?;
+        self.0.reserve_vec_limit(values, 1, operation)?;
         values.push(value);
         Ok(())
     }

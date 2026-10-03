@@ -172,7 +172,7 @@ pub(in crate::native) fn feature_datum_plane_headers(
                     None,
                 )?;
                 ctx.charge_entities(1, "NX datum-plane header")?;
-                ctx.reserve_retained_vec(&mut headers, 1, "NX datum-plane headers")?;
+                ctx.reserve_vec(&mut headers, 1, "NX datum-plane headers")?;
                 headers.push(FeatureDatumPlaneHeader {
                     id,
                     operation_label,

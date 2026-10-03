@@ -162,7 +162,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
                 .filter(|lane| !is_supplemental_config_lane(lane))
                 .count();
             let mut expected_primary_lanes = Vec::new();
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut expected_primary_lanes,
                 primary_count,
                 "validate SLDPRT expected primary lanes",
@@ -177,7 +177,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
             }
             let supplemental_count = native.feature_input_lanes.len() - primary_count;
             let mut expected_supplemental_lanes = Vec::new();
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut expected_supplemental_lanes,
                 supplemental_count,
                 "validate SLDPRT expected supplemental lanes",
@@ -204,7 +204,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
                 rebuild_scalar_relations_charged(ctx, lane, scalars)?;
             }
             let mut expected = Vec::new();
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut expected,
                 native.feature_input_lanes.len(),
                 "validate SLDPRT expected lane pairs",

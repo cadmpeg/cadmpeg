@@ -508,7 +508,7 @@ pub(crate) fn bind_pattern_inputs(
                         class.offset,
                         end,
                     )?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut directions,
                         declared.len(),
                         "merge SLDPRT declared line directions",
@@ -534,7 +534,7 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     )?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         &mut directions,
                         compact.len(),
                         "merge SLDPRT compact line directions",
@@ -661,7 +661,7 @@ pub(crate) fn bind_pattern_inputs(
             )?;
         }
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut pattern_seed_assignments,
         curve_seed_assignments.len(),
         "merge SLDPRT pattern seed assignments",
@@ -1406,25 +1406,21 @@ pub(crate) fn bind_scalar_operands(
             "sort SLDPRT scalar operand features",
         )?;
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
-            for entity in lane
-                .sketch_entities
-                .iter_mut()
-                .filter(|entity| entity.offset() > start && entity.offset() < end)
-            {
+            let end = starts.get(index + 1).map(|next| next.0);
+            for entity in lane.sketch_entities.iter_mut().filter(|entity| {
+                entity.offset() > start && end.is_none_or(|end| entity.offset() < end)
+            }) {
                 entity.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
-            for reference in lane
-                .references
-                .iter_mut()
-                .filter(|reference| reference.offset > start && reference.offset < end)
-            {
+            for reference in lane.references.iter_mut().filter(|reference| {
+                reference.offset > start && end.is_none_or(|end| reference.offset < end)
+            }) {
                 reference.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
             for scalar in lane
                 .scalars
                 .iter_mut()
-                .filter(|scalar| scalar.offset > start && scalar.offset < end)
+                .filter(|scalar| scalar.offset > start && end.is_none_or(|end| scalar.offset < end))
             {
                 scalar.feature_ref = Some(copy_binding_text(ctx, feature_id)?);
             }
@@ -1457,10 +1453,10 @@ pub(crate) fn bind_scalar_operands(
             let child_end = starts
                 .iter()
                 .find(|(offset, _)| offset > child_start)
-                .map_or(u64::MAX, |(offset, _)| *offset);
+                .map(|(offset, _)| *offset);
             for scalar in lane.scalars.iter_mut().filter(|scalar| {
                 scalar.offset > *child_start
-                    && scalar.offset < child_end
+                    && child_end.is_none_or(|end| scalar.offset < end)
                     && scalar.feature_ref.as_deref() == Some(*child_id)
             }) {
                 scalar.feature_ref = Some(copy_binding_text(ctx, parent_id)?);
@@ -1618,9 +1614,11 @@ fn represented_sketch_features(
             if feature.xml_tag != "Sketch" {
                 continue;
             }
-            let end = objects.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = objects.get(index + 1).map(|next| next.0);
             if lane.sketch_entities.iter().any(|entity| {
-                entity.offset() > start && entity.offset() < end && entity.coordinates_m.is_some()
+                entity.offset() > start
+                    && end.is_none_or(|end| entity.offset() < end)
+                    && entity.coordinates_m.is_some()
             }) {
                 ctx.reserve_set(&mut represented, 1, SCALAR_BINDING_INDEX)?;
                 represented.insert(copy_binding_text(ctx, &feature.id)?);

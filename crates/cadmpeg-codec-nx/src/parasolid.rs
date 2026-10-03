@@ -349,11 +349,7 @@ fn referenced_value_xmts<'ctx>(
             continue;
         }
         for record in records {
-            for xmt in record
-                .leading_references
-                .into_iter()
-                .chain(record.trailing_references.into_values())
-            {
+            for xmt in record.trailing_references.into_values() {
                 ctx.insert_scoped_btree_set(
                     &mut reference_guard,
                     &mut referenced,
@@ -950,7 +946,7 @@ pub(crate) fn extract_streams<'a>(
             };
             let body = classify(&inflated);
             ctx.charge_entities(1, "admit NX streams")?;
-            ctx.push_retained_vec(
+            ctx.push_vec(
                 &mut streams,
                 Stream {
                     file_offset: start + offset,
@@ -1015,7 +1011,7 @@ fn append_all_zlib_streams<'a>(
                     || structural_stream_candidate(ctx, body.kind(), &inflated)?)
                 {
                     ctx.charge_entities(1, "admit NX streams")?;
-                    ctx.push_retained_vec(
+                    ctx.push_vec(
                         streams,
                         Stream {
                             file_offset,
@@ -1118,7 +1114,7 @@ pub(crate) fn extract_legacy_streams<'a>(
             CodecError::Malformed("legacy Parasolid stream offset overflow".into())
         })?;
         ctx.charge_entities(1, "admit NX streams")?;
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut streams,
             Stream {
                 file_offset,

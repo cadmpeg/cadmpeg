@@ -1680,7 +1680,7 @@ fn finish_direct_chunk(
             .map_err(FramingError::from)?;
     }
     if matches!(
-        verify_checksum(parent.backing_bytes(), chunk)?,
+        verify_checksum(ctx, parent.backing_bytes(), chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings
@@ -1715,9 +1715,9 @@ fn finish_chunk_children(
             )
             .map_err(FramingError::from)?;
     }
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
+    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(parent.backing_bytes(), chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings

@@ -6,23 +6,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
-fn refuse<V: ExpressionValue + std::fmt::Debug>(
-    expression: &str,
-    configure: impl FnOnce(&mut DecodePolicy),
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    crate::curve::parse_relation_expression::<V>(
-        &ctx,
-        expression,
-        &BTreeMap::new(),
-        RelationEvaluationContext::default(),
-    )
-    .expect_err("string function allocation must refuse")
-}
-
 fn assert_work(error: &CodecError, operation: &str) {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
@@ -33,6 +16,7 @@ fn assert_work(error: &CodecError, operation: &str) {
 fn relation_search_refuses_scan_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation text search work",
             |ctx| {
@@ -52,6 +36,7 @@ fn relation_search_refuses_scan_work() {
 fn relation_length_refuses_scan_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation text length work",
             |ctx| {
@@ -71,6 +56,7 @@ fn relation_length_refuses_scan_work() {
 fn relation_prefix_refuses_comparison_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation text prefix work",
             |ctx| {
@@ -90,6 +76,7 @@ fn relation_prefix_refuses_comparison_work() {
 fn relation_suffix_refuses_comparison_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation text suffix work",
             |ctx| {
@@ -109,6 +96,7 @@ fn relation_suffix_refuses_comparison_work() {
 fn relation_match_refuses_comparison_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation text match work",
             |ctx| {
@@ -128,6 +116,7 @@ fn relation_match_refuses_comparison_work() {
 fn relation_regex_refuses_compile_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation regex compile work",
             |ctx| {
@@ -145,9 +134,19 @@ fn relation_regex_refuses_compile_work() {
 
 #[test]
 fn relation_regex_refuses_source_text() {
-    let error = refuse::<CurveExpressionValue>("string_pattern('abc','a')", |policy| {
-        policy.limits.max_materialized_bytes = 0;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo relation regex source text",
+        |ctx| {
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                "string_pattern('abc','a')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo relation regex source text"));
@@ -155,9 +154,19 @@ fn relation_regex_refuses_source_text() {
 
 #[test]
 fn relation_regex_refuses_compiler_scratch() {
-    let error = refuse::<CurveExpressionValue>("string_pattern('abc','a')", |policy| {
-        policy.limits.max_materialized_bytes = 9;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo relation regex compiler scratch",
+        |ctx| {
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                "string_pattern('abc','a')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo relation regex compiler scratch"));
@@ -167,6 +176,7 @@ fn relation_regex_refuses_compiler_scratch() {
 fn relation_regex_refuses_match_work() {
     assert_work(
         &crate::test_support::last_refusal_at(
+            &[],
             ResourceDimension::WorkUnits,
             "creo relation regex match work",
             |ctx| {
@@ -184,9 +194,19 @@ fn relation_regex_refuses_match_work() {
 
 #[test]
 fn dimension_regex_refuses_compiler_scratch() {
-    let error = refuse::<DimensionProbeValue>("string_pattern('abc','a')", |policy| {
-        policy.limits.max_materialized_bytes = 9;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo relation regex compiler scratch",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "string_pattern('abc','a')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo relation regex compiler scratch"));
@@ -320,4 +340,51 @@ fn relation_unit_symbols_match_borrowed_text_at_zero_byte_limits() {
             "{expression}"
         );
     }
+}
+
+#[test]
+fn relation_argument_storage_is_scoped_and_released() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = crate::curve::parse_relation_expression::<CurveExpressionValue>(
+        &ctx,
+        "itos(-1)",
+        &BTreeMap::new(),
+        RelationEvaluationContext::default(),
+    )
+    .expect_err("argument slots need scoped storage");
+    assert!(matches!(error, CodecError::ResourceLimit(ref resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo relation function arguments"));
+    let CodecError::ResourceLimit(resource) = error else {
+        panic!("resource refusal");
+    };
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+    let slots =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<CurveExpressionValue>());
+    assert_eq!(resource.additional, slots);
+    policy.limits.max_materialized_bytes = slots;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(
+        crate::curve::parse_relation_expression::<CurveExpressionValue>(
+            &ctx,
+            "itos(-1)",
+            &BTreeMap::new(),
+            RelationEvaluationContext::default(),
+        )
+        .expect("argument and result storage")
+        .expect("text value"),
+        CurveExpressionValue::String("-1".to_owned())
+    );
+    ctx.reserve_scoped(slots, "released relation arguments")
+        .expect("argument reservation released");
+    let error = ctx
+        .charge_retained(1, "result bytes remain retained")
+        .expect_err("two result bytes exhaust the retained limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(ref resource) if resource.dimension == ResourceDimension::RetainedBytes && resource.used == 2)
+    );
 }

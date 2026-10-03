@@ -36,7 +36,7 @@ pub(crate) fn abr_lanes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Abr
         };
         if bytes.get(at..end) == Some(&ABR_TERMINATOR) {
             if let Some(lane) = AbrLane::<(), usize>::new(tokens, start) {
-                ctx.push_retained_vec(&mut lanes, lane, "NX ABR lanes")?;
+                ctx.push_vec(&mut lanes, lane, "NX ABR lanes")?;
             }
             start = end;
         } else {
@@ -73,7 +73,7 @@ pub(crate) fn counted_lanes(
             return Ok(None);
         };
         let operation = "NX counted index lane members";
-        let mut members = ctx.retained_vec(member_count, operation)?;
+        let mut members = ctx.collection_vec(member_count, operation)?;
         let mut at = members_start;
         for _ in 0..member_count {
             let Some(token) = LocatedCompactIndex::read(bytes, at) else {
@@ -92,7 +92,7 @@ pub(crate) fn counted_lanes(
     let mut start = 0;
     while start + 4 <= bytes.len() {
         if let Some((lane, end)) = decode(start)? {
-            ctx.push_retained_vec(&mut lanes, lane, "NX counted index lanes")?;
+            ctx.push_vec(&mut lanes, lane, "NX counted index lanes")?;
             start = end;
         } else {
             start += 1;

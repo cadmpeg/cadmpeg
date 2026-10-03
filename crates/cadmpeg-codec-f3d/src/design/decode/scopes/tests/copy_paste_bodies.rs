@@ -106,6 +106,7 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = cap;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result =
             crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
@@ -144,6 +145,7 @@ fn design_scope_reference_vectors_refuse_each_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = cap;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &ctx,
@@ -219,6 +221,7 @@ fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
         if let Some(cap) = retained_cap {
             policy.limits.max_retained_bytes = cap;
         }
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &ctx,
@@ -246,6 +249,7 @@ fn design_scope_candidate_headers_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
         &ctx, &bytes, &records,
@@ -286,35 +290,54 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
             )
         };
         assert!(!decode(&DecodePolicy::default()).unwrap().is_empty());
-        for (dimension, operation, cap_max) in [
+        for (dimension, operation) in [
             (
                 ResourceDimension::CollectionItems,
                 "f3d Design parameter scopes",
-                400,
             ),
             (
                 ResourceDimension::RetainedBytes,
                 "f3d Design parameter scope ID",
-                1000,
             ),
         ] {
-            let refuses = |cap| {
-                let mut policy = DecodePolicy::default();
-                match dimension {
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                    _ => return false,
-                }
-                matches!(
-                    decode(&policy),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                        if failure.dimension == dimension && failure.operation == operation
-                )
+            let error =
+                cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                    let mut policy = DecodePolicy::default();
+                    match dimension {
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                        _ => unreachable!(),
+                    }
+                    // A fresh container cache preserves the request sequence.
+                    crate::test_support::zip_test::with_scan(&archive, |scan| {
+                        let arena = DecodeArena::new();
+                        let (ctx, _) =
+                            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+                            &ctx,
+                            scan,
+                            &crate::native::F3dNative::default(),
+                        )
+                    })
+                });
+            let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+                panic!("resource refusal")
             };
-            let refused_cap = (0..=cap_max).rfind(|&cap| refuses(cap));
-            let cap = refused_cap.expect("the allocation must refuse at the matching limit");
+            let mut policy = DecodePolicy::default();
+            match dimension {
+                ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = refusal.limit + 1;
+                }
+                ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = refusal.limit + 1;
+                }
+                _ => unreachable!(),
+            }
             assert!(
-                !refuses(cap + 1),
+                !matches!(decode(&policy), Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation),
                 "{operation} must be admitted above its boundary"
             );
         }

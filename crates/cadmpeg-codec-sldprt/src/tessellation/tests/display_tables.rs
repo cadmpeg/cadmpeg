@@ -266,10 +266,16 @@ fn display_table_partitioned_strips_refuse_collection_limit_before_allocation() 
 fn display_table_channel_bytes_refuse_retained_limit_before_copy() {
     let payload = table();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = parse_table(&ctx, &payload, 0).expect_err("four channel bytes exceed three");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy display-list channel bytes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+            parse_table(&ctx, &payload, 0).map(|_| ())
+        },
+    );
     assert!(matches!(error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

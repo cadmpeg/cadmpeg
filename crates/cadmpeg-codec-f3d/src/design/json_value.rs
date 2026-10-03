@@ -1,11 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admit each text copy, member and recursive step while building a JSON value.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
 use std::fmt;
+
+/// Bounds `serde_json` scratch growth by twice the wire width, with its eight-byte minimum.
+pub(in crate::design) fn reserve_json_scratch<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    length: usize,
+    operation: &'static str,
+) -> Result<ScopedReservation<'ctx>, CodecError> {
+    let bound = length
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+        .max(8);
+    ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bound), operation)
+}
 
 pub(in crate::design) struct TextSeed<'a, 'b> {
     pub(in crate::design) ctx: &'a DecodeContext<'b>,
@@ -129,7 +142,7 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
             refusal: &mut *self.refusal,
             member: true,
         })? {
-            self.admit(DecodeContext::reserve_admitted_vec(
+            self.admit(self.ctx.reserve_capacity(
                 &mut values,
                 1,
                 "f3d configuration JSON array allocation",
@@ -159,15 +172,11 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
                     entry: false,
                     expected: "raw value",
                 })?;
-                let raw_len = u64::try_from(raw.len()).map_err(|_| {
-                    self.ctx
-                        .refuse_codec_limit("f3d configuration raw JSON scratch", 0, 1)
-                });
-                let raw_len = self.admit(raw_len)?;
-                let _raw_scratch = self.admit(
-                    self.ctx
-                        .reserve_scoped(raw_len, "f3d configuration raw JSON scratch"),
-                )?;
+                let _raw_scratch = self.admit(reserve_json_scratch(
+                    self.ctx,
+                    raw.len(),
+                    "f3d configuration raw JSON scratch",
+                ))?;
                 let mut deserializer = serde_json::Deserializer::from_str(&raw);
                 let value = ValueSeed {
                     ctx: self.ctx,
@@ -178,6 +187,16 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
                 .map_err(serde::de::Error::custom)?;
                 deserializer.end().map_err(serde::de::Error::custom)?;
                 return Ok(value);
+            }
+            self.admit(self.ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(fields.len()),
+                "f3d configuration JSON object lookup",
+            ))?;
+            if !fields.contains_key(&key) {
+                self.admit(self.ctx.admit_btree_node_storage::<String, Value>(
+                    fields.len(),
+                    "f3d configuration JSON object allocation",
+                ))?;
             }
             let value = map.next_value_seed(ValueSeed {
                 ctx: self.ctx,

@@ -152,11 +152,18 @@ fn affine_parameter_map_retains_identity_between_overflowing_spans() {
 
 #[test]
 fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
+    {
         let mut graph = (1..=100_000_u32)
             .map(|sequence| (sequence, vec![sequence + 1]))
             .collect::<BTreeMap<_, _>>();
         graph.entry(50_000).or_default().push(100_001);
+        // The unchanged graph supplies the input-dependent byte envelope for its node storage.
+        let input = serde_json::to_vec(&graph).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&input, &arena, &policy).unwrap();
+        let decode_ctx = &ctx;
         let mut visited = std::collections::BTreeSet::new();
 
         assert!(
@@ -177,7 +184,7 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
             |sequence| graph.get(&sequence).into_iter().flatten().copied()
         )
         .unwrap());
-    });
+    }
 }
 
 #[test]

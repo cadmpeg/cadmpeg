@@ -36,13 +36,18 @@ fn catalog_value_refuses_retained_limit_before_copy() {
     use cadmpeg_core::CodecError;
 
     let bytes = catalog_stream(&PREFIX);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("catalog fixture fits the input limit");
-    let error =
-        super::parse(&ctx, &bytes).expect_err("the catalog prefix exceeds one retained byte");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "catia_catalog_entry_value",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("catalog input");
+            super::parse(&ctx, &bytes)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_catalog_entry_value"));

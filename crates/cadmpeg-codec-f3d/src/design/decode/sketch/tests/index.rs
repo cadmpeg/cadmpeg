@@ -255,6 +255,7 @@ fn entity_header_type_indices_refuse_collection_limits() {
     let mut policy = DecodePolicy::default();
     let mut modules = std::collections::HashMap::new();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         insert_entity_module(&ctx, &mut modules, "f3d:MetaStream.dat", 7, "MSketch"),
@@ -263,6 +264,7 @@ fn entity_header_type_indices_refuse_collection_limits() {
                 && limit.operation == "f3d entity module stream"
     ));
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         insert_entity_module(&ctx, &mut modules, "f3d:MetaStream.dat", 7, "MSketch"),
@@ -273,6 +275,7 @@ fn entity_header_type_indices_refuse_collection_limits() {
 
     let mut candidates = std::collections::HashMap::new();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         insert_legacy_candidate(&ctx, &mut candidates, "f3d:", 7),
@@ -281,6 +284,7 @@ fn entity_header_type_indices_refuse_collection_limits() {
                 && limit.operation == "f3d legacy sketch stream"
     ));
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         insert_legacy_candidate(&ctx, &mut candidates, "f3d:", 7),
@@ -295,6 +299,7 @@ fn entity_header_existing_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut indices = std::collections::HashSet::new();
     assert!(matches!(
@@ -352,6 +357,7 @@ fn entity_header_output_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut out = Vec::new();
     assert!(matches!(

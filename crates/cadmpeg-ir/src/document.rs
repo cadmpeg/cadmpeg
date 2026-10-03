@@ -598,7 +598,7 @@ macro_rules! declare_model {
                 &mut self, ctx: &DecodeContext<'_>, other: Self, rewrite: &mut R, operation: &'static str,
             ) -> Result<(), ModelRewriteError<R::Error>> {
                 $(
-                    ctx.reserve_retained_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
+                    ctx.reserve_capacity_limit(&mut self.$field, other.$field.len(), operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
                     for entity in other.$field {
                         ctx.charge_work_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
                         ctx.charge_collection_items_limit(1, operation).map_err(|limit| ModelRewriteError::Resource(limit.into()))?;
@@ -1279,7 +1279,7 @@ impl ModelAdmission<'_, '_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         match self.0 {
-            Some(ctx) => ctx.reserve_retained_vec(values, count, operation),
+            Some(ctx) => ctx.reserve_vec(values, count, operation),
             None => {
                 values.reserve(count);
                 Ok(())
@@ -1819,7 +1819,7 @@ impl CadIr {
         macro_rules! reserve_arenas {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                 if !model.$field.is_empty() {
-                    ctx.reserve_retained_vec(&mut self.model.$field, model.$field.len(), "append model arena slots")?;
+                    ctx.reserve_vec(&mut self.model.$field, model.$field.len(), "append model arena slots")?;
                     let moved = model.$field.len().checked_mul(std::mem::size_of::<$ty>())
                         .ok_or_else(|| ctx.refuse_codec_limit("append model arena moves", u64::MAX - 1, u64::MAX))?;
                     ctx.charge_work(u64_from_index(moved), "append model arena moves")?;
@@ -1854,7 +1854,7 @@ impl CadIr {
                 for (arena, records) in incoming.arenas() {
                     admit_append_key(ctx, arena_bound, arena.len(), "append native arena lookup")?;
                     if let Some(existing) = destination.arenas_mut().get_mut(arena) {
-                        ctx.reserve_retained_vec(
+                        ctx.reserve_vec(
                             existing,
                             records.len(),
                             "append native record slots",

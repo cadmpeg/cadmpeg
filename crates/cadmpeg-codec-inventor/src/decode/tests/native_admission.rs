@@ -1279,7 +1279,8 @@ fn product_body_id_copy_refuses_limits_before_target_changes() {
 
     policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        u64::try_from(id.as_str().len() - 1).expect("id length fits");
+        u64::try_from(id.as_str().len() - 1 + std::mem::size_of::<BodyId>())
+            .expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         (|| {
@@ -1487,7 +1488,7 @@ fn empty_external_identity_does_not_fail_file_decode() {
         .expect("native namespace");
     let ufrx = UfrxRecord::read(namespace).expect("admitted UFRx arenas agree");
     assert_eq!(ufrx.external_references().len(), 1);
-    assert_eq!(ufrx.external_references()[0].ordinal, 1);
+    assert_eq!(ufrx.external_references()[0].ordinal(), 1);
     assert_eq!(ufrx.external_references()[0].reference_id, 8);
 }
 

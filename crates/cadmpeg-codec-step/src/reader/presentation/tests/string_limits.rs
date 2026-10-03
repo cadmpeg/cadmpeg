@@ -55,11 +55,15 @@ fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolu
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
-    find_color(
+    let result = find_color(
         1,
         &exchange,
         StyleDomain::Any,
         super::super::ColorSearchState {
+            storage: &std::cell::RefCell::new(
+                ctx.reserve_scoped(0, "color search fixture")
+                    .expect("scope"),
+            ),
             active: &mut BTreeSet::new(),
             cache: &mut BTreeMap::new(),
             losses: &mut Vec::new(),
@@ -67,14 +71,15 @@ fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolu
         },
         0,
         &ctx,
-    )
+    );
+    result
 }
 
 #[test]
 fn rgb_colour_name_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('named colour',1.,0.,0.);ENDSEC;END-ISO-10303-21;";
     assert!(matches!(
-        color_result(SOURCE, 1),
+        Err::<(), CodecError>(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_string_text", |cap| color_result(SOURCE, cap))),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_string_text"
@@ -85,7 +90,7 @@ fn rgb_colour_name_refuses_retained_limit() {
 fn predefined_colour_name_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DRAUGHTING_PRE_DEFINED_COLOUR('red');ENDSEC;END-ISO-10303-21;";
     assert!(matches!(
-        color_result(SOURCE, 1),
+        Err::<(), CodecError>(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_string_text", |cap| color_result(SOURCE, cap))),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_string_text"

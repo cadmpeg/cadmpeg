@@ -2301,7 +2301,7 @@ pub(in super::super) fn section_dimension_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+) -> Result<Vec<(SketchConstraint, usize, usize)>, cadmpeg_core::CodecError> {
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
@@ -2323,7 +2323,7 @@ pub(in super::super) fn section_dimension_constraints(
     let saved_coordinate_witnesses =
         saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
     let mut constraints = Vec::new();
-    for relation in &relations.rows {
+    for (relation_index, relation) in relations.rows.iter().enumerate() {
         let mut coordinate_refusal = None;
         let locus_refusal = Cell::new(None);
         let candidate = (|| {
@@ -2729,6 +2729,7 @@ pub(in super::super) fn section_dimension_constraints(
                         )?),
                     },
                     relation.offset,
+                    relation_index,
                 )
             })
         })();
@@ -2788,7 +2789,22 @@ mod tests {
             total += cadmpeg_core::decode::u64_from_index(text.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = total - 1;
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    super::equation_constraint(&trial_ctx, &sketch, 1, definition(), true, 7)
+                },
+            );
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)
@@ -2823,7 +2839,10 @@ mod tests {
                 && resource.operation == "creo scalar equality constraints")
         );
         policy.limits.max_collection_items = 1;
-        policy.limits.max_retained_bytes = total;
+        policy.limits.max_retained_bytes = total
+            + cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<(cadmpeg_ir::sketches::SketchConstraint, usize)>(),
+            );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let rows = super::collect_constraint_candidates(
             &ctx,
@@ -2858,7 +2877,15 @@ mod tests {
             ("creo:featdefs:sketch#5", "creo sketch native reference"),
         ];
         let mut total = 0u64;
-        for (field, operation) in fields {
+        for (field_index, (field, operation)) in fields.into_iter().enumerate() {
+            if field_index == 3 {
+                total += cadmpeg_core::decode::u64_from_index(
+                    11 * std::mem::size_of::<(String, String)>()
+                        + 16 * std::mem::size_of::<usize>()
+                        + 2 * std::mem::align_of::<(String, String)>()
+                        + 4 * std::mem::size_of::<SketchEntityId>(),
+                );
+            }
             total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -2927,7 +2954,15 @@ mod tests {
             ("creo:featdefs:sketch#5", "creo sketch native reference"),
         ];
         let mut total = 0u64;
-        for (field, operation) in fields {
+        for (field_index, (field, operation)) in fields.into_iter().enumerate() {
+            if field_index == 3 {
+                total += cadmpeg_core::decode::u64_from_index(
+                    11 * std::mem::size_of::<(String, String)>()
+                        + 16 * std::mem::size_of::<usize>()
+                        + 2 * std::mem::align_of::<(String, String)>()
+                        + 4 * std::mem::size_of::<SketchEntityId>(),
+                );
+            }
             total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -3237,7 +3272,7 @@ mod tests {
                     && resource.operation == "creo native equation operands")
             );
         }
-        for (cap, operation) in [
+        for (_cap, operation) in [
             (0, "creo equation operand kind"),
             (
                 cadmpeg_core::decode::u64_from_index("eqtn_arr".len()),
@@ -3249,7 +3284,22 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    native_equation_operands(&trial_ctx, 1, &arguments, "creo:featdefs:sketch#40")
+                },
+            );
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = native_equation_operands(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
@@ -3755,6 +3805,70 @@ mod tests {
         assert_eq!(
             admitted[0].0.id.as_str(),
             "creo:featdefs:sketch_constraint#5:relation:7"
+        );
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use cadmpeg_ir::sketches::SketchId;
+    #[test]
+    fn dimension_constraints_preserve_original_row_after_skipped_candidates() {
+        let relation = crate::feature::definitions::FeatureRelation {
+            relation_id: 7,
+            used: 1,
+            operands: Vec::new(),
+            operand_vectors: None,
+            sign: 1,
+            dimension_id: 0,
+            relation_type: 0,
+            body: Vec::new(),
+            offset: 11,
+        };
+        let mut definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::definitions::FeatureRelationTable {
+                declared_count: 5,
+                entity_ref: None,
+                rows: vec![relation],
+                skamps: None,
+                triples: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+        let table = definition.relations.as_mut().expect("relations");
+        let mut skipped = table.rows[0].clone();
+        skipped.offset = 12;
+        let mut retained = skipped.clone();
+        retained.relation_id = 8;
+        retained.offset = 13;
+        table.rows.extend([skipped, retained]);
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+            super::section_dimension_constraints(ctx, &definition, &sketch)
+        })
+        .expect("constraints");
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].1, 13);
+        assert_eq!(constraints[0].2, 2);
+        assert_eq!(
+            constraints[0].0.id.as_str(),
+            "creo:featdefs:sketch_constraint#5:relation:8"
         );
     }
 }

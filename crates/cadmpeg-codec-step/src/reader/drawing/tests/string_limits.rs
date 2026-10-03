@@ -90,52 +90,60 @@ fn drawing_binary_text_refuses_retained_limit() {
 #[test]
 fn drawing_decode_propagates_string_refusal() {
     let (source, exchange) = exchange("#1=DRAWING_DEFINITION('Main','detail');");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        crate::ids::drawing(crate::ids::kind!("drawing_definition"), 1)
-            .as_str()
-            .len(),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_string_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("root fits retained policy");
+            (super::super::decode(
+                &exchange,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &HashSet::new(),
+                &BTreeMap::new(),
+                &ctx,
+            ))
+            .map(|_| ())
+        },
     );
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("root fits retained policy");
-    assert!(matches!(
-        super::super::decode(
-            &exchange,
-            &mut cadmpeg_ir::document::CadIr::empty(),
-            &HashSet::new(),
-            &BTreeMap::new(),
-            &ctx,
-        ),
-        Err(CodecError::ResourceLimit(refusal))
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+                && refusal.operation == "step_string_text")
+    );
 }
 
 #[test]
 fn drawing_sheet_usage_sequence_propagates_string_refusal() {
     let (source, exchange) = exchange("#1=DRAWING_DEFINITION('','');#2=DRAWING_REVISION('',#1,'');#3=REPRESENTATION_CONTEXT('','');#4=PRESENTATION_VIEW('',(),#3);#5=DRAWING_SHEET_REVISION('',(),#3,#2);#6=DRAWING_SHEET_REVISION_USAGE(#5,#2,'sequence');");
     let arena = DecodeArena::new();
-    let bound = cadmpeg_core::decode::u64_from_index(source.len()) * 16;
-    let refused = (0..bound).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            super::super::decode(
-                &exchange,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &HashSet::new(),
-                &BTreeMap::new(),
-                &ctx,
-            ),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_string_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                    .expect("root fits retained policy");
+
+                (super::super::decode(
+                    &exchange,
+                    &mut cadmpeg_ir::document::CadIr::empty(),
+                    &HashSet::new(),
+                    &BTreeMap::new(),
+                    &ctx,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_string_text"
-        )
-    });
+                    && refusal.operation == "step_string_text")
+    };
     assert!(
         refused,
         "no retained limit refused the drawing sequence string"

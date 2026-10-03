@@ -1282,6 +1282,7 @@ fn assert_expression_audit_limit(operation: &'static str) {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(
             unresolved_parameter_expression_dependency_count(&ctx, &native, &projected),

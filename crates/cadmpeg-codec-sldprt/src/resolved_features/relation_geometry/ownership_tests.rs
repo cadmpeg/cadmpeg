@@ -66,9 +66,15 @@ fn relation_ownership_refuses_collection_limit() {
 
 #[test]
 fn relation_ownership_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let error = project_with_policy(policy).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT relation identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            project_with_policy(policy).map(|_| ())
+        },
+    );
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)

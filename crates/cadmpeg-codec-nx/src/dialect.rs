@@ -109,13 +109,15 @@ pub(crate) fn classify_layers(
         .iter()
         .filter(|stream| stream.schema_token().is_some())
         .count();
-    let mut streams = ctx.retained_vec(schema_count, "nx schema streams")?;
+    let (mut streams, _streams_storage) = ctx.with_scoped_storage("nx schema streams", || {
+        ctx.collection_vec(schema_count, "nx schema streams")
+    })?;
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
         }
     }
-    let mut carriers = ctx.retained_vec(schema_count, "nx schema carriers")?;
+    let mut carriers = ctx.collection_vec(schema_count, "nx schema carriers")?;
     for (stream, schema) in streams {
         let mut digits = 1usize;
         let mut value = stream.file_offset;
@@ -126,19 +128,13 @@ pub(crate) fn classify_layers(
         let label_len = 7usize.checked_add(digits).ok_or_else(|| {
             ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(digits))
         })?;
-        let text_bytes = label_len.checked_add(schema.value().len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
-        })?;
+
         ctx.charge_retained(
-            u64_from_index(text_bytes),
+            u64_from_index(schema.value().len()),
             "retain NX schema carrier labels",
         )?;
         let mut label = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
-            &mut label,
-            label_len,
-            "nx schema carrier labels",
-        )?;
+        ctx.try_reserve_retained_text(&mut label, label_len, "nx schema carrier labels")?;
         std::fmt::Write::write_fmt(&mut label, format_args!("stream@{}", stream.file_offset))
             .map_err(|_| {
                 ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
@@ -155,7 +151,7 @@ pub(crate) fn classify_layers(
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
     let mut losses = Vec::new();
     for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
-        ctx.push_retained_vec(
+        ctx.push_vec(
             &mut losses,
             NxLossCode::DialectLayerCollision.note(message),
             "collect NX dialect collision losses",
@@ -167,7 +163,7 @@ pub(crate) fn classify_layers(
     )?;
     for layer in layers.iter() {
         if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, layer)? {
-            ctx.push_retained_vec(
+            ctx.push_vec(
                 &mut losses,
                 NxLossCode::KernelDialectUnverified.note(message),
                 "collect NX kernel dialect losses",

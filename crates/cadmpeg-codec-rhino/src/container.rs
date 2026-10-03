@@ -325,7 +325,12 @@ fn checksum_warning(
                 | TCODE_TEXTURE_MAPPING_RECORD
                 | TCODE_HISTORY_RECORD
         ) {
-        crate::chunks::verify_checksum_ranges(data, &chunk, &[])
+        crate::chunks::verify_checksum_ranges(
+            ctx,
+            data,
+            &chunk,
+            std::iter::empty::<Result<std::ops::Range<usize>, FramingError>>(),
+        )
     } else if matches!(
         typecode,
         TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
@@ -338,8 +343,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if matches!(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
@@ -351,8 +357,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
         let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -361,8 +368,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -371,8 +379,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
         let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -381,8 +390,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let children = match checksum_children_through_class_end(
             ctx,
@@ -397,8 +407,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
         let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -407,8 +418,9 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
@@ -417,10 +429,11 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
-        verify_checksum_ranges(data, &chunk, &direct)
+        let direct =
+            direct_checksum_ranges(ctx, &chunk.body(), &children).map_err(framing_error)?;
+        verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else {
-        verify_checksum(data, &chunk)
+        verify_checksum(ctx, data, &chunk)
     }
     .map_err(framing_error)?;
     match status {
@@ -805,10 +818,6 @@ fn list_checksum_children(
         });
     }
     let first_child_offset = offset;
-    for _ in 0..child_count {
-        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
-        offset = child.next_offset();
-    }
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(child_count),
         "Rhino view checksum child ranges",
@@ -817,22 +826,17 @@ fn list_checksum_children(
         CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
         other => FramingError::structural(first_child_offset, other.to_string()),
     })?;
-    let range_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<std::ops::Range<usize>>());
-    let total_bytes = cadmpeg_core::decode::u64_from_index(child_count)
-        .checked_mul(range_bytes)
-        .ok_or(FramingError::Overflow {
-            offset: first_child_offset,
-        })?;
-    reservation.grow(total_bytes).map_err(|error| match error {
-        CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-        other => FramingError::structural(first_child_offset, other.to_string()),
-    })?;
+    for _ in 0..child_count {
+        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
+        offset = child.next_offset();
+    }
     let mut children = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut children,
-        child_count,
-        "Rhino view checksum ranges",
+    reservation.with_storage(|| {
+        ctx.reserve_capacity(&mut children, child_count, "Rhino view checksum ranges")
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(child_count),
+        "Rhino view checksum second walk",
     )?;
     offset = first_child_offset;
     for _ in 0..child_count {
@@ -1028,7 +1032,7 @@ fn scan_with_record_limit<'a>(
     data: &'a [u8],
     record_limit: usize,
 ) -> Result<Scan<'a>, CodecError> {
-    let header = parse_header(data).map_err(framing_error)?;
+    let header = parse_header(ctx, data).map_err(framing_error)?;
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
@@ -1063,6 +1067,7 @@ fn scan_with_record_limit<'a>(
     let mut saw_settings = false;
     let mut saw_objects = false;
     let mut all_objects = Vec::new();
+    let mut object_storage = ctx.reserve_scoped(0, "Rhino scanned object descriptors")?;
     let mut opaque_records = Vec::new();
     let mut definitions = DefinitionScan::default();
     let mut history = Vec::new();
@@ -1079,7 +1084,12 @@ fn scan_with_record_limit<'a>(
             let mut metadata =
                 crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
             let all_objects = resolve_identities(ctx, all_objects, &metadata, &mut warnings)?;
-            opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
+            ctx.reserve_vec(
+                &mut opaque_records,
+                metadata.opaque_records.len(),
+                "Rhino scanned opaque records",
+            )?;
+            opaque_records.append(&mut metadata.opaque_records);
             return Ok(Scan {
                 data,
                 archive,
@@ -1232,16 +1242,25 @@ fn scan_with_record_limit<'a>(
                 };
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 count_object_typecode(ctx, &mut object_typecodes, typecode)?;
-                all_objects.push(descriptor);
+                ctx.push_scoped_vec(
+                    &mut object_storage,
+                    &mut all_objects,
+                    descriptor,
+                    "Rhino scanned object descriptors",
+                )?;
             }
             if opaque {
-                opaque_records.push(OpaqueRecord {
-                    table_typecode: chunk.typecode,
-                    record: record.clone(),
-                });
+                ctx.push_vec(
+                    &mut opaque_records,
+                    OpaqueRecord {
+                        table_typecode: chunk.typecode,
+                        record: record.clone(),
+                    },
+                    "Rhino scanned opaque records",
+                )?;
             }
             if retain_records {
-                records.push(record);
+                ctx.push_vec(&mut records, record, "Rhino scanned table records")?;
             }
             child_offset = child.next_offset();
         }
@@ -1268,6 +1287,11 @@ fn scan_with_record_limit<'a>(
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed.scan;
+            ctx.reserve_vec(
+                &mut opaque_records,
+                parsed.opaque_records.len(),
+                "Rhino scanned opaque records",
+            )?;
             opaque_records.extend(parsed.opaque_records);
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
@@ -1280,6 +1304,11 @@ fn scan_with_record_limit<'a>(
                 chunk.typecode,
             )?;
             history = parsed.records;
+            ctx.reserve_vec(
+                &mut opaque_records,
+                parsed.opaque_records.len(),
+                "Rhino scanned opaque records",
+            )?;
             opaque_records.extend(parsed.opaque_records);
         }
         let table = Table::new(
@@ -1296,7 +1325,7 @@ fn scan_with_record_limit<'a>(
                 "table chunk declares a body that does not fit its framing",
             ))
         })?;
-        tables.push(table);
+        ctx.push_vec(&mut tables, table, "Rhino scanned tables")?;
         offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
@@ -1672,7 +1701,7 @@ pub(crate) fn inspect(
     root: View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root);
-    let header = parse_header(data).map_err(framing_error)?;
+    let header = parse_header(ctx, data).map_err(framing_error)?;
     if !header.archive_version.is_chunked() {
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
@@ -1702,7 +1731,7 @@ pub(crate) fn inspect(
 /// Decode a Rhino stream according to the supported container depth.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let data = acquire(root);
-    let header = parse_header(data).map_err(framing_error)?;
+    let header = parse_header(ctx, data).map_err(framing_error)?;
     if header.archive_version == ArchiveVersion::V1 {
         return crate::legacy::decode_v1(ctx, data);
     }

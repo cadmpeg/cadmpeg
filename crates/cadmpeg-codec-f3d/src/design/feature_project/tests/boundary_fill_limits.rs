@@ -9,8 +9,7 @@ use crate::records::topology::construction::{
     DesignConstructionOperandRole,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::ResourceDimension;
 
 pub(super) fn group(
     record_index: u32,
@@ -85,27 +84,13 @@ fn fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {
 
 fn assert_refusal(operation: &'static str, dimension: ResourceDimension) {
     let (scope, groups) = fixture();
-    for limit in 0..256 {
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported dimension"),
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_boundary_fill(&ctx, &scope, &groups) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_boundary_fill(ctx, &scope, &groups)
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension)
+    );
 }
 
 #[test]

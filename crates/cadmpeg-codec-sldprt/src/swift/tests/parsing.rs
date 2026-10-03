@@ -10,6 +10,7 @@ use crate::swift::ObjectSection;
 use crate::swift::Reference;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiQuantity;
 use cadmpeg_ir::pmi::PmiTarget;
@@ -447,4 +448,244 @@ fn swift_serialized_entity_depth_refuses_instead_of_unresolved_root() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "parse SWIFT entity")
     );
+}
+
+#[test]
+fn duplicate_swift_annotation_reference_ids_refuse_before_projection() {
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.doubles.insert("Tolerance".into(), 0.25);
+    let mut root = super::entity("GdtPart");
+    root.class = crate::swift::ROOT_CLASS.into();
+    root.annotations.references = vec![super::reference("A42", "GdtFlatness"); 2];
+    root.annotations.entities = vec![annotation.clone(), annotation];
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let error = parse_unique_root(&ctx, &payload).unwrap_err();
+    assert!(
+        matches!(&error, CodecError::Malformed(message) if message == "duplicate SWIFT object reference ID A42")
+    );
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let error = crate::SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(source),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(&error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message == "duplicate SWIFT object reference ID A42")
+    );
+}
+
+#[test]
+fn swift_roster_constructor_rejects_duplicate_ids_and_wrong_bindings() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let reference = super::reference("A42", "GdtFlatness");
+    let entity = super::entity("GdtFlatness");
+    assert!(matches!(
+        ObjectSection::new(
+            &ctx,
+            vec![reference.clone(), reference.clone()],
+            vec![entity.clone(), entity.clone()]
+        ),
+        Err(CodecError::Malformed(_))
+    ));
+    assert!(matches!(
+        ObjectSection::new(
+            &ctx,
+            vec![reference.clone()],
+            vec![super::entity("GdtDatum")]
+        ),
+        Ok(None)
+    ));
+    assert!(matches!(
+        ObjectSection::new(&ctx, vec![], vec![entity.clone()]),
+        Ok(None)
+    ));
+    assert!(ObjectSection::new(&ctx, vec![reference], vec![entity])
+        .unwrap()
+        .is_some());
+    assert!(ObjectSection::new(&ctx, vec![], vec![]).unwrap().is_some());
+}
+
+#[test]
+fn swift_roster_identity_admission_preserves_resource_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ObjectSection::new(
+        &ctx,
+        vec![super::reference("A42", "GdtFlatness")],
+        vec![super::entity("GdtFlatness")],
+    )
+    .unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("identity admission refusal");
+    };
+    assert_eq!(limit.operation, "admit distinct SWIFT object references");
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+fn source_with_swift_annotation(annotation: Entity) -> Vec<u8> {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    root.annotations.references.push(Reference {
+        id: "A42".into(),
+        class: annotation.class.clone(),
+    });
+    root.annotations.entities.push(annotation);
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    source
+}
+
+fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
+    let class = crate::swift::short_class(&annotation.class).to_owned();
+    let source = source_with_swift_annotation(annotation);
+    let scan = crate::test_support::container::scan(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let expected = format!("SWIFT annotation A42 ({class}): {reason}");
+    assert!(
+        matches!(crate::swift::annotations(&ctx, &scan, &mut provenance, None, None),
+        Err(CodecError::Malformed(message)) if message == expected)
+    );
+    assert!(
+        matches!(crate::swift::unsupported_annotation_classes(&ctx, &scan),
+        Err(CodecError::Malformed(message)) if message == expected)
+    );
+    assert!(
+        matches!(crate::SldprtCodec.decode(&mut std::io::Cursor::new(source), &cadmpeg_ir::codec::DecodeOptions::default()),
+        Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::Malformed(message))) if message == expected)
+    );
+}
+
+#[test]
+fn swift_missing_tolerance_refuses_instead_of_silent_omission() {
+    assert_malformed_swift_projection(
+        super::entity("GdtFlatness"),
+        "Tolerance must be present, finite and non-negative",
+    );
+}
+
+#[test]
+fn swift_negative_tolerance_refuses_instead_of_silent_omission() {
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.doubles.insert("Tolerance".into(), -1.0);
+    assert_malformed_swift_projection(
+        annotation,
+        "Tolerance must be present, finite and non-negative",
+    );
+}
+
+#[test]
+fn swift_nonfinite_tolerance_refuses_instead_of_silent_omission() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut annotation = super::entity("GdtFlatness");
+        annotation.doubles.insert("Tolerance".into(), value);
+        assert_malformed_swift_projection(
+            annotation,
+            "Tolerance must be present, finite and non-negative",
+        );
+    }
+}
+
+#[test]
+fn swift_empty_datum_identifier_refuses_instead_of_silent_omission() {
+    let mut annotation = super::entity("GdtDatum");
+    annotation
+        .strings
+        .insert("DatumIdentifier".into(), String::new());
+    assert_malformed_swift_projection(annotation, "missing or empty DatumIdentifier");
+}
+
+#[test]
+fn swift_missing_datum_identifier_refuses_instead_of_silent_omission() {
+    assert_malformed_swift_projection(
+        super::entity("GdtDatum"),
+        "missing or empty DatumIdentifier",
+    );
+}
+
+#[test]
+fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
+    for value in [0.0, 0.25] {
+        let mut annotation = super::entity("GdtFlatness");
+        annotation.doubles.insert("Tolerance".into(), value);
+        let source = source_with_swift_annotation(annotation);
+        let scan = crate::test_support::container::scan(&source);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+        let projected =
+            crate::swift::annotations(&ctx, &scan, &mut provenance, None, None).unwrap();
+        assert_eq!(projected.len(), 1);
+        let annotation = projected.first().unwrap();
+        assert_eq!(annotation.id, pmi_id("A42").unwrap());
+        let PmiDefinition::GeometricTolerance { magnitude, .. } = &annotation.definition else {
+            panic!("expected flatness tolerance");
+        };
+        assert_eq!(magnitude.get(), length(value).unwrap());
+        assert!(crate::swift::unsupported_annotation_classes(&ctx, &scan)
+            .unwrap()
+            .is_empty());
+    }
+    for class in ["GdtFlatness", "GdtDatum", "GdtUnsupported"] {
+        let mut annotation = super::entity(class);
+        annotation.integers.insert("IsSuppressed".into(), 1);
+        let source = source_with_swift_annotation(annotation);
+        let scan = crate::test_support::container::scan(&source);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+        assert!(
+            crate::swift::annotations(&ctx, &scan, &mut provenance, None, None)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(crate::swift::unsupported_annotation_classes(&ctx, &scan)
+            .unwrap()
+            .is_empty());
+    }
+}
+
+#[test]
+fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
+    let source = source_with_swift_annotation(super::entity("GdtWidth"));
+    let scan = crate::test_support::container::scan(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    assert!(
+        crate::swift::annotations(&ctx, &scan, &mut provenance, None, None)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        crate::swift::unsupported_annotation_classes(&ctx, &scan).unwrap(),
+        BTreeMap::from([("GdtWidth".into(), 1)])
+    );
+    let result = crate::SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(source),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("GdtWidth (1)")));
 }

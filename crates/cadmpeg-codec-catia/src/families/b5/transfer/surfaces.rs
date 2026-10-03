@@ -226,7 +226,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
             "B5 rolling-ball carrier requires a jet definition",
         ));
     };
-    let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
+    let stations = ctx.copy_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
         cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations, ctx)?
             .map_err(CodecError::malformed)?,
@@ -606,7 +606,6 @@ pub(super) fn revolve_nurbs(
             }
         }
         let row_len = angular_count;
-        let row_count = profile.pole_count();
         let profile_knots = match ctx.copy_slice(
             profile.knots().as_slice(),
             "catia b5 revolution profile knots",
@@ -614,40 +613,20 @@ pub(super) fn revolve_nurbs(
             Ok(knots) => knots,
             Err(error) => return Some(Err(error)),
         };
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(row_count), "catia b5 revolution point rows")
-        {
-            return Some(Err(error));
-        }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(control_count),
-            "catia b5 revolution point row values",
-        ) {
-            return Some(Err(error));
-        }
-        if let Err(error) = ctx
-            .charge_collection_items(u64_from_index(row_count), "catia b5 revolution weight rows")
-        {
-            return Some(Err(error));
-        }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(control_count),
-            "catia b5 revolution weight row values",
-        ) {
-            return Some(Err(error));
-        }
-        let point_rows = match cadmpeg_core::decode::DecodeContext::copy_admitted_rows(
+        let point_rows = match ctx.copy_rows(
             &control_points,
             row_len,
             "catia b5 revolution point rows",
+            "catia b5 revolution point row values",
         ) {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
-        let weight_rows = match cadmpeg_core::decode::DecodeContext::copy_admitted_rows(
+        let weight_rows = match ctx.copy_rows(
             &weights,
             row_len,
             "catia b5 revolution weight rows",
+            "catia b5 revolution weight row values",
         ) {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),

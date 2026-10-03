@@ -27,10 +27,18 @@ pub fn frame(
             | StreamFailure::Malformed(error)
             | StreamFailure::NotImplemented(error),
         ) => Err(error),
+        Err(StreamFailure::Operation(error)) => Err(StreamError {
+            format: StreamFormat::Binary,
+            offset: start,
+            reason: format!("fixture context operation failed: {error}"),
+        }),
         Err(StreamFailure::Resource(error)) => Err(StreamError {
             format: StreamFormat::Binary,
             offset: start,
-            reason: format!("fixture exhausted a resource: {error}"),
+            reason: format!(
+                "fixture exhausted a resource: {}",
+                cadmpeg_core::CodecError::ResourceLimit(error)
+            ),
         }),
     }
 }
@@ -56,10 +64,18 @@ pub fn frame_history(
             | StreamFailure::Malformed(error)
             | StreamFailure::NotImplemented(error),
         ) => Err(error),
+        Err(StreamFailure::Operation(error)) => Err(StreamError {
+            format: StreamFormat::Binary,
+            offset: start,
+            reason: format!("fixture context operation failed: {error}"),
+        }),
         Err(StreamFailure::Resource(error)) => Err(StreamError {
             format: StreamFormat::Binary,
             offset: start,
-            reason: format!("fixture exhausted a resource: {error}"),
+            reason: format!(
+                "fixture exhausted a resource: {}",
+                cadmpeg_core::CodecError::ResourceLimit(error)
+            ),
         }),
     }
 }

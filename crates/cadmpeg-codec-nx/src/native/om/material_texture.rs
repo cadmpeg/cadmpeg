@@ -186,11 +186,7 @@ pub(in crate::native) fn material_texture_assets(
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
         .count();
     let mut entries = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut entries,
-        count,
-        "allocate NX material texture entries",
-    )?;
+    ctx.reserve_capacity(&mut entries, count, "allocate NX material texture entries")?;
     entries.extend(
         container
             .entries
@@ -224,7 +220,7 @@ pub(in crate::native) fn material_texture_assets(
         let Some((offset, size, payload, byte_order, first_ifd_offset)) = parsed else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut assets, 1, "NX material texture assets")?;
+        ctx.reserve_vec(&mut assets, 1, "NX material texture assets")?;
         let ordinal = assets.len();
         let mut digits = 1;
         let mut value = ordinal;
@@ -267,7 +263,6 @@ mod tests {
     use crate::container::{Container, DirEntry, DirEntryBody, Region};
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use std::borrow::Cow;
     use std::sync::OnceLock;
 
     const TIFF: &[u8] = &[b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
@@ -278,7 +273,7 @@ mod tests {
 
     fn container_of(count: usize) -> Container<'static> {
         Container {
-            data: Cow::Borrowed(TIFF),
+            data: TIFF.into(),
             physical_size: cadmpeg_core::decode::u64_from_index(TIFF.len()),
             layout: crate::container::test_modern_layout(6),
             entries: (0..count)

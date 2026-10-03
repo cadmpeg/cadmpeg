@@ -63,7 +63,8 @@ fn annotation_stream_refuses_retained_limit() {
     let by_index = std::collections::HashMap::from([(1, &records[0])]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::AnnotationRecord>());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = emit_annotation_records(
         &ctx,

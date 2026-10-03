@@ -88,6 +88,7 @@ fn fixed_fillet_refuses_scalar_group_and_intermediate_collection_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = exact_fixed_fillet_parameters_with_ctx(&ctx, &bytes, &records, &scope);
         assert!(matches!(

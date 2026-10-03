@@ -22,10 +22,11 @@ fn edge_assignment_visits_refuse_materialized_limit() {
 fn edge_assignment_members_refuse_materialized_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 8;
+    // Four i64 buckets, four controls, sixteen trailing controls and fifteen padding bytes.
+    policy.limits.max_materialized_bytes = 4 * 8 + 4 + 16 + 15;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::bipartite_assignment(&[vec![17]], None, &ctx)
-        .expect_err("one assigned member exceeds eight live bytes");
+        .expect_err("member table exceeds the live visited-set storage allowance");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

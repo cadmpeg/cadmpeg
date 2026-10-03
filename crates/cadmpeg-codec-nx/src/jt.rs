@@ -159,6 +159,7 @@ fn unpack_predictor_scratch<'ctx>(
             values.push(residual);
             continue;
         }
+        // wrapping-exception: JT Int32 predictor and packet integer addition is modulo 2^32
         values.push(residual.wrapping_add(values[index - 1]));
     }
     Ok(ScratchLane {
@@ -368,7 +369,8 @@ fn decode_vertex_normals_inner(
                     ctx, &exponents, &mantissae
                 ))?);
             }
-            let mut normals = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut normals =
+                propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for ((x, y), z) in components[0].iter().zip(&components[1]).zip(&components[2]) {
                 normals.push([*x, *y, *z]);
             }
@@ -386,7 +388,8 @@ fn decode_vertex_normals_inner(
                 codes.push(values);
             }
             let bits = NormalBits::new(expected_bits)?;
-            let mut normals = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut normals =
+                propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for (((sextant, octant), theta), psi) in
                 codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
             {
@@ -498,10 +501,10 @@ fn decode_vertex_texture_coordinates_inner(
         }
         let hash = read_u32(bytes, cursor)?;
         cursor = cursor.checked_add(4)?;
-        let mut values = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+        let mut values = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
         for index in 0..count {
             let mut value =
-                propagate_resource!(ctx.retained_vec(component_count, "nx JT decoded vector"));
+                propagate_resource!(ctx.collection_vec(component_count, "nx JT decoded vector"));
             for component in 0..component_count {
                 value.push(components.get(component)?.get(index).copied()?);
             }
@@ -567,7 +570,7 @@ fn decode_vertex_colors_inner(
                     ctx, &exponents, &mantissae
                 ))?);
             }
-            let mut colors = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut colors = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for index in 0..count {
                 colors.push([
                     *components.first()?.get(index)?,
@@ -642,7 +645,7 @@ fn decode_vertex_colors_inner(
                     reservation,
                 });
             }
-            let mut colors = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+            let mut colors = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for index in 0..count {
                 let first = *components.first()?.get(index)?;
                 let second = *components.get(1)?.get(index)?;
@@ -716,7 +719,7 @@ fn decode_vertex_flags_inner(
         if values.len() != count {
             return None;
         }
-        let mut flags = propagate_resource!(ctx.retained_vec(count, "nx JT decoded vector"));
+        let mut flags = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
         for value in values.iter().copied() {
             flags.push(u32::try_from(value).ok().filter(|value| *value <= 1)?);
         }
@@ -824,7 +827,7 @@ fn decode_vertex_coordinates_inner(
         let coordinate_hash = read_u32(bytes, cursor)?;
         cursor = cursor.checked_add(4)?;
         let mut points =
-            propagate_resource!(ctx.retained_vec(vertex_count, "nx JT decoded vector"));
+            propagate_resource!(ctx.collection_vec(vertex_count, "nx JT decoded vector"));
         for index in 0..vertex_count {
             points.push([
                 *components.first()?.get(index)?,
@@ -966,6 +969,7 @@ fn parse_probability_context<'a>(
         for _ in 0..entry_count {
             let symbol = i32::try_from(i64::from(bits.read(symbol_bits)?).checked_sub(2)?).ok()?;
             let occurrence_count = bits.read(occurrence_bits)?;
+            // wrapping-exception: JT Int32 predictor and packet integer addition is modulo 2^32
             let value = (bits.read(value_bits)?.cast_signed()).wrapping_add(minimum);
             entries.push(ProbabilityEntry {
                 symbol,
@@ -1078,8 +1082,8 @@ fn decode_arithmetic<'a>(
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
         for _ in 0..value_count {
-            let range = u32::from(high.wrapping_sub(low)) + 1;
-            let scaled = ((u32::from(code.wrapping_sub(low)) + 1) * total - 1) / range;
+            let range = u32::from(high.checked_sub(low)?) + 1;
+            let scaled = ((u32::from(code.checked_sub(low)?) + 1) * total - 1) / range;
             let mut cumulative = 0u32;
             let entry = entries.iter().find(|entry| {
                 let end = cumulative + entry.occurrence_count;
@@ -1090,8 +1094,8 @@ fn decode_arithmetic<'a>(
                 contains
             })?;
             let entry_high = cumulative + entry.occurrence_count;
-            high = low.wrapping_add(u16::try_from((range * entry_high) / total - 1).ok()?);
-            low = low.wrapping_add(u16::try_from((range * cumulative) / total).ok()?);
+            high = low.checked_add(u16::try_from((range * entry_high) / total - 1).ok()?)?;
+            low = low.checked_add(u16::try_from((range * cumulative) / total).ok()?)?;
             loop {
                 if ((high ^ low) & 0x8000) == 0 {
                 } else if low & 0x4000 != 0 && high & 0x4000 == 0 {
@@ -1101,8 +1105,11 @@ fn decode_arithmetic<'a>(
                 } else {
                     break;
                 }
+                // wrapping-exception: JT arithmetic normalization uses a sixteen-bit code register
                 low = low.wrapping_shl(1);
+                // wrapping-exception: JT arithmetic normalization uses a sixteen-bit code register
                 high = high.wrapping_shl(1) | 1;
+                // wrapping-exception: JT arithmetic normalization uses a sixteen-bit code register
                 code = code.wrapping_shl(1) | bits.next()?;
             }
             values.push(if entry.symbol == -2 {
@@ -1139,6 +1146,10 @@ fn decode_bitlength<'ctx>(
         propagate_resource!(ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(value_count),
             "decode JT bitlength symbols",
+        ));
+        propagate_resource!(ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(code_bit_len),
+            "decode JT bitlength code bits",
         ));
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
@@ -1193,6 +1204,7 @@ fn decode_bitlength<'ctx>(
                     return None;
                 }
                 for _ in 0..run {
+                    // wrapping-exception: JT Int32 predictor and packet integer addition is modulo 2^32
                     values.push(mean.wrapping_add(bits.read_signed(u8::try_from(width).ok()?)?));
                 }
             }
@@ -1287,7 +1299,9 @@ fn decode_int32_cdp2_inner<'ctx>(
                 "combine JT chopped symbols"
             ));
             for (high, low) in msb.iter().copied().zip(lsb.iter().copied()) {
-                values.push((low | high.wrapping_shl(u32::from(shift))).wrapping_add(bias));
+                let high = high.checked_shl(u32::from(shift))?;
+                // wrapping-exception: JT chopped Int32 symbols add bias modulo 2^32
+                values.push((low | high).wrapping_add(bias));
             }
             return Some(Ok((
                 ScratchLane {

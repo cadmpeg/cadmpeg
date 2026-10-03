@@ -102,7 +102,7 @@ pub(crate) fn scan<'a>(
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX name fields")?;
     if bytes.first() == Some(&3) {
         if let Some(value) = name_text(bytes, 1) {
-            ctx.reserve_retained_vec(&mut fields, 1, "NX name fields")?;
+            ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
             fields.push(NameField {
                 form: Form::Leading,
                 value,
@@ -128,7 +128,7 @@ pub(crate) fn scan<'a>(
         let Some(value) = name_text(bytes, marker + 1) else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut fields, 1, "NX name fields")?;
+        ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
         fields.push(NameField {
             form: Form::Typed {
                 offset: start,

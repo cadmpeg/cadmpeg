@@ -274,7 +274,7 @@ impl<'a> BitReader<'a> {
                 return Err(malformed("a Binary string payload is truncated"));
             }
 
-            ctx.reserve_retained_admitted_vec(&mut output, count, "iges binary string payload")?;
+            ctx.reserve_capacity(&mut output, count, "iges binary string payload")?;
             for _ in 0..count {
                 let byte = self.read_bits(8)?;
                 let byte =
@@ -922,9 +922,10 @@ fn normalize_start(
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
+    let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    while let Some(value) = stream.next()? {
+    while let Some(value) = primitive_storage.with_storage(|| stream.next())? {
         let BinaryValue::String(value) = value else {
             return Err(malformed(
                 "Binary Start section contains a non-text primitive",
@@ -1348,7 +1349,7 @@ fn append_output_card(
     card: &[u8; CARD_WIDTH],
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_admitted_vec(output, 81, "iges binary normalized card")?;
+    ctx.reserve_capacity(output, 81, "iges binary normalized card")?;
     output.extend_from_slice(card);
     output.push(b'\n');
     Ok(())
@@ -1431,7 +1432,7 @@ mod tests {
         let payload = primitive_string(b"ab", lengths());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 5;
+        policy.limits.max_retained_bytes = 7;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("valid test fixture");
         let result = super::normalize_start(&payload, lengths(), &ctx);
@@ -1439,8 +1440,8 @@ mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 4
-                    && limit.additional == 2
+                    && limit.used == 0
+                    && limit.additional == 8
                     && limit.operation == "iges binary start text"
         ));
 
@@ -1493,8 +1494,8 @@ mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 5
-                    && limit.additional == 1
+                    && limit.used == 3
+                    && limit.additional == 3
                     && limit.operation == "iges binary parameter text"
         ));
 
@@ -1524,7 +1525,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.used == 0
-                    && limit.additional == 2
+                    && limit.additional == 8
                     && limit.operation == "iges binary rendered string"
         ));
 
@@ -2093,7 +2094,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.used == 0
-                    && limit.additional == 4
+                    && limit.additional == 8
         ));
 
         let arena = DecodeArena::new();
@@ -2164,7 +2165,7 @@ mod tests {
         let bytes = writer.bytes();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 5;
+        policy.limits.max_retained_bytes = 9;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
         let mut stream = ValueStream::new(&bytes, lengths, &ctx);
@@ -2172,7 +2173,7 @@ mod tests {
             stream.next(),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 4
+                    && limit.used == 8
                     && limit.additional == 2
                     && limit.operation == "iges binary repeated string"
         ));

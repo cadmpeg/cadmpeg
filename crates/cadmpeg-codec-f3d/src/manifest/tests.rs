@@ -25,14 +25,22 @@ fn top_level_limit(items: u64, retained: u64) -> CodecError {
 
 #[test]
 fn manifest_ascii_refuses_retained_limit() {
-    let error = top_level_limit(u64::MAX, 6);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D manifest ASCII",
+        |cap| Err::<(), cadmpeg_core::CodecError>(top_level_limit(u64::MAX, cap)),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D manifest ASCII"));
 }
 
 #[test]
 fn manifest_utf16_refuses_retained_limit() {
-    let error = top_level_limit(u64::MAX, 17);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D manifest UTF-16",
+        |cap| Err::<(), cadmpeg_core::CodecError>(top_level_limit(u64::MAX, cap)),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D manifest UTF-16"));
 }
@@ -82,7 +90,8 @@ fn manifest_capability_index_refuses_collection_limit() {
 #[test]
 fn manifest_active_name_refuses_materialization_limit() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 13;
+    policy.limits.max_materialized_bytes =
+        13 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<&str>());
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let manifest = super::TopLevelManifest {
@@ -98,7 +107,8 @@ fn manifest_active_name_refuses_materialization_limit() {
 #[test]
 fn manifest_member_name_refuses_materialization_limit() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 14;
+    policy.limits.max_materialized_bytes =
+        14 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<&str>());
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let manifest = super::TopLevelManifest {
@@ -545,9 +555,11 @@ fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     }
     bytes.splice(at..at, failed);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (TOP_LEVEL_MANIFEST_VERSION.len() + "Design Base".len())
-        .try_into()
-        .unwrap();
+    policy.limits.max_retained_bytes = (TOP_LEVEL_MANIFEST_VERSION.len()
+        + "Design Base".len()
+        + 4 * std::mem::size_of::<String>())
+    .try_into()
+    .unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let manifest = parse_top_level(ctx, &bytes).unwrap();
         assert_eq!(manifest.declared_version(), TOP_LEVEL_MANIFEST_VERSION);

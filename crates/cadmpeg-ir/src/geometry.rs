@@ -42,7 +42,7 @@ pub(super) fn copy_decode_slice<T: Copy>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    ctx.copy_retained_slice(values, operation)
+    ctx.copy_slice(values, operation)
 }
 
 pub mod analytic;
@@ -481,7 +481,7 @@ impl SolvedCurveGeometry {
                 self_intersect,
             } => {
                 let mut copy = Vec::new();
-                ctx.reserve_retained_vec(&mut copy, segments.len(), operation)?;
+                ctx.reserve_vec(&mut copy, segments.len(), operation)?;
                 ctx.charge_work(u64_from_index(segments.len()), operation)?;
                 for segment in segments {
                     copy.push(CompositeCurveSegment {
@@ -3338,7 +3338,7 @@ impl RollingBallJetStations {
             |count, operation| {
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
             },
-            |count| ctx.retained_vec(count, "rolling-ball jet stations"),
+            |count| ctx.collection_vec(count, "rolling-ball jet stations"),
         )
     }
 

@@ -43,6 +43,7 @@ fn external_reference_text_fields_refuse_retained_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64_from_index(limit);
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = take_external_reference_identity(&ctx, &bytes, &mut 0);
         assert!(
@@ -164,6 +165,7 @@ fn combine_selector_identity_text_refuses_retained_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = exact_combine_operation(&ctx, &bytes, &records, &scope);
         assert!(
@@ -256,6 +258,7 @@ fn combine_tools_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = exact_combine_operation(&ctx, &bytes, &records, &scope);
     assert!(matches!(

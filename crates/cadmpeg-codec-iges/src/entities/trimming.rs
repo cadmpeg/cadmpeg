@@ -136,13 +136,33 @@ fn point_order(left: Point3, right: Point3) -> Ordering {
         .then_with(|| left.z.total_cmp(&right.z))
 }
 
-fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
-    if parents[index] == index {
-        return index;
+fn find_cluster_root(
+    parents: &mut [usize],
+    index: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<usize, CodecError> {
+    let mut root = index;
+    loop {
+        ctx.charge_work(1, "iges boundary cluster root traversal")?;
+        let parent = *parents
+            .get(root)
+            .ok_or_else(|| CodecError::malformed("boundary cluster parent is out of range"))?;
+        if parent == root {
+            break;
+        }
+        root = parent;
     }
-    let root = find_cluster_root(parents, parents[index]);
-    parents[index] = root;
-    root
+    let mut current = index;
+    while current != root {
+        ctx.charge_work(1, "iges boundary cluster path compression")?;
+        let parent = parents
+            .get_mut(current)
+            .ok_or_else(|| CodecError::malformed("boundary cluster parent is out of range"))?;
+        let next = *parent;
+        *parent = root;
+        current = next;
+    }
+    Ok(root)
 }
 
 fn cluster_boundary_positions(
@@ -156,31 +176,41 @@ fn cluster_boundary_positions(
         0
     } else {
         count.checked_mul(count - 1).ok_or_else(|| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "iges boundary clustering comparisons",
-                u64::MAX,
-                1,
-            )
+            ctx.refuse_codec_limit("iges boundary clustering comparisons", u64::MAX, u64::MAX)
         })? / 2
     };
     ctx.charge_work(pair_count, "iges boundary clustering comparisons")?;
     let mut parents = ctx.collection_vec(positions.len(), "iges boundary cluster parents")?;
+    let initialization_work = count.checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit("iges boundary cluster initialization", u64::MAX, u64::MAX)
+    })?;
+    ctx.charge_work(initialization_work, "iges boundary cluster initialization")?;
     parents.extend(0..positions.len());
+    let mut sizes = ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")?;
     for (left_index, left) in positions.iter().enumerate() {
         for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
             if !close(left.get(), right.get(), tolerance) {
                 continue;
             }
-            let left_root = find_cluster_root(&mut parents, left_index);
-            let right_root = find_cluster_root(&mut parents, right_index);
+            let mut left_root = find_cluster_root(&mut parents, left_index, ctx)?;
+            let mut right_root = find_cluster_root(&mut parents, right_index, ctx)?;
             if left_root != right_root {
+                if sizes[left_root] < sizes[right_root] {
+                    std::mem::swap(&mut left_root, &mut right_root);
+                }
+                sizes[left_root] =
+                    sizes[left_root]
+                        .checked_add(sizes[right_root])
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit("iges boundary cluster size", u64::MAX, u64::MAX)
+                        })?;
                 parents[right_root] = left_root;
             }
         }
     }
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     for index in 0..positions.len() {
-        let root = find_cluster_root(&mut parents, index);
+        let root = find_cluster_root(&mut parents, index, ctx)?;
         ctx.admit_btree_entry(&members_by_root, &root, "iges boundary cluster roots")?;
         let members = members_by_root.entry(root).or_default();
         ctx.reserve_vec(members, 1, "iges boundary cluster members")?;
@@ -197,6 +227,14 @@ fn cluster_boundary_positions(
         }) {
             return Err(BoundaryVertexClusterError::NonTransitive.into());
         }
+        let representative_comparisons = members
+            .len()
+            .checked_sub(1)
+            .ok_or(BoundaryVertexClusterError::NonTransitive)?;
+        ctx.charge_work(
+            u64_from_index(representative_comparisons),
+            "iges boundary cluster representative comparisons",
+        )?;
         let representative = members
             .iter()
             .copied()
@@ -1115,31 +1153,36 @@ struct SimpleRing(Vec<[f64; 2]>);
 struct NonSimpleRing;
 
 impl SimpleRing {
-    fn new(points: Vec<[f64; 2]>) -> Result<Self, NonSimpleRing> {
-        if points.len() < 4
-            || points.first() != points.last()
-            || points
-                .iter()
-                .flatten()
-                .any(|coordinate| !coordinate.is_finite())
-        {
-            return Err(NonSimpleRing);
+    fn new(
+        points: Vec<[f64; 2]>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<Self, NonSimpleRing>, CodecError> {
+        if points.len() < 4 || points.first() != points.last() {
+            return Ok(Err(NonSimpleRing));
         }
-        if points.windows(2).any(|segment| segment[0] == segment[1]) {
-            return Err(NonSimpleRing);
-        }
-        let last = points.len() - 1;
-        for first in 0..last {
-            for second in first + 1..last {
-                if points[first] == points[second] {
-                    return Err(NonSimpleRing);
-                }
+        for point in &points {
+            ctx.charge_work(2, "iges simple ring coordinate admission")?;
+            if point.iter().any(|coordinate| !coordinate.is_finite()) {
+                return Ok(Err(NonSimpleRing));
             }
         }
-        if planar_polyline_has_self_intersection(&points) {
-            return Err(NonSimpleRing);
+        for segment in points.windows(2) {
+            ctx.charge_work(1, "iges simple ring adjacent vertex comparisons")?;
+            if segment[0] == segment[1] {
+                return Ok(Err(NonSimpleRing));
+            }
         }
-        Ok(Self(points))
+        if super::geometry::closed_polyline_has_duplicate(
+            &points,
+            |left, right| left == right,
+            ctx,
+        )? {
+            return Ok(Err(NonSimpleRing));
+        }
+        if planar_polyline_has_self_intersection(&points, ctx)? {
+            return Ok(Err(NonSimpleRing));
+        }
+        Ok(Ok(Self(points)))
     }
 
     fn first(&self) -> [f64; 2] {
@@ -1155,14 +1198,20 @@ impl SimpleRing {
     }
 }
 
-fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
-    if ring.points().windows(2).any(|segment| {
-        super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]])
-    }) {
-        return false;
+fn planar_point_is_strictly_inside(
+    point: [f64; 2],
+    ring: &SimpleRing,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    for segment in ring.points().windows(2) {
+        ctx.charge_work(1, "iges planar point boundary comparisons")?;
+        if super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]]) {
+            return Ok(false);
+        }
     }
     let mut inside = false;
     for segment in ring.points().windows(2) {
+        ctx.charge_work(1, "iges planar point containment comparisons")?;
         let [left, right] = [segment[0], segment[1]];
         if (left[1] > point[1]) != (right[1] > point[1]) {
             let crossing =
@@ -1172,7 +1221,7 @@ fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
             }
         }
     }
-    inside
+    Ok(inside)
 }
 
 fn linear_boundary_rings(
@@ -1192,8 +1241,12 @@ fn linear_boundary_rings(
             return Ok(None);
         };
         let mut copied = ctx.collection_vec(points.len(), "iges linear boundary ring points")?;
+        ctx.charge_work(
+            u64_from_index(points.len()),
+            "iges linear boundary ring copy",
+        )?;
         copied.extend_from_slice(points);
-        match SimpleRing::new(copied) {
+        match SimpleRing::new(copied, ctx)? {
             Ok(ring) => rings.push(ring),
             Err(error) => return Ok(Some(Err(error))),
         }
@@ -1201,24 +1254,37 @@ fn linear_boundary_rings(
     Ok(Some(Ok(rings)))
 }
 
-fn inner_boundaries_are_disjoint_and_inside(outer: &SimpleRing, inners: &[SimpleRing]) -> bool {
-    for inner in inners {
-        if planar_polylines_intersect(outer.points(), inner.points())
-            || inner
-                .interior()
-                .iter()
-                .any(|point| !planar_point_is_strictly_inside(*point, outer))
-        {
-            return false;
+fn rings_are_disjoint(rings: &[SimpleRing], ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+    for (left_index, left) in rings.iter().enumerate() {
+        for right in rings.iter().skip(left_index + 1) {
+            ctx.charge_work(1, "iges inner ring pair comparisons")?;
+            if planar_polylines_intersect(left.points(), right.points(), ctx)?
+                || planar_point_is_strictly_inside(left.first(), right, ctx)?
+                || planar_point_is_strictly_inside(right.first(), left, ctx)?
+            {
+                return Ok(false);
+            }
         }
     }
-    inners.iter().enumerate().all(|(left_index, left)| {
-        inners.iter().skip(left_index + 1).all(|right| {
-            !planar_polylines_intersect(left.points(), right.points())
-                && !planar_point_is_strictly_inside(left.first(), right)
-                && !planar_point_is_strictly_inside(right.first(), left)
-        })
-    })
+    Ok(true)
+}
+
+fn inner_boundaries_are_disjoint_and_inside(
+    outer: &SimpleRing,
+    inners: &[SimpleRing],
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    for inner in inners {
+        if planar_polylines_intersect(outer.points(), inner.points(), ctx)? {
+            return Ok(false);
+        }
+        for point in inner.interior() {
+            if !planar_point_is_strictly_inside(*point, outer, ctx)? {
+                return Ok(false);
+            }
+        }
+    }
+    rings_are_disjoint(inners, ctx)
 }
 
 fn linear_boundary_relationship_is_valid(
@@ -1228,20 +1294,25 @@ fn linear_boundary_relationship_is_valid(
     support: &SurfaceGeometry,
     support_bounds: Option<[Option<f64>; 4]>,
     periodic_parameters: [bool; 2],
-) -> Option<bool> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<bool>, CodecError> {
     let rings = match rings {
         Ok(rings) => rings,
-        Err(NonSimpleRing) => return Some(false),
+        Err(NonSimpleRing) => return Ok(Some(false)),
     };
     if surface_kind == BoundarySurfaceKind::Bounded {
-        return Some(true);
+        return Ok(Some(true));
     }
     if has_explicit_outer {
-        let (outer, inners) = rings.split_first()?;
-        return Some(inner_boundaries_are_disjoint_and_inside(outer, inners));
+        let Some((outer, inners)) = rings.split_first() else {
+            return Ok(None);
+        };
+        return Ok(Some(inner_boundaries_are_disjoint_and_inside(
+            outer, inners, ctx,
+        )?));
     }
     if periodic_parameters.iter().any(|periodic| *periodic) {
-        return None;
+        return Ok(None);
     }
     match support_bounds {
         Some([Some(u_lower), Some(u_upper), Some(v_lower), Some(v_upper)])
@@ -1252,34 +1323,30 @@ fn linear_boundary_relationship_is_valid(
                 && u_lower < u_upper
                 && v_lower < v_upper =>
         {
-            if rings.iter().any(|ring| {
-                ring.interior().iter().any(|point| {
-                    point[0] <= u_lower
+            for ring in rings {
+                for point in ring.interior() {
+                    ctx.charge_work(1, "iges ring support bound comparisons")?;
+                    if point[0] <= u_lower
                         || point[0] >= u_upper
                         || point[1] <= v_lower
                         || point[1] >= v_upper
-                })
-            }) {
-                return Some(false);
+                    {
+                        return Ok(Some(false));
+                    }
+                }
             }
         }
-        Some(_) => return None,
+        Some(_) => return Ok(None),
         None if !matches!(
             support,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
         ) =>
         {
-            return None
+            return Ok(None);
         }
         None => {}
     }
-    Some(rings.iter().enumerate().all(|(left_index, left)| {
-        rings.iter().skip(left_index + 1).all(|right| {
-            !planar_polylines_intersect(left.points(), right.points())
-                && !planar_point_is_strictly_inside(left.first(), right)
-                && !planar_point_is_strictly_inside(right.first(), left)
-        })
-    }))
+    Ok(Some(rings_are_disjoint(rings, ctx)?))
 }
 
 #[derive(Clone)]
@@ -1966,23 +2033,28 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges trimming parameter index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut records,
+                record.directory_sequence,
+                record,
+                "iges trimming parameter index",
+            )
+        })?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges trimming directory index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut entries,
+                entry.sequence,
+                entry,
+                "iges trimming directory index",
+            )
+        })?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -1990,13 +2062,18 @@ pub(super) fn project(
     let mut boundaries = BTreeMap::new();
 
     let carrier_index = ModelIndex::new_model_only(ir, ctx)?;
+    let mut composite_storage = ctx.reserve_scoped(0, "IGES trimming composite index")?;
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
-            ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")?;
+            lookup_storage.with_storage(|| {
+                ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")
+            })?;
             let group = edges_by_curve.entry(curve).or_default();
-            ctx.reserve_vec(group, 1, "iges boundary carrier edge references")?;
+            lookup_storage.with_storage(|| {
+                ctx.reserve_vec(group, 1, "iges boundary carrier edge references")
+            })?;
             group.push(edge);
         }
     }
@@ -2564,7 +2641,9 @@ pub(super) fn project(
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
                     if composite_index.is_none() {
-                        composite_index = Some(CompositeIndex::from_ir(ir, ctx)?);
+                        composite_index = Some(
+                            composite_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?,
+                        );
                     }
                     let index = composite_index.as_ref().ok_or_else(|| {
                         CodecError::Malformed("IGES trimming composite index is absent".into())
@@ -3007,16 +3086,18 @@ pub(super) fn project(
             Some(rings) => Some(rings),
             None => linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model, ctx)?,
         };
-        let linear_relationship = linear_rings.and_then(|rings| {
-            linear_boundary_relationship_is_valid(
+        let linear_relationship = match linear_rings {
+            Some(rings) => linear_boundary_relationship_is_valid(
                 rings.as_deref(),
                 surface_kind,
                 has_explicit_outer,
                 &support_geometry,
                 support_parameter_bounds,
                 periodic_parameters,
-            )
-        });
+                ctx,
+            )?,
+            None => None,
+        };
         if linear_relationship == Some(false) {
             super::push_entity_loss(
                 ctx,

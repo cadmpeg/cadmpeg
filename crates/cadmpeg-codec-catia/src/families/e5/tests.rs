@@ -640,13 +640,7 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
     for cap in 0..2048 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        let result = CatiaCodec.decode(
-            &mut Cursor::new(&file),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
+        let result = cadmpeg_test_support::decode::full(&CatiaCodec, &file, &policy);
         match result {
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 limit,
@@ -673,13 +667,7 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
     for cap in 0..2048 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match CatiaCodec.decode(
-            &mut Cursor::new(&file),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
+        match cadmpeg_test_support::decode::full(&CatiaCodec, &file, &policy) {
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 limit,
             ))) => {
@@ -704,7 +692,8 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
 fn e5_topology_emission_refuses_retained_identity_copies() {
     let file = object_main_catpart(&e5_torus_topology_stream());
     let mut refused = std::collections::HashSet::new();
-    for cap in 0..32_768 {
+    let mut cap = 0;
+    for _ in 0..4096 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         match CatiaCodec.decode(
@@ -718,6 +707,8 @@ fn e5_topology_emission_refuses_retained_identity_copies() {
                 limit,
             ))) => {
                 refused.insert(limit.operation);
+                assert!(limit.used + limit.additional > cap);
+                cap = limit.used + limit.additional;
             }
             Ok(_) => break,
             Err(error) => panic!("unexpected E5 topology decode refusal: {error}"),
@@ -1015,7 +1006,9 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
         .position(|bytes| bytes == vertex_bytes)
         .expect("file-level E5 vertex run");
 
-    let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
+    let record_range = crate::container::e5_record_stream(&ctx, &file)
+        .expect("service work")
+        .expect("coherent E5 walk");
     assert!(!record_range.contains(&vertex_file_start));
     assert!(
         crate::families::e5::records::e5_vertices(&ctx, &file[record_range], 4)

@@ -668,13 +668,14 @@ fn parse_positional_spline_replay(
         return Ok(None);
     };
     Ok(crate::interpolation_grid::InterpolationGrid::try_new(
+        ctx,
         points,
         u_parameters,
         v_parameters,
         u_derivatives,
         v_derivatives,
         mixed_derivatives,
-    )
+    )?
     .map(|grid| (grid, cursor)))
 }
 
@@ -6553,6 +6554,7 @@ fn named_spline_scalar_slot(
 }
 
 fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
+    // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
     let second = body.get(offset)?.wrapping_sub(0x8b);
     let first = if second >= 0x80 { 0x3f } else { 0x40 };
     scalar::ieee7_with_prefix(body, offset, first, second)

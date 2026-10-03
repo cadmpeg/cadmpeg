@@ -104,7 +104,7 @@ fn inner_parasolid_frame_retention_refuses_before_exposing_output() {
 }
 
 #[test]
-fn declared_frame_above_local_cap_still_reports_session_expand_limit() {
+fn declared_frame_above_local_cap_refuses_without_allocation() {
     let member = zlib_member(b"x");
     let declared = 512_u32 * 1024 * 1024 + 1;
     let mut payload = WRAPPED_MAGIC.to_vec();
@@ -115,12 +115,21 @@ fn declared_frame_above_local_cap_still_reports_session_expand_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected the session per-expansion refusal");
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        super::inflate_zlib_frame_budgeted(&ctx, &member, usize::try_from(declared).unwrap())
+    });
+    let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+        panic!("expected the local frame refusal");
     };
-    assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert!(limit.limit < u64::from(declared));
+    assert_eq!(
+        limit.dimension,
+        ResourceDimension::Codec("inflate Parasolid frame")
+    );
+    assert_eq!(
+        limit.limit,
+        cadmpeg_core::decode::u64_from_index(super::MAX_WRAPPED_FRAME_UNCOMPRESSED)
+    );
+    assert_eq!(allocations, 0);
 }
 
 #[test]
@@ -178,12 +187,17 @@ fn chained_parasolid_concatenation_refuses_retained_limit() {
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let split = stream.len() / 2;
     let (payload, _) = chained_payload(&[vec![stream[..split].to_vec(), stream[split..].to_vec()]]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(stream.len()) * 2 - 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
-        .expect_err("concatenation must be admitted");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain concatenated Parasolid stream",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+            crate::parasolid::extract_streams_with_offsets(&payload, &ctx).map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain concatenated Parasolid stream"));
@@ -496,4 +510,23 @@ fn direct_parasolid_decode_route_refuses_work_at_minimum_admission() {
     assert!(admitted(&options));
     options.policy.limits.max_work_units = upper - 1;
     assert!(!admitted(&options));
+}
+
+#[test]
+fn parasolid_frame_storage_refuses_before_expansion_allocation() {
+    let member = zlib_member(b"storage");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(&member, &arena, &policy).unwrap();
+    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+        super::inflate_zlib_frame_budgeted(&ctx, &member, 7)
+    });
+    let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+        panic!("expected storage refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "inflate Parasolid frame");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(allocations, 0);
 }

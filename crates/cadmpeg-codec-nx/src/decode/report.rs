@@ -347,7 +347,7 @@ pub(super) fn build_geometry_report(
         ))?;
     }
 
-    if scan.count(StreamKind::Deltas) > 0 {
+    if scan.count(ctx, StreamKind::Deltas)? > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
         let unmatched_tombstone_detail = JoinedCounts {
             counts: unmatched_delta_tombstone_counts,
@@ -377,7 +377,7 @@ pub(super) fn build_geometry_report(
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
-                scan.count(StreamKind::Deltas)
+                scan.count(ctx, StreamKind::Deltas)?
             ))?;
         } else {
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
@@ -385,7 +385,7 @@ pub(super) fn build_geometry_report(
                     Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                scan.count(StreamKind::Deltas)
+                scan.count(ctx, StreamKind::Deltas)?
             ))?;
         }
     }
@@ -400,7 +400,7 @@ pub(super) fn build_geometry_report(
                  Booleans do not resolve every intermediate body object to a partition image. \
                  Carriers from all sub-bodies are emitted without the unresolved composition that \
                  would remove interior/construction faces.",
-                scan.count(StreamKind::Partition)
+                scan.count(ctx, StreamKind::Partition)?
             ),
         )?;
     }
@@ -442,21 +442,23 @@ pub(crate) fn append_design_intent_losses(
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut current_body_ids =
-        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")?;
+    let mut body_storage = ctx.reserve_scoped(0, "NX report body lookup storage")?;
+    let mut current_body_ids = body_storage.with_storage(|| {
+        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")
+    })?;
     for body in &ir.model.bodies {
-        current_body_ids.push(
+        current_body_ids.push(body_storage.with_storage(|| {
             body.id
-                .try_clone_for_decode(ctx, "nx report current body identity")?,
-        );
+                .try_clone_for_decode(ctx, "nx report current body identity")
+        })?);
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
-    let (active_features, closure_rejection) =
-        match crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)?
-        {
-            Ok(active) => (Some(active), None),
-            Err(rejection) => (None, Some(rejection.code())),
-        };
+    let (active_features, closure_rejection) = match body_storage.with_storage(|| {
+        crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)
+    })? {
+        Ok(active) => (Some(active), None),
+        Err(rejection) => (None, Some(rejection.code())),
+    };
     let active_features = active_features.filter(|active| {
         active.values().any(|&index| {
             !matches!(
@@ -651,16 +653,19 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
+    let mut lookup_storage = ctx.reserve_scoped(0, "NX report feature lookup")?;
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
     let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
     let mut generated_body_outputs = BTreeSet::new();
     for state in &ir.model.feature_result_topologies {
         if !state.bodies().is_empty() {
-            ctx.insert_btree_set(
-                &mut generated_body_outputs,
-                &state.output_of,
-                "nx report generated body outputs",
-            )?;
+            lookup_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut generated_body_outputs,
+                    &state.output_of,
+                    "nx report generated body outputs",
+                )
+            })?;
         }
     }
     for feature in &ir.model.features {
@@ -695,11 +700,13 @@ pub(crate) fn append_design_intent_losses(
                                 && generated_body_outputs.contains(&feature.id))
                     })
             {
-                ctx.admit_btree_entry(
-                    &incomplete_feature_output_families,
-                    &family,
-                    "nx report incomplete output families",
-                )?;
+                lookup_storage.with_storage(|| {
+                    ctx.admit_btree_entry(
+                        &incomplete_feature_output_families,
+                        &family,
+                        "nx report incomplete output families",
+                    )
+                })?;
                 match incomplete_feature_output_families.entry(family) {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         *entry.get_mut() += 1;
@@ -916,11 +923,13 @@ pub(crate) fn append_design_intent_losses(
             }
             _ => continue,
         };
-        ctx.admit_btree_entry(
-            &incomplete_feature_construction_families,
-            &family,
-            "nx report incomplete construction families",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.admit_btree_entry(
+                &incomplete_feature_construction_families,
+                &family,
+                "nx report incomplete construction families",
+            )
+        })?;
         match incomplete_feature_construction_families.entry(family) {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -1010,11 +1019,13 @@ pub(crate) fn append_design_intent_losses(
             ..
         }) = feature.evaluation.definition()
         {
-            ctx.insert_btree_set(
-                &mut active_sketch_ids,
-                sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
-                "nx report active sketch identities",
-            )?;
+            lookup_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut active_sketch_ids,
+                    sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
+                    "nx report active sketch identities",
+                )
+            })?;
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
@@ -1100,20 +1111,16 @@ mod tests {
     }
 
     #[test]
-    fn design_intent_report_refuses_body_copy_at_retained_limit() {
-        crate::test_support::with_decode_context_over(
+    fn design_intent_report_refuses_body_copy_at_scoped_limit() {
+        let error = crate::test_support::resource_refusal_at(
             &[],
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                assert!(matches!(
-                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::RetainedBytes
-                            && limit.operation == "nx report current body identity"
-                ));
-            },
+            ResourceDimension::MaterializedBytes,
+            "nx report current body identity",
+            |ctx| append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "nx report current body identity")
         );
     }
 }

@@ -93,9 +93,15 @@ fn assert_fc_coordinate_collection_refusal(limit: u64, operation: &'static str) 
             && resource.operation == operation));
 }
 
-fn assert_fc_coordinate_retained_refusal(limit: u64, operation: &'static str) {
-    let error = fc_coordinates_with_limits(u64::MAX, limit)
-        .expect_err("one FC coordinate row exceeds retained limit");
+fn assert_fc_coordinate_retained_refusal(_limit: u64, operation: &'static str) {
+    let parameter = fc_curve_parameter();
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        operation,
+        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
+    );
+
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == operation));

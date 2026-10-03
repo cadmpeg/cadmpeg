@@ -261,28 +261,21 @@ pub(super) fn fast_load_component_object_groups(
     for uuid in uuids {
         let mut use_count = 0usize;
         let mut value_count = 0usize;
-        let mut text_bytes = 0usize;
-        for occurrence in occurrences
+        for _occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.component_uuid == uuid.id)
         {
             use_count = use_count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("NX fast-load group occurrence count", 0, 1)
             })?;
-            text_bytes = text_bytes
-                .checked_add(occurrence.id.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group text", 0, 1))?;
         }
-        for value in object_uuid_values
+        for _value in object_uuid_values
             .iter()
             .filter(|value| value.uuid == uuid.uuid)
         {
             value_count = value_count
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group value count", 0, 1))?;
-            text_bytes = text_bytes
-                .checked_add(value.id.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group text", 0, 1))?;
         }
         if use_count == 0 || use_count != value_count {
             continue;
@@ -290,26 +283,15 @@ pub(super) fn fast_load_component_object_groups(
         let list_count = use_count
             .checked_add(value_count)
             .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group list count", 0, 1))?;
-        let list_slots = list_count
-            .checked_mul(std::mem::size_of::<String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group list slots", 0, 1))?;
-        let temporary_bytes = list_slots
-            .checked_add(text_bytes)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group temporary bytes", 0, 1))?;
-        let _temporary = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(temporary_bytes),
-            "NX fast-load group temporary lists",
-        )?;
+        let mut temporary = ctx.reserve_scoped(0, "NX fast-load group temporary lists")?;
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(list_count),
             "NX fast-load group temporary lists",
         )?;
         let mut uses = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut uses,
-            use_count,
-            "allocate NX fast-load group uses",
-        )?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(&mut uses, use_count, "allocate NX fast-load group uses")
+        })?;
         for occurrence in occurrences
             .iter()
             .filter(|occurrence| occurrence.component_uuid == uuid.id)
@@ -317,11 +299,13 @@ pub(super) fn fast_load_component_object_groups(
             uses.push(ctx.copy_retained_text(&occurrence.id, "allocate NX fast-load group use")?);
         }
         let mut values = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut values,
-            value_count,
-            "allocate NX fast-load group values",
-        )?;
+        temporary.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut values,
+                value_count,
+                "allocate NX fast-load group values",
+            )
+        })?;
         for value in object_uuid_values
             .iter()
             .filter(|value| value.uuid == uuid.uuid)
@@ -331,7 +315,7 @@ pub(super) fn fast_load_component_object_groups(
         let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut groups, 1, "NX fast-load object groups")?;
+        ctx.reserve_vec(&mut groups, 1, "NX fast-load object groups")?;
         let uuid_text =
             ctx.copy_retained_text(uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
         groups.push(FastLoadComponentObjectGroup {
@@ -503,7 +487,7 @@ pub(super) fn fast_load_component_roster(
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let mut prototypes = ctx.retained_vec::<FastLoadComponentPrototype>(
+    let mut prototypes = ctx.collection_vec::<FastLoadComponentPrototype>(
         candidate.prototype_count,
         "NX fast-load prototypes",
     )?;
@@ -529,7 +513,7 @@ pub(super) fn fast_load_component_roster(
         });
     }
     let mut uuids =
-        ctx.retained_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
+        ctx.collection_vec::<FastLoadComponentUuid>(candidate.uuid_count, "NX fast-load UUIDs")?;
     let mut at = candidate.uuids_offset;
     for ordinal in 0..candidate.uuid_count {
         let (offset, text) = parse_tagged_string(payload, &mut at, 3).ok_or_else(|| {
@@ -565,7 +549,7 @@ pub(super) fn fast_load_component_roster(
     let markers = lane_bytes(candidate.occurrence_markers_offset)?;
     let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
     let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
-    let mut records = ctx.retained_vec::<FastLoadComponentOccurrence>(
+    let mut records = ctx.collection_vec::<FastLoadComponentOccurrence>(
         candidate.occurrence_count,
         "NX fast-load occurrences",
     )?;
@@ -761,7 +745,6 @@ mod tests {
     use crate::container::Container;
     use crate::container::{DirEntry, Region};
     use crate::native::om::object_uuid::ObjectUuidValue;
-    use std::borrow::Cow;
 
     fn fast_load_component_roster(
         container: &Container<'_>,
@@ -943,7 +926,7 @@ mod tests {
         data.extend(payload);
         let len = cadmpeg_core::decode::u64_from_index(data.len());
         Container {
-            data: Cow::Owned(data),
+            data: data.into(),
             physical_size: len,
             layout: crate::container::test_modern_layout(0x06),
             entries: vec![DirEntry {

@@ -458,9 +458,9 @@ pub(super) fn pair_standard_populations(
             layout,
             StandardSurfacePopulation {
                 records: ctx
-                    .copy_retained_slice(&population.records, "catia_population_pair_records")?,
+                    .copy_slice(&population.records, "catia_population_pair_records")?,
                 supports: ctx
-                    .copy_retained_slice(&population.supports, "catia_population_pair_supports")?,
+                    .copy_slice(&population.supports, "catia_population_pair_supports")?,
             },
         )))
     };
@@ -789,7 +789,7 @@ pub(super) fn standard_curve_supports(
         else {
             return Ok(Vec::new());
         };
-        return ctx.copy_retained_slice(&population.supports, "catia_curve_support_copy");
+        return ctx.copy_slice(&population.supports, "catia_curve_support_copy");
     }
     if let Some(first) = standard_surface_records(ctx, brep, face_count)?
         .and_then(|records| records.last().map(StandardSurfaceRecord::end))

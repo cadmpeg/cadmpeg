@@ -53,7 +53,7 @@ pub(crate) fn admitted_json(
     let mut count = ByteCount(0);
     serde_json::to_writer(&mut count, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let mut bytes = ctx.retained_vec(count.0, operation)?;
+    let mut bytes = ctx.collection_vec(count.0, operation)?;
     serde_json::to_writer(&mut bytes, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
@@ -85,23 +85,32 @@ pub(crate) fn admitted_canonical_json(
     let (mut raw, _temporary) = ctx.temporary_vec(count.0, operation)?;
     serde_json::to_writer(&mut raw, value)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let _tree = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
-    let failure = RefCell::new(None);
-    let seed = CanonicalSeed {
-        ctx,
-        operation,
-        failure: &failure,
-    };
-    let mut decoder = serde_json::Deserializer::from_slice(&raw);
-    let canonical =
-        serde::de::DeserializeSeed::deserialize(seed, &mut decoder).map_err(|error| {
-            failure
-                .into_inner()
-                .unwrap_or_else(|| CodecError::malformed(error.to_string()))
-        })?;
-    decoder
-        .end()
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let scratch_bytes = count
+        .0
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+        .max(8);
+    let _scratch = ctx.reserve_scoped(u64_from_index(scratch_bytes), operation)?;
+    let (canonical, _tree) = ctx.with_scoped_storage(operation, || {
+        let failure = RefCell::new(None);
+        let seed = CanonicalSeed {
+            ctx,
+            operation,
+            failure: &failure,
+        };
+        let mut decoder = serde_json::Deserializer::from_slice(&raw);
+        let canonical =
+            serde::de::DeserializeSeed::deserialize(seed, &mut decoder).map_err(|error| {
+                match failure.into_inner() {
+                    Some(refusal) => refusal,
+                    None => CodecError::malformed(error.to_string()),
+                }
+            })?;
+        decoder
+            .end()
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+        Ok::<_, CodecError>(canonical)
+    })?;
     admitted_json(ctx, &canonical, operation)
 }
 
@@ -149,7 +158,10 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
         serde::de::DeserializeSeed::deserialize(self.0, decoder)
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let copy = DecodeContext::copy_admitted_text(value, self.0.operation)
+        let copy = self
+            .0
+            .ctx
+            .copy_retained_text(value, self.0.operation)
             .map_err(|error| self.0.fail(error))?;
         Ok(serde_json::Value::String(copy))
     }
@@ -177,8 +189,18 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
                 .ctx
                 .charge_collection_items(1, self.0.operation)
                 .map_err(|error| self.0.fail(error))?;
+            if !values.contains_key(&key) {
+                self.0
+                    .ctx
+                    .admit_btree_node_storage::<String, serde_json::Value>(
+                        values.len(),
+                        self.0.operation,
+                    )
+                    .map_err(|error| self.0.fail(error))?;
+            }
             let value = map.next_value_seed(self.0)?;
-            values.insert(key, value);
+            // discarded-value: canonical objects keep the last value for duplicate keys.
+            let _ = values.insert(key, value);
         }
         Ok(serde_json::Value::Object(values))
     }
@@ -201,7 +223,10 @@ impl serde::de::Visitor<'_> for CanonicalKeyVisitor<'_, '_> {
         formatter.write_str("a JSON object key")
     }
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        let copy = DecodeContext::copy_admitted_text(value, self.0.operation)
+        let copy = self
+            .0
+            .ctx
+            .copy_retained_text(value, self.0.operation)
             .map_err(|error| self.0.fail(error))?;
         Ok(copy)
     }

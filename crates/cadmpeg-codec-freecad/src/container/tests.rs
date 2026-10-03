@@ -224,48 +224,29 @@ fn entry_referencing_identity_refuses_at_retained_limit() {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
                 .expect("valid XML span"),
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(property.id.len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::entry_records(&ctx, scan, &[property]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd entry referencing identity"));
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FCStd entry referencing identity",
+            |ctx| super::entry_records(ctx, scan, std::slice::from_ref(&property)),
+        );
     });
 }
 
 #[test]
 fn entry_identity_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
-        let name = &scan.entries[0].name;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(crate::native::native_id("entry", name).len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::entry_records(&ctx, scan, &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD native identity"));
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
+            super::entry_records(ctx, scan, &[])
+        });
     });
 }
 
 #[test]
 fn entry_name_copy_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
-        let name = &scan.entries[0].name;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::native_id("entry", name).len() + name.len(),
-        ) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::entry_records(&ctx, scan, &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd entry record name"));
+        crate::test_support::assert_retained_refusal_at(&[], "FCStd entry record name", |ctx| {
+            super::entry_records(ctx, scan, &[])
+        });
     });
 }
 
@@ -273,17 +254,10 @@ fn entry_name_copy_refuses_at_retained_limit() {
 fn entry_data_copy_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         let name = &scan.entries[0].name;
-        let byte_len = scan.data.get(name).expect("entry data").window().len();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::native_id("entry", name).len() + name.len() + byte_len,
-        ) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::entry_records(&ctx, scan, &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "retain FCStd entry"));
+        scan.data.get(name).expect("entry data");
+        crate::test_support::assert_retained_refusal_at(&[], "retain FCStd entry", |ctx| {
+            super::entry_records(ctx, scan, &[])
+        });
     });
 }
 
@@ -311,8 +285,9 @@ fn gui_entry_reference_refuses_at_collection_limit() {
 fn gui_entry_reference_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("fcstd:native:gui#owner".len()) - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<String>() + "fcstd:native:gui#owner".len(),
+    ) - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();
@@ -451,18 +426,25 @@ fn x62_object_envelope_is_admitted_before_the_xml_tree() {
 fn x62_xml_tree_items_are_admitted_before_allocation() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
-    let mut options = cadmpeg_core::decode::InspectOptions {
+    let options = cadmpeg_core::decode::InspectOptions {
         limits: cadmpeg_core::decode::ResourceLimits::service(),
     };
     FcstdCodec
         .inspect(&mut Cursor::new(&bytes), &options)
         .expect("service profile admits the XML tree");
 
-    // The ZIP snapshot and FCStd entry table admit six items before the XML tree.
-    options.limits.max_collection_items = 6;
-    let error = FcstdCodec
-        .inspect(&mut Cursor::new(&bytes), &options)
-        .expect_err("XML nodes must be charged before parsing the tree");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "FCStd Document.xml node tree",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("borrowed input");
+            cadmpeg_ir::codec::CodecBackend::inspect_impl(&FcstdCodec, &ctx, root)
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -771,18 +753,28 @@ fn retains_every_reference_to_a_shared_side_entry() {
 #[test]
 fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(
-        FcstdCodec.detect(&archive(
-            "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>"
-        )),
+        cadmpeg_test_support::detection::confidence(
+            &FcstdCodec,
+            &archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>")
+        ),
         Confidence::High
     );
     let public = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
     ));
-    assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
-    assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
-    assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, &public[..512]),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, b"PK\x03\x04 unrelated"),
+        Confidence::Low
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, b"not zip"),
+        Confidence::No
+    );
 }
 
 #[test]

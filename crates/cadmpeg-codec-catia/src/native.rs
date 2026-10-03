@@ -197,8 +197,7 @@ enum CatiaOwnerPacketPayload {
         /// Persistent identities in serialization order.
         references: Vec<u32>,
         /// Complete nonempty class-specific tail.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        tail: Vec<u8>,
+        tail: crate::families::b2::counted_owner_tail::CountedOwnerTail,
     },
 }
 
@@ -347,16 +346,26 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 references,
                 identity_encodings,
                 numeric_tail,
-                ..
-            } => CatiaOwnerPacketPayload::FixedNine {
-                reference_encoding,
-                references,
-                identity_encodings,
-                numeric_tail,
-                identity_targets: wire.identity_targets,
-                owner_chart: wire.owner_chart.map(Box::new),
-                boundary_cycle: wire.boundary_cycle.map(Box::new),
-            },
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+            } => {
+                if !identity_targets.is_empty() || owner_chart.is_some() || boundary_cycle.is_some()
+                {
+                    return Err(
+                        "fixed-nine metadata must occur only at the packet level".to_owned()
+                    );
+                }
+                CatiaOwnerPacketPayload::FixedNine {
+                    reference_encoding,
+                    references,
+                    identity_encodings,
+                    numeric_tail,
+                    identity_targets: wire.identity_targets,
+                    owner_chart: wire.owner_chart.map(Box::new),
+                    boundary_cycle: wire.boundary_cycle.map(Box::new),
+                }
+            }
             counted @ CatiaOwnerPacketPayload::Counted { .. } => {
                 if !wire.identity_targets.is_empty()
                     || wire.owner_chart.is_some()
@@ -383,6 +392,7 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
 
 /// One structurally complete consolidated `B:29` cone chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedConeWire")]
 pub(crate) struct CatiaConsolidatedCone {
     /// Stable native-record identity.
     id: String,
@@ -408,6 +418,54 @@ pub(crate) struct CatiaConsolidatedCone {
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Full-turn azimuth chart domain.
     angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
+}
+
+#[derive(Deserialize)]
+struct CatiaConsolidatedConeWire {
+    id: String,
+    byte_offset: u64,
+    apex: FiniteVector<3>,
+    direction_x: crate::checked::RelaxedUnitVector3,
+    direction_y: crate::checked::RelaxedUnitVector3,
+    axis: crate::checked::RelaxedUnitVector3,
+    half_angle: cadmpeg_ir::scalar::Angle,
+    reference_radius: FiniteReal,
+    angular_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    slant_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    angular_scale: cadmpeg_ir::scalar::PositiveReal,
+    angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
+}
+
+impl TryFrom<CatiaConsolidatedConeWire> for CatiaConsolidatedCone {
+    type Error = &'static str;
+
+    fn try_from(wire: CatiaConsolidatedConeWire) -> Result<Self, Self::Error> {
+        if crate::checked::UnitFrame3::right_handed(wire.axis, wire.direction_x, wire.direction_y)
+            .is_none()
+            || !(0.0 < wire.half_angle.get() && wire.half_angle.get() < std::f64::consts::FRAC_PI_2)
+            || !crate::analytic::periodic_angular_range_is_valid(
+                wire.angular_range.endpoints(),
+                wire.angular_domain.endpoints(),
+            )
+            || wire.slant_range.lower() < 0.0
+        {
+            return Err("invalid consolidated cone frame or chart");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            apex: wire.apex,
+            direction_x: wire.direction_x,
+            direction_y: wire.direction_y,
+            axis: wire.axis,
+            half_angle: wire.half_angle,
+            reference_radius: wire.reference_radius,
+            angular_range: wire.angular_range,
+            slant_range: wire.slant_range,
+            angular_scale: wire.angular_scale,
+            angular_domain: wire.angular_domain,
+        })
+    }
 }
 
 /// Payload-layout discriminator of a consolidated arc-length circle.
@@ -572,6 +630,31 @@ impl CatiaConsolidatedCylinderPayload {
             Self::RangeOrigin { .. } => 0x62,
         }
     }
+
+    fn resolved_5a(
+        radius: cadmpeg_ir::scalar::PositiveLength,
+        u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+        frame_token: u8,
+        axis: crate::checked::RelaxedHypotUnitVector3,
+        reference_direction: crate::checked::RelaxedHypotUnitVector3,
+    ) -> Result<Self, String> {
+        let direction = axis.get();
+        if !matches!(frame_token, 0x19 | 0x1c)
+            || direction[2] != 0.0
+            || reference_direction.get() != [-direction[1], direction[0], 0.0]
+            || !crate::families::b2::records::circle_range_is_full_turn(
+                radius.get(),
+                u_range.endpoints(),
+            )
+        {
+            return Err("invalid layout-0x5a cylinder chart".to_owned());
+        }
+        Ok(Self::Layout5a {
+            frame_token,
+            axis,
+            reference_direction,
+        })
+    }
 }
 
 /// One structurally complete consolidated `B:28` cylinder chart.
@@ -678,11 +761,23 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     axis,
                     reference_direction,
                 },
-            ) => CatiaConsolidatedCylinderPayload::Layout52 {
-                frame_token,
-                axis,
-                reference_direction,
-            },
+            ) => {
+                if frame_token != 0x1d
+                    || axis.get() != [1.0, 0.0, 0.0]
+                    || reference_direction.get() != [0.0, 1.0, 0.0]
+                    || !crate::families::b2::records::circle_range_is_full_turn(
+                        wire.radius.get(),
+                        wire.u_range.endpoints(),
+                    )
+                {
+                    return Err("invalid layout-0x52 cylinder chart".to_owned());
+                }
+                CatiaConsolidatedCylinderPayload::Layout52 {
+                    frame_token,
+                    axis,
+                    reference_direction,
+                }
+            }
             (
                 0x5a,
                 CatiaConsolidatedCylinderPayloadWire::Resolved {
@@ -690,11 +785,13 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     axis,
                     reference_direction,
                 },
-            ) => CatiaConsolidatedCylinderPayload::Layout5a {
+            ) => CatiaConsolidatedCylinderPayload::resolved_5a(
+                wire.radius,
+                wire.u_range,
                 frame_token,
                 axis,
                 reference_direction,
-            },
+            )?,
             (
                 0x62,
                 CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
@@ -703,12 +800,31 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
                     reference_direction,
                     range_origin,
                 },
-            ) => CatiaConsolidatedCylinderPayload::RangeOrigin {
-                stored_vector,
-                axis,
-                reference_direction,
-                range_origin,
-            },
+            ) => {
+                let vector = stored_vector.get();
+                if axis.get() != [0.0, 1.0, 0.0]
+                    || reference_direction.get() != [vector[0], 0.0, vector[1]]
+                    || !crate::families::b2::records::circle_range_is_within_full_turn(
+                        wire.radius.get(),
+                        wire.u_range.endpoints(),
+                    )
+                    || !range_origin.is_finite()
+                    || range_origin.to_bits()
+                        != crate::families::b2::records::cylinder_range_origin(
+                            wire.radius.get(),
+                            wire.u_range.endpoints(),
+                        )
+                        .to_bits()
+                {
+                    return Err("invalid layout-0x62 cylinder chart".to_owned());
+                }
+                CatiaConsolidatedCylinderPayload::RangeOrigin {
+                    stored_vector,
+                    axis,
+                    reference_direction,
+                    range_origin,
+                }
+            }
             (layout, _) => {
                 return Err(format!(
                     "cylinder layout {layout:#04x} does not match payload"
@@ -729,6 +845,7 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
 
 /// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedEmbeddedCylinderWire")]
 pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     /// Stable native-record identity.
     id: String,
@@ -752,6 +869,47 @@ pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     axis: crate::checked::RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
     reference_direction: crate::checked::RelaxedHypotUnitVector3,
+}
+
+#[derive(Deserialize)]
+struct CatiaConsolidatedEmbeddedCylinderWire {
+    id: String,
+    byte_offset: u64,
+    group: String,
+    object_id: u32,
+    origin: FiniteVector<3>,
+    radius: cadmpeg_ir::scalar::PositiveLength,
+    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    frame_token: u8,
+    axis: crate::checked::RelaxedHypotUnitVector3,
+    reference_direction: crate::checked::RelaxedHypotUnitVector3,
+}
+
+impl TryFrom<CatiaConsolidatedEmbeddedCylinderWire> for CatiaConsolidatedEmbeddedCylinder {
+    type Error = String;
+    fn try_from(wire: CatiaConsolidatedEmbeddedCylinderWire) -> Result<Self, Self::Error> {
+        CatiaConsolidatedCylinderPayload::resolved_5a(
+            wire.radius,
+            wire.u_range,
+            wire.frame_token,
+            wire.axis,
+            wire.reference_direction,
+        )?;
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            group: wire.group,
+            object_id: wire.object_id,
+            origin: wire.origin,
+            radius: wire.radius,
+            u_range: wire.u_range,
+            v_range: wire.v_range,
+            frame_token: wire.frame_token,
+            axis: wire.axis,
+            reference_direction: wire.reference_direction,
+        })
+    }
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
@@ -4861,12 +5019,13 @@ fn entity_value_schema_selections(
             .get(rank + 1)
             .copied()
             .unwrap_or(fields.len());
-        let value_start_offset = fields.get(index + 1).map_or(usize::MAX, value_field_offset);
-        let value_end_offset = fields.get(value_end).map_or(usize::MAX, value_field_offset);
+        let value_start_offset = fields.get(index + 1).map(value_field_offset);
+        let value_end_offset = fields.get(value_end).map(value_field_offset);
         let mut selected_packets = Vec::new();
         for packet in packets.iter().filter(|packet| {
             packet.byte_range().is_some_and(|range| {
-                range.start >= value_start_offset && range.end <= value_end_offset
+                value_start_offset.is_some_and(|start| range.start >= start)
+                    && value_end_offset.is_none_or(|end| range.end <= end)
             })
         }) {
             ctx.push_vec(
@@ -5844,7 +6003,7 @@ fn entity_suffix_framing(
         }
         [0x81, 0x49] => CatiaEntitySuffixFraming::Token8149,
         [0xfe, 0xf6, payload @ ..] if payload.len() == 16 => CatiaEntitySuffixFraming::FixedFeF6 {
-            payload: ctx.copy_retained_slice(payload, "catia_native_fixed_suffix_payload")?,
+            payload: ctx.copy_slice(payload, "catia_native_fixed_suffix_payload")?,
         },
         [lead @ 0xd1..=0xe4, low, 0x01] => CatiaEntitySuffixFraming::PagedAtomState01 {
             value: u32::from(*lead - 0xd1) * 256 + u32::from(*low) + 1,
@@ -8337,8 +8496,8 @@ fn consolidated_class5b5c_records(
     ctx.stable_sort_by(
         &mut control_records,
         |left, right| {
-        (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
-    },
+            (left.source_index, left.source_offset).cmp(&(right.source_index, right.source_offset))
+        },
         |_| 0,
         "catia_native_class5b5c_sort",
     )?;
@@ -8379,9 +8538,10 @@ mod consolidated_class_record_limit_tests {
             assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
                 if error.operation == operation));
         }
-        let limited = crate::test_support::with_retained_limit(24, |ctx| {
-            consolidated_class61_records(ctx, &bytes, &records)
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_class61_id", |ctx| {
+                consolidated_class61_records(ctx, &bytes, &records)
+            });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class61_id"));
     }
@@ -8393,7 +8553,7 @@ mod consolidated_class_record_limit_tests {
         let payload_bytes = u64::try_from(
             records
                 .iter()
-                .filter(|record| matches!(record.class, 0x5b | 0x5c))
+                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
                 .map(|record| record.payload().expect("class payload").len())
                 .sum::<usize>(),
         )
@@ -8401,7 +8561,7 @@ mod consolidated_class_record_limit_tests {
         let record_count = u64::try_from(
             records
                 .iter()
-                .filter(|record| matches!(record.class, 0x5b | 0x5c))
+                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
                 .count(),
         )
         .expect("fixture records fit u64");
@@ -8411,9 +8571,10 @@ mod consolidated_class_record_limit_tests {
             });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class5b5c_records"));
-        let limited = crate::test_support::with_retained_limit(payload_bytes, |ctx| {
-            consolidated_class5b5c_records(ctx, &bytes, &records)
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_class5b5c_id", |ctx| {
+                consolidated_class5b5c_records(ctx, &bytes, &records)
+            });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class5b5c_id"));
     }
@@ -8433,9 +8594,10 @@ mod consolidated_cone_face_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_faces"));
-        let limited = crate::test_support::with_retained_limit(16, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &[])
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_cone_face_id", |ctx| {
+                consolidated_cone_faces(ctx, &bytes, &records, &[])
+            });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_id"));
     }
@@ -8461,17 +8623,18 @@ mod consolidated_cone_face_limit_tests {
             assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
                 if error.operation == operation));
         }
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &points)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_cone_face_point_index_id",
+            |ctx| consolidated_cone_faces(ctx, &bytes, &records, &points),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_point_index_id"));
-        let indexed_id_bytes =
-            u64::try_from(points.iter().map(|point| point.id.len()).sum::<usize>())
-                .expect("fixture ids fit u64");
-        let limited = crate::test_support::with_retained_limit(indexed_id_bytes + 16, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &points)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_cone_face_parameter_id",
+            |ctx| consolidated_cone_faces(ctx, &bytes, &records, &points),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_parameter_id"));
     }
@@ -8495,7 +8658,7 @@ fn consolidated_cone_faces(
     }
     let mut class18_ends = HashMap::new();
     for record in records.iter().filter(|record| {
-        record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
+        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x18
     }) {
         if let Some(range) = record.range() {
             ctx.insert_hash_map(
@@ -8847,9 +9010,11 @@ mod consolidated_analytic_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_reference_lists"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_reference_lists(ctx, &bytes, &records)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_reference_list_id",
+            |ctx| consolidated_reference_lists(ctx, &bytes, &records),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_reference_list_id"));
     }
@@ -8863,9 +9028,11 @@ mod consolidated_analytic_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_plane_carriers"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_plane_carriers(ctx, &bytes, &records)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_native_plane_carrier_id",
+            |ctx| consolidated_plane_carriers(ctx, &bytes, &records),
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_plane_carrier_id"));
     }
@@ -9061,9 +9228,10 @@ mod consolidated_pcurve_limit_tests {
     fn native_pcurve_id_and_output_refuse_limits() {
         let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_retained_limit(1, |ctx| {
-            super::consolidated_pcurves(ctx, &bytes, &records)
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_native_pcurve_id", |ctx| {
+                super::consolidated_pcurves(ctx, &bytes, &records)
+            });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_native_pcurve_id")
@@ -9090,26 +9258,35 @@ fn consolidated_revolutions(
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<Vec<CatiaConsolidatedRevolution>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia native revolution workspace")?;
     let mut resolved_profiles = HashMap::new();
-    for resolved in
-        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)?
-    {
-        ctx.insert_hash_map(
-            &mut resolved_profiles,
-            u64_from_index(resolved.revolution.pos),
-            u64_from_index(resolved.profile.pos),
-            "catia_native_revolution_profile_index",
-        )?;
+    let (resolved, _resolved_storage) = ctx
+        .with_scoped_storage("catia native revolution profiles", || {
+            crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)
+        })?;
+    for resolved in resolved {
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut resolved_profiles,
+                u64_from_index(resolved.revolution.pos),
+                u64_from_index(resolved.profile.pos),
+                "catia_native_revolution_profile_index",
+            )
+        })?;
     }
     let mut circle_ids = HashMap::new();
     for circle in circles {
-        let id = ctx.copy_retained_text(&circle.id, "catia_native_revolution_circle_id")?;
-        ctx.insert_hash_map(
-            &mut circle_ids,
-            circle.byte_offset,
-            id,
-            "catia_native_revolution_circle_index",
-        )?;
+        let id = temporary.with_storage(|| {
+            ctx.copy_retained_text(&circle.id, "catia_native_revolution_circle_id")
+        })?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut circle_ids,
+                circle.byte_offset,
+                id,
+                "catia_native_revolution_circle_index",
+            )
+        })?;
     }
     let mut revolutions = Vec::new();
     for (index, revolution) in
@@ -9647,8 +9824,8 @@ impl CatiaNative {
             )?;
             let family = ctx
                 .copy_retained_text(finjpl_family(segment.kind()), "catia_native_finjpl_family")?;
-            let data = ctx
-                .copy_retained_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
+            let data =
+                ctx.copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
             ctx.push_vec(
                 &mut finjpl_segments,
                 CatiaFinjplSegment {

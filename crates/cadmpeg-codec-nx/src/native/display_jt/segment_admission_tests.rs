@@ -69,6 +69,29 @@ fn display_jt_inflate_propagates_retained_copy_limit() {
 }
 
 #[test]
+fn display_jt_owned_inflate_omits_payload_copy_work() {
+    let member = compressed_member();
+    let work =
+        cadmpeg_core::decode::u64_from_index(member.len() + 8192 + b"DisplayJT payload".len());
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = work;
+        },
+        |ctx| {
+            let buffer = super::inflate_display_jt(ctx, View::over_retained(&member))
+                .unwrap()
+                .unwrap();
+            assert_eq!(buffer, b"DisplayJT payload");
+            assert!(ctx.resource_refusal().is_none());
+            let error = ctx.charge_work(1, "verify expansion work").unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.used == work && limit.additional == 1));
+        },
+    );
+}
+
+#[test]
 fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     let mut container = super::document_admission_tests::one_document();
     let data = container.data.to_mut();
@@ -86,16 +109,13 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
                 policy.limits.max_entities = 0;
             },
             |ctx| {
-                let source = View::over_retained(container.data.as_ref());
-                let error =
-                    super::display_jt_segments((ctx, source), &container, &documents).unwrap_err();
+                let error = super::display_jt_segments(ctx, &container, &documents).unwrap_err();
                 assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
             && limit.operation == "store DisplayJT segment"));
                 crate::test_support::with_decode_context(|service| {
                     let segments =
-                        super::display_jt_segments((service, source), &container, &documents)
-                            .unwrap();
+                        super::display_jt_segments(service, &container, &documents).unwrap();
                     assert_eq!(segments.len(), 1);
                 });
             },
@@ -152,9 +172,8 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
             policy.limits.max_entities = 0;
         },
         |ctx| {
-            let source = View::over_retained(container.data.as_ref());
             let error = super::display_jt_shape_lod_elements(
-                (ctx, source),
+                ctx,
                 &container,
                 std::slice::from_ref(&segment),
             )
@@ -164,10 +183,53 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
             && limit.operation == "store DisplayJT shape element"));
             crate::test_support::with_decode_context(|service| {
                 let elements =
-                    super::display_jt_shape_lod_elements((service, source), &container, &[segment])
-                        .unwrap();
+                    super::display_jt_shape_lod_elements(service, &container, &[segment]).unwrap();
                 assert_eq!(elements.len(), 1);
             });
+        },
+    );
+}
+
+#[test]
+fn legacy_display_jt_expands_the_logical_container_member() {
+    let jt = crate::test_support::test_streams::display_jt_basic_stream();
+    let mut file = crate::test_support::test_cfb::legacy_cfb_with_two_streams();
+    let name = 512 + 3 * 128;
+    file[name..name + 64].fill(0);
+    for (index, unit) in "DisplayJT".encode_utf16().enumerate() {
+        file[name + index * 2..name + index * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    file[name + 64..name + 66].copy_from_slice(&20_u16.to_le_bytes());
+    file[512 + 128 + 76..512 + 128 + 80].copy_from_slice(&2_u32.to_le_bytes());
+    file[512 + 2 * 128 + 72..512 + 2 * 128 + 76].copy_from_slice(&3_u32.to_le_bytes());
+    file[name + 72..name + 76].copy_from_slice(&u32::MAX.to_le_bytes());
+    let physical_start = 13 * 512;
+    file[physical_start..physical_start + 4096].fill(0);
+    file[physical_start..physical_start + jt.len()].copy_from_slice(&jt);
+
+    crate::test_support::with_decode_context_over(
+        &file,
+        |_| {},
+        |ctx| {
+            let (container, _) =
+                crate::container::scan_legacy(ctx, View::over_retained(&file)).unwrap();
+            assert_ne!(
+                container.data.view().location().space,
+                View::over_retained(&file).location().space
+            );
+            let indices = super::display_jt_indices(ctx, &container).unwrap();
+            let documents = super::display_jt_documents(ctx, &container, &indices).unwrap();
+            assert_eq!(documents.len(), 1);
+            assert_ne!(
+                documents[0].source_offset,
+                u64::try_from(physical_start + 28).unwrap()
+            );
+            let segments = super::display_jt_segments(ctx, &container, &documents).unwrap();
+            assert_eq!(segments.len(), 1);
+            let (elements, sequences) =
+                super::display_jt_compressed_element_sequences(ctx, &container, &segments).unwrap();
+            assert_eq!((elements.len(), sequences.len()), (1, 1));
+            assert_eq!(elements[0].object_id, 5);
         },
     );
 }

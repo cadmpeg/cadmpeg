@@ -768,14 +768,14 @@ mod tests {
         dimension: ResourceDimension,
         operation: &'static str,
     ) {
-        let refusal = (0..1024).find_map(|limit| {
-            let Err(CodecError::ResourceLimit(refusal)) =
-                parse_with_limit(persistence, dimension, limit)
-            else {
-                return None;
-            };
-            (refusal.operation == operation).then_some(refusal)
+        let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), |cap| {
+            parse_with_limit(persistence, dimension, cap)
         });
+        let refusal = match parse_with_limit(persistence, dimension, cap) {
+            Err(CodecError::ResourceLimit(resource)) => Some(resource),
+            _ => None,
+        };
+
         assert!(
             matches!(
                 refusal,

@@ -38,6 +38,7 @@ fn form_resolved_cage_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(push_form_cage_id(&ctx, &mut Vec::new(), &id),
         Err(CodecError::ResourceLimit(failure))
@@ -54,6 +55,7 @@ fn form_resolved_cage_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(push_form_cage_id(&ctx, &mut Vec::new(), &id),
         Err(CodecError::ResourceLimit(failure))
@@ -69,6 +71,7 @@ fn form_cage_uniqueness_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(distinct_form_cage_ids(&ctx, &["one", "two"]),
         Err(CodecError::ResourceLimit(failure))
@@ -223,6 +226,7 @@ fn assert_form_cage_collection_refusal(limit: u64, operation: &'static str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = limit;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = form_cage_lists(&ctx, &bytes, &records, [2196].into_iter(), 2190);
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
@@ -306,6 +310,7 @@ fn form_cage_surface_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(form_cage_surfaces(&ctx, &bytes, &records, &[8300], 2190),
@@ -373,6 +378,7 @@ fn assert_form_serializer_refusal(
         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
         _ => panic!("test dimension must be a serializer allocation dimension"),
     }
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
         Err(CodecError::ResourceLimit(failure))
@@ -418,6 +424,7 @@ fn form_serializer_name_refuses_work_limit() {
     // The two-offset sort takes its count plus sixteen bytes over three levels at eight units
     // each, leaving nothing for the serializer name.
     policy.limits.max_work_units = 2 + 16 * 3 * 8;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(
         matches!(form_cage_serializers(&ctx, &bytes, &records), Err(CodecError::ResourceLimit(limit))
@@ -459,6 +466,7 @@ fn form_serializer_unicode_name_refuses_exact_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(entry_name.len()).unwrap() - 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
         Err(CodecError::ResourceLimit(failure))

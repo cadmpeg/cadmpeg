@@ -44,30 +44,37 @@ fn assert_main_group_refusal_with_limit(
     }
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#main-edge-group").unwrap();
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &operands,
-            &[],
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_edge_group(
+                    &group,
+                    std::slice::from_ref(&group),
+                    &operands,
+                    &[],
+                    Some(7),
+                    &feature_id,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 fn assert_main_group_refusal(operation: &'static str, surface_patch: bool) {
@@ -260,30 +267,37 @@ fn assert_complete_identity_refusal(operation: &'static str, retained: bool) {
     operand.resolved_edge_slot = Some(17);
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#complete-identity").unwrap();
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &[],
-            std::slice::from_ref(&operand),
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_edge_group(
+                    &group,
+                    std::slice::from_ref(&group),
+                    &[],
+                    std::slice::from_ref(&operand),
+                    Some(7),
+                    &feature_id,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -325,35 +339,42 @@ fn assert_identity_historical_refusal(
     let radius = matches!(route, IdentityHistoricalRoute::Radius).then_some(3.0);
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#identity-history").unwrap();
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(
-            &group,
-            crate::design::edge_resolve::EdgeTreatmentInputs {
-                groups: std::slice::from_ref(&group),
-                operands: &[],
-                identity_operands: std::slice::from_ref(&operand),
-                vertex_operands: &[],
-                histories: &[],
-                previous_state_id: Some(7),
-                feature_id: &feature_id,
-                treatment_radius: radius,
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
             },
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_edge_treatment_group_with_corners(
+                    &group,
+                    crate::design::edge_resolve::EdgeTreatmentInputs {
+                        groups: std::slice::from_ref(&group),
+                        operands: &[],
+                        identity_operands: std::slice::from_ref(&operand),
+                        vertex_operands: &[],
+                        histories: &[],
+                        previous_state_id: Some(7),
+                        feature_id: &feature_id,
+                        treatment_radius: radius,
+                    },
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -435,30 +456,37 @@ fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
     let identities = [first_identity, second_identity];
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combined-history").unwrap();
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &recipes,
-            &identities,
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
+            },
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_edge_group(
+                    &group,
+                    std::slice::from_ref(&group),
+                    &recipes,
+                    &identities,
+                    Some(7),
+                    &feature_id,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]
@@ -484,30 +512,29 @@ fn assert_native_group_refusal(standard_recipe: bool) {
     }
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#native-group").unwrap();
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            std::slice::from_ref(&operand),
-            &[],
-            standard_recipe.then_some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d native edge group id" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected native edge group ID refusal: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d native edge group id",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_edge_group(
+                    &group,
+                    std::slice::from_ref(&group),
+                    std::slice::from_ref(&operand),
+                    &[],
+                    standard_recipe.then_some(7),
+                    &feature_id,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d native edge group id" && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no native edge group ID refusal");
 }
 
 #[test]

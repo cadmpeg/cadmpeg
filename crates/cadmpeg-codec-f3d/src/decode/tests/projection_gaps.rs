@@ -95,7 +95,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let mut native = F3dNative::default();
     native.design_body_bindings.push(
         DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-            id: "f3d:design:body-binding#0".into(),
+            id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
             pair_ordinal: 0,
@@ -1219,6 +1219,7 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(container_only_dimension_parameters(&ctx, &native),
         Err(CodecError::ResourceLimit(failure))

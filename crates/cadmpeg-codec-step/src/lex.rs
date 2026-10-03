@@ -89,7 +89,7 @@ impl BinaryValue {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_work(u64_from_index(self.data.len()), operation)?;
-        let data = ctx.copy_retained_slice(&self.data, operation)?;
+        let data = ctx.copy_slice(&self.data, operation)?;
         Ok(Self {
             unused_bits: self.unused_bits,
             data: data.into_boxed_slice(),

@@ -205,8 +205,7 @@ pub(crate) fn parse_registry(
         cadmpeg_core::decode::u64_from_index(count),
         "admit Inventor segment registry entries",
     )?;
-    let mut entries =
-        DecodeContext::admitted_vec(count, "admit Inventor segment registry entries")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
     for _ in 0..count {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
@@ -224,7 +223,7 @@ pub(crate) fn parse_registry(
             "admit Inventor segment registry objects",
         )?;
         let mut objects =
-            DecodeContext::admitted_vec(object_count, "admit Inventor segment registry objects")?;
+            ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
         for _ in 0..object_count {
             let object = SegmentObject {
@@ -252,8 +251,7 @@ pub(crate) fn parse_registry(
             cadmpeg_core::decode::u64_from_index(node_count),
             "admit Inventor segment registry nodes",
         )?;
-        let mut nodes =
-            DecodeContext::admitted_vec(node_count, "admit Inventor segment registry nodes")?;
+        let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
         for _ in 0..node_count {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
@@ -306,7 +304,7 @@ pub(crate) fn parse_revisions(
         cadmpeg_core::decode::u64_from_index(count),
         "admit Inventor revision entries",
     )?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor revision entries")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
     for _ in 0..count {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
@@ -430,7 +428,7 @@ impl<'a> Cursor<'a> {
                     "Inventor registry identifier count exceeds remaining payload",
                 )
             })?;
-        let mut ids = ctx.retained_vec(count, "admit Inventor registry identifier list")?;
+        let mut ids = ctx.collection_vec(count, "admit Inventor registry identifier list")?;
         for _ in 0..count {
             ids.push(self.array(field)?);
         }
@@ -554,8 +552,9 @@ mod tests {
         let bytes = registry_fixture(&[2]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("PmBRepSegment".len()) - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            "PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>(),
+        ) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -565,8 +564,9 @@ mod tests {
                     && limit.operation == "retain RSe table UTF-16 field"
         ));
 
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("PmBRepSegment".len());
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            "PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -574,7 +574,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain RSe table UTF-16 field"
-                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len())
+                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>())
         ));
 
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())

@@ -97,35 +97,42 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
         }],
     };
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").unwrap();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(
-            &selection_group,
-            crate::design::edge_resolve::EdgeTreatmentInputs {
-                groups: std::slice::from_ref(&selection_group),
-                operands: std::slice::from_ref(&edge),
-                identity_operands: &[],
-                vertex_operands: std::slice::from_ref(&corner),
-                histories: std::slice::from_ref(&history),
-                previous_state_id: Some(7),
-                feature_id: &feature_id,
-                treatment_radius: None,
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            if retained {
+                ResourceDimension::RetainedBytes
+            } else {
+                ResourceDimension::CollectionItems
             },
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected treatment refusal at {operation}: {other:?}"),
-        }
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if retained {
+                    policy.limits.max_retained_bytes = cap;
+                } else {
+                    policy.limits.max_collection_items = cap;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                resolved_edge_treatment_group_with_corners(
+                    &selection_group,
+                    crate::design::edge_resolve::EdgeTreatmentInputs {
+                        groups: std::slice::from_ref(&selection_group),
+                        operands: std::slice::from_ref(&edge),
+                        identity_operands: &[],
+                        vertex_operands: std::slice::from_ref(&corner),
+                        histories: std::slice::from_ref(&history),
+                        previous_state_id: Some(7),
+                        feature_id: &feature_id,
+                        treatment_radius: None,
+                    },
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
     }
-    panic!("no treatment refusal at {operation}");
 }
 
 #[test]

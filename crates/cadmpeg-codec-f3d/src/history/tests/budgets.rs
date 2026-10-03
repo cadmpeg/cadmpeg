@@ -260,7 +260,26 @@ fn history_record_name_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D historical record text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::historical_record_archive(
+                &ctx,
+                &[],
+                &[archive_record()],
+                Default::default(),
+            )
+            .map(|_| ())
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
@@ -282,8 +301,22 @@ fn history_token_text_copy_refuses_retained_limit() {
         ..archive_record()
     };
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(std::mem::size_of::<cadmpeg_asm::sab::Token>()).unwrap();
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D historical record text",
+        |cap| {
+            let record = record.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::historical_record_archive(&ctx, &[], &[record], Default::default())
+                .map(|_| ())
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::historical_record_archive(&ctx, &[], &[record], Default::default())
@@ -613,9 +646,18 @@ fn history_record_vector_refuses_collection_limit() {
 fn history_record_id_refuses_retained_limit() {
     let bytes = one_framed_history_record();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1
-        + u64_from_index(std::mem::size_of::<cadmpeg_asm::sab::Token>())
-        + u64_from_index(bytes.len());
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D native record ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&bytes, &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = history_record_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -627,12 +669,20 @@ fn history_record_id_refuses_retained_limit() {
 fn history_record_parent_refuses_retained_limit() {
     let bytes = one_framed_history_record();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let id =
-        crate::ids::native_scoped_id("history", "asm-history-record", format_args!("{:010}", 0));
-    policy.limits.max_retained_bytes = 1
-        + u64_from_index(std::mem::size_of::<cadmpeg_asm::sab::Token>())
-        + u64_from_index(bytes.len())
-        + u64_from_index(id.len());
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D history record parent",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&bytes, &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = history_record_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -643,7 +693,18 @@ fn history_record_parent_refuses_retained_limit() {
 #[test]
 fn opaque_history_record_id_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D native record ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&[0xff], &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = history_record_with_limits(&[0xff], &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -654,9 +715,20 @@ fn opaque_history_record_id_refuses_retained_limit() {
 #[test]
 fn opaque_history_record_parent_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let id =
-        crate::ids::native_scoped_id("history", "asm-history-record", format_args!("{:010}", 0));
-    policy.limits.max_retained_bytes = 1 + u64_from_index(id.len());
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy opaque F3D history record parent",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&[0xff], &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = history_record_with_limits(&[0xff], &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -667,9 +739,20 @@ fn opaque_history_record_parent_refuses_retained_limit() {
 #[test]
 fn opaque_history_error_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let id =
-        crate::ids::native_scoped_id("history", "asm-history-record", format_args!("{:010}", 0));
-    policy.limits.max_retained_bytes = 1 + u64_from_index(id.len()) + u64_from_index("state".len());
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain opaque F3D history error",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&[0xff], &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = history_record_with_limits(&[0xff], &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -719,8 +802,20 @@ fn history_change_id_refuses_retained_limit() {
 fn history_change_parent_refuses_retained_limit() {
     let bytes = one_board_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (history, state, board, change) = history_id_lengths();
-    policy.limits.max_retained_bytes = history + state + board + change;
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D ASM change parent",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = decode_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -744,8 +839,20 @@ fn history_board_vector_refuses_collection_limit() {
 fn history_board_parent_refuses_retained_limit() {
     let bytes = one_board_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (history, state, board, change) = history_id_lengths();
-    policy.limits.max_retained_bytes = history + state + board + change + board;
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D ASM board parent",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = decode_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -786,9 +893,20 @@ fn history_id_refuses_retained_limit() {
 fn history_state_id_refuses_retained_limit() {
     let bytes = one_delta_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let history_id =
-        crate::ids::native_scoped_id("history", "asm-history", format_args!("{:010}", 0));
-    policy.limits.max_retained_bytes = u64_from_index(history_id.len());
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D native record ID",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = decode_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -812,11 +930,20 @@ fn history_state_vector_refuses_collection_limit() {
 fn history_parent_copy_refuses_retained_limit() {
     let bytes = one_delta_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let history_id =
-        crate::ids::native_scoped_id("history", "asm-history", format_args!("{:010}", 0));
-    let state_id =
-        crate::ids::native_scoped_id("history", "asm-delta-state", format_args!("{:010}", 0));
-    policy.limits.max_retained_bytes = u64_from_index(history_id.len() + state_id.len());
+
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D ASM history parent",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let error = decode_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

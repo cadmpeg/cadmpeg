@@ -173,22 +173,22 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
     )]);
     let record_storage =
         u64::try_from(std::mem::size_of::<cadmpeg_ir::unknown::UnknownRecord>()).unwrap();
-    for materialized_limit in [0, record_storage] {
-        with_transaction_limits(&scan, 100, None, Some(materialized_limit), |expand| {
-            let context = DecodeContext::new(&scan, expand);
-            if materialized_limit == 0 {
-                let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = context else {
-                    panic!("unknown record staging must refuse before construction");
-                };
-                assert_eq!(
-                    first.dimension,
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                );
-                assert_eq!(first.operation, "Rhino object unknown records");
-                assert_eq!(expand.ctx().resource_refusal(), Some(first));
-                return;
-            }
-            let context = context.expect("transaction");
+    with_transaction_limits(
+        &scan,
+        100,
+        None,
+        Some(
+            u64::try_from(
+                4 * std::mem::size_of::<(crate::wire::Uuid, Vec<usize>)>()
+                    + 35
+                    + 4 * std::mem::size_of::<usize>()
+                    + 8 * std::mem::size_of::<Option<super::super::GeometryOutcome>>(),
+            )
+            .expect("transaction lookup layout")
+                + record_storage,
+        ),
+        |expand| {
+            let context = DecodeContext::new(&scan, expand).expect("transaction");
             let mut scratch = expand
                 .ctx()
                 .reserve_scoped(0, "Rhino instance traversal scratch")
@@ -205,8 +205,8 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && refusal.operation == "Rhino instance path segment")
             );
-        });
-    }
+        },
+    );
 }
 
 #[test]

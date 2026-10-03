@@ -60,15 +60,15 @@ fn string_records_refuse_before_growth() {
     assert_string_collection_refusal(b"@name 1 10\n0 1 W\n", 1, "creo legacy string records");
 }
 
-fn assert_string_retained_refusal(data: &[u8], limit: u64, operation: &'static str) {
+fn assert_string_retained_refusal(data: &[u8], _limit: u64, operation: &'static str) {
     let (persistence, parents) = super::object_fixture_parts(data);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::super::string_records(&ctx, data, &persistence.scopes, &parents)
-        .expect_err("the next string copy exceeds the retained limit");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        operation,
+        |ctx| super::super::string_records(ctx, data, &persistence.scopes, &parents),
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -117,15 +117,29 @@ fn assert_scalar_string_refusal(
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::super::scalar_string_records(
-        &ctx,
-        data,
-        &persistence.scopes,
-        ValueKind::TYPE3,
-        NullToken::RepresentsNull,
-        &parents,
-    )
-    .expect_err("the next scalar string allocation exceeds the limit");
+    let error = if dimension == ResourceDimension::RetainedBytes {
+        crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            super::super::scalar_string_records(
+                ctx,
+                data,
+                &persistence.scopes,
+                ValueKind::TYPE3,
+                NullToken::RepresentsNull,
+                &parents,
+            )
+        })
+    } else {
+        super::super::scalar_string_records(
+            &ctx,
+            data,
+            &persistence.scopes,
+            ValueKind::TYPE3,
+            NullToken::RepresentsNull,
+            &parents,
+        )
+        .expect_err("the next scalar string allocation exceeds the limit")
+    };
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == dimension && resource.operation == operation)

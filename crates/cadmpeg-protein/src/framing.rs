@@ -145,7 +145,7 @@ fn frame_records(
             if let Some(scope) = scope.as_deref_mut() {
                 ctx.reserve_scoped_vec(scope, &mut records, 1, "Protein logical record frame")?;
             } else {
-                ctx.reserve_retained_vec(&mut records, 1, "Protein logical record frame")?;
+                ctx.reserve_vec(&mut records, 1, "Protein logical record frame")?;
             }
             let mut frame = RecordFrame {
                 logical_offset,
@@ -163,7 +163,7 @@ fn frame_records(
                     "Protein copied record range",
                 )?;
             } else {
-                ctx.reserve_retained_vec(
+                ctx.reserve_vec(
                     &mut frame.bytes,
                     RECORD_MARKER.len(),
                     "Protein copied record range",
@@ -187,7 +187,7 @@ fn frame_records(
                 "Protein copied record range",
             )?;
         } else {
-            ctx.reserve_retained_vec(
+            ctx.reserve_vec(
                 &mut frame.bytes,
                 payload.len(),
                 "Protein copied record range",
@@ -230,8 +230,9 @@ mod tests {
         page[body..body + 5].copy_from_slice(b"frame");
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        // The frame vector obtains its four-slot minimum capacity.
-        let live = 4 * std::mem::size_of::<super::RecordFrame>() + crate::RECORD_MARKER.len() + 5;
+        // The frame vector has four slots. Its byte vector starts with eight
+        // slots and doubles to sixteen for the marker and five-byte payload.
+        let live = 4 * std::mem::size_of::<super::RecordFrame>() + 16;
         policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) =

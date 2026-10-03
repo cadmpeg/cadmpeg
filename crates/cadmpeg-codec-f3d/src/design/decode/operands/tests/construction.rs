@@ -232,6 +232,120 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_retained_bytes = retained_limit;
+        let refusal_cap =
+            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                let parsed = parse_construction_operand_group(
+                    &bytes,
+                    &scope,
+                    0,
+                    &RecordFrame::from(&record),
+                )
+                .complete()
+                .expect("counted Extrude operand group");
+                let mut out = Vec::new();
+                crate::design::decode::operands::push_construction_operand_group(
+                    &ctx,
+                    &mut out,
+                    Box::new(parsed),
+                    "Design/BulkStream.dat",
+                    0,
+                )
+            }) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
+        let refusal_cap =
+            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                let parsed = parse_construction_operand_group(
+                    &bytes,
+                    &scope,
+                    0,
+                    &RecordFrame::from(&record),
+                )
+                .complete()
+                .expect("counted Extrude operand group");
+                let mut out = Vec::new();
+                crate::design::decode::operands::push_construction_operand_group(
+                    &ctx,
+                    &mut out,
+                    Box::new(parsed),
+                    "Design/BulkStream.dat",
+                    0,
+                )
+            }) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let parsed =
@@ -251,6 +365,104 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d unclosed construction operand group",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match cadmpeg_core::decode::ResourceDimension::CollectionItems {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap;
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut unclosed = Vec::new();
+            ctx.push_vec(
+                &mut unclosed,
+                100,
+                "f3d unclosed construction operand group",
+            )
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match cadmpeg_core::decode::ResourceDimension::CollectionItems {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap;
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap;
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap;
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap;
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
+    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d unclosed construction operand group",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match cadmpeg_core::decode::ResourceDimension::CollectionItems {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap;
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut unclosed = Vec::new();
+            ctx.push_vec(
+                &mut unclosed,
+                100,
+                "f3d unclosed construction operand group",
+            )
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
+    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+    match cadmpeg_core::decode::ResourceDimension::CollectionItems {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+            policy.limits.max_retained_bytes = refusal_cap;
+        }
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+            policy.limits.max_collection_items = refusal_cap;
+        }
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+            policy.limits.max_materialized_bytes = refusal_cap;
+        }
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+            policy.limits.max_work_units = refusal_cap;
+        }
+        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+    }
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut unclosed = Vec::new();
@@ -1751,137 +1963,4 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
     }
 }
 
-#[test]
-fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#296536",
-        crate::records::feature::scope::DesignFeatureKind::Extrude,
-        296_536,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.byte_offset = 1000;
-            draft.reference_count_offset = draft.byte_offset + 9;
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap();
-    scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope
-        .try_edit(|draft| {
-            draft.frame_length = 536;
-            draft.reference_count_offset = 1291;
-            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
-                (0..13).map(|index| 296_500 + index).collect(),
-            );
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
-    {
-        slot.get_or_insert_with(Default::default).extrude_prologue =
-            Some(DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker_offset: None,
-                operation: DesignExtrudeOperation::Join,
-                operation_offset: 1026,
-                direction_face_extend_values: [2, 2],
-                side_extent_discriminators: [2, 0],
-                side_extent_discriminator_offsets: [1115, 1287],
-                extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
-                direction_face_extend_offsets: [1030, 1034],
-                direction_reversed: false,
-                direction_reversed_offset: 1038,
-                solid_operation: true,
-                solid_operation_offset: 1039,
-                start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 1040,
-            });
-    }
-
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"323");
-    bytes.extend_from_slice(&296_501_u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&0u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-    bytes.extend_from_slice(&0u32.to_le_bytes());
-    bytes.extend_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&91u32.to_le_bytes());
-    bytes.extend_from_slice(&0.125f64.to_le_bytes());
-    bytes.extend_from_slice(&91u32.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&296_503_u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.extend_from_slice(&[1, 1, 0]);
-    bytes.push(1);
-    bytes.extend_from_slice(&296_502_u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.push(0);
-    bytes.push(1);
-    bytes.extend_from_slice(&scope.record_index.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"261");
-    bytes.extend_from_slice(&296_501_u32.to_le_bytes());
-
-    let header = DesignRecordHeader {
-        id: "f3d:Design/BulkStream.dat:group#296501".into(),
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
-        record_index: 296_501,
-    };
-    let mut group =
-        parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&header))
-            .complete()
-            .expect("class-296 two-sided-to-faces construction group");
-    assert_eq!(group.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
-        &scope,
-        std::slice::from_mut(&mut group),
-    );
-    assert_eq!(
-        group.extrude_role(),
-        Some(DesignExtrudeOperandRole::Faces(
-            DesignExtrudeFaceRole::Termination
-        ))
-    );
-
-    let mut wrong_length = scope.clone();
-    wrong_length
-        .try_edit(|draft| {
-            draft.frame_length = 537;
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let group =
-        parse_construction_operand_group(&bytes, &wrong_length, 0, &RecordFrame::from(&header))
-            .complete()
-            .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role(), None);
-
-    let mut wrong_extent = scope;
-    let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
-        wrong_extent.extrude_prologue_mut()
-    else {
-        panic!("synthetic class-296 two-sided-to-faces prologue");
-    };
-    *extent = Some(DesignExtrudeExtent::SymmetricDistance);
-    let group =
-        parse_construction_operand_group(&bytes, &wrong_extent, 0, &RecordFrame::from(&header))
-            .complete()
-            .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role(), None);
-}
+mod roles;

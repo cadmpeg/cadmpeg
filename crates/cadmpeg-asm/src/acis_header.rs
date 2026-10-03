@@ -77,25 +77,38 @@ pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> O
 
 /// Exact boundary between solved records and a legacy `delta_state` history
 /// partition.
-pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
-    if !has_acis_magic(bytes) {
-        return None;
-    }
-    let flags = View::u32_le_at(bytes, acis_bf4::FLAGS)?;
-    if u64::from(flags) & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
-        return None;
-    }
-    let start = record_stream_start(bytes)?;
-    crate::sab::scan_history_boundary(bytes, start, RefWidth::Four, None)
+pub fn solved_record_limit(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some((start, width)) = (|| {
+        if !has_acis_magic(bytes) {
+            return None;
+        }
+        let flags = View::u32_le_at(bytes, acis_bf4::FLAGS)?;
+        if u64::from(flags) & crate::kernel_header::HISTORY_PARTITION_FLAG == 0 {
+            return None;
+        }
+        Some((record_stream_start(bytes)?, RefWidth::Four))
+    })() else {
+        return Ok(None);
+    };
+    crate::sab::scan_history_boundary(ctx, bytes, start, width, None)
 }
 
 /// Exact solved-record boundary, using an already-parsed ACIS header.
-pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
+pub fn solved_record_limit_with_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    header: &BinaryHeader,
+) -> Result<Option<usize>, CodecError> {
     if !header.metadata.has_history_partition() {
-        return None;
+        return Ok(None);
     }
-    let start = record_stream_start_with_header(bytes, header)?;
-    crate::sab::scan_history_boundary(bytes, start, RefWidth::Four, None)
+    let Some(start) = record_stream_start_with_header(bytes, header) else {
+        return Ok(None);
+    };
+    crate::sab::scan_history_boundary(ctx, bytes, start, header.width, None)
 }
 
 #[cfg(test)]
@@ -165,6 +178,10 @@ mod tests {
         assert_eq!(header.metadata.entity_count, Some(2));
         assert_eq!(header.metadata.flags, Some(13));
         assert_eq!(record_stream_start(&bytes), Some(record_start));
-        assert_eq!(solved_record_limit(&bytes), Some(history_start));
+        assert_eq!(
+            solved_record_limit(&cadmpeg_test_support::service_decode_context(), &bytes)
+                .expect("service policy admits history scan"),
+            Some(history_start)
+        );
     }
 }

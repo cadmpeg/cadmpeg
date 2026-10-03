@@ -714,7 +714,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     let records = crate::wire::records::consolidated_records(&valid);
     let side_05 = records
         .iter()
-        .find(|record| record.class == 0x18)
+        .find(|record| record.class() == 0x18)
         .expect("first owner-chart side");
 
     let mut wrong_selector = valid.clone();
@@ -1091,9 +1091,10 @@ fn b2_counted_owner_encodings_refuse_collection_limit() {
 fn b2_counted_owner_tail_refuses_retained_limit() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let result = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
-    });
+    let result =
+        crate::test_support::with_retained_refusal(&[], "catia_b2_counted_owner_tail", |ctx| {
+            crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+        });
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_b2_counted_owner_tail")
@@ -1146,7 +1147,7 @@ fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
     let owners = crate::families::b2::records::b2_counted_owners(&bytes);
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
-    assert_eq!(owners[0].tail, [0x83, 0x41, 0x92, 0x00, 0x01]);
+    assert_eq!(owners[0].tail.as_slice(), [0x83, 0x41, 0x92, 0x00, 0x01]);
 
     let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
     assert_eq!(related.len(), 1);

@@ -316,7 +316,7 @@ fn legacy_type_definitions<'a>(
     while at < end {
         if let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") {
             let name_end = declaration.name_end();
-            ctx.reserve_retained_vec(&mut out, 1, "nx legacy type definitions")?;
+            ctx.reserve_vec(&mut out, 1, "nx legacy type definitions")?;
             out.push(TypeDefinition {
                 offset: declaration.offset,
                 name: declaration.name,
@@ -361,7 +361,7 @@ pub(super) fn field_definitions<'a>(
             .checked_add(256)
             .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
             .min(end);
-        ctx.reserve_retained_vec(&mut out, 1, "nx field definitions")?;
+        ctx.reserve_vec(&mut out, 1, "nx field definitions")?;
         out.push(definition);
     }
     bound_field_registry_tails(bytes, &mut out);
@@ -379,7 +379,7 @@ pub(super) fn all_field_definitions<'a>(
     while at < end {
         if let Some(definition) = field_definition_at(bytes, at, end) {
             at += definition.name.len() + 2;
-            ctx.reserve_retained_vec(&mut out, 1, "nx all field definitions")?;
+            ctx.reserve_vec(&mut out, 1, "nx all field definitions")?;
             out.push(definition);
         } else {
             at += 1;

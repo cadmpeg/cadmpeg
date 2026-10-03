@@ -266,15 +266,33 @@ fn model_double_xar_tables_refuse_before_aggregate_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = b"double_xar\0\xf8\x02\x10\xe0";
     assert_eq!(
-        scan_primitives_with_limits("Body", bytes, 4, 4)
-            .expect("model dictionary admitted")
-            .double_xar_tables
-            .len(),
+        scan_primitives_with_limits(
+            "Body",
+            bytes,
+            4,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| scan_primitives_with_limits("Body", bytes, u64::MAX, cap)
+            )
+        )
+        .expect("model dictionary admitted")
+        .double_xar_tables
+        .len(),
         1
     );
-    let error = scan_primitives_with_limits("Body", bytes, 3, 4)
-        .err()
-        .expect("model dictionary aggregate needs admission");
+    let error = scan_primitives_with_limits(
+        "Body",
+        bytes,
+        3,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| scan_primitives_with_limits("Body", bytes, u64::MAX, cap),
+        ),
+    )
+    .err()
+    .expect("model dictionary aggregate needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -286,9 +304,18 @@ fn model_double_xar_tables_refuse_before_aggregate_growth() {
 fn model_double_xar_section_name_refuses_before_copy() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-    let error = scan_primitives_with_limits("Body", bytes, 4, 3)
-        .err()
-        .expect("model dictionary name needs admission");
+    let error = scan_primitives_with_limits(
+        "Body",
+        bytes,
+        4,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo model double_xar section names"),
+            |cap| scan_primitives_with_limits("Body", bytes, 4, cap),
+        ),
+    )
+    .err()
+    .expect("model dictionary name needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -512,7 +539,15 @@ fn depdb_recipe_row_body_refuses_before_retained_copy() {
         depdb_recipe_rows_with_limits(6, u64::MAX).expect("one recipe row"),
         1
     );
-    let error = depdb_recipe_rows_with_limits(6, 0).expect_err("row body needs retained bytes");
+    let error = depdb_recipe_rows_with_limits(
+        6,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo DEPDB recipe row body"),
+            |cap| depdb_recipe_rows_with_limits(6, cap),
+        ),
+    )
+    .expect_err("row body needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo DEPDB recipe row body"));
@@ -1160,3 +1195,7 @@ fn container_framing_misses_and_text_copies_refuse_work() {
         |ctx| super::scan_bytes(ctx, bytes.as_slice()),
     );
 }
+
+mod unit_selection;
+
+mod work_admission;

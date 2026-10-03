@@ -198,7 +198,7 @@ fn malformed(ctx: &DecodeContext<'_>, name: &str, message: impl std::fmt::Displa
         format_args!("T-spline cage {name}: {message}"),
         "describe malformed T-spline cage",
     ) {
-        Ok(text) => crate::error::malformed(text),
+        Ok(text) => CodecError::Malformed(text),
         Err(refusal) => refusal,
     }
 }
@@ -2084,7 +2084,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     #[test]
     fn tsm_source_identity_key_refuses_retained_limit() {
         let source = quad_source();
-        let error = parse_small_limit(&source, u64::MAX, 8);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain T-spline identity key",
+            |cap| Err::<(), cadmpeg_core::CodecError>(parse_small_limit(&source, u64::MAX, cap)),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain T-spline identity key")
@@ -2094,7 +2098,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     #[test]
     fn tsm_source_identity_refuses_retained_limit() {
         let source = quad_source();
-        let error = parse_small_limit(&source, u64::MAX, 34);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain T-spline identity",
+            |cap| Err::<(), cadmpeg_core::CodecError>(parse_small_limit(&source, u64::MAX, cap)),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain T-spline identity")
@@ -2104,7 +2112,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     #[test]
     fn tsm_source_object_id_refuses_retained_limit() {
         let source = quad_source();
-        let error = parse_small_limit(&source, u64::MAX, 35);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain T-spline source object ID",
+            |cap| Err::<(), cadmpeg_core::CodecError>(parse_small_limit(&source, u64::MAX, cap)),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain T-spline source object ID")

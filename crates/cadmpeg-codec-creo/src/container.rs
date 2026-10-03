@@ -1343,7 +1343,14 @@ fn read_array_count(
     let mut from = 0;
     let mut total = 0u32;
     let mut found = false;
-    while let Some(pos) = find(region, label, from) {
+    loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(region.len() - from),
+            "creo geometry census search",
+        )?;
+        let Some(pos) = find(region, label, from) else {
+            break;
+        };
         let mut p = pos + label.len();
         // Require the NUL that terminates the namespace label.
         if region.get(p) == Some(&0) {
@@ -1352,7 +1359,10 @@ fn read_array_count(
             for _ in 0..3 {
                 match region.get(p) {
                     Some(&psb::token::ARRAY_OPEN) => {
-                        let (count, _) = psb::compact_int(region, p + 1);
+                        let (count, _) =
+                            psb::complete_compact_int(region, p + 1).ok_or_else(|| {
+                                CodecError::malformed("incomplete geometry census count")
+                            })?;
                         let Some(sum) = total.checked_add(count) else {
                             return Err(CodecError::malformed(ctx.format_retained(
                                 format_args!(
@@ -1397,17 +1407,58 @@ fn geom_census(
     })
 }
 
-/// Decode the active unit-system selector. `51` is millimeter-Newton-Second,
-/// `54` is the Creo default inch-pound-mass-second system, and `55` is
-/// millimeter-Kilogram-Second.
-fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
-    let start = find(data, PRINCIPAL_UNIT_ID, 0)? + PRINCIPAL_UNIT_ID.len();
-    match *data.get(start)? {
-        51 => Some(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
-        54 => Some(legacy::PrincipalUnitSystem::InchPoundMassSecond),
-        55 => Some(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
-        value => Some(legacy::PrincipalUnitSystem::UnknownBinarySelector(value)),
+/// Agreement of all binary unit declarations in the image.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BinaryUnitSelection {
+    Absent,
+    Selected(legacy::PrincipalUnitSystem),
+    Unsupported,
+    Conflicting,
+}
+
+fn binary_principal_unit(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<BinaryUnitSelection, CodecError> {
+    let mut selector = None;
+    let mut conflicting = false;
+    let mut from = 0;
+    loop {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len() - from),
+            "creo binary unit declaration scan",
+        )?;
+        let Some(found) = find(data, PRINCIPAL_UNIT_ID, from) else {
+            break;
+        };
+        let start = found + PRINCIPAL_UNIT_ID.len();
+        let Some(&value) = data.get(start) else {
+            return Ok(BinaryUnitSelection::Unsupported);
+        };
+        if let Some(previous) = selector {
+            conflicting |= previous != value;
+        } else {
+            selector = Some(value);
+        }
+        from = start;
     }
+    Ok(if conflicting {
+        BinaryUnitSelection::Conflicting
+    } else {
+        match selector {
+            None => BinaryUnitSelection::Absent,
+            Some(51) => {
+                BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::MillimeterNewtonSecond)
+            }
+            Some(54) => {
+                BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::InchPoundMassSecond)
+            }
+            Some(55) => {
+                BinaryUnitSelection::Selected(legacy::PrincipalUnitSystem::MillimeterKilogramSecond)
+            }
+            Some(_) => BinaryUnitSelection::Unsupported,
+        }
+    })
 }
 
 fn cmnm_model_name(
@@ -2035,12 +2086,30 @@ fn structural_feature_ids(
     curve_rows: &[CurveTopologyRow],
 ) -> Result<std::collections::BTreeSet<u32>, CodecError> {
     let mut ids = std::collections::BTreeSet::new();
+    let rows = surface_rows
+        .len()
+        .checked_add(curve_rows.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("creo structural feature rows", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(rows),
+        "creo structural feature rows",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sections.len()),
+        "creo structural feature sections",
+    )?;
     for id in surface_rows
         .iter()
         .map(|row| row.feature_id)
         .chain(curve_rows.iter().map(|row| row.feature_id))
         .filter(|id| *id != 0)
     {
+        ctx.charge_work(
+            24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1),
+            "creo structural feature identity work",
+        )?;
         ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
     }
     for section in sections
@@ -2049,19 +2118,30 @@ fn structural_feature_ids(
     {
         let payload = section.region;
         let mut from = 0;
-        while let Some(found) = find(payload, b"parent_feats\0", from) {
+        loop {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(payload.len() - from),
+                "creo parent-feature search",
+            )?;
+            let Some(found) = find(payload, b"parent_feats\0", from) else {
+                break;
+            };
             let start = found + b"parent_feats\0".len();
             let Some(&psb::token::ARRAY_OPEN) = payload.get(start) else {
                 from = start;
                 continue;
             };
-            let (count, mut cursor) = psb::compact_int(payload, start + 1);
+            let (count, mut cursor) = psb::complete_compact_int(payload, start + 1)
+                .ok_or_else(|| CodecError::malformed("incomplete parent-feature count"))?;
             for _ in 0..count {
-                let (id, next) = psb::compact_int(payload, cursor);
-                if next == cursor {
-                    break;
-                }
+                ctx.charge_work(2, "creo parent-feature entries")?;
+                let (id, next) = psb::complete_compact_int(payload, cursor)
+                    .ok_or_else(|| CodecError::malformed("incomplete parent-feature entry"))?;
                 if id != 0 {
+                    ctx.charge_work(
+                        24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1),
+                        "creo structural feature identity work",
+                    )?;
                     ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
                 }
                 cursor = next;
@@ -2686,7 +2766,9 @@ fn depdb_recipe_rows(
         .filter(|section| section.section.name() == "DEPDB_DATA")
     {
         let payload = section.region;
-        let recipe_operations = feature::operations::operation_states(ctx, payload)?
+        let mut recipe_storage = ctx.reserve_scoped(0, "Creo DEPDB recipe operation lookup")?;
+        let recipe_operations = recipe_storage
+            .with_storage(|| feature::operations::operation_states(ctx, payload))?
             .into_iter()
             .filter_map(|operation| {
                 operation
@@ -2889,6 +2971,16 @@ pub(crate) fn scan_bytes<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
     ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(MAGIC.len()),
+        "creo container signature",
+    )?;
+    if !looks_like_creo(&data) {
+        return Err(CodecError::WrongFormat(
+            "missing Creo #UGC:2 signature".into(),
+        ));
+    }
+
+    ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(data.len()),
         "creo container model-name scan",
     )?;
@@ -2976,22 +3068,25 @@ pub(crate) fn scan_bytes<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
+    let mut selection_storage = ctx.reserve_scoped(0, "Creo model section selection storage")?;
+    let model_geometry_sections =
+        selection_storage.with_storage(|| model_geometry_sections(ctx, &sections))?;
     let census = geom_census(ctx, &sections)?;
-    let principal_unit = if let Some(unit) = binary_principal_unit(&data) {
-        Some(unit)
-    } else {
-        legacy_ascii
+    let principal_unit = match binary_principal_unit(ctx, &data)? {
+        BinaryUnitSelection::Selected(unit) => Some(unit),
+        BinaryUnitSelection::Absent => legacy_ascii
             .map(|framing| framing.persistence.principal_unit_system(ctx))
             .transpose()?
-            .flatten()
+            .flatten(),
+        BinaryUnitSelection::Unsupported | BinaryUnitSelection::Conflicting => None,
     };
     let family_table = family_table(&data, &sections);
     let legacy_family_table = legacy_ascii
         .map(|framing| crate::legacy_family::parse(ctx, &framing.persistence))
         .transpose()?
         .flatten();
-    let nonvisible_geometry_sections = nonvisible_geometry_sections(ctx, &sections)?;
+    let nonvisible_geometry_sections =
+        selection_storage.with_storage(|| nonvisible_geometry_sections(ctx, &sections))?;
     let loop_array_sections = loop_array_sections(
         ctx,
         &model_geometry_sections,

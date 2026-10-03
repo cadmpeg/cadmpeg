@@ -540,16 +540,19 @@ pub(in super::super) fn transfer_sketches(
                 ));
             }
         }
+        let mut profile_storage = ctx.reserve_scoped(0, "Creo sketch profile membership")?;
         let mut profile_entities = BTreeSet::new();
         for entity_use in profiles.iter().flatten() {
             if !profile_entities.contains(&entity_use.entity) {
-                ctx.insert_btree_set(
-                    &mut profile_entities,
-                    entity_use
-                        .entity
-                        .try_clone_for_decode(ctx, "creo profile entity identities")?,
-                    "creo profile entity ID nodes",
-                )?;
+                profile_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut profile_entities,
+                        entity_use
+                            .entity
+                            .try_clone_for_decode(ctx, "creo profile entity identities")?,
+                        "creo profile entity ID nodes",
+                    )
+                })?;
             }
         }
         for profile in saved_profile_chains(ctx, &sketch_id, &generated_profile_geometries)? {
@@ -559,13 +562,15 @@ pub(in super::super) fn transfer_sketches(
             {
                 for entity_use in &profile {
                     if !profile_entities.contains(&entity_use.entity) {
-                        ctx.insert_btree_set(
-                            &mut profile_entities,
-                            entity_use
-                                .entity
-                                .try_clone_for_decode(ctx, "creo profile entity identities")?,
-                            "creo profile entity ID nodes",
-                        )?;
+                        profile_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut profile_entities,
+                                entity_use
+                                    .entity
+                                    .try_clone_for_decode(ctx, "creo profile entity identities")?,
+                                "creo profile entity ID nodes",
+                            )
+                        })?;
                     }
                 }
                 ctx.reserve_vec(&mut profiles, 1, "creo merged sketch profile rows")?;
@@ -647,7 +652,9 @@ pub(in super::super) fn transfer_sketches(
                 .with_native_ref(Some(sketch_native_ref_admitted(ctx, &sketch_id)?)),
             );
         }
-        let (emitted_entity_ids, emitted_entity_geometry) = emitted_entity_views(ctx, &entities)?;
+        let mut emitted_storage = ctx.reserve_scoped(0, "Creo emitted sketch lookup")?;
+        let (emitted_entity_ids, emitted_entity_geometry) =
+            emitted_storage.with_storage(|| emitted_entity_views(ctx, &entities))?;
         let mut constraints = Vec::new();
         for segment in &segments {
             if segment.vertical_horizontal.is_none() {
@@ -816,10 +823,8 @@ pub(in super::super) fn transfer_sketches(
                 segment.offset,
             )?;
         }
-        for (relation_index, (mut constraint, offset)) in
+        for (mut constraint, offset, relation_index) in
             section_dimension_constraints(ctx, definition, &sketch_id)?
-                .into_iter()
-                .enumerate()
         {
             let Some(relation) = definition
                 .relations
@@ -874,8 +879,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let equation_constraints = crate::decode::collect_items(
-            ctx,
+        let equation_constraints = ctx.collect_vec(
             section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
@@ -961,7 +965,9 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
+                cadmpeg_core::decode::u64_from_index(
+                    definition.body_position(offset)?.source()?.get(),
+                ),
                 "section_equation_constraint",
                 Exactness::ByteExact,
             )?;
@@ -985,7 +991,9 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                cadmpeg_core::decode::u64_from_index(offset),
+                cadmpeg_core::decode::u64_from_index(
+                    definition.body_position(offset)?.source()?.get(),
+                ),
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
             )?;

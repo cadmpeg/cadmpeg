@@ -139,12 +139,11 @@ mod tests {
         matches_native_surface_id, native_surface_id, native_surface_namespace,
         transfer_part_product,
     };
-    use crate::container::scan_bytes_ok;
     use crate::surface::{SurfaceKind, SurfaceRow};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn named_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.framing.model_name = Some(crate::container::ModelName {
             name: "wheel".into(),
             offset: 0,
@@ -240,7 +239,7 @@ mod tests {
             (product_id_len, "creo product source name"),
             (product_id_len + 5, "creo product label"),
             (product_id_len + 10, "creo product part number"),
-            (product_id_len + 15, "creo occurrence name"),
+            (product_id_len + 15 + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>()), "creo occurrence name"),
         ] {
             let error = limited_product(
                 &named_scan(),
@@ -298,7 +297,7 @@ mod tests {
         let error = limited_product(
             &named_scan(),
             u64::MAX,
-            product_identity_and_annotation_bytes(),
+            product_identity_and_annotation_bytes() + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::ids::BodyId>()),
             true,
         );
         assert!(
@@ -310,8 +309,21 @@ mod tests {
     }
 
     #[test]
+    fn part_product_identity_retention_refuses_before_occurrence_transfer() {
+        let product_id_len = cadmpeg_core::decode::u64_from_index(
+            cadmpeg_ir::ids::ProductDefinitionId::compose(&crate::identity::MODEL_PRODUCT_DEFINITION,
+                cadmpeg_ir::identity_key!("root")).as_str().len());
+        let before_transfer = product_identity_and_annotation_bytes() + product_id_len + 20
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>());
+        let error = limited_product(&named_scan(), u64::MAX, before_transfer + product_id_len - 1, false);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "creo product identity"
+                && limit.additional == product_id_len));
+    }
+
+    #[test]
     fn native_surface_id_preserves_nonvisible_namespace() {
-        let mut scan = scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.nonvisible_rows.push(SurfaceRow {
             id: 17,
             kind: SurfaceKind::Plane,
@@ -370,7 +382,7 @@ pub(super) fn transfer_part_product(
     };
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
-    let (product_id, _product_id_reservation) =
+    let (product_id, product_id_reservation) =
         crate::identity::compose_scoped::<ProductDefinitionId>(
             ctx,
             &crate::identity::MODEL_PRODUCT_DEFINITION,
@@ -439,6 +451,7 @@ pub(super) fn transfer_part_product(
     });
     ctx.charge_entities(1, "admit Creo model occurrences")?;
     let occurrence_name = ctx.copy_retained_text(model_name, "creo occurrence name")?;
+    product_id_reservation.commit()?;
     source_carriers.admit_occurrence(
         ctx,
         ir,

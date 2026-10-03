@@ -92,7 +92,15 @@ fn split_line_enrichment_refuses_collection_limit() {
 #[test]
 fn split_line_enrichment_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT split-line observation ID",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
+                policy.limits.max_retained_bytes = cap;
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

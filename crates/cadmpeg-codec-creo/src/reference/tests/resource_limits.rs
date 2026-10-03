@@ -123,10 +123,12 @@ fn named_conic_refuses_before_vec_growth() {
 #[test]
 fn named_conic_body_refuses_before_retained_copy() {
     assert_retained(
-        &run(NAMED_CONIC, 1, 0, |ctx| {
-            super::super::named_conics(ctx, NAMED_CONIC)
-        })
-        .expect_err("conic body needs retained bytes"),
+        &crate::test_support::last_refusal_at(
+            NAMED_CONIC,
+            ResourceDimension::RetainedBytes,
+            "creo named reference conic body",
+            |ctx| super::super::named_conics(ctx, NAMED_CONIC),
+        ),
         "creo named reference conic body",
     );
 }
@@ -164,10 +166,12 @@ fn positional_conic_refuses_before_vec_growth() {
 #[test]
 fn positional_conic_body_refuses_before_retained_copy() {
     assert_retained(
-        &run(POSITIONAL_CONIC, 2, 0, |ctx| {
-            super::super::positional_conics(ctx, POSITIONAL_CONIC)
-        })
-        .expect_err("body needs retained bytes"),
+        &crate::test_support::last_refusal_at(
+            POSITIONAL_CONIC,
+            ResourceDimension::RetainedBytes,
+            "creo positional reference conic body",
+            |ctx| super::super::positional_conics(ctx, POSITIONAL_CONIC),
+        ),
         "creo positional reference conic body",
     );
 }
@@ -291,4 +295,29 @@ fn reference_ellipse_refuses_before_vec_growth() {
         .expect_err("ellipse needs a Vec item"),
         "creo reference ellipses",
     );
+}
+
+#[test]
+fn arc_z_discovery_refuses_header_search_and_numeric_work() {
+    let circles = crate::test_support::assert_work_boundaries(
+        &[
+            "creo arc-z prototype search",
+            "creo arc-z block search",
+            "creo arc-z row headers",
+            "creo arc-z numeric trials",
+        ],
+        |ctx| super::super::arc_z_circles(ctx, ARC_Z),
+    );
+    assert_eq!(circles.len(), 1);
+}
+
+#[test]
+fn arc_z_failed_numeric_candidates_refuse_work() {
+    let body = [0; 64];
+    let cache = crate::scalar::ScalarCache::from_section(&body);
+    let circle =
+        crate::test_support::assert_work_boundaries(&["creo arc-z numeric trials"], |ctx| {
+            super::super::arc_z_fields(ctx, &body, &cache, 1)
+        });
+    assert!(circle.is_none());
 }

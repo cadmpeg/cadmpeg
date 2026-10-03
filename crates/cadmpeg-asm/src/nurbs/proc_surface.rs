@@ -4295,12 +4295,12 @@ pub(crate) fn copy_revision_discontinuities(
     source: &[Vec<f64>; 6],
 ) -> Result<[Vec<f64>; 6], cadmpeg_core::CodecError> {
     Ok([
-        ctx.copy_retained_slice(&source[0], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[1], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[2], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[3], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[4], "ASM revision discontinuities")?,
-        ctx.copy_retained_slice(&source[5], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[0], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[1], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[2], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[3], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[4], "ASM revision discontinuities")?,
+        ctx.copy_slice(&source[5], "ASM revision discontinuities")?,
     ])
 }
 
@@ -5038,7 +5038,9 @@ mod reference_allocation_tests {
     fn law_operator_copy_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<super::EmbeddedLawExpression>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let tokens = [Token::Str("ABS".into()), Token::Double(1.0)];
         let error = resource_error(law_expression(&ctx, &mut Cur::at(&tokens, 0), 0).unwrap());

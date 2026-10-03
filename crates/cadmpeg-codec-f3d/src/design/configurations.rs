@@ -125,6 +125,13 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
         M: MapAccess<'de>,
     {
         let mut names = Vec::new();
+        let mut unique_storage = self
+            .ctx
+            .reserve_scoped(0, "f3d configuration unique names")
+            .map_err(|error| {
+                *self.refusal = Some(error);
+                serde::de::Error::custom("configuration variant resource limit")
+            })?;
         let mut unique = HashSet::new();
         while let Some(name) = map.next_key_seed(crate::design::json_value::TextSeed {
             ctx: self.ctx,
@@ -151,9 +158,12 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
             {
                 let ctx = self.ctx;
                 let charge = (|| -> Result<String, CodecError> {
-                    let copy =
-                        ctx.copy_retained_text(&name, "f3d configuration variant unique name")?;
-                    ctx.reserve_set(&mut unique, 1, "f3d configuration variant name index")?;
+                    let copy = unique_storage.with_storage(|| -> Result<String, CodecError> {
+                        let copy =
+                            ctx.copy_retained_text(&name, "f3d configuration variant unique name")?;
+                        ctx.reserve_set(&mut unique, 1, "f3d configuration variant name index")?;
+                        Ok(copy)
+                    })?;
                     ctx.reserve_vec(&mut names, 1, "f3d configuration variant order")?;
                     Ok(copy)
                 })();
@@ -992,6 +1002,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
@@ -1011,6 +1022,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
@@ -1038,6 +1050,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
@@ -1066,6 +1079,96 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(feature_id_bytes).unwrap();
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d configuration suppressed dependency id",
+            |cap| {
+                let mut configurations = configurations.clone();
+                let feature = feature.clone();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature])
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d configuration suppressed dependency id",
+            |cap| {
+                let mut configurations = configurations.clone();
+                let feature = feature.clone();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature])
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
@@ -1120,6 +1223,108 @@ mod tests {
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_retained_bytes = retained;
                 policy.limits.max_collection_items = collections;
+                let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                    dimension,
+                    operation,
+                    |cap| {
+                        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                        match dimension {
+                            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                                policy.limits.max_retained_bytes = cap;
+                            }
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                                policy.limits.max_collection_items = cap;
+                            }
+                            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                                policy.limits.max_materialized_bytes = cap;
+                            }
+                            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                                policy.limits.max_work_units = cap;
+                            }
+                            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                        }
+                        let (ctx, _) =
+                            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                        let mut projected =
+                            project_configurations(decode_ctx, std::slice::from_ref(&table))
+                                .unwrap();
+                        bind_configuration_parameter_overrides(
+                            &ctx,
+                            &mut projected,
+                            std::slice::from_ref(&parameter),
+                        )
+                    },
+                ) {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                    error => panic!("unexpected refusal: {error:?}"),
+                };
+                policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = refusal_cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = refusal_cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = refusal_cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = refusal_cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                    dimension,
+                    operation,
+                    |cap| {
+                        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                        match dimension {
+                            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                                policy.limits.max_retained_bytes = cap;
+                            }
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                                policy.limits.max_collection_items = cap;
+                            }
+                            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                                policy.limits.max_materialized_bytes = cap;
+                            }
+                            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                                policy.limits.max_work_units = cap;
+                            }
+                            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                        }
+                        let (ctx, _) =
+                            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                        let mut projected =
+                            project_configurations(decode_ctx, std::slice::from_ref(&table))
+                                .unwrap();
+                        bind_configuration_parameter_overrides(
+                            &ctx,
+                            &mut projected,
+                            std::slice::from_ref(&parameter),
+                        )
+                    },
+                ) {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                    error => panic!("unexpected refusal: {error:?}"),
+                };
+                policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = refusal_cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = refusal_cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = refusal_cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = refusal_cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut projected =
                     project_configurations(decode_ctx, std::slice::from_ref(&table)).unwrap();
@@ -1177,6 +1382,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(
                 matches!(
@@ -1204,6 +1410,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_retained_bytes = 4;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
                 ctx.copy_retained_text("input", operation),
@@ -1220,6 +1427,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_retained_bytes = 4;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
                 super::configuration_property_key(&ctx, prefix, "input", operation),
@@ -1271,6 +1479,92 @@ mod tests {
             policy.limits.max_collection_items = collection_limit;
             policy.limits.max_retained_bytes = retained_limit;
             policy.limits.max_materialized_bytes = materialized_limit;
+            let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                operation,
+                |cap| {
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    match dimension {
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                            policy.limits.max_work_units = cap;
+                        }
+                        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    (parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes)).map(|_| ())
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+            policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = refusal_cap;
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                operation,
+                |cap| {
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    match dimension {
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                            policy.limits.max_work_units = cap;
+                        }
+                        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    (parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes)).map(|_| ())
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+            policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = refusal_cap;
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(
                 matches!(
@@ -1296,6 +1590,92 @@ mod tests {
             let mut policy = DecodePolicy::default();
             // Two input names and the unique-name copy consume 15 bytes.
             policy.limits.max_retained_bytes = 15;
+            let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                "f3d duplicate configuration variant diagnostic",
+                |cap| {
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    match ResourceDimension::RetainedBytes {
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                            policy.limits.max_work_units = cap;
+                        }
+                        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    (parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes)).map(|_| ())
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+            policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = refusal_cap;
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
+            let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                "f3d duplicate configuration variant diagnostic",
+                |cap| {
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    match ResourceDimension::RetainedBytes {
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                            policy.limits.max_work_units = cap;
+                        }
+                        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    (parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes)).map(|_| ())
+                },
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                error => panic!("unexpected refusal: {error:?}"),
+            };
+            policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+            match ResourceDimension::RetainedBytes {
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                    policy.limits.max_retained_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = refusal_cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = refusal_cap;
+                }
+                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+            }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
                 parse_configuration_variant_order(&ctx, "table.dsgcfg", bytes),
@@ -1345,6 +1725,7 @@ mod tests {
         // The sort scratch holds two index vectors for the 21 projected variants.
         policy.limits.max_materialized_bytes =
             u64::try_from(21 * 2 * std::mem::size_of::<usize>() - 1).unwrap();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(project_configurations(&ctx, std::slice::from_ref(&table)),

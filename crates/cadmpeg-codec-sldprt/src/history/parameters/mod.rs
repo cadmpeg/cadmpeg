@@ -844,11 +844,6 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                     None => text_parameter_literal(ctx, &parameter.name, &parameter.expression)?,
                 };
             if let Some((id, value)) = own {
-                DecodeContext::reserve_admitted_map(
-                    values,
-                    1,
-                    "restore SLDPRT parameter evaluation value",
-                )?;
                 values.insert(id, value);
             }
             if evaluated.is_none() {
@@ -913,11 +908,6 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
                         !equivalent_parameter_values(actual, evaluated)
                     });
             if let Some((id, value)) = own {
-                DecodeContext::reserve_admitted_map(
-                    values,
-                    1,
-                    "restore SLDPRT parameter coherence value",
-                )?;
                 values.insert(id, value);
             }
             if incoherent {

@@ -226,7 +226,10 @@ macro_rules! limit_case {
     ($name:ident, $case:expr, $items:expr, $retained:expr, $operation:literal) => {
         #[test]
         fn $name() {
-            let error = dimension_error($case, $items, $retained);
+            let error = if $retained != u64::MAX {
+                cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    $operation, |cap| Err::<(), cadmpeg_core::CodecError>(dimension_error($case, $items, cap)))
+            } else { dimension_error($case, $items, $retained) };
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }

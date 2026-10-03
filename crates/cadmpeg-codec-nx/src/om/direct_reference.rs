@@ -133,7 +133,7 @@ pub(crate) fn operation_reference_fields(
         else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut fields, 1, "nx direct reference fields")?;
+        ctx.reserve_vec(&mut fields, 1, "nx direct reference fields")?;
         fields.push(frame);
     }
     Ok(fields)

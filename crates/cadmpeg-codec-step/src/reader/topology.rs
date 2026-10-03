@@ -131,13 +131,10 @@ fn admitted_body_clone<'a>(
     operation: &'static str,
 ) -> Result<AdmittedRepresentationBodies<'a>, cadmpeg_core::CodecError> {
     ctx.charge_collection_items(u64_from_index(bodies.len()), operation)?;
-    let slot_bytes = u64_from_index(bodies.len())
-        .checked_mul(u64_from_index(std::mem::size_of::<BodyId>()))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    let mut bytes = ctx.reserve_scoped(slot_bytes, operation)?;
+    let mut bytes = ctx.reserve_scoped(0, operation)?;
     let mut values = Vec::new();
 
-    DecodeContext::reserve_admitted_vec(&mut values, bodies.len(), operation)?;
+    bytes.with_storage(|| ctx.reserve_capacity(&mut values, bodies.len(), operation))?;
     for body in bodies {
         values.push(bytes.with_storage(|| body.try_clone_for_decode(ctx, operation))?);
     }

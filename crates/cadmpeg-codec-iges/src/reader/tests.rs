@@ -127,7 +127,9 @@ fn transfer_ledger_refuses_row_and_note_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::decode::TransferRecord>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::record_retained_transfer(&ctx, &mut ledger, "D1".into(), "iges:entity:directory#1".into(), "retained"),
@@ -189,7 +191,9 @@ fn reader_occurrence_loss_refuses_slot_and_message_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::push_occurrence_loss(&ctx, &mut losses, IgesLossCode::OccurrenceRootInferenceBlocked,
@@ -238,7 +242,9 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
@@ -672,9 +678,8 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         let bytes = point_file();
         let mut options = DecodeOptions::default();
         edit(&mut options.policy.limits);
-        let error = IgesCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .unwrap_err();
+        let error =
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy).unwrap_err();
         assert!(
             matches!(
                 error,
@@ -735,9 +740,15 @@ fn decode_enforces_each_iges_session_resource_dimension() {
 fn inspect_enforces_iges_parser_resource_limits() {
     let mut options = cadmpeg_core::decode::InspectOptions::default();
     options.limits.max_collection_items = 0;
-    let error = IgesCodec
-        .inspect(&mut Cursor::new(point_file()), &options)
-        .unwrap_err();
+    let bytes = point_file();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: options.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("borrowed input");
+    let error = cadmpeg_ir::codec::CodecBackend::inspect_impl(&IgesCodec, &ctx, root).unwrap_err();
 
     assert!(matches!(
         error,

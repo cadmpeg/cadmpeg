@@ -89,9 +89,15 @@ fn reference_plane_enrichment_refuses_collection_limit() {
 
 #[test]
 fn reference_plane_enrichment_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let error = reference_plane_error(policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT plane frame source",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            Err::<(), cadmpeg_core::CodecError>(reference_plane_error(policy))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain SLDPRT plane frame source"));

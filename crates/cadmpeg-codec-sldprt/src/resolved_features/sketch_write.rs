@@ -858,7 +858,7 @@ fn patch_direct_stream_point(
     point_mm: Point3,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];
-    edit_stream(payload, stream_ordinal, |body| {
+    edit_stream(payload, stream_ordinal, |_ctx, body| {
         if !crate::brep::topology::patch_point(body, attr, xyz_m) {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "SLDPRT sketch point {attr} is missing"
@@ -872,12 +872,13 @@ fn patch_direct_curve(
     payload: &mut Vec<u8>,
     request: &CurvePatch,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    edit_stream(payload, request.stream, |body| {
-        patch_direct_curve_body(body, request)
+    edit_stream(payload, request.stream, |ctx, body| {
+        patch_direct_curve_body(ctx, body, request)
     })
 }
 
 fn patch_direct_curve_body(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &mut [u8],
     request: &CurvePatch,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -889,10 +890,10 @@ fn patch_direct_curve_body(
             start_angle,
             end_angle,
         } => (*center, *radius, Some((*start_angle, *end_angle))),
-        PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(body, request, ellipse),
-        PatchCurve::Nurbs(curve) => return patch_direct_nurbs(body, request, curve),
+        PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(ctx, body, request, ellipse),
+        PatchCurve::Nurbs(curve) => return patch_direct_nurbs(ctx, body, request, curve),
     };
-    let frame = match crate::brep::curve_by_attr(body, request.carrier_attr) {
+    let frame = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             *circle_curve.frame()
         }
@@ -918,7 +919,7 @@ fn patch_direct_curve_body(
         cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
+    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch circle carrier cannot be patched".into(),
         ));
@@ -960,17 +961,21 @@ fn patch_direct_curve_body(
 fn edit_stream(
     payload: &mut Vec<u8>,
     stream_ordinal: usize,
-    edit: impl FnOnce(&mut [u8]) -> Result<(), cadmpeg_core::CodecError>,
+    edit: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut [u8],
+    ) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload,
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::read_root(
+        &mut std::io::Cursor::new(payload.as_slice()),
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
+        false,
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
-        .get(stream_ordinal)
-        .cloned()
+        .into_iter()
+        .nth(stream_ordinal)
         .ok_or_else(|| {
             cadmpeg_core::CodecError::Malformed("SLDPRT sketch stream is missing".into())
         })?;
@@ -979,7 +984,10 @@ fn edit_stream(
         .windows(stream.payload.len())
         .position(|candidate| candidate == stream.payload.as_slice())
     {
-        return edit(&mut payload[start + body_offset..start + stream.payload.len()]);
+        return edit(
+            &ctx,
+            &mut payload[start + body_offset..start + stream.payload.len()],
+        );
     }
     let (start, end) = compressed_member(payload, &stream.payload).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
@@ -987,7 +995,7 @@ fn edit_stream(
         )
     })?;
     let mut inflated = stream.payload;
-    edit(&mut inflated[body_offset..])?;
+    edit(&ctx, &mut inflated[body_offset..])?;
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(&inflated)?;
     payload.splice(start..end, encoder.finish()?);
@@ -1028,6 +1036,7 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
 }
 
 fn patch_direct_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &mut [u8],
     request: &CurvePatch,
     curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
@@ -1046,7 +1055,7 @@ fn patch_direct_nurbs(
                 "SLDPRT sketch NURBS lift is invalid: {error}"
             ))
         })?;
-    if !crate::brep::patch_nurbs_by_attr(body, request.carrier_attr, &curve) {
+    if !crate::brep::patch_nurbs_by_attr(ctx, body, request.carrier_attr, &curve)? {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT sketch NURBS edit changes native storage shape".into(),
         ));
@@ -1055,11 +1064,12 @@ fn patch_direct_nurbs(
 }
 
 fn patch_direct_ellipse(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &mut [u8],
     request: &CurvePatch,
     ellipse: &PatchEllipse,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let axis = match crate::brep::curve_by_attr(body, request.carrier_attr) {
+    let axis = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
             *ellipse_curve.frame().axis()
         }
@@ -1108,7 +1118,7 @@ fn patch_direct_ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
+    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));

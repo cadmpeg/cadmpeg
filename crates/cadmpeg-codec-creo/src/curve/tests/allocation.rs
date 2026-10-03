@@ -85,7 +85,11 @@ fn expression_target_arguments_refuse_before_growth() {
 #[test]
 fn expression_target_argument_text_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("foo(x)", u64::MAX, 0),
+        &target_limit_error(
+            "foo(x)",
+            u64::MAX,
+            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>()),
+        ),
         ResourceDimension::RetainedBytes,
         "creo expression target argument text",
     );
@@ -186,7 +190,17 @@ fn expression_dependency_items_refuse_before_growth() {
 fn expression_dependency_text_refuses_before_copy() {
     let line = expression_lines(&["a=b"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo expression dependency text"),
+        |cap| {
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            with_expression_policy(trial_policy, |ctx| {
+                super::super::expression_assignment(ctx, &line[0])
+            })
+        },
+    );
     let error = with_expression_policy(policy, |ctx| {
         super::super::expression_assignment(ctx, &line[0])
     })
@@ -324,11 +338,12 @@ fn executable_solve_line_nodes_refuse_before_insert() {
 #[test]
 fn solve_equation_left_refuses_retained_limit() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
-    }));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo solve equation left",
+        |ctx| super::super::curve_expression_solve_program(ctx, &lines),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo solve equation left"));
@@ -337,11 +352,12 @@ fn solve_equation_left_refuses_retained_limit() {
 #[test]
 fn solve_equation_right_refuses_retained_limit() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
-    }));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo solve equation right",
+        |ctx| super::super::curve_expression_solve_program(ctx, &lines),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo solve equation right"));
@@ -406,24 +422,11 @@ fn evaluation_limit_reaches(
     })
     .expect("service profile evaluates expression");
 
-    for limit in 0..256 {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
-            _ => panic!("unsupported test limit"),
-        }
-        let result = with_expression_policy(policy, |ctx| {
-            super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
-        });
-        if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == dimension && refusal.operation == operation)
-        {
-            return;
-        }
-    }
-    panic!("no limit reaches {operation}");
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == dimension && refusal.operation == operation));
 }
 
 fn external_symbol(
@@ -676,22 +679,11 @@ fn affine_helix_limit_reaches(dimension: ResourceDimension, operation: &'static 
     })
     .expect("service profile")
     .is_some());
-    for limit in 0..256 {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unsupported affine test limit"),
-        }
-        let result =
-            with_expression_policy(policy, |ctx| super::super::expression_helix(ctx, &record));
-        if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == dimension && refusal.operation == operation)
-        {
-            return;
-        }
-    }
-    panic!("no limit reaches {operation}");
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        super::super::expression_helix(ctx, &record)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == dimension && refusal.operation == operation));
 }
 
 macro_rules! affine_helix_collection_test {
@@ -950,7 +942,17 @@ fn solve_unknowns_refuse_before_vector_growth() {
 #[test]
 fn solve_unknown_name_refuses_before_retained_copy() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo solve unknown names"),
+        |cap| {
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            with_expression_policy(trial_policy, |ctx| {
+                super::super::curve_expression_solve_unknowns(ctx, "x")
+            })
+        },
+    );
     let error = with_expression_policy(policy, |ctx| {
         super::super::curve_expression_solve_unknowns(ctx, "x")
     })
@@ -1001,7 +1003,15 @@ fn curve_expression_local_system_body_refuses_before_copy() {
         1
     );
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo expression local-system body"),
+        |cap| {
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            parse(WITH_LOCAL_SYSTEM, trial_policy)
+        },
+    );
     let error =
         parse(WITH_LOCAL_SYSTEM, policy).expect_err("the local-system body needs retained bytes");
     assert!(matches!(
@@ -1028,7 +1038,15 @@ fn curve_expression_lines_refuse_before_vector_growth() {
 #[test]
 fn curve_expression_line_text_refuses_before_copy() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo expression record line text"),
+        |cap| {
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            parse(ONE_COMMENT, trial_policy)
+        },
+    );
     let error = parse(ONE_COMMENT, policy).expect_err("the source line needs retained bytes");
     assert!(matches!(
         error,
@@ -1133,14 +1151,32 @@ fn curve_parameter_references_refuse_before_vector_growth() {
 #[test]
 fn curve_parameter_scalars_refuse_before_vector_growth() {
     assert_eq!(
-        scalar_lane_with_limits(&[0x0e], 8, 2, 100)
-            .expect("service limits admit scalar")
-            .scalar_tokens
-            .len(),
+        scalar_lane_with_limits(
+            &[0x0e],
+            8,
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| scalar_lane_with_limits(&[0x0e], 8, u64::MAX, cap)
+            )
+        )
+        .expect("service limits admit scalar")
+        .scalar_tokens
+        .len(),
         1
     );
-    let error =
-        scalar_lane_with_limits(&[0x0e], 8, 1, 100).expect_err("scalar follows one claim slot");
+    let error = scalar_lane_with_limits(
+        &[0x0e],
+        8,
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| scalar_lane_with_limits(&[0x0e], 8, u64::MAX, cap),
+        ),
+    )
+    .expect_err("scalar follows one claim slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo curve parameter scalars"));
@@ -1149,14 +1185,32 @@ fn curve_parameter_scalars_refuse_before_vector_growth() {
 #[test]
 fn curve_scalar_raw_token_refuses_before_copy() {
     assert_eq!(
-        scalar_lane_with_limits(&[0x0e], 8, 2, 1)
-            .expect("one raw byte is admitted")
-            .scalar_tokens[0]
+        scalar_lane_with_limits(
+            &[0x0e],
+            8,
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| scalar_lane_with_limits(&[0x0e], 8, u64::MAX, cap)
+            )
+        )
+        .expect("one raw byte is admitted")
+        .scalar_tokens[0]
             .raw,
         [0x0e]
     );
-    let error = scalar_lane_with_limits(&[0x0e], 8, 2, 0)
-        .expect_err("one raw byte needs retained admission");
+    let error = scalar_lane_with_limits(
+        &[0x0e],
+        8,
+        2,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo curve scalar raw token"),
+            |cap| scalar_lane_with_limits(&[0x0e], 8, 2, cap),
+        ),
+    )
+    .expect_err("one raw byte needs retained admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo curve scalar raw token"));
@@ -1165,14 +1219,32 @@ fn curve_scalar_raw_token_refuses_before_copy() {
 #[test]
 fn curve_zero_raw_token_refuses_before_copy() {
     assert_eq!(
-        scalar_lane_with_limits(&[0x18], 0, 2, 1)
-            .expect("one zero byte is admitted")
-            .scalar_tokens[0]
+        scalar_lane_with_limits(
+            &[0x18],
+            0,
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| scalar_lane_with_limits(&[0x18], 0, u64::MAX, cap)
+            )
+        )
+        .expect("one zero byte is admitted")
+        .scalar_tokens[0]
             .raw,
         [0x18]
     );
-    let error = scalar_lane_with_limits(&[0x18], 0, 2, 0)
-        .expect_err("one zero byte needs retained admission");
+    let error = scalar_lane_with_limits(
+        &[0x18],
+        0,
+        2,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo curve zero raw token"),
+            |cap| scalar_lane_with_limits(&[0x18], 0, 2, cap),
+        ),
+    )
+    .expect_err("one zero byte needs retained admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo curve zero raw token"));
@@ -1181,14 +1253,32 @@ fn curve_zero_raw_token_refuses_before_copy() {
 #[test]
 fn curve_opaque_spans_refuse_before_vector_growth() {
     assert_eq!(
-        scalar_lane_with_limits(&[0xff], 0, 2, 1)
-            .expect("one opaque span is admitted")
-            .opaque_spans
-            .len(),
+        scalar_lane_with_limits(
+            &[0xff],
+            0,
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| scalar_lane_with_limits(&[0xff], 0, u64::MAX, cap)
+            )
+        )
+        .expect("one opaque span is admitted")
+        .opaque_spans
+        .len(),
         1
     );
-    let error =
-        scalar_lane_with_limits(&[0xff], 0, 1, 1).expect_err("opaque span follows one claim slot");
+    let error = scalar_lane_with_limits(
+        &[0xff],
+        0,
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| scalar_lane_with_limits(&[0xff], 0, u64::MAX, cap),
+        ),
+    )
+    .expect_err("opaque span follows one claim slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo curve opaque spans"));
@@ -1197,14 +1287,32 @@ fn curve_opaque_spans_refuse_before_vector_growth() {
 #[test]
 fn curve_opaque_raw_span_refuses_before_copy() {
     assert_eq!(
-        scalar_lane_with_limits(&[0xff], 0, 2, 1)
-            .expect("one opaque byte is admitted")
-            .opaque_spans[0]
+        scalar_lane_with_limits(
+            &[0xff],
+            0,
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| scalar_lane_with_limits(&[0xff], 0, u64::MAX, cap)
+            )
+        )
+        .expect("one opaque byte is admitted")
+        .opaque_spans[0]
             .raw,
         [0xff]
     );
-    let error = scalar_lane_with_limits(&[0xff], 0, 2, 0)
-        .expect_err("one opaque byte needs retained admission");
+    let error = scalar_lane_with_limits(
+        &[0xff],
+        0,
+        2,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo curve opaque raw span"),
+            |cap| scalar_lane_with_limits(&[0xff], 0, 2, cap),
+        ),
+    )
+    .expect_err("one opaque byte needs retained admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo curve opaque raw span"));

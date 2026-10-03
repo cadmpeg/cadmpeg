@@ -83,8 +83,7 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
             let (center, _) = saved_section_circle_values(definition, segment)?;
             Some((segment.center_id, center))
         });
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         ordinary.chain(circles),
         "creo saved section coordinate witnesses",
     )
@@ -320,8 +319,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
     }
     let saved_segment_points =
         saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
-    let segments = crate::decode::collect_items(
-        ctx,
+    let segments = ctx.collect_vec(
         definition
             .segments
             .iter()
@@ -341,8 +339,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             }),
         "creo section line segments",
     )?;
-    let coincident_points = crate::decode::collect_items(
-        ctx,
+    let coincident_points = ctx.collect_vec(
         active_complete_section_skamps(definition).filter_map(|skamp| {
             let [first, second] = skamp.items.as_slice() else {
                 return None;
@@ -384,8 +381,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         }),
         "creo section coincident point pairs",
     )?;
-    let same_coordinate_points = crate::decode::collect_items(
-        ctx,
+    let same_coordinate_points = ctx.collect_vec(
         active_complete_section_skamps(definition)
             .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
             .filter(|(pair, _)| {
@@ -428,8 +424,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             }
         }
     }
-    let line_midpoint_constraints = crate::decode::collect_items(
-        ctx,
+    let line_midpoint_constraints = ctx.collect_vec(
         active_complete_section_skamps(definition)
             .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
             .filter(|(point_sources, point)| {
@@ -470,8 +465,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             symmetric_point_constraints.push((axis, first, second, coordinate));
         }
     }
-    let point_symmetric_constraints = crate::decode::collect_items(
-        ctx,
+    let point_symmetric_constraints = ctx.collect_vec(
         active_complete_section_skamps(definition)
             .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
             .filter(|(center, first, second)| {
@@ -549,8 +543,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             linear_dimension_candidates.push((first, second, coordinate, magnitude, relation.sign));
         }
     }
-    let signed_dimension_candidates = crate::decode::collect_items(
-        ctx,
+    let signed_dimension_candidates = ctx.collect_vec(
         linear_dimension_candidates.iter().filter_map(
             |&(first, second, coordinate, magnitude, sign)| {
                 let delta = match sign {
@@ -563,8 +556,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         ),
         "creo section signed dimension candidates",
     )?;
-    let mut unsigned_dimension_candidates = crate::decode::collect_items(
-        ctx,
+    let mut unsigned_dimension_candidates = ctx.collect_vec(
         linear_dimension_candidates.iter().filter_map(
             |&(first, second, coordinate, magnitude, sign)| {
                 (sign == 0).then_some((first, second, coordinate, magnitude))
@@ -614,8 +606,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             })
             .or_insert(Some(canonical_delta));
     }
-    let signed_dimensions = crate::decode::collect_items(
-        ctx,
+    let signed_dimensions = ctx.collect_vec(
         signed_dimensions
             .into_iter()
             .filter_map(|((first, second, coordinate), delta)| {
@@ -877,8 +868,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     )?;
-    let arc_midpoint_constraints = crate::decode::collect_items(
-        ctx,
+    let arc_midpoint_constraints = ctx.collect_vec(
         active_complete_section_skamps(definition)
             .filter_map(|skamp| {
                 section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)

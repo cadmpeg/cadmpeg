@@ -997,9 +997,9 @@ fn finish_anonymous(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), checksum.children)?;
+    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1024,9 +1024,9 @@ fn finish_payload(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
+    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -1334,11 +1334,17 @@ pub(crate) mod tests {
             if cache_bytes != 0 {
                 children.push(body.len() - cache_bytes..body.len());
             }
-            let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let ctx = cadmpeg_core::decode::DecodeContext::new(
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+                false,
+            );
+            let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), &children)
                 .expect("valid extrusion children");
             let mut hasher = crc32fast::Hasher::new();
-            for range in direct {
-                hasher.update(&body[range]);
+            for range in &direct {
+                hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
             }
             let crc = hasher.finalize();
             let end = payload.len();
@@ -1997,9 +2003,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn optional_mesh_cache_over_document_budget_is_dropped() {
+    fn optional_mesh_cache_over_document_budget_propagates_resource_refusal() {
         let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let decoded = decode(
+        let refusal = decode(
             &bytes,
             0..bytes.len(),
             ArchiveVersion::V5,
@@ -2007,10 +2013,11 @@ pub(crate) mod tests {
             MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::with_limit(0),
         )
-        .expect("extrusion remains usable");
-        assert!(decoded.meshes.is_empty());
-        assert_eq!(decoded.warnings.len(), 1);
-        assert!(decoded.warnings[0].contains("document mesh buffer budget exceeded"));
+        .expect_err("optional cache resource refusal reaches the caller");
+        assert!(matches!(refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino document mesh buffer bytes"
+                    && limit.limit == 0 && limit.used == 0 && limit.additional == 12));
     }
 
     #[test]
@@ -2107,10 +2114,10 @@ pub(crate) mod tests {
     #[test]
     fn optional_mesh_cache_propagates_decode_retained_limit() {
         let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        for _ in 0..4096 {
+        let run = |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
             let (ctx, root) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                     .expect("root view");
@@ -2127,24 +2134,29 @@ pub(crate) mod tests {
                 &mut crate::mesh::MeshBudget::new(),
             )
             .expect_err("cache buffer exceeds zero retained bytes");
-            let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = refusal
-            else {
-                panic!("retained refusal");
-            };
-            assert_eq!(
-                first.dimension,
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            );
-            assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-            if first.operation == "rhino_mesh_buffer" {
-                return;
+            if let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = &refusal {
+                assert_eq!(
+                    first.dimension,
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                );
+                assert!(matches!(ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
             }
-            let next = first.used.checked_add(first.additional).unwrap();
-            assert!(next > policy.limits.max_retained_bytes);
-            policy.limits.max_retained_bytes = next;
-        }
-        panic!("mesh cache buffer admission must be reached");
+            refusal
+        };
+        let refusal = run(crate::test_support::retained_limit_at(
+            "rhino_mesh_buffer",
+            0,
+            |cap| match run(cap) {
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
+            },
+        ));
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "rhino_mesh_buffer"
+        ));
     }
 
     #[test]
@@ -2200,27 +2212,38 @@ pub(crate) mod tests {
     #[test]
     fn extrusion_mesh_cache_id_refuses_retained_limit() {
         let bytes = one_mesh_cache();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 12;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root view");
-        let mut reader =
-            crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
-        let refusal = read_mesh_cache(
-            crate::mesh::MeshExpand::new(&ctx, root),
-            &bytes,
-            &mut reader,
-            ExtrusionFormat {
-                archive: ArchiveVersion::V5,
-                writer_version: None,
-                scale: MillimeterScale::IDENTITY,
+        let run = |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("root view");
+            let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
+                .expect("valid cache range");
+            let refusal = read_mesh_cache(
+                crate::mesh::MeshExpand::new(&ctx, root),
+                &bytes,
+                &mut reader,
+                ExtrusionFormat {
+                    archive: ArchiveVersion::V5,
+                    writer_version: None,
+                    scale: MillimeterScale::IDENTITY,
+                },
+                &mut crate::mesh::MeshBudget::new(),
+                &mut Diagnostics::new(),
+            )
+            .expect_err("cache ID exceeds the retained vertex buffer allowance");
+            refusal
+        };
+        let refusal = run(crate::test_support::retained_limit_at(
+            "Rhino extrusion mesh-cache ID",
+            0,
+            |cap| match run(cap) {
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
             },
-            &mut crate::mesh::MeshBudget::new(),
-            &mut Diagnostics::new(),
-        )
-        .expect_err("cache ID exceeds the retained vertex buffer allowance");
+        ));
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2295,25 +2318,36 @@ pub(crate) mod tests {
             save_context: None,
             payload_range: 0..bytes.len(),
         });
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 12;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root view");
-        let refusal = read_v5_mesh_cache(
-            crate::mesh::MeshExpand::new(&ctx, root),
-            &bytes,
-            ExtrusionFormat {
-                archive: ArchiveVersion::V5,
-                writer_version: None,
-                scale: MillimeterScale::IDENTITY,
+        let run = |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("root view");
+            let refusal = read_v5_mesh_cache(
+                crate::mesh::MeshExpand::new(&ctx, root),
+                &bytes,
+                ExtrusionFormat {
+                    archive: ArchiveVersion::V5,
+                    writer_version: None,
+                    scale: MillimeterScale::IDENTITY,
+                },
+                std::slice::from_ref(&descriptor),
+                &mut crate::mesh::MeshBudget::new(),
+                &mut Diagnostics::new(),
+            )
+            .expect_err("V5 cache ID exceeds the retained vertex buffer allowance");
+            refusal
+        };
+        let refusal = run(crate::test_support::retained_limit_at(
+            "Rhino V5 extrusion mesh-cache ID",
+            0,
+            |cap| match run(cap) {
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
             },
-            std::slice::from_ref(&descriptor),
-            &mut crate::mesh::MeshBudget::new(),
-            &mut Diagnostics::new(),
-        )
-        .expect_err("V5 cache ID exceeds the retained vertex buffer allowance");
+        ));
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))

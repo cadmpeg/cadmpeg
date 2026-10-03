@@ -34,7 +34,7 @@ macro_rules! pmi_string_limit_test {
         #[test]
         fn $name() {
             assert!(matches!(
-                pmi_result($records, $limit),
+                Err::<(), CodecError>(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_string_text", |cap| pmi_result($records, cap))),
                 Err(CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::RetainedBytes
                         && refusal.operation == "step_string_text"
@@ -116,20 +116,34 @@ fn annotation_text_refuses_retained_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid text exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("root fits retained policy");
-    let mut visited = BTreeSet::new();
-    let mut candidates = BTreeMap::new();
-    let mut losses = Vec::<LossNote>::new();
-    assert!(matches!(
-        super::super::collect_annotation_text(1, &exchange, &mut visited, &mut candidates, &mut losses, 0, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_string_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("root fits retained policy");
+            let mut visited = BTreeSet::new();
+            let mut candidates = BTreeMap::new();
+            let mut losses = Vec::<LossNote>::new();
+            super::super::collect_annotation_text(
+                1,
+                &exchange,
+                &mut visited,
+                &mut candidates,
+                &mut losses,
+                0,
+                &ctx,
+            )
+        },
+    );
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+                && refusal.operation == "step_string_text")
+    );
 }
 
 #[test]

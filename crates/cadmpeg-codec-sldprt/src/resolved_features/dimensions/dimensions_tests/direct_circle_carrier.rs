@@ -277,22 +277,31 @@ fn marker_circle_projection_refuses_retained_limit() {
     let DirectCircleFixture {
         feature,
         lane,
-        mut entities,
-        mut sketches,
+        entities,
+        sketches,
         ..
     } = direct_circle_fixture();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::project_marker_dimensioned_circles(
-        &limited,
-        &mut entities,
-        &mut sketches,
-        &[feature],
-        &[],
-        &[lane],
-    )
-    .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT circle carrier entity identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut entities = entities.clone();
+            let mut sketches = sketches.clone();
+            let feature = feature.clone();
+            let lane = lane.clone();
+            super::super::project_marker_dimensioned_circles(
+                &limited,
+                &mut entities,
+                &mut sketches,
+                &[feature],
+                &[],
+                &[lane],
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

@@ -1692,7 +1692,11 @@ mod tests {
         };
         let service = crate::test_support::with_service_context(run_with);
         assert!(service.expect("service budget").is_none());
-        let limited = crate::test_support::with_retained_limit(0, run_with);
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_zero_topology_face_id",
+            run_with,
+        );
         assert!(matches!(limited, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "catia_zero_topology_face_id"));
     }

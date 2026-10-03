@@ -2,7 +2,6 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use crate::decode_resource::lossy_retained;
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::DecodeContext;
@@ -479,7 +478,9 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields = ctx.collection_vec(1, "iges global layout fields")?;
+    let mut field_storage = ctx.reserve_scoped(0, "IGES global layout field spans")?;
+    let mut fields =
+        field_storage.with_storage(|| ctx.collection_vec(1, "iges global layout fields"))?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -498,7 +499,8 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        ctx.reserve_vec(&mut fields, 1, "iges global layout fields")?;
+        field_storage
+            .with_storage(|| ctx.reserve_vec(&mut fields, 1, "iges global layout fields"))?;
         fields.push(start..end);
         cursor = end;
         if is_record {
@@ -507,7 +509,7 @@ pub(crate) fn layout_global_cards(
     }
 
     let mut cards = Vec::new();
-    let mut card = ctx.retained_admitted_vec(72, "iges global layout card bytes")?;
+    let mut card = ctx.vector_storage(72, "iges global layout card bytes")?;
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -526,13 +528,13 @@ pub(crate) fn layout_global_cards(
             card.extend(std::iter::repeat_with(|| b' ').take(72 - card.len()));
             ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
             cards.push(std::mem::take(&mut card));
-            card = ctx.retained_admitted_vec(72, "iges global layout card bytes")?;
+            card = ctx.vector_storage(72, "iges global layout card bytes")?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
                 ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));
-                card = ctx.retained_admitted_vec(72, "iges global layout card bytes")?;
+                card = ctx.vector_storage(72, "iges global layout card bytes")?;
             }
             card.push(byte);
         }
@@ -698,7 +700,7 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>,
     let length = card_count
         .checked_mul(72)
         .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
-    let mut bytes = ctx.retained_admitted_vec(length, "iges_global_stream")?;
+    let mut bytes = ctx.vector_storage(length, "iges_global_stream")?;
 
     for (_, line) in scan.section(Section::Global) {
         bytes.extend_from_slice(&line.payload[..72]);
@@ -893,7 +895,7 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
         return Ok(text.parse::<f64>().ok().and_then(FiniteReal::new));
     }
     let (mut normalized, _reservation) =
-        ctx.scoped_admitted_vec(text.len(), "iges global numeric text")?;
+        ctx.scoped_vector_storage(text.len(), "iges global numeric text")?;
     normalized.extend_from_slice(text.as_bytes());
     for byte in &mut normalized {
         if matches!(byte, b'D' | b'd') {
@@ -960,7 +962,7 @@ impl Resolution<'_, '_> {
         match self.value(index) {
             Value::Omitted => Ok(String::new()),
             Value::String(bytes) | Value::Malformed(bytes) | Value::Atom(bytes) => {
-                lossy_retained(self.ctx, bytes, "iges global declaration text")
+                self.ctx.copy_retained_lossy_utf8(bytes, "iges global declaration text")
             }
             Value::ForbiddenString => {
                 self.ctx.format_retained(format_args!("a string payload contains a byte forbidden by the effective specification family"), "iges global declaration text")

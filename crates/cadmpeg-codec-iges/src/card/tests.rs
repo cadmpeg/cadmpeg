@@ -137,7 +137,9 @@ fn framing_recovery_losses_refuse_slot_and_retained_limits() {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             recoveries.notes(&ctx),
@@ -209,14 +211,16 @@ fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<cadmpeg_core::container::ContainerEntry>(),
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::summarize(&scan, primary(), &ctx);
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<cadmpeg_core::container::ContainerEntry>())
                 && limit.additional == 1
                 && limit.operation == "iges card summary card count"
     ));
@@ -301,7 +305,10 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
     bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].copy_from_slice(b"     1 ");
 
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::No
+    );
     assert_eq!(
         IgesCodec
             .inspect(
@@ -477,7 +484,10 @@ fn decode_accepts_carriage_return_only_line_endings() {
         .map(|byte| if byte == b'\n' { b'\r' } else { byte })
         .collect::<Vec<_>>();
 
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
+        Confidence::High
+    );
 
     let result = IgesCodec
         .decode(

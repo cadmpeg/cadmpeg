@@ -336,44 +336,36 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
     Some(at)
 }
 
-fn color_table_at(bytes: &[u8], start: usize) -> Result<Option<ColorTable<'_>>, CodecError> {
+fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
     let mut at = start + COLOR_TABLE_NAME_HEADER.len();
-    let mut names = cadmpeg_core::decode::DecodeContext::admitted_vec(217, "NX color table names")?;
-    for _ in 0..217 {
-        let Some((name, width)) = color_name_frame(bytes, at) else {
-            return Ok(None);
-        };
-        names.push(name);
+    let mut names = [""; 217];
+    for slot in &mut names {
+        let (name, width) = color_name_frame(bytes, at)?;
+        *slot = name;
         at += width;
     }
     at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
-    let Some(background) = color_components(bytes, &mut at) else {
-        return Ok(None);
-    };
-    let mut definitions = cadmpeg_core::decode::DecodeContext::admitted_vec(
-        PALETTE_SIZE,
-        "NX color table definitions",
-    )?;
+    let background = color_components(bytes, &mut at)?;
+    let mut definitions = std::array::from_fn(|_| ColorTableDefinition {
+        name: "",
+        components: background,
+        offset: start,
+    });
     for color_index in PaletteIndex::all() {
         let offset = at;
         at += 1 + color_index.definition_token().1 + 3;
-        let Some(components) = color_components(bytes, &mut at) else {
-            return Ok(None);
-        };
-        definitions.push(ColorTableDefinition {
+        let components = color_components(bytes, &mut at)?;
+        definitions[usize::from(color_index.value()) - 1] = ColorTableDefinition {
             name: names[usize::from(color_index.value())],
             components,
             offset,
-        });
+        };
     }
-    let Ok(definitions) = definitions.try_into() else {
-        return Ok(None);
-    };
-    Ok(Some(ColorTable {
+    Some(ColorTable {
         offset: start,
         background,
         definitions,
-    }))
+    })
 }
 
 /// Decode every complete NX part color table in a bounded byte region.
@@ -397,8 +389,8 @@ pub(crate) fn color_tables<'a>(
             start += 1;
             continue;
         };
-        if let Some(table) = color_table_at(bytes, start)? {
-            ctx.reserve_retained_vec(&mut tables, 1, "nx part color tables")?;
+        if let Some(table) = color_table_at(bytes, start) {
+            ctx.reserve_vec(&mut tables, 1, "nx part color tables")?;
             tables.push(table);
         }
         start = end;
@@ -444,7 +436,7 @@ pub(crate) fn construction_payload_scalar_fields(
         else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut fields, 1, "NX construction scalar fields")?;
+        ctx.reserve_vec(&mut fields, 1, "NX construction scalar fields")?;
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
@@ -1027,7 +1019,7 @@ impl<'a> IndexedSection<'a> {
         let records = self.numeric_expression_records(ctx)?;
         let mut expressions = Vec::new();
         for (_, expression) in records {
-            ctx.reserve_retained_vec(&mut expressions, 1, "nx indexed numeric expressions")?;
+            ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expressions")?;
             expressions.push(expression);
         }
         Ok(expressions)
@@ -1076,11 +1068,7 @@ impl<'a> IndexedSection<'a> {
         let mut expressions = Vec::new();
         for (record_ordinal, (offset, bytes, object_id)) in records.into_iter().enumerate() {
             if let Some(expression) = numeric_expression_at(bytes, offset, object_id) {
-                ctx.reserve_retained_vec(
-                    &mut expressions,
-                    1,
-                    "nx indexed numeric expression records",
-                )?;
+                ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expression records")?;
                 expressions.push((record_ordinal, expression));
             }
         }
@@ -1107,14 +1095,14 @@ impl<'a> FixedEntityRecord<'a> {
         let counted = counted_record_references(ctx, self.bytes, self.offset, record_count)?;
         let mut references = Vec::new();
         for reference in direct {
-            ctx.reserve_retained_vec(&mut references, 1, "NX fixed entity references")?;
+            ctx.reserve_vec(&mut references, 1, "NX fixed entity references")?;
             references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::Direct(reference.value),
             });
         }
         for reference in counted {
-            ctx.reserve_retained_vec(&mut references, 1, "NX fixed entity references")?;
+            ctx.reserve_vec(&mut references, 1, "NX fixed entity references")?;
             references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::RecordOrdinal16 {
@@ -1323,8 +1311,7 @@ impl<'a> Section<'a> {
         else {
             return Ok(None);
         };
-        let mut ends =
-            cadmpeg_core::decode::DecodeContext::admitted_vec(2, "NX operation state boundaries")?;
+        let mut ends = ctx.vector_storage(2, "NX operation state boundaries")?;
         if let Some(table) = &group {
             let Some(overlap_end) =
                 terminal.checked_add(table.groups().first().opener().bytes().len())
@@ -1414,11 +1401,7 @@ impl<'a> Section<'a> {
         let mut references = Vec::new();
         for (ordinal, record) in self.operation_records_with_label_ordinals(ctx)? {
             if let Some(reference) = operation_body_reference(record.body_view()) {
-                ctx.reserve_retained_vec(
-                    &mut references,
-                    1,
-                    "nx section operation body references",
-                )?;
+                ctx.reserve_vec(&mut references, 1, "nx section operation body references")?;
                 references.push((ordinal, reference));
             }
         }
@@ -1435,7 +1418,7 @@ fn operation_labels<'a>(
     let mut labels = Vec::new();
     for header in validated_operation_headers(ctx, bytes, base_offset)? {
         if let Some(label) = operation_label_at(bytes, base_offset, header) {
-            ctx.reserve_retained_vec(&mut labels, 1, "nx operation labels")?;
+            ctx.reserve_vec(&mut labels, 1, "nx operation labels")?;
             labels.push(label);
         }
     }
@@ -1477,7 +1460,7 @@ fn validated_operation_headers(
         else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut headers, 1, "nx operation headers")?;
+        ctx.reserve_vec(&mut headers, 1, "nx operation headers")?;
         headers.push(header);
     }
     Ok(headers)
@@ -1533,7 +1516,7 @@ fn operation_records_with_labels_and_ordinals<'a>(
             OperationRecord::new(bytes.get(start..end)?, *label)
         })();
         if let Some(record) = record {
-            ctx.reserve_retained_vec(&mut records, 1, "nx labeled operation records")?;
+            ctx.reserve_vec(&mut records, 1, "nx labeled operation records")?;
             records.push((ordinal, record));
         }
     }
@@ -1563,7 +1546,7 @@ fn unlabeled_operation_records_with_ordinals<'a>(
             UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)
         })();
         if let Some(record) = record {
-            ctx.reserve_retained_vec(&mut records, 1, "nx unlabeled operation records")?;
+            ctx.reserve_vec(&mut records, 1, "nx unlabeled operation records")?;
             records.push((ordinal, record));
         }
     }
@@ -1610,7 +1593,7 @@ pub(crate) fn operation_payload_text_frames<'a>(
             at += 1;
             continue;
         }
-        ctx.reserve_retained_vec(&mut frames, 1, "nx operation payload text frames")?;
+        ctx.reserve_vec(&mut frames, 1, "nx operation payload text frames")?;
         frames.push(OperationPayloadTextFrame {
             marker,
             offset: record.payload_offset() + at,
@@ -1629,7 +1612,7 @@ pub(crate) fn operation_payload_strings<'a>(
     let mut strings = Vec::new();
     for frame in operation_payload_text_frames(ctx, record)? {
         if frame.marker == OperationTextMarker::String {
-            ctx.reserve_retained_vec(&mut strings, 1, "nx operation payload strings")?;
+            ctx.reserve_vec(&mut strings, 1, "nx operation payload strings")?;
             strings.push(OperationPayloadString {
                 offset: frame.offset,
                 value: frame.value,
@@ -1671,7 +1654,7 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
             if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
-                ctx.reserve_retained_vec(&mut scalars, 1, "nx simple hole scalar witnesses")?;
+                ctx.reserve_vec(&mut scalars, 1, "nx simple hole scalar witnesses")?;
                 scalars.push((scalar, record.payload_offset() + at));
                 at += 8;
                 continue;
@@ -1693,17 +1676,13 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     }
     let mut repeated = Vec::new();
     for (left, right) in first.iter().zip(second) {
-        ctx.reserve_retained_vec(&mut repeated, 1, "nx simple hole repeated scalars")?;
+        ctx.reserve_vec(&mut repeated, 1, "nx simple hole repeated scalars")?;
         repeated.push(RepeatedScalar {
             scalar: left.0,
             witness_offsets: [left.1, right.1],
         });
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(repeated.len()),
-        "move NX simple hole first scalar",
-    )?;
-    Ok(NonEmpty::from_vec(repeated))
+    Ok(NonEmpty::from_admitted_vec(repeated))
 }
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
@@ -1884,8 +1863,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) = ctx.reserve_retained_vec(&mut rows, 1, "nx pattern transform rows")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern transform rows") {
                 *failure.borrow_mut() = Some(error);
                 return None;
             }
@@ -1965,9 +1943,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) =
-                ctx.reserve_retained_vec(&mut rows, 1, "nx pattern wide transform rows")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern wide transform rows") {
                 *failure.borrow_mut() = Some(error);
                 return None;
             }
@@ -2058,9 +2034,7 @@ pub(crate) fn multi_instance_output_payload_lane(
             let ordinal = *record.payload().get(at + 1)?;
             instance_count = instance_count.max(ordinal);
             (record.payload().get(at + 2) == Some(&expected_row_index)).then_some(())?;
-            if let Err(error) =
-                ctx.reserve_retained_vec(&mut rows, 1, "nx multi-instance selector rows")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx multi-instance selector rows") {
                 failure = Some(error);
                 return None;
             }
@@ -2081,7 +2055,7 @@ pub(crate) fn multi_instance_output_payload_lane(
             let object_index =
                 reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
             let end = at + object_index.raw().len();
-            if let Err(error) = ctx.reserve_retained_vec(
+            if let Err(error) = ctx.reserve_vec(
                 &mut trailing_references,
                 1,
                 "nx multi-instance trailing references",
@@ -2188,7 +2162,7 @@ pub(crate) fn identical_instance_output_payload_lane(
     };
     let selector_count = usize::from(declared_count - 1);
     let operation = "NX identical-instance selectors";
-    let mut selectors = ctx.retained_vec(selector_count, operation)?;
+    let mut selectors = ctx.collection_vec(selector_count, operation)?;
     let mut at = start + 4;
     for _ in 2..=declared_count {
         at += 5;
@@ -2251,38 +2225,29 @@ pub(crate) fn point_feature_payload_header(
 pub(crate) fn point_feature_scalar_lane(
     preceding_block: &[u8],
     target_block: &[u8],
-) -> Result<Option<PointFeatureScalarLane>, CodecError> {
+) -> Option<PointFeatureScalarLane> {
     const SUFFIX: [u8; 19] = [
         0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
         0x02, 0x00, 0x01, 0x00,
     ];
-    let Some(preceding_start) = preceding_block.len().checked_sub(3) else {
-        return Ok(None);
-    };
+    let preceding_start = preceding_block.len().checked_sub(3)?;
     if target_block.get(45..64) != Some(&SUFFIX) {
-        return Ok(None);
+        return None;
     }
-    let Some(target) = target_block.get(..45) else {
-        return Ok(None);
-    };
-    let mut lane =
-        cadmpeg_core::decode::DecodeContext::admitted_vec(48, "NX point feature scalar lane")?;
-    lane.extend_from_slice(&preceding_block[preceding_start..]);
-    lane.extend_from_slice(target);
-    let Some(values) = lane
-        .chunks_exact(8)
-        .map(ShiftedBinary64::read)
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Ok(values) = values.try_into() else {
-        return Ok(None);
-    };
-    Ok(Some(PointFeatureScalarLane {
+    let target = target_block.get(..45)?;
+    let mut lane = [0; 48];
+    lane[..3].copy_from_slice(&preceding_block[preceding_start..]);
+    lane[3..].copy_from_slice(target);
+    let first = ShiftedBinary64::read(&lane[..8])?;
+    let mut values = [first; 6];
+    for (value, bytes) in values.iter_mut().zip(lane.chunks_exact(8)) {
+        let scalar = ShiftedBinary64::read(bytes)?;
+        *value = scalar;
+    }
+    Some(PointFeatureScalarLane {
         values,
         offset: preceding_start,
-    }))
+    })
 }
 
 /// Decode the exact leading construction branch in a bounded `SWP104`
@@ -2328,7 +2293,7 @@ pub(crate) fn swp104_payload_leading_branch(
     };
     let len = usize::from(declared_count) - 1;
     let operation = "NX SWP104 members";
-    let mut members = ctx.retained_vec(len, operation)?;
+    let mut members = ctx.collection_vec(len, operation)?;
     for _ in 1..declared_count {
         let Some(object_index) = record
             .payload()
@@ -2460,9 +2425,7 @@ pub(crate) fn operation_body_members(
                     return None;
                 }
                 at += 1;
-                if let Err(error) =
-                    ctx.reserve_retained_vec(&mut members, 1, "NX operation body members")
-                {
+                if let Err(error) = ctx.reserve_vec(&mut members, 1, "NX operation body members") {
                     failure = Some(error);
                     return None;
                 }
@@ -2481,7 +2444,7 @@ pub(crate) fn operation_body_members(
             return Err(error);
         }
         if let Some(group) = group {
-            ctx.reserve_retained_vec(&mut groups, 1, "NX operation body member groups")?;
+            ctx.reserve_vec(&mut groups, 1, "NX operation body member groups")?;
             groups.push(group);
         }
     }
@@ -2564,7 +2527,7 @@ pub(crate) fn operation_body_11_continuations(
             })
         })();
         if let Some(continuation) = continuation {
-            ctx.reserve_retained_vec(&mut continuations, 1, "NX operation body continuations")?;
+            ctx.reserve_vec(&mut continuations, 1, "NX operation body continuations")?;
             continuations.push(continuation);
         }
     }
@@ -2657,7 +2620,7 @@ pub(crate) fn operation_body_reference_lanes(
             return Err(error);
         }
         if let Some(lane) = lane {
-            ctx.reserve_retained_vec(&mut lanes, 1, "NX operation body reference lanes")?;
+            ctx.reserve_vec(&mut lanes, 1, "NX operation body reference lanes")?;
             lanes.push(lane);
         }
     }
@@ -2681,7 +2644,7 @@ fn operation_body_reference_lane_values<T>(
             return Ok(None);
         };
         at += width;
-        ctx.reserve_retained_vec(&mut values, 1, "NX operation body lane values")?;
+        ctx.reserve_vec(&mut values, 1, "NX operation body lane values")?;
         values.push(value);
     }
     Ok((record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values))
@@ -2729,13 +2692,13 @@ pub(crate) fn sketch_payload_scalar_lanes(
                     break false;
                 };
                 at += scalar.raw().len();
-                ctx.reserve_retained_vec(&mut values, 1, "NX sketch scalar atoms")?;
+                ctx.reserve_vec(&mut values, 1, "NX sketch scalar atoms")?;
                 values.push((scalar, ()));
             };
             if !complete {
                 continue;
             }
-            let Some(values) = NonEmpty::from_vec(values) else {
+            let Some(values) = NonEmpty::from_admitted_vec(values) else {
                 continue;
             };
             let Ok(lane) =
@@ -2743,7 +2706,7 @@ pub(crate) fn sketch_payload_scalar_lanes(
             else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut lanes, 1, "NX sketch scalar lanes")?;
+            ctx.reserve_vec(&mut lanes, 1, "NX sketch scalar lanes")?;
             lanes.push(lane);
         }
     }
@@ -2795,7 +2758,7 @@ pub(crate) fn sketch_payload_fixed_pairs(
             let Some(second_value) = sketch_fixed_atom(bytes, second) else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut pairs, 1, "NX sketch fixed pairs")?;
+            ctx.reserve_vec(&mut pairs, 1, "NX sketch fixed pairs")?;
             pairs.push(SketchPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
@@ -2844,7 +2807,7 @@ pub(crate) fn sketch_payload_mixed_pairs(
         let Some(fixed) = sketch_fixed_atom(bytes, fixed_offset) else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut pairs, 1, "NX sketch mixed pairs")?;
+        ctx.reserve_vec(&mut pairs, 1, "NX sketch mixed pairs")?;
         pairs.push(SketchPayloadMixedPair {
             offset,
             scalars: SketchMixedScalars {
@@ -2911,7 +2874,7 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut pairs, 1, "NX datum CSYS pairs")?;
+            ctx.reserve_vec(&mut pairs, 1, "NX datum CSYS pairs")?;
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
@@ -2961,14 +2924,14 @@ pub(crate) fn draft_construction_fixed_lanes(
             let Some(scalar) = Q155::from_raw(raw) else {
                 break false;
             };
-            ctx.reserve_retained_vec(&mut values, 1, "NX draft fixed atoms")?;
+            ctx.reserve_vec(&mut values, 1, "NX draft fixed atoms")?;
             values.push((Q155Atom { marker, scalar }, ()));
             at += 8;
         };
         if !complete {
             continue;
         }
-        let Some(values) = NonEmpty::from_vec(values) else {
+        let Some(values) = NonEmpty::from_admitted_vec(values) else {
             continue;
         };
         let Ok(lane) = FramedScalarRun::new(
@@ -2978,7 +2941,7 @@ pub(crate) fn draft_construction_fixed_lanes(
         ) else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut lanes, 1, "NX draft fixed lanes")?;
+        ctx.reserve_vec(&mut lanes, 1, "NX draft fixed lanes")?;
         lanes.push(lane);
     }
     Ok(lanes)
@@ -3016,14 +2979,14 @@ pub(crate) fn draft_construction_binary32_lanes(
                 let Some(scalar) = bytes.get(at..at + 4).and_then(ShiftedBinary32::read) else {
                     break false;
                 };
-                ctx.reserve_retained_vec(&mut values, 1, "NX draft binary32 atoms")?;
+                ctx.reserve_vec(&mut values, 1, "NX draft binary32 atoms")?;
                 values.push((scalar, ()));
                 at += 4;
             };
             if !complete {
                 continue;
             }
-            let Some(values) = NonEmpty::from_vec(values) else {
+            let Some(values) = NonEmpty::from_admitted_vec(values) else {
                 continue;
             };
             let Ok(lane) =
@@ -3031,7 +2994,7 @@ pub(crate) fn draft_construction_binary32_lanes(
             else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut lanes, 1, "NX draft binary32 lanes")?;
+            ctx.reserve_vec(&mut lanes, 1, "NX draft binary32 lanes")?;
             lanes.push(lane);
         }
     }
@@ -3064,7 +3027,7 @@ pub(crate) fn draft_construction_identity_frames(
     let mut frames = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(frame) = draft_identity::DraftIdentityFrame::read(ctx, bytes, offset)? {
-            ctx.reserve_retained_vec(&mut frames, 1, "NX draft identity frames")?;
+            ctx.reserve_vec(&mut frames, 1, "NX draft identity frames")?;
             frames.push(frame);
         }
     }
@@ -3096,7 +3059,7 @@ pub(crate) fn data_block_object_frames(
             offset += 1;
             continue;
         }
-        ctx.reserve_retained_vec(&mut references, 1, "NX data-block object frames")?;
+        ctx.reserve_vec(&mut references, 1, "NX data-block object frames")?;
         references.push(LocatedCompactIndex { atom, offset });
         offset += width + DISCRIMINATOR.len();
     }
@@ -3218,7 +3181,7 @@ pub(crate) fn operation_body_references(
     )?;
     let mut references = Vec::new();
     for reference in operation_body_reference_candidates(record) {
-        ctx.reserve_retained_vec(&mut references, 1, "NX operation body references")?;
+        ctx.reserve_vec(&mut references, 1, "NX operation body references")?;
         references.push(reference);
     }
     Ok(references)
@@ -3259,7 +3222,7 @@ fn body_write_frames(
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
         if let Some(write) = operation_body_write_frame_at(payload, payload_offset, marker) {
-            ctx.reserve_retained_vec(&mut relations, 1, "nx body-write frames")?;
+            ctx.reserve_vec(&mut relations, 1, "nx body-write frames")?;
             relations.push(write);
         }
     }
@@ -3348,11 +3311,7 @@ fn operation_state_group_table_before_counter_map(
             continue;
         };
         ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-        ctx.reserve_retained_admitted_vec(
-            &mut candidates,
-            1,
-            "nx operation-state group candidates",
-        )?;
+        ctx.reserve_capacity(&mut candidates, 1, "nx operation-state group candidates")?;
         candidates.push((at, end));
     }
     ctx.stable_sort_by(
@@ -3427,7 +3386,7 @@ fn operation_state_group_table_before_counter_map(
         "nx operation-state group path",
     )?;
     let mut path = Vec::new();
-    ctx.reserve_retained_admitted_vec(&mut path, terminal.length, "nx operation-state group path")?;
+    ctx.reserve_capacity(&mut path, terminal.length, "nx operation-state group path")?;
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
         path.push(candidate_index);
@@ -3442,7 +3401,7 @@ fn operation_state_group_table_before_counter_map(
         "nx operation-state groups",
     )?;
     let mut groups = Vec::new();
-    ctx.reserve_retained_admitted_vec(&mut groups, path.len(), "nx operation-state groups")?;
+    ctx.reserve_capacity(&mut groups, path.len(), "nx operation-state groups")?;
     for candidate in path {
         let Some(group) =
             operation_state_group_at(ctx, bytes, candidates[candidate].0, map_start, base_offset)?
@@ -3577,7 +3536,7 @@ fn audit_trail_rows(
         }
         previous_ordinal = Some(ordinal);
         at = row.local_end();
-        ctx.reserve_retained_vec(&mut rows, 1, "NX audit-trail rows")?;
+        ctx.reserve_vec(&mut rows, 1, "NX audit-trail rows")?;
         rows.push(row);
     }
     Ok(Some(rows))
@@ -3655,7 +3614,7 @@ fn operation_state_journal_groups_before_boundary(
             return Ok(None);
         };
         at = next;
-        ctx.reserve_retained_vec(&mut groups, 1, "NX state-journal groups")?;
+        ctx.reserve_vec(&mut groups, 1, "NX state-journal groups")?;
         groups.push(group);
     }
     Ok((!groups.is_empty()).then_some(groups))
@@ -3731,11 +3690,11 @@ pub(crate) fn operation_common_frames(
     let mut frames = Vec::new();
     for start in 0..record.payload().len() {
         if let Some(frame) = decode(start, [1, 3, 2]) {
-            ctx.reserve_retained_vec(&mut frames, 1, "nx common frames")?;
+            ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
         if let Some(frame) = decode(start, [1, 1, 1]) {
-            ctx.reserve_retained_vec(&mut frames, 1, "nx common frames")?;
+            ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
     }
@@ -3808,7 +3767,7 @@ pub(crate) fn data_block_object_references(
             at += 1;
             continue;
         }
-        ctx.reserve_retained_vec(&mut references, 1, "nx data-block object references")?;
+        ctx.reserve_vec(&mut references, 1, "nx data-block object references")?;
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
@@ -3887,7 +3846,7 @@ fn boolean_operations_with_labels(
             return Err(error);
         }
         if let Some(operation) = operation {
-            ctx.reserve_retained_vec(&mut operations, 1, "NX Boolean operations")?;
+            ctx.reserve_vec(&mut operations, 1, "NX Boolean operations")?;
             operations.push(operation);
         }
     }
@@ -3932,7 +3891,7 @@ fn counted_feature_object_indices(
             return Ok(None);
         };
         let next = cursor + value.raw().len();
-        ctx.reserve_retained_vec(&mut values, 1, "NX Boolean references")?;
+        ctx.reserve_vec(&mut values, 1, "NX Boolean references")?;
         values.push(PayloadObjectReference {
             offset: base_offset + cursor,
             token: value,
@@ -3985,7 +3944,7 @@ pub(crate) fn counted_record_references(
             let Some(value) = View::u16_be_at(bytes, token + 1) else {
                 break;
             };
-            ctx.reserve_retained_vec(&mut references, 1, "NX counted record references")?;
+            ctx.reserve_vec(&mut references, 1, "NX counted record references")?;
             references.push(LocatedReference {
                 offset: base_offset + token,
                 value,
@@ -4013,7 +3972,7 @@ fn record_references(
         .copied()
         .filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_)))
     {
-        ctx.reserve_retained_vec(&mut out, 1, "NX record references")?;
+        ctx.reserve_vec(&mut out, 1, "NX record references")?;
         out.push(reference);
     }
     for (persistent, tagged) in parsed.iter().zip(parsed.iter().skip(1)) {
@@ -4025,7 +3984,7 @@ fn record_references(
             && matches!(tagged.value, DirectReference::Tagged28(_))
             && adjacent
         {
-            ctx.reserve_retained_vec(&mut out, 1, "NX record references")?;
+            ctx.reserve_vec(&mut out, 1, "NX record references")?;
             out.push(*tagged);
         }
     }
@@ -4053,7 +4012,7 @@ pub(crate) fn references(
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
             if let Some(value) = View::u32_be_at(bytes, at + 1) {
-                ctx.reserve_retained_vec(&mut out, 1, "NX tagged references")?;
+                ctx.reserve_vec(&mut out, 1, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::PersistentHandle(value),
@@ -4063,7 +4022,7 @@ pub(crate) fn references(
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
             if let Some(value) = View::u32_be_at(bytes, at) {
-                ctx.reserve_retained_vec(&mut out, 1, "NX tagged references")?;
+                ctx.reserve_vec(&mut out, 1, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::Tagged28(Tagged28::from_word(value)),
@@ -4108,7 +4067,7 @@ pub(crate) fn string_values<'a>(
             })
         })();
         if let Some(value) = value {
-            ctx.reserve_retained_vec(&mut values, 1, "NX printable strings")?;
+            ctx.reserve_vec(&mut values, 1, "NX printable strings")?;
             values.push(value);
         }
     }
@@ -4158,7 +4117,7 @@ pub(crate) fn uuid_string_values<'a>(
         let Some(absolute_offset) = base_offset.checked_add(offset) else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut values, 1, "nx UUID strings")?;
+        ctx.reserve_vec(&mut values, 1, "nx UUID strings")?;
         values.push(UuidStringValue {
             offset: absolute_offset,
             value,
@@ -4315,7 +4274,7 @@ pub(crate) fn surface_payload_strings<'a>(
             continue;
         }
         let value = SurfacePayloadString { offset, value };
-        ctx.reserve_retained_vec(&mut strings, 1, "nx surface payload strings")?;
+        ctx.reserve_vec(&mut strings, 1, "nx surface payload strings")?;
         strings.push(value);
     }
     Ok(strings)
@@ -4353,7 +4312,7 @@ pub(crate) fn numeric_expressions<'a>(
         let Some(expression) = numeric_expression_at(&bytes[start..], start, None) else {
             continue;
         };
-        ctx.reserve_retained_vec(&mut expressions, 1, "nx numeric expressions")?;
+        ctx.reserve_vec(&mut expressions, 1, "nx numeric expressions")?;
         expressions.push(expression);
     }
     Ok(expressions)
@@ -4428,7 +4387,7 @@ pub(crate) fn sections<'a>(
             Some(area) => operation_labels(ctx, area.bytes, area.offset)?,
             None => Vec::new(),
         };
-        ctx.reserve_retained_vec(&mut out, 1, "nx framed OM sections")?;
+        ctx.reserve_vec(&mut out, 1, "nx framed OM sections")?;
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -4629,7 +4588,7 @@ fn materialize_indexed_candidate<'a>(
                 records: {
                     let mut records = Vec::new();
                     for record in index.records() {
-                        ctx.reserve_retained_vec(&mut records, 1, "nx fixed OM records")?;
+                        ctx.reserve_vec(&mut records, 1, "nx fixed OM records")?;
                         records.push(record);
                     }
                     records.into()
@@ -4646,7 +4605,7 @@ fn materialize_indexed_candidate<'a>(
                     records: {
                         let mut records = Vec::new();
                         for record in index.records() {
-                            ctx.reserve_retained_vec(&mut records, 1, "nx offset OM records")?;
+                            ctx.reserve_vec(&mut records, 1, "nx offset OM records")?;
                             records.push(record);
                         }
                         records.into()
@@ -4853,7 +4812,7 @@ pub(crate) fn indexed_sections<'a>(
     let mut sections = Vec::new();
     for candidate in select_outer_indexed_candidates(ctx, candidates)? {
         let section = materialize_indexed_candidate(ctx, candidate)?;
-        ctx.reserve_retained_vec(&mut sections, 1, "nx indexed OM sections")?;
+        ctx.reserve_vec(&mut sections, 1, "nx indexed OM sections")?;
         sections.push(section);
     }
     Ok(sections)

@@ -119,13 +119,15 @@ fn prototype_spline_nurbs(
         return Ok(None);
     };
     let Some(grid) = crate::interpolation_grid::InterpolationGrid::try_new(
+        ctx,
         points,
         u_parameters,
         v_parameters,
         u_derivatives,
         v_derivatives,
         mixed_derivatives,
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     interpolation_spline_surface(

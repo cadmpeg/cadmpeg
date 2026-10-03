@@ -54,7 +54,7 @@ impl<T: CloneCharged> CloneCharged for Vec<T> {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut copy = Vec::new();
-        ctx.reserve_retained_vec(&mut copy, self.len(), operation)?;
+        ctx.reserve_vec(&mut copy, self.len(), operation)?;
         for value in self {
             ctx.charge_work(1, operation)?;
             copy.push(value.clone_charged(ctx, operation)?);

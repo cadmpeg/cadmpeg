@@ -219,7 +219,7 @@ macro_rules! generated_arc_collection_limit_test {
                 Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == $operation));
-            let entities = generated_arc_with_limits(3, 14).expect("generated arc admitted");
+            let entities = generated_arc_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| generated_arc_with_limits(u64::MAX, cap))).expect("generated arc admitted");
             let [FeatureSavedEntity::Arc(arc)] = entities.as_slice() else {
                 panic!("generated arc");
             };
@@ -248,14 +248,21 @@ generated_arc_collection_limit_test!(
 #[test]
 fn saved_generated_arc_body_refuses_before_retained_copy() {
     assert!(
-        matches!(generated_arc_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
+        matches!(generated_arc_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved generated arc body"), |cap| generated_arc_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved generated arc body")
     );
     assert_eq!(
-        generated_arc_with_limits(3, 14)
-            .expect("generated arc admitted")
-            .len(),
+        generated_arc_with_limits(
+            3,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| generated_arc_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("generated arc admitted")
+        .len(),
         1
     );
 }
@@ -263,11 +270,19 @@ fn saved_generated_arc_body_refuses_before_retained_copy() {
 #[test]
 fn saved_generated_line_body_refuses_before_retained_copy() {
     assert!(
-        matches!(generated_line_with_limits(3, 7), Err(CodecError::ResourceLimit(limit))
+        matches!(generated_line_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved generated line body"), |cap| generated_line_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved generated line body")
     );
-    let entities = generated_line_with_limits(3, 8).expect("generated line admitted");
+    let entities = generated_line_with_limits(
+        3,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| generated_line_with_limits(u64::MAX, cap),
+        ),
+    )
+    .expect("generated line admitted");
     let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
         panic!("generated line");
     };
@@ -319,14 +334,21 @@ fn saved_circular_with_limits(
 #[test]
 fn saved_arc_body_refuses_before_retained_copy() {
     assert!(
-        matches!(saved_circular_with_limits(2, 5), Err(CodecError::ResourceLimit(limit))
+        matches!(saved_circular_with_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved arc body"), |cap| saved_circular_with_limits(2, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved arc body")
     );
     assert_eq!(
-        saved_circular_with_limits(2, 12)
-            .expect("arc and circle admitted")
-            .len(),
+        saved_circular_with_limits(
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| saved_circular_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("arc and circle admitted")
+        .len(),
         2
     );
 }
@@ -334,14 +356,21 @@ fn saved_arc_body_refuses_before_retained_copy() {
 #[test]
 fn saved_circle_body_refuses_before_retained_copy() {
     assert!(
-        matches!(saved_circular_with_limits(2, 11), Err(CodecError::ResourceLimit(limit))
+        matches!(saved_circular_with_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved circle body"), |cap| saved_circular_with_limits(2, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved circle body")
     );
     assert_eq!(
-        saved_circular_with_limits(2, 12)
-            .expect("arc and circle admitted")
-            .len(),
+        saved_circular_with_limits(
+            2,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| saved_circular_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("arc and circle admitted")
+        .len(),
         2
     );
 }
@@ -378,7 +407,17 @@ fn saved_conic_body_refuses_before_retained_copy() {
     assert!(matches!(run(1, 13), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved conic body"));
-    assert_eq!(run(1, 14).expect("conic admitted").len(), 1);
+    assert_eq!(
+        run(
+            1,
+            14 + cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<super::FeatureSavedEntity>()
+            )
+        )
+        .expect("conic admitted")
+        .len(),
+        1
+    );
 }
 
 #[test]
@@ -418,14 +457,21 @@ fn saved_dummy_body_refuses_before_retained_copy() {
             && limit.operation == "creo saved dummy body")
     );
     assert_eq!(
-        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, 1, |ctx| {
-            crate::feature::definitions::saved_dummy_entities(
-                ctx,
-                SAVED_DUMMY_LIMIT_INPUT,
-                0,
-                SAVED_DUMMY_LIMIT_INPUT.len(),
-            )
-        })
+        with_saved_leaf_limits(
+            SAVED_DUMMY_LIMIT_INPUT,
+            1,
+            1 + cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<super::FeatureSavedEntity>()
+            ),
+            |ctx| {
+                crate::feature::definitions::saved_dummy_entities(
+                    ctx,
+                    SAVED_DUMMY_LIMIT_INPUT,
+                    0,
+                    SAVED_DUMMY_LIMIT_INPUT.len(),
+                )
+            }
+        )
         .expect("dummy admitted")
         .len(),
         1
@@ -551,14 +597,21 @@ saved_line_collection_limit_test!(
 #[test]
 fn saved_line_body_refuses_before_retained_copy() {
     assert!(
-        matches!(saved_line_with_limits(4, 12), Err(CodecError::ResourceLimit(limit))
+        matches!(saved_line_with_limits(4, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved line body"), |cap| saved_line_with_limits(4, cap))), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved line body")
     );
     assert_eq!(
-        saved_line_with_limits(4, 13)
-            .expect("saved line admitted")
-            .len(),
+        saved_line_with_limits(
+            4,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                None,
+                |cap| saved_line_with_limits(u64::MAX, cap)
+            )
+        )
+        .expect("saved line admitted")
+        .len(),
         1
     );
 }
@@ -624,11 +677,11 @@ macro_rules! saved_spline_retained_limit_test {
     ($name:ident, $limit:expr, $operation:literal) => {
         #[test]
         fn $name() {
-            assert!(matches!(saved_spline_with_limits(u64::MAX, $limit),
+            assert!(matches!(saved_spline_with_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some($operation), |cap| saved_spline_with_limits(u64::MAX, cap))),
                 Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == $operation));
-            assert_eq!(saved_spline_with_limits(u64::MAX, 22).expect("spline admitted").len(), 1);
+            assert_eq!(saved_spline_with_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| saved_spline_with_limits(u64::MAX, cap))).expect("spline admitted").len(), 1);
         }
     };
 }

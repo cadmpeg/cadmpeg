@@ -186,7 +186,7 @@ fn parse_mesh(
             "mesh population exceeds remaining payload",
         ));
     }
-    let mut vertices = ctx.retained_vec(point_count, "FreeCAD mesh vertices")?;
+    let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
     for _ in 0..point_count {
         vertices.push(reader.point3(byte_order, "mesh point")?);
     }
@@ -262,7 +262,7 @@ fn parse_points(
         "FreeCAD point-cloud entities",
     )?;
     let transform = point_transform(ctx, property)?;
-    let mut points = ctx.retained_vec(count, "FreeCAD point-cloud points")?;
+    let mut points = ctx.collection_vec(count, "FreeCAD point-cloud points")?;
     for index in 0..count {
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(

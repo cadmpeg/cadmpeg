@@ -232,12 +232,12 @@ pub(crate) fn reverse_pcurve_geometry(
             let mut poles = match nurbs.pole_rows() {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
-                        points: ctx.copy_retained_slice(points, "catia_reverse_pcurve_poles")?,
+                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
                     }
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational {
-                        points: ctx.copy_retained_slice(points, "catia_reverse_pcurve_poles")?,
+                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
                     }
                 }
             };
@@ -348,7 +348,7 @@ fn reverse_knots(
     knots: &[f64],
     [lower, upper]: [f64; 2],
 ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-    let mut reversed = ctx.copy_retained_slice(knots, "catia_reverse_knots")?;
+    let mut reversed = ctx.copy_slice(knots, "catia_reverse_knots")?;
     reversed.reverse();
     for knot in &mut reversed {
         let reflected = if (*knot - lower).abs() <= (upper - *knot).abs() {
@@ -377,12 +377,12 @@ pub(crate) fn reverse_nurbs_curve(
     let mut poles = match curve.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
-                points: ctx.copy_retained_slice(points, "catia_reverse_curve_poles")?,
+                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
             }
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
-                points: ctx.copy_retained_slice(points, "catia_reverse_curve_poles")?,
+                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
             }
         }
     };

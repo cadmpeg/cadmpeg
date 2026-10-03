@@ -127,41 +127,38 @@ fn fixture() -> (
 
 fn assert_refusal(operation: &'static str, spatial: bool) {
     let (scope, feature, planar, spatial_entity) = fixture();
-    let max_limit = 512;
-    for limit in 0..max_limit {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut features = [feature.clone()];
-        let result = bind_work_point_sketch_point_constructions(
-            &ctx,
-            &mut features,
-            std::slice::from_ref(&scope),
-            if spatial {
-                &[]
-            } else {
-                std::slice::from_ref(&planar)
-            },
-            if spatial {
-                std::slice::from_ref(&spatial_entity)
-            } else {
-                &[]
+
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut features = [feature.clone()];
+                let result = bind_work_point_sketch_point_constructions(
+                    &ctx,
+                    &mut features,
+                    std::slice::from_ref(&scope),
+                    if spatial {
+                        &[]
+                    } else {
+                        std::slice::from_ref(&planar)
+                    },
+                    if spatial {
+                        std::slice::from_ref(&spatial_entity)
+                    } else {
+                        &[]
+                    },
+                );
+                result
             },
         );
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::RetainedBytes =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(()) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no {operation} refusal");
 }
 
 #[test]

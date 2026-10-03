@@ -19,14 +19,15 @@ fn hollerith_token_refuses_retained_limit_before_copy() {
     let bytes = b"116,4Habcd;";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
+    policy.limits.max_retained_bytes = (3)
+        + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<crate::parameter::Token>());
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let result = tokenize(bytes, &[], b',', b';', GlobalTable::V5Later, &ctx);
     assert!(matches!(
         result,
         Err(TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
+                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<crate::parameter::Token>())
                 && limit.additional == 4
     ));
 

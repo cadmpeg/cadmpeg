@@ -701,7 +701,15 @@ mod tests {
 
     #[test]
     fn entity_graph_lossy_name_refuses_before_retained_growth() {
-        let error = run(3, 15).expect_err("replacement needs three retained bytes");
+        let error = run(
+            3,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo feature entity name"),
+                |cap| run(3, cap),
+            ),
+        )
+        .expect_err("replacement needs three retained bytes");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo feature entity name"));

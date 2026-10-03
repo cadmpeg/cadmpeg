@@ -252,7 +252,7 @@ impl CanonError {
             return self;
         };
         let admitted = (|| {
-            ctx.reserve_retained_vec(&mut steps, 1, STORAGE)?;
+            ctx.reserve_vec(&mut steps, 1, STORAGE)?;
             step()
         })();
         match admitted {
@@ -644,7 +644,7 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         Ok(CanonSeq {
             ctx: self.ctx,
             _nested: nested,
-            out: self.ctx.retained_vec(len.unwrap_or(0), STORAGE)?,
+            out: self.ctx.collection_vec(len.unwrap_or(0), STORAGE)?,
             unfilled: len.unwrap_or(0),
             depth,
             sink: self.sink,
@@ -765,7 +765,7 @@ impl ser::SerializeSeq for CanonSeq<'_> {
         if let Some(unfilled) = self.unfilled.checked_sub(1) {
             self.unfilled = unfilled;
         } else {
-            self.ctx.reserve_retained_vec(&mut self.out, 1, STORAGE)?;
+            self.ctx.reserve_vec(&mut self.out, 1, STORAGE)?;
         }
         self.out.push(element);
         Ok(())

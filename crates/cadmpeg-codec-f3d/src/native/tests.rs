@@ -10,6 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -107,7 +108,21 @@ fn native_owner_index_refuses_retained_key_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D native owner id",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::owner_indices(&ctx, ["key"].into_iter())
+                .map(|_| ())
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::owner_indices(&ctx, ["key"].into_iter()).unwrap_err();
     assert!(matches!(
@@ -765,7 +780,11 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(cadmpeg_asm::asm_header::solved_record_limit(&smbh).is_none());
+    assert!(
+        cadmpeg_asm::asm_header::solved_record_limit(&service_decode_context(), &smbh)
+            .expect("history scan")
+            .is_none()
+    );
 
     let decoded = F3dCodec
         .decode(

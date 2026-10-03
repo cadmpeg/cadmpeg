@@ -392,7 +392,11 @@ fn pattern_body_second_slot_refuses_collection_limit() {
 
 #[test]
 fn pattern_body_feature_id_refuses_retained_limit() {
-    let error = pattern_slots_error(u64::MAX, 0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D pattern body feature ID",
+        |cap| pattern_slots_error(u64::MAX, cap),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D pattern body feature ID")

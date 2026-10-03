@@ -10,9 +10,11 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::service_decode_context;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
+const EPS_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-12;
 const HEADER_NORMAL_TOLERANCE_RADIANS: f64 = 1.0e-10;
 const ABOVE_FLOOR_RESABS_CM: f64 = 2.0e-8;
 const BELOW_FLOOR_RESABS_CM: f64 = 5.0e-9;
@@ -316,7 +318,9 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
 #[test]
 fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
+    let off = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .expect("has a delta_state");
     assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
     assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
 
@@ -325,20 +329,29 @@ fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let mut smb = bytes;
     smb[39..47].copy_from_slice(&2u64.to_le_bytes());
     smb.truncate(off);
-    assert!(asm_header::solved_record_limit(&smb).is_none());
+    assert!(
+        asm_header::solved_record_limit(&service_decode_context(), &smb)
+            .expect("history scan")
+            .is_none()
+    );
 }
 
 #[test]
 fn history_preamble_record_is_the_modern_partition_boundary() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
+        .expect("history scan")
+        .unwrap();
     let mut bytes = direct[..delta].to_vec();
     let expected = bytes.len();
     t_ident(&mut bytes, "Begin-of-ASM-History-Data");
     t_end(&mut bytes);
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    assert_eq!(
+        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
+        Some(expected)
+    );
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
@@ -356,7 +369,9 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 #[test]
 fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let direct = synthetic_smbh();
-    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let delta = asm_header::solved_record_limit(&service_decode_context(), &direct)
+        .expect("history scan")
+        .unwrap();
     let start = asm_header::record_stream_start(&direct).unwrap();
     let mut bytes = direct[..start].to_vec();
     t_ident(&mut bytes, "metadata");
@@ -365,7 +380,10 @@ fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
     let expected = bytes.len();
     bytes.extend_from_slice(&direct[delta..]);
 
-    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    assert_eq!(
+        asm_header::solved_record_limit(&service_decode_context(), &bytes).expect("history scan"),
+        Some(expected)
+    );
 }
 
 #[test]
@@ -502,7 +520,10 @@ use crate::container::classify;
 fn detect_high_on_f3d_zip_low_on_bare_zip() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
-    assert_eq!(codec.detect(&f3d), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &f3d),
+        Confidence::High
+    );
 
     // A ZIP whose visible prefix has no f3d markers.
     let mut bare = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -513,9 +534,15 @@ fn detect_high_on_f3d_zip_low_on_bare_zip() {
     .unwrap();
     bare.write_all(b"hello").unwrap();
     let bare = bare.finish().unwrap().into_inner();
-    assert_eq!(codec.detect(&bare), Confidence::Low);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bare),
+        Confidence::Low
+    );
 
-    assert_eq!(codec.detect(b"\x00\x01\x02\x03 not a zip"), Confidence::No);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, b"\x00\x01\x02\x03 not a zip"),
+        Confidence::No
+    );
 }
 
 #[test]
@@ -561,10 +588,10 @@ fn f3d_brep_scan_propagates_header_string_limit() {
     use cadmpeg_core::CodecError;
 
     let bytes = synthetic_f3d(true);
-    let arena = DecodeArena::new();
     let mut cap = 0;
     let mut needed = None;
     for _ in 0..128 {
+        let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         let (limited, root) =
@@ -589,6 +616,7 @@ fn f3d_brep_scan_propagates_header_string_limit() {
         }
     }
     let needed = needed.expect("header string reached within fixture charges");
+    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = needed - 1;
     let (limited, root) =
@@ -831,7 +859,9 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
+        .expect("history scan")
+        .unwrap_or(bytes.len());
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -850,4 +880,67 @@ fn sab_framer_indexes_records_from_asmheader() {
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
     assert!(records.iter().all(|r| r.head() != "delta_state"));
+}
+
+#[test]
+fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
+    for skipped in [vec![0], synthetic_smbh()] {
+        let contributing_name = "FusionAssetName[Active]/Breps.BlobParts/BREP.second.smbh";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.first.smbh",
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&skipped).unwrap();
+        zip.start_file(contributing_name, stored).unwrap();
+        zip.write_all(&synthetic_geometry_smbh()).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let expected_digest = with_scan(&bytes, |scan| {
+            scan.breps
+                .iter()
+                .find(|facts| facts.name == contributing_name)
+                .unwrap()
+                .sha256
+                .to_string()
+        });
+        let result = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(!result.ir().model.faces.is_empty());
+        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        assert_eq!(
+            attributes.get("active_brep").map(String::as_str),
+            Some(contributing_name)
+        );
+        assert_eq!(attributes.get("active_brep_sha256"), Some(&expected_digest));
+        assert!(
+            (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+                <= EPS_HEADER_LINEAR_TOLERANCE
+        );
+    }
+}
+
+#[test]
+fn kernel_tolerance_below_precision_floor_is_unsupported() {
+    let error = super::super::admit_kernel_tolerances(
+        BELOW_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("tolerance floor"))
+    );
+}
+
+#[test]
+fn kernel_tolerance_invalid_values_remain_malformed() {
+    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+        assert!(matches!(
+            super::super::admit_kernel_tolerances(value, HEADER_NORMAL_TOLERANCE_RADIANS),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }

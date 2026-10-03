@@ -1,3 +1,4 @@
+use cadmpeg_core::decode::ResourceDimension;
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
@@ -241,25 +242,28 @@ fn assert_projected_constraint_retained_refusal(operation: &'static str) {
     let points = [point, unprojected_point];
     let relations = [relation];
     let entities = [entity];
-    for limit in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::project_sketch_constraints(
-            &ctx,
-            &placements,
-            &[],
-            (&points, &[], &[]),
-            &relations,
-            &entities,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected retained refusal at {operation}: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::project_sketch_constraints(
+                    &ctx,
+                    &placements,
+                    &[],
+                    (&points, &[], &[]),
+                    &relations,
+                    &entities,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no refusal at {operation}");
 }
 
 #[test]

@@ -29,19 +29,24 @@ fn user_defined_name_prefix_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=!VENDOR_ENTITY(!VENDOR_TYPE(#2));#2=KNOWN();ENDSEC;END-ISO-10303-21;";
-    let refused = (0..=8192).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-            .expect("root fits selected policy");
-        matches!(
-            crate::parse::parse_with_context(SOURCE, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_parse_user_name_prefix",
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                    .expect("root fits selected policy");
+
+                (crate::parse::parse_with_context(SOURCE, &ctx)).map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_parse_user_name_prefix"
-        )
-    });
+                    && refusal.operation == "step_parse_user_name_prefix")
+    };
     assert!(refused, "user-defined names must charge prefixed text");
 }
 
@@ -51,19 +56,24 @@ fn expected_name_error_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     const SOURCE: &[u8] = b"WRONG;";
-    let refused = (0..=128).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            crate::parse::parse_with_context(SOURCE, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_parse_expected_name_error",
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                    .expect("root fits retained policy");
+
+                (crate::parse::parse_with_context(SOURCE, &ctx)).map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_parse_expected_name_error"
-        )
-    });
+                    && refusal.operation == "step_parse_expected_name_error")
+    };
     assert!(refused, "expected-name diagnostic must charge its text");
 }
 
@@ -78,25 +88,22 @@ fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
     assert_eq!(parameters.len(), 2);
     assert_eq!(diagnostics.len(), 1);
 
-    let mut recovery_limit = None;
-    for max_retained_bytes in 1..=8192 {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = max_retained_bytes;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
-                .expect("root fits the test policy");
-        let error = crate::parse::parse_with_context(source, &ctx)
-            .expect_err("recovered storage must consume retained bytes");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            continue;
-        };
-        if limit.operation == "step_omitted_name_recovery_storage" {
-            recovery_limit = Some(limit);
-            break;
-        }
-    }
-    let limit = recovery_limit.expect("recovered name storage must have a budget gate");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "step_parse_parameter",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                    .expect("root fits the test policy");
+            crate::parse::parse_with_context(source, &ctx)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("parameter slot storage refusal");
+    };
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes

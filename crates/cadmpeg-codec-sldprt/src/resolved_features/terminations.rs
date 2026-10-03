@@ -1771,14 +1771,18 @@ pub(crate) fn project_compact_combine_paths(
             let order = features
                 .iter()
                 .find(|feature| feature.id == dependency)
-                .map_or(u64::MAX, |feature| feature.ordinal);
+                .map(|feature| feature.ordinal);
             ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
             ordered.push((order, ordinal, dependency));
         }
         ctx.sort_unstable_by(
             &mut ordered,
             |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
-                (left_order, left_ordinal).cmp(&(right_order, right_ordinal))
+                (left_order.is_none(), left_order, left_ordinal).cmp(&(
+                    right_order.is_none(),
+                    right_order,
+                    right_ordinal,
+                ))
             },
             |_| 0,
             OPERATION,
@@ -1795,11 +1799,7 @@ pub(crate) fn project_compact_combine_paths(
                     continue;
                 }
             }
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                &mut dependencies,
-                1,
-                OPERATION,
-            )?;
+            ctx.reserve_capacity(&mut dependencies, 1, OPERATION)?;
             dependencies.push(dependency);
         }
         ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;

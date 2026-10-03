@@ -1814,9 +1814,20 @@ mod tests {
     #[test]
     fn sketch_transfer_refuses_before_unadmitted_member_allocation() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-        });
+        let refused = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_sketch_entity_sketch_id",
+            |ctx| {
+                let mut trial_ir = ir.clone();
+                transfer_native_sketch_entities(
+                    ctx,
+                    &mut trial_ir,
+                    &native,
+                    &transfer,
+                    &graph_scope,
+                )
+            },
+        );
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_sketch_entity_sketch_id")
@@ -1831,9 +1842,20 @@ mod tests {
     #[test]
     fn sketch_constraint_scan_refuses_before_unadmitted_candidate_allocation() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-        });
+        let refused = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_sketch_constraint_sketch_id",
+            |ctx| {
+                let mut trial_ir = ir.clone();
+                transfer_native_sketch_constraints(
+                    ctx,
+                    &mut trial_ir,
+                    &native,
+                    &transfer,
+                    &graph_scope,
+                )
+            },
+        );
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_sketch_constraint_sketch_id")

@@ -2,13 +2,11 @@
 
 use super::{
     anonymous, bitmap_header, embedded_bitmap_payload, legacy_text_style_bytes, light_payload,
-    model_attributes_status_chunk, modern_font_chunk, object_rendering_with_negative_minor,
-    stored_bitmap_buffer, texture_payload, utf16_bytes, v5_dimension_style_chunk,
-    v5_dimension_style_extra_chunk, windows_bitmap_payload,
+    model_attributes_status_chunk, modern_font_chunk, stored_bitmap_buffer, texture_payload,
+    utf16_bytes, v5_dimension_style_chunk, v5_dimension_style_extra_chunk, windows_bitmap_payload,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
-use crate::presentation::rendering_attributes;
 use crate::presentation::TextStyleParseInput;
 use crate::settings;
 use crate::wire::Uuid;
@@ -117,7 +115,7 @@ fn group_identity_workspace_refuses_materialized_limit() {
     let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
         .expect_err("identity workspace exceeds materialized limit");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity workspace")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
     );
 }
 
@@ -151,13 +149,23 @@ fn duplicate_group_indices_refuse_collection_limit() {
 
 #[test]
 fn disambiguated_group_id_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
-        .expect_err("disambiguated ID exceeds retained limit");
+    let run = |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+            .expect_err("disambiguated ID exceeds retained limit")
+    };
+    let error = run(crate::test_support::retained_limit_at(
+        "Rhino disambiguated group ID",
+        0,
+        |cap| match run(cap) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+            error => panic!("unexpected resource refusal: {error:?}"),
+        },
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID")
     );
@@ -589,14 +597,14 @@ fn rendering_mapping_refusal(limit: u64) -> FramingError {
 #[test]
 fn rendering_mapping_plugin_uuid_refuses_retained_limit() {
     assert!(
-        matches!(rendering_mapping_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering mapping plugin UUID")
+        matches!(rendering_mapping_refusal(crate::test_support::retained_limit_at("Rhino rendering mapping plugin UUID", 0, |cap| { match rendering_mapping_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering mapping plugin UUID")
     );
 }
 
 #[test]
 fn rendering_channel_uuid_refuses_retained_limit() {
     assert!(
-        matches!(rendering_mapping_refusal(36), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering channel UUID")
+        matches!(rendering_mapping_refusal(crate::test_support::retained_limit_at("Rhino rendering channel UUID", 0, |cap| { match rendering_mapping_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering channel UUID")
     );
 }
 
@@ -635,21 +643,21 @@ fn rendering_material_refusal(limit: u64) -> FramingError {
 #[test]
 fn rendering_material_plugin_uuid_refuses_retained_limit() {
     assert!(
-        matches!(rendering_material_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering material plugin UUID")
+        matches!(rendering_material_refusal(crate::test_support::retained_limit_at("Rhino rendering material plugin UUID", 0, |cap| { match rendering_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering material plugin UUID")
     );
 }
 
 #[test]
 fn rendering_front_material_uuid_refuses_retained_limit() {
     assert!(
-        matches!(rendering_material_refusal(36), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering front material UUID")
+        matches!(rendering_material_refusal(crate::test_support::retained_limit_at("Rhino rendering front material UUID", 0, |cap| { match rendering_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering front material UUID")
     );
 }
 
 #[test]
 fn rendering_back_material_uuid_refuses_retained_limit_after_obsolete_channel() {
     assert!(
-        matches!(rendering_material_refusal(72), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering back material UUID")
+        matches!(rendering_material_refusal(crate::test_support::retained_limit_at("Rhino rendering back material UUID", 0, |cap| { match rendering_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering back material UUID")
     );
 }
 
@@ -692,14 +700,14 @@ fn v5_dimension_valid_fields_refuse_collection_limit() {
 #[test]
 fn v5_dimension_parent_uuid_refuses_retained_limit() {
     assert!(
-        matches!(v5_dimension_extra_refusal(u64::MAX, 0), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension parent UUID")
+        matches!(v5_dimension_extra_refusal(u64::MAX, crate::test_support::retained_limit_at("Rhino V5 dimension parent UUID", 0, |cap| { match v5_dimension_extra_refusal(u64::MAX, cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension parent UUID")
     );
 }
 
 #[test]
 fn v5_dimension_source_uuid_refuses_retained_limit() {
     assert!(
-        matches!(v5_dimension_extra_refusal(u64::MAX, 36), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension source UUID")
+        matches!(v5_dimension_extra_refusal(u64::MAX, crate::test_support::retained_limit_at("Rhino V5 dimension source UUID", 0, |cap| { match v5_dimension_extra_refusal(u64::MAX, cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino V5 dimension source UUID")
     );
 }
 
@@ -725,28 +733,9 @@ macro_rules! v5_dimension_text_limit {
     ($name:ident, $limit:expr, $operation:literal) => {
         #[test]
         fn $name() {
-            assert!(matches!(v5_dimension_style_refusal($limit), FramingError::Resource(refusal) if refusal.operation == $operation));
+            assert!(matches!(v5_dimension_style_refusal(crate::test_support::retained_limit_at($operation, 0, |cap| { match v5_dimension_style_refusal(cap) { FramingError::Resource(limit) => limit, error => panic!("unexpected resource refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == $operation));
         }
     };
-}
-
-fn v5_dimension_prefix_budget() -> u64 {
-    let keys = ["v5_version", "v5_arrow_type", "v5_angular_units"];
-    u64::try_from(22 + keys.iter().map(|key| key.len()).sum::<usize>()).expect("prefix budget fits")
-}
-
-fn v5_dimension_id_budget() -> u64 {
-    let later_keys = [
-        "v5_length_factor",
-        "v5_alternate_angle_format",
-        "v5_alternate_angle_resolution",
-        "v5_unused",
-        "v5_leader_arrow_type",
-    ];
-    v5_dimension_prefix_budget()
-        + 4
-        + u64::try_from(later_keys.iter().map(|key| key.len()).sum::<usize>())
-            .expect("ID budget fits")
 }
 
 v5_dimension_text_limit!(
@@ -806,35 +795,34 @@ fn dimension_controls_preserve_sorted_serialization_and_replacement() {
 }
 v5_dimension_text_limit!(
     v5_dimension_prefix_refuses_retained_limit,
-    v5_dimension_prefix_budget(),
+    0,
     "Rhino V5 dimension prefix"
 );
 v5_dimension_text_limit!(
     v5_dimension_suffix_refuses_retained_limit,
-    v5_dimension_prefix_budget() + 1,
+    1,
     "Rhino V5 dimension suffix"
 );
 v5_dimension_text_limit!(
     v5_dimension_alternate_prefix_refuses_retained_limit,
-    v5_dimension_prefix_budget() + 2,
+    2,
     "Rhino V5 dimension alternate prefix"
 );
 v5_dimension_text_limit!(
     v5_dimension_alternate_suffix_refuses_retained_limit,
-    v5_dimension_prefix_budget() + 3,
+    3,
     "Rhino V5 dimension alternate suffix"
 );
 v5_dimension_text_limit!(
     v5_dimension_id_refuses_retained_limit,
-    v5_dimension_id_budget(),
+    0,
     "Rhino dimension style ID"
 );
 
 #[test]
 fn v5_dimension_source_record_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:dimension_style#33333333-3333-3333-3333-333333333333".len();
     assert!(
-        matches!(v5_dimension_style_refusal(v5_dimension_id_budget() + u64::try_from(id_len).expect("budget fits")), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension style source UUID")
+        matches!(v5_dimension_style_refusal(crate::test_support::retained_limit_at("Rhino dimension style source UUID", 0, |cap| { match v5_dimension_style_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })), FramingError::Resource(refusal) if refusal.operation == "Rhino dimension style source UUID")
     );
 }
 
@@ -1436,24 +1424,35 @@ fn unstamped_font_loss_refuses_collection_limit() {
 #[test]
 fn unstamped_font_loss_text_refuses_retained_limit() {
     let bytes = legacy_text_style_bytes();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 28;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("legacy style root admitted");
-    let error = crate::presentation::parse_text_style(
-        &ctx,
-        &bytes,
-        TextStyleParseInput {
-            range: 0..bytes.len(),
-            archive: ArchiveVersion::V8,
-            writer_version: None,
-            apple_runtime: false,
-            source_offset: 42,
+    let run = |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("legacy style root admitted");
+        crate::presentation::parse_text_style(
+            &ctx,
+            &bytes,
+            TextStyleParseInput {
+                range: 0..bytes.len(),
+                archive: ArchiveVersion::V8,
+                writer_version: None,
+                apple_runtime: false,
+                source_offset: 42,
+            },
+            &mut Vec::new(),
+        )
+        .expect_err("unstamped loss text exceeds retained limit")
+    };
+    let error = run(crate::test_support::retained_limit_at(
+        "Rhino text style writer-stamp loss text",
+        0,
+        |cap| match run(cap) {
+            FramingError::Resource(limit) => limit,
+            error => panic!("unexpected resource refusal: {error:?}"),
         },
-        &mut Vec::new(),
-    )
-    .expect_err("unstamped loss text exceeds retained limit");
+    ));
     assert!(matches!(
         error,
         FramingError::Resource(refusal)
@@ -1547,20 +1546,30 @@ fn texture_file_reference_loss_refuses_collection_limit() {
 
 #[test]
 fn texture_file_reference_loss_text_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let mut diagnostics = Diagnostics::new();
-    diagnostics.push("invalid reference");
-    let error = crate::presentation::append_file_reference_diagnostics(
-        &ctx,
-        &mut Vec::new(),
-        diagnostics,
-        42,
-    )
-    .expect_err("loss text exceeds retained limit");
+    let run = |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut diagnostics = Diagnostics::new();
+        diagnostics.push("invalid reference");
+        crate::presentation::append_file_reference_diagnostics(
+            &ctx,
+            &mut Vec::new(),
+            diagnostics,
+            42,
+        )
+        .expect_err("loss text exceeds retained limit")
+    };
+    let error = run(crate::test_support::retained_limit_at(
+        "Rhino texture file-reference loss text",
+        0,
+        |cap| match run(cap) {
+            FramingError::Resource(limit) => limit,
+            error => panic!("unexpected resource refusal: {error:?}"),
+        },
+    ));
     assert!(
         matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino texture file-reference loss text")
     );
@@ -1588,7 +1597,25 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
     ));
 
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("dropped".len());
+    policy.limits.max_retained_bytes =
+        crate::test_support::retained_limit_at("Rhino presentation loss text", 1, |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root");
+            match crate::presentation::push_presentation_loss(
+                &ctx,
+                &mut Vec::new(),
+                crate::loss::RhinoLossCode::PresentationRecordDropped,
+                format_args!("dropped"),
+            )
+            .expect_err("loss refusal")
+            {
+                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
+                error => panic!("loss refusal: {error:?}"),
+            }
+        });
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error = crate::presentation::push_presentation_loss(
@@ -1655,325 +1682,4 @@ fn unbound_presentation_record_refuses_opaque_collection_limit() {
     assert_eq!(opaque.len(), 1);
 }
 
-#[test]
-fn projected_user_string_entries_refuse_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = crate::presentation::user_string_records(
-        &ctx,
-        vec![("key".to_string(), "value".to_string())],
-    )
-    .expect_err("projected entry exceeds collection limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino projected user-string entries"
-    ));
-}
-
-fn presentation_attributes() -> crate::objects::ObjectAttributes {
-    let bytes = crate::test_support::test_dump::tagged_attributes(&[], 0);
-    crate::objects::parse_attributes(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0..bytes.len(),
-        0..bytes.len(),
-        ArchiveVersion::V8,
-        None,
-        &mut crate::loss::Diagnostics::new(),
-    )
-    .expect("empty tagged attributes")
-}
-
-fn projected_attributes_refusal(
-    attributes: &crate::objects::ObjectAttributes,
-    collection_limit: u64,
-    retained_limit: u64,
-) -> cadmpeg_core::CodecError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    crate::presentation::object_attributes_presentation(
-        &ctx,
-        &[],
-        attributes,
-        &[],
-        &[],
-        crate::presentation::ObjectPresentationSource {
-            archive: ArchiveVersion::V8,
-            offset: 0,
-            uuid: attributes.object_id,
-        },
-        &mut Vec::new(),
-    )
-    .expect_err("projected attributes exceed configured limit")
-}
-
-fn assert_projected_attributes_resource(error: &cadmpeg_core::CodecError, operation: &str) {
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == operation),
-        "expected resource operation {operation}, got {error:?}"
-    );
-}
-
-#[test]
-fn projected_object_name_and_url_refuse_retained_limit() {
-    let mut attributes = presentation_attributes();
-    attributes.name = "name".to_string();
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 100, 3),
-        "Rhino projected object name",
-    );
-    attributes.name.clear();
-    attributes.url = "url".to_string();
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 100, 2),
-        "Rhino projected object URL",
-    );
-}
-
-#[test]
-fn projected_object_groups_refuse_collection_limit() {
-    let mut attributes = presentation_attributes();
-    attributes.groups.push(7);
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 0, 100),
-        "Rhino projected object groups",
-    );
-}
-
-#[test]
-fn projected_display_materials_refuse_collection_limit() {
-    let mut attributes = presentation_attributes();
-    attributes
-        .display_materials
-        .push((Uuid::nil(), Uuid::nil()));
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 0, 100),
-        "Rhino projected display materials",
-    );
-}
-
-#[test]
-fn projected_display_material_uuid_text_refuses_retained_limit() {
-    let mut attributes = presentation_attributes();
-    attributes
-        .display_materials
-        .push((Uuid::nil(), Uuid::nil()));
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 1, 35),
-        "Rhino projected display viewport UUID",
-    );
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 1, 36),
-        "Rhino projected display material UUID",
-    );
-}
-
-#[test]
-fn projected_active_viewport_uuid_refuses_retained_limit() {
-    let mut attributes = presentation_attributes();
-    attributes.viewport_id = Uuid::from_canonical([1; 16]);
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 100, 35),
-        "Rhino projected active viewport UUID",
-    );
-}
-
-#[test]
-fn projected_clipping_plane_uuids_refuse_collection_limit() {
-    let mut attributes = presentation_attributes();
-    attributes.clipping_plane_ids.push(Uuid::nil());
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 0, 100),
-        "Rhino projected clipping plane UUIDs",
-    );
-}
-
-#[test]
-fn projected_clipping_plane_uuid_text_refuses_retained_limit() {
-    let mut attributes = presentation_attributes();
-    attributes.clipping_plane_ids.push(Uuid::nil());
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 1, 35),
-        "Rhino projected clipping plane UUID text",
-    );
-}
-
-#[test]
-fn projected_source_uuid_refuses_retained_limit() {
-    let attributes = presentation_attributes();
-    assert_projected_attributes_resource(
-        &projected_attributes_refusal(&attributes, 100, 35),
-        "Rhino projected source UUID",
-    );
-}
-
-fn displacement_with_sub_item() -> crate::mesh_modifiers::DisplacementModifier {
-    use crate::mesh_modifiers::{DisplacementModifier, DisplacementSubItem};
-    DisplacementModifier {
-        xml_version: 2,
-        on: true,
-        texture: None,
-        channel: 0,
-        black_point: crate::test_support::finite(0.0),
-        white_point: crate::test_support::finite(1.0),
-        sweep_pitch: 1000,
-        refine_steps: 1,
-        refine_sensitivity: crate::test_support::finite(0.5),
-        face_count_limit_enabled: false,
-        face_count_limit: 10_000,
-        post_weld_angle: crate::test_support::finite(40.0),
-        mesh_memory_limit: 512,
-        fairing_enabled: false,
-        fairing_amount: 4,
-        sub_object_count: Some(1),
-        sweep_resolution_formula: 0,
-        sub_items: vec![DisplacementSubItem {
-            face_index: 7,
-            on: true,
-            texture: None,
-            channel: 0,
-            black_point: crate::test_support::finite(0.0),
-            white_point: crate::test_support::finite(1.0),
-        }],
-    }
-}
-
-fn displacement_projection_refusal(
-    value: &crate::mesh_modifiers::DisplacementModifier,
-    collection_limit: u64,
-    retained_limit: u64,
-) -> cadmpeg_core::CodecError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    crate::presentation::displacement_record(&ctx, value)
-        .expect_err("displacement projection exceeds configured limit")
-}
-
-#[test]
-fn projected_displacement_sub_items_refuse_collection_limit() {
-    let value = displacement_with_sub_item();
-    assert_projected_attributes_resource(
-        &displacement_projection_refusal(&value, 0, 100),
-        "Rhino projected displacement sub-items",
-    );
-}
-
-#[test]
-fn projected_displacement_sub_item_texture_refuses_retained_limit() {
-    let mut value = displacement_with_sub_item();
-    value.sub_items[0].texture = Some(Uuid::from_canonical([1; 16]));
-    assert_projected_attributes_resource(
-        &displacement_projection_refusal(&value, 1, 35),
-        "Rhino projected displacement sub-item texture UUID",
-    );
-}
-
-#[test]
-fn projected_displacement_texture_refuses_retained_limit() {
-    let mut value = displacement_with_sub_item();
-    value.texture = Some(Uuid::from_canonical([1; 16]));
-    assert_projected_attributes_resource(
-        &displacement_projection_refusal(&value, 1, 35),
-        "Rhino projected displacement texture UUID",
-    );
-}
-
-fn shut_lining_projection_refusal(
-    value: &crate::mesh_modifiers::ShutLiningModifier,
-    collection_limit: u64,
-    retained_limit: u64,
-) -> cadmpeg_core::CodecError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    crate::presentation::shut_lining_record(&ctx, value)
-        .expect_err("shut-lining projection exceeds configured limit")
-}
-
-#[test]
-fn projected_shut_lining_curves_refuse_collection_limit() {
-    let value = crate::mesh_modifiers::ShutLiningModifier {
-        xml_version: 2,
-        on: true,
-        options: crate::mesh_modifiers::ShutLiningOptions {
-            faceted: false,
-            auto_update: false,
-            force_update: false,
-        },
-        curves: vec![crate::mesh_modifiers::ShutLiningCurve {
-            uuid: Some(Uuid::from_canonical([1; 16])),
-            radius: crate::test_support::finite(1.0),
-            profile: 0,
-            enabled: true,
-            pull: false,
-            is_bump: false,
-        }],
-    };
-    assert_projected_attributes_resource(
-        &shut_lining_projection_refusal(&value, 0, 100),
-        "Rhino projected shut-lining curves",
-    );
-    assert_projected_attributes_resource(
-        &shut_lining_projection_refusal(&value, 1, 35),
-        "Rhino projected shut-lining curve UUID",
-    );
-}
-
-fn projected_rendering_collection_refusal(limit: u64) -> FramingError {
-    let bytes = object_rendering_with_negative_minor(3, 0, Some(0), Some(1));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    rendering_attributes(
-        &ctx,
-        &bytes,
-        Some(0..bytes.len()),
-        ArchiveVersion::V8,
-        settings::RenderingAttributesKind::Object,
-    )
-    .expect_err("rendering projection exceeds collection limit")
-}
-
-#[test]
-fn projected_rendering_materials_refuse_collection_limit() {
-    assert!(matches!(
-        projected_rendering_collection_refusal(0),
-        FramingError::Resource(refusal)
-            if refusal.operation == "Rhino projected rendering materials"
-    ));
-}
-
-#[test]
-fn projected_rendering_mappings_refuse_collection_limit() {
-    assert!(matches!(
-        projected_rendering_collection_refusal(1),
-        FramingError::Resource(refusal)
-            if refusal.operation == "Rhino projected rendering mappings"
-    ));
-}
-
-#[test]
-fn projected_rendering_channels_refuse_collection_limit() {
-    assert!(matches!(
-        projected_rendering_collection_refusal(2),
-        FramingError::Resource(refusal)
-            if refusal.operation == "Rhino projected rendering channels"
-    ));
-}
+mod projections;

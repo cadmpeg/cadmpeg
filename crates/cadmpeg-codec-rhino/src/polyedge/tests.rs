@@ -35,8 +35,12 @@ fn semantic_json_preserves_bytes_and_refuses_retained_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
             .expect("root bytes admitted");
     let expand = crate::mesh::MeshExpand::new(&ctx, root);
-    let decoded =
-        decode(expand, 0..payload.len(), ArchiveVersion::V8).expect("valid polyedge fixture");
+    let mut storage = ctx
+        .reserve_scoped(0, "polyedge temporary storage")
+        .expect("storage");
+    let decoded = storage
+        .with_storage(|| decode(expand, 0..payload.len(), ArchiveVersion::V8))
+        .expect("valid polyedge fixture");
     let refusal = super::semantic_json(&ctx, &decoded)
         .expect_err("semantic JSON exceeds zero retained bytes");
     assert!(matches!(
@@ -194,7 +198,11 @@ fn polyedge_segment_uuid_resolves_to_the_single_record_that_owns_it() {
         .losses
         .iter()
         .any(|loss| loss.message.starts_with("reference.")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -213,7 +221,11 @@ fn polyedge_segment_uuid_that_names_no_record_is_charged_and_left_unbound() {
         charged[0].code,
         crate::loss::RhinoLossCode::ReferenceMemberUnresolved.kind()
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -238,5 +250,9 @@ fn polyedge_segment_uuid_owned_by_two_records_is_charged_as_ambiguous() {
         .losses
         .iter()
         .any(|loss| { loss.code == crate::loss::RhinoLossCode::ReferenceMemberAmbiguous.kind() }));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }

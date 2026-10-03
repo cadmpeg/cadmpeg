@@ -49,20 +49,48 @@ impl EncoderBackend for StepCodec {
 impl CodecBackend for StepCodec {
     const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let view = prefix;
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect STEP trivia",
+        )?;
         if starts_with_step_magic(prefix) {
-            Confidence::High
-        } else if archive::has_root_marker(prefix)
-            || is_part26_hdf5(prefix)
-            || is_part28_xml(prefix)
-            || is_ap242_bo_model_xml(prefix)
-        {
-            Confidence::Medium
-        } else if archive::has_zip_magic(prefix) {
+            return Ok(Confidence::High);
+        }
+        if archive::has_root_marker(ctx, view)? {
+            return Ok(Confidence::Medium);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect STEP HDF5",
+        )?;
+        if is_part26_hdf5(prefix) {
+            return Ok(Confidence::Medium);
+        }
+        let xml_bytes = cadmpeg_core::decode::u64_from_index(prefix.len().min(4096));
+        ctx.charge_work(xml_bytes * 6, "detect STEP Part 28 XML")?;
+        if is_part28_xml(prefix) {
+            return Ok(Confidence::Medium);
+        }
+        ctx.charge_work(xml_bytes * 5, "detect STEP business-object XML")?;
+        if is_ap242_bo_model_xml(prefix) {
+            return Ok(Confidence::Medium);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len().min(4)),
+            "detect STEP ZIP",
+        )?;
+        Ok(if archive::has_zip_magic(prefix) {
             Confidence::Low
         } else {
             Confidence::No
-        }
+        })
     }
 
     fn inspect_impl(
@@ -94,7 +122,7 @@ impl CodecBackend for StepCodec {
             return decode_zip(ctx, root);
         }
         refuse_alternate_encoding(bytes)?;
-        if self.detect_impl(bytes) == Confidence::No {
+        if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
         reader::decode(bytes, ctx, reader::Packaging::Bare)
@@ -147,7 +175,7 @@ fn inspect_exchange(
 ) -> Result<InspectedExchange, CodecError> {
     let bytes = root.window();
     refuse_alternate_encoding(bytes)?;
-    if codec.detect_impl(bytes) == Confidence::No {
+    if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
@@ -420,7 +448,7 @@ fn inspect_zip(
     } = archive::open_root(ctx, root)?;
     let root_bytes = root_view.window();
     refuse_alternate_encoding(root_bytes)?;
-    if StepCodec::default().detect_impl(root_bytes) == Confidence::No {
+    if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
@@ -754,7 +782,12 @@ mod tests {
     #[test]
     fn inspection_owned_attribute_value_is_not_charged_twice() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 13;
+        policy.limits.max_retained_bytes = u64::try_from(
+            13 + 11 * std::mem::size_of::<(String, String)>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<String>(),
+        )
+        .expect("attribute node layout");
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let mut attributes = std::collections::BTreeMap::new();
             let value = ctx
@@ -967,13 +1000,19 @@ mod tests {
         let codec = StepCodec::default();
 
         assert!(starts_with_step_magic(source));
-        assert_eq!(codec.detect(source), Confidence::High);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, source),
+            Confidence::High
+        );
         codec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode Part 21 with ignored framing octets");
 
         let with_bom = [b"\xEF\xBB\xBF".as_slice(), source].concat();
-        assert_eq!(codec.detect(&with_bom), Confidence::No);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&codec, &with_bom),
+            Confidence::No
+        );
         assert!(!starts_with_step_magic(b"/* incomplete ISO-10303-21;"));
     }
 

@@ -14,6 +14,7 @@ fn scope_reference_property_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = scope_properties(&ctx, &scope, "f3d:Design/BulkStream.dat", &[]);
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
@@ -85,6 +86,7 @@ fn scope_profile_property_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = scope_properties(
         &ctx,
@@ -119,6 +121,7 @@ fn assert_reference_text_refusal(operation: &'static str, limit: usize) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(limit).unwrap();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(scope_properties(&ctx, &scope, "f3d:test", &[]),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == operation

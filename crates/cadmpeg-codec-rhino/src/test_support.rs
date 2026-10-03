@@ -80,3 +80,36 @@ pub(crate) fn plan_at(
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
 }
+
+/// Reach a named retained allocation after admitting preceding slot storage.
+pub(crate) fn retained_limit_at(
+    operation: &str,
+    occurrence: usize,
+    run: impl Fn(u64) -> cadmpeg_core::decode::ResourceLimit,
+) -> u64 {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut cap = 0;
+    let mut seen = 0;
+    for _ in 0..8192 {
+        let refusal = run(cap);
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        let need = refusal
+            .used
+            .checked_add(refusal.additional)
+            .expect("retained need");
+        assert!(need > cap);
+        if refusal.operation == operation {
+            if seen == occurrence {
+                let below = need - 1;
+                let refused = run(below);
+                assert_eq!(refused.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(refused.operation, operation);
+                assert_eq!(refused.used.checked_add(refused.additional), Some(need));
+                return below;
+            }
+            seen += 1;
+        }
+        cap = need;
+    }
+    panic!("retained allocation boundary was not reached: {operation}");
+}

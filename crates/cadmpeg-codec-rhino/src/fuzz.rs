@@ -52,6 +52,13 @@ pub fn container(data: &[u8]) {
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
 pub fn chunks(data: &[u8]) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let Ok((ctx, _root)) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
     if data.is_empty() {
         return;
     }
@@ -65,11 +72,11 @@ pub fn chunks(data: &[u8]) {
     for archive in ARCHIVES {
         for offset in [0, selected_offset] {
             if let Ok(chunk) = chunks::chunk_at(data, offset, data.len(), archive, false) {
-                let _probe = chunks::verify_checksum(data, &chunk);
+                let _probe = chunks::verify_checksum(&ctx, data, &chunk);
             }
         }
     }
-    let Ok(header) = chunks::parse_header(data) else {
+    let Ok(header) = chunks::parse_header(&ctx, data) else {
         return;
     };
     let mut offset = header.start_offset + file_header::LEN;
@@ -78,7 +85,7 @@ pub fn chunks(data: &[u8]) {
         else {
             break;
         };
-        let _probe = chunks::verify_checksum(data, &chunk);
+        let _probe = chunks::verify_checksum(&ctx, data, &chunk);
         offset = chunk.next_offset();
     }
 }

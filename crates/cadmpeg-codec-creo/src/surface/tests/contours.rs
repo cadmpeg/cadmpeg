@@ -96,8 +96,15 @@ fn contour_chain_refuses_second_entry_before_growth() {
 
 #[test]
 fn contour_chain_refuses_body_before_retained_copy() {
-    let error =
-        contour_chain_with_limits(u64::MAX, 0).expect_err("contour body exceeds retained limit");
+    let error = contour_chain_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo contour chain body"),
+            |cap| contour_chain_with_limits(u64::MAX, cap),
+        ),
+    )
+    .expect_err("contour body exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo contour chain body"));

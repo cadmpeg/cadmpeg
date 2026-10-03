@@ -155,7 +155,7 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = starts.get(index + 1).map(|next| next.0);
             for sketch in sketches.iter() {
                 let work = u64_from_index(sketch.native_ref.as_ref().map_or(0, String::len))
                     .checked_add(u64_from_index(lane.id.len()))
@@ -169,7 +169,9 @@ pub(crate) fn bind_sketch_profiles(
                     && annotations
                         .provenance
                         .get(sketch.id.as_str())
-                        .is_some_and(|source| source.offset > start && source.offset < end)
+                        .is_some_and(|source| {
+                            source.offset > start && end.is_none_or(|end| source.offset < end)
+                        })
             });
             let Some(sketch) = enclosed.next() else {
                 continue;
@@ -2593,7 +2595,7 @@ pub(crate) fn project_marker_backed_sketches(
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 sketch_entities,
                 projected.len(),
                 "append SLDPRT projected marker entities",
@@ -2907,7 +2909,7 @@ pub(crate) fn project_sketch_block_profiles(
                     continue;
                 };
                 if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    ctx.reserve_capacity(
                         sketch_entities,
                         assembled.entities.len(),
                         "append SLDPRT sketch block entities",

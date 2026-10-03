@@ -126,9 +126,10 @@ fn native_projection_refuses_catalog_header_and_flattened_entry_growth() {
     assert!(matches!(header,
         Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.operation == "catia_native_catalog_headers"));
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::CatiaArenaProjection::from_owned(ctx, native)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_native_catalog_header_id", |ctx| {
+            super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
+        });
     assert!(matches!(retained,
         Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.operation == "catia_native_catalog_header_id"));
@@ -140,9 +141,10 @@ fn legacy_native_projection_refuses_collection_and_retained_limits() {
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
     bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::legacy_entity_runs(ctx, &bytes)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_native_legacy_run_id", |ctx| {
+            super::super::legacy_entity_runs(ctx, &bytes)
+        });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_legacy_run_id")
@@ -1202,7 +1204,8 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 fn native_graph_catalog_link_refuses_retained_limit() {
     let bytes = standard_catpart_with_value_block();
     let mut found = false;
-    for cap in 0..=4096 {
+    let mut cap = 0;
+    for _ in 0..4096 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
@@ -1225,7 +1228,11 @@ fn native_graph_catalog_link_refuses_retained_limit() {
                 assert!(native.object_graphs[0].catalog.is_some());
                 break;
             }
-            _ => {}
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                assert!(limit.used + limit.additional > cap);
+                cap = limit.used + limit.additional;
+            }
+            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
         }
     }
     assert!(found, "retained sweep must reach the graph catalog link");

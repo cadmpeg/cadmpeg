@@ -384,7 +384,7 @@ pub(crate) fn copy_intcurve_support_context(
     let [first, second, third] = context
         .discontinuities()
         .each_ref()
-        .map(|lane| ctx.copy_retained_slice(lane, operation));
+        .map(|lane| ctx.copy_slice(lane, operation));
     IntcurveSupportContext::from_parts(
         [left?, right?],
         context.parameter_range(),

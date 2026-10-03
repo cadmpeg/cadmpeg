@@ -122,6 +122,7 @@ fn assert_chamfer_collection_refusal(limit: u64, operation: &str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = limit;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::feature_project::project_chamfer(&scope, &[(0, &parameter)],

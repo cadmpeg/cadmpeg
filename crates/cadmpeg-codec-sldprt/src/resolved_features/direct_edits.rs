@@ -269,7 +269,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 end,
                 &excluded_handles,
             )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            ctx.reserve_capacity(
                 &mut directions,
                 compact.len(),
                 "merge SLDPRT move-face directions",

@@ -760,7 +760,7 @@ impl EntityValuePacket {
                 type_selector: *type_selector,
                 layout_atom: *layout_atom,
                 value_atom: *value_atom,
-                items: ctx.copy_retained_slice(items, "catia_native_numeric_packet_items")?,
+                items: ctx.copy_slice(items, "catia_native_numeric_packet_items")?,
                 terminator_count: *terminator_count,
             }),
             other => Ok(other.clone()),
@@ -2072,14 +2072,12 @@ mod tests {
     #[test]
     fn entity_table_retained_body_limit_refuses_before_body_copy() {
         let bytes = record(&[0x11], 37);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("small entity record fits input limit");
-        let error =
-            super::parse_runs(&ctx, &bytes).expect_err("one body byte exceeds zero retained bytes");
+        let error = crate::test_support::with_retained_refusal(
+            &bytes,
+            "retain CATIA 7C05 nested body",
+            |ctx| super::parse_runs(ctx, &bytes),
+        )
+        .expect_err("body storage refusal");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes

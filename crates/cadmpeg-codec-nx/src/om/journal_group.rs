@@ -76,10 +76,10 @@ impl JournalGroup<usize> {
                 return Ok(None);
             };
             cursor = next;
-            ctx.reserve_retained_vec(&mut rows, 1, "NX state-journal rows")?;
+            ctx.reserve_vec(&mut rows, 1, "NX state-journal rows")?;
             rows.push(row);
         }
-        Ok(NonEmpty::from_vec(rows).map(|rows| Self {
+        Ok(NonEmpty::from_admitted_vec(rows).map(|rows| Self {
             selector,
             header,
             rows,
@@ -113,7 +113,8 @@ impl JournalGroup {
         source_offset: u64,
         rows: Vec<JournalRow>,
     ) -> Result<Self, &'static str> {
-        let rows = NonEmpty::from_vec(rows).ok_or("rows: journal group must not be empty")?;
+        let rows =
+            NonEmpty::from_admitted_vec(rows).ok_or("rows: journal group must not be empty")?;
         let header =
             match rows.first().offset().checked_sub(source_offset) {
                 Some(4) => Header::Plain,

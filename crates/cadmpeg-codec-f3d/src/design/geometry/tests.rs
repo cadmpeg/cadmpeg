@@ -127,6 +127,7 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
+    // The four knots exhaust admission before endpoint evaluation or tube growth.
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(error) = super::certified_nurbs_tubes(&curve, 0.5, &ctx) else {
@@ -135,7 +136,7 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d certified nurbs tube")
+            && limit.operation == "f3d nurbs tube input")
     );
 }
 
@@ -746,7 +747,7 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
 }
 
 #[test]
-fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
+fn sketch_arrangement_faces_propagates_session_work_refusal() {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
@@ -761,10 +762,14 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
         .work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK))
         .with_session_work_scale(scale);
 
-    assert!(
+    let error =
         sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, &ctx)
-            .expect("work refusal remains an absent arrangement")
-            .is_none()
+            .err()
+            .expect("session work refusal");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && ctx.resource_refusal() == Some(limit))
     );
     assert!(budget.exhausted());
 }
@@ -1852,10 +1857,10 @@ mod sort_limits;
 mod profile_limits;
 
 #[test]
-fn arrangement_cycle_work_rejects_unrepresentable_edge_square() {
+fn arrangement_cycle_work_rejects_unrepresentable_traversal_bound() {
     let edge_count = 1usize << (usize::BITS / 2);
     let error = crate::test_support::with_decode_context(|ctx| {
-        super::arrangement_cycle_work(edge_count, ctx)
+        super::arrangement_cycle_work(edge_count, 1, ctx)
     })
     .expect_err("the squared work count cannot be represented");
     assert!(
@@ -1865,12 +1870,58 @@ fn arrangement_cycle_work_rejects_unrepresentable_edge_square() {
 }
 
 #[test]
-fn arrangement_cycle_work_preserves_representable_square() {
+fn arrangement_cycle_work_admits_cubic_ring_bound() {
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| {
-            super::arrangement_cycle_work(1_000, ctx)
+            super::arrangement_cycle_work(1_000, 1_000, ctx)
         })
         .unwrap(),
-        1_000_000
+        1_002_001_000
     );
+}
+
+#[test]
+fn sketch_arrangement_faces_propagates_local_work_refusal() {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    crate::test_support::with_decode_context(|ctx| {
+        let budget = ctx.work_budget(0);
+        let error =
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
+                .err()
+                .expect("local work refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "F3D arrangement cycle work" && ctx.resource_refusal() == Some(limit))
+        );
+    });
+}
+
+#[test]
+fn arrangement_ring_refuses_unadmitted_cubic_scan() {
+    let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
+    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity,
+        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+        reversed: false,
+    };
+    let mut edges: Vec<_> = (0..500)
+        .map(|index| super::SketchArrangementEdge {
+            nodes: [index, (index + 1) % 500],
+            boundary: boundary.clone(),
+            polyline: Vec::new(),
+        })
+        .collect();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 250_000;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let budget = ctx.work_budget(1_000_000_000);
+        let error =
+            super::arrangement_retain_cycle_edges(&mut edges, 500, &budget, ctx).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && ctx.resource_refusal() == Some(limit))
+        );
+        assert_eq!(edges.len(), 500);
+    });
 }

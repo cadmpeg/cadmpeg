@@ -710,7 +710,7 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "reserve NX operation header keys"
+                        && limit.operation == "NX operation header keys"
             ));
         },
     );

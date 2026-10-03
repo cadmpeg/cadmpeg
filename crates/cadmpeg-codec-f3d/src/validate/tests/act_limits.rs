@@ -248,7 +248,11 @@ fn act_missing_root_finding_refuses_collection_limit() {
 fn act_missing_root_witness_refuses_retained_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_guids.push(act_guid(0));
-    let error = act_error(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

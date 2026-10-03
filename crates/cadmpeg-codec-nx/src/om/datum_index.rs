@@ -117,7 +117,7 @@ pub(crate) fn scan(
         }
         let member_count = usize::from(declared_count - 1);
         let operation = "NX datum index members";
-        let mut indices = ctx.retained_vec(member_count, operation)?;
+        let mut indices = ctx.collection_vec(member_count, operation)?;
         let mut at = start + 2;
         for _ in 0..member_count {
             let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
@@ -136,7 +136,7 @@ pub(crate) fn scan(
             continue;
         };
         if let Some(lane) = DatumIndexLane::<usize>::new(indices, trailer, start) {
-            ctx.reserve_retained_vec(&mut lanes, 1, "NX datum index lanes")?;
+            ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
             lanes.push(lane);
         }
     }

@@ -73,9 +73,9 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
     assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].name, "Box");
+    assert_eq!(objects[0].name(), "Box");
     assert_eq!(objects[0].type_name, "Part::Box");
-    assert_eq!(objects[1].dependencies, vec![objects[0].id.clone()]);
+    assert_eq!(objects[1].dependencies, vec![objects[0].id().clone()]);
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");

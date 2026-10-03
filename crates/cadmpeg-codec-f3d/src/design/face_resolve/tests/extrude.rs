@@ -65,6 +65,7 @@ fn start_plane_candidate_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         extrude_start_plane_geometry_candidates(
@@ -84,6 +85,7 @@ fn start_plane_candidate_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         extrude_start_plane_geometry_candidates(
@@ -103,6 +105,7 @@ fn retained_start_face_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         retain_face_operand_resolution(
@@ -253,6 +256,7 @@ fn assert_start_binder_refusal(
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
             _ => unreachable!(),
         }
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(run(&ctx).0,
             Err(CodecError::ResourceLimit(failure))
@@ -389,6 +393,7 @@ fn target_native_id_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(run(&ctx).0,
             Err(CodecError::ResourceLimit(failure))
@@ -680,6 +685,7 @@ fn target_plane_face_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         extrude_target_plane_candidate(
@@ -755,6 +761,7 @@ fn assert_extrude_root_collection_limit(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
             Err(CodecError::ResourceLimit(failure))
@@ -801,6 +808,7 @@ fn extrude_profile_hierarchy_refuses_depth_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 1;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
@@ -819,6 +827,7 @@ fn extrude_profile_hierarchy_refuses_work_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 386;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
@@ -895,6 +904,7 @@ fn assert_extrude_leaf_collection_limit(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root, &groups, &operands), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
@@ -935,6 +945,7 @@ fn extrude_leaf_hierarchy_refuses_depth_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 1;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root,
@@ -953,6 +964,7 @@ fn extrude_leaf_hierarchy_refuses_work_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 1;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root,
@@ -983,6 +995,7 @@ fn extrude_active_face_id_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::face_resolve::resolved_extrude_profile_active_faces(&ctx, &[0], &operands),
@@ -1001,6 +1014,7 @@ fn extrude_active_face_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::face_resolve::resolved_extrude_profile_active_faces(&ctx, &[0], &operands),

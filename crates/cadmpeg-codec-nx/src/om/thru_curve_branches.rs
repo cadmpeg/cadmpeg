@@ -113,7 +113,7 @@ impl ThruCurveGroup<()> {
                 .members
                 .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
             let terminal = (branch.terminal.0, target(branch.terminal.0)?);
-            ctx.reserve_retained_vec(&mut branches, 1, "NX resolved thru-curve branches")?;
+            ctx.reserve_vec(&mut branches, 1, "NX resolved thru-curve branches")?;
             branches.push(ThruCurveBranch {
                 mode: branch.mode,
                 members,
@@ -146,7 +146,7 @@ fn thru_curve_payload_branch(
             let token = PayloadIndexToken::read(record.payload().get(cursor..)?)?;
             cursor += token.raw().len();
             if let Err(error) =
-                ctx.reserve_retained_vec(&mut members, 1, "NX thru-curve branch members")
+                ctx.reserve_vec(&mut members, 1, "NX thru-curve branch members")
             {
                 failure = Some(error);
                 return None;
@@ -217,7 +217,7 @@ pub(crate) fn thru_curve_payload_branch_group(
         let Some((branch, next)) = thru_curve_payload_branch(ctx, record, at)? else {
             return Ok(None);
         };
-        ctx.reserve_retained_vec(&mut branches, 1, "NX thru-curve branches")?;
+        ctx.reserve_vec(&mut branches, 1, "NX thru-curve branches")?;
         branches.push(branch);
         at = next;
     }
