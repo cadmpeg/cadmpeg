@@ -553,3 +553,28 @@ fn retained_byte_extension_refuses_before_copy() {
     assert!(matches!(ctx.charge_work(1, "after refusal"),
         Err(CodecError::ResourceLimit(repeated)) if repeated == original));
 }
+
+#[test]
+fn unzip_admits_each_pair_and_both_owned_result_vectors() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let text = String::from("owned");
+    let pointer = text.as_ptr();
+    let (left, right) = ctx.unzip_vec([(text, 7_u8)], "unzip").unwrap();
+    assert_eq!(left, ["owned"]);
+    assert_eq!(right, [7]);
+    assert_eq!(left[0].as_ptr(), pointer);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut calls = 0;
+    let source = [(1_u8, 2_u8)].into_iter().map(|pair| { calls += 1; pair });
+    let CodecError::ResourceLimit(first) = ctx.unzip_vec(source, "unzip refusal").unwrap_err() else { panic!("resource refusal") };
+    assert_eq!(calls, 0);
+    let CodecError::ResourceLimit(repeated) = ctx.unzip_vec([(3_u8, 4_u8)], "later unzip").unwrap_err() else { panic!("resource refusal") };
+    assert_eq!(first, repeated);
+    policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(ctx.unzip_vec([(1_u8, 2_u8)], "second slot"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1 && limit.additional == 1));
+}
