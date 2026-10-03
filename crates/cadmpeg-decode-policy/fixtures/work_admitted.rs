@@ -15,5 +15,11 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8], admitted: decode::scan::Admitte
     for byte in admitted { std::hint::black_box(byte); }
     let mut admitted = decode::scan::source(bytes.iter());
     std::hint::black_box(admitted.any(|byte| *byte == 1));
+    let admitted = decode::scan::source(bytes.iter());
+    for byte in admitted.filter(|byte| **byte != 0).take(2).enumerate() { std::hint::black_box(byte); }
+    let admitted = decode::scan::source(bytes.iter());
+    std::hint::black_box(admitted.filter(|byte| **byte != 0).count());
+    let admitted = decode::scan::source(bytes.iter());
+    std::hint::black_box(admitted.map(|byte| *byte).any(|byte| byte == 1));
     for byte in bytes { std::hint::black_box(byte); } // finding: uncharged_decode_work
 }

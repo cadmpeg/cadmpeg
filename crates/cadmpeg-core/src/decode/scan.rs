@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible linear search and byte comparison under the caller's work budget.
 
+use super::iter_source::IterSource;
 use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
@@ -23,16 +24,36 @@ impl<I: Iterator> Iterator for AdmittedIter<I> {
     }
 }
 
+impl<I: DoubleEndedIterator> DoubleEndedIterator for AdmittedIter<I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.source.next_back()
+    }
+}
+
+impl<I: ExactSizeIterator> ExactSizeIterator for AdmittedIter<I> {}
+
+impl<'a, T> AdmittedIter<std::slice::Iter<'a, T>> {
+    /// Consumes admission for overlapping windows; each window has child work.
+    pub fn windows(self, size: std::num::NonZeroUsize) -> AdmittedIter<std::slice::Windows<'a, T>> {
+        AdmittedIter { source: self.source.as_slice().windows(size.get()) }
+    }
+
+    /// Consumes admission for non-overlapping chunks.
+    pub fn chunks(self, size: std::num::NonZeroUsize) -> AdmittedIter<std::slice::Chunks<'a, T>> {
+        AdmittedIter { source: self.source.as_slice().chunks(size.get()) }
+    }
+}
+
 impl DecodeContext<'_> {
-    /// Admits every slice slot before visiting any element. Iterator adapters
+    /// Admits the collection traversal before visiting any element. Iterator adapters
     /// run on the admitted result; callbacks admit their own child work.
-    pub fn admit_iter<'values, T>(
+    pub fn admit_iter<'values, S: IterSource + ?Sized>(
         &self,
-        values: &'values [T],
+        values: &'values S,
         operation: &'static str,
-    ) -> Result<AdmittedIter<std::slice::Iter<'values, T>>, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        Ok(AdmittedIter { source: values.iter() })
+    ) -> Result<AdmittedIter<S::Iter<'values>>, CodecError> {
+        self.charge_work(u64_from_index(values.visit_bound()), operation)?;
+        Ok(AdmittedIter { source: values.source_iter() })
     }
 
     /// Returns the first matching position. Each visited slot is admitted before
@@ -108,6 +129,52 @@ mod tests {
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(limit.operation, "iteration");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    }
+
+    #[test]
+    fn iteration_sources_charge_text_bytes_and_hash_capacity() {
+        use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        let vector = vec![1, 2];
+        let boxed = vec![1, 2].into_boxed_slice();
+        let queue = VecDeque::from([1, 2]);
+        let tree = BTreeMap::from([(1, 2)]);
+        let ordered = BTreeSet::from([1, 2]);
+        let mut map = HashMap::with_capacity(100);
+        map.insert(1, 2);
+        let mut set = HashSet::with_capacity(100);
+        set.insert(1);
+        assert_eq!(ctx.admit_iter(&vector, "vector").expect("vector").count(), 2);
+        assert_eq!(ctx.admit_iter(&boxed, "box").expect("box").count(), 2);
+        assert_eq!(ctx.admit_iter(&queue, "queue").expect("queue").count(), 2);
+        assert_eq!(ctx.admit_iter(&tree, "tree").expect("tree").count(), 1);
+        assert_eq!(ctx.admit_iter(&ordered, "set").expect("set").count(), 2);
+        assert_eq!(ctx.admit_iter("é", "text").expect("text").count(), 1);
+        assert_eq!(ctx.admit_iter("é".as_bytes(), "bytes").expect("bytes").count(), 2);
+        assert_eq!(ctx.admit_iter(&map, "map").expect("map").count(), 1);
+        assert_eq!(ctx.admit_iter(&set, "set").expect("set").count(), 1);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else {
+            panic!("resource refusal");
+        };
+        // Nine collection slots, four text bytes, and both hash capacity scans.
+        assert_eq!(limit.used, 13 + super::u64_from_index(map.capacity() + set.capacity()));
+    }
+
+    #[test]
+    fn iteration_slice_adapters_consume_admission() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        let size = std::num::NonZeroUsize::new(2).expect("nonzero");
+        let values = [1, 2, 3];
+        let windows: Vec<_> = ctx.admit_iter(&values, "windows").expect("admission")
+            .windows(size).collect();
+        assert_eq!(windows, [&[1, 2][..], &[2, 3][..]]);
+        let chunks: Vec<_> = ctx.admit_iter(&values, "chunks").expect("admission")
+            .chunks(size).rev().collect();
+        assert_eq!(chunks, [&[3][..], &[1, 2][..]]);
     }
 
     #[test]

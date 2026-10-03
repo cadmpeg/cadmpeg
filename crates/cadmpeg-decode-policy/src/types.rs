@@ -253,14 +253,32 @@ pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
 }
 
 pub(crate) fn admitted_iterator(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
-    matches!(value.peel_refs().kind(), ty::Adt(owner, _)
-        if tcx.item_name(owner.did()).as_str() == "AdmittedIter"
-            && (tcx.crate_name(owner.did().krate).as_str() == "cadmpeg_core"
-                && matches!(tcx.def_path_str(owner.did()).as_str(),
-                    "decode::scan::AdmittedIter" | "cadmpeg_core::decode::scan::AdmittedIter")
-                || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
-                    && owner.did().is_local()
-                    && tcx.def_path_str(owner.did()).ends_with("decode::scan::AdmittedIter")))
+    let ty::Adt(owner, arguments) = value.peel_refs().kind() else { return false; };
+    if tcx.item_name(owner.did()).as_str() == "AdmittedIter"
+        && (tcx.crate_name(owner.did().krate).as_str() == "cadmpeg_core"
+            && matches!(tcx.def_path_str(owner.did()).as_str(),
+                "decode::scan::AdmittedIter" | "cadmpeg_core::decode::scan::AdmittedIter")
+            || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
+                && owner.did().is_local()
+                && tcx.def_path_str(owner.did()).ends_with("decode::scan::AdmittedIter")) {
+        return true;
+    }
+    if !standard(tcx, owner.did()) { return false; }
+    let name = tcx.item_name(owner.did());
+    let mut types = arguments.types();
+    let Some(source) = types.next() else { return false; };
+    match name.as_str() {
+        "Map" | "Filter" | "FilterMap" | "Enumerate" | "Rev" | "Cloned" | "Copied"
+            | "Inspect" | "Take" | "Skip" | "TakeWhile" | "SkipWhile" | "StepBy"
+            | "Peekable" | "Fuse" | "Scan" | "MapWhile" => admitted_iterator(tcx, source),
+        "Zip" | "Chain" => admitted_iterator(tcx, source)
+            && types.next().is_some_and(|other| admitted_iterator(tcx, other)
+                || iteration(tcx, other) == Shape::Fixed),
+        "FlatMap" => admitted_iterator(tcx, source)
+            && types.next().is_some_and(|inner| admitted_iterator(tcx, inner)
+                || iteration(tcx, inner) == Shape::Fixed),
+        _ => false,
+    }
 }
 
 pub(crate) fn derived(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
