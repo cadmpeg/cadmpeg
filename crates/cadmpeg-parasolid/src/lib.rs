@@ -304,7 +304,7 @@ pub fn extra_layers(
         u64_from_index(streams.len()),
         "scan Parasolid schema carriers",
     )?;
-    let mut layers = ctx.retained_vec(streams.len(), "collect Parasolid classified layers")?;
+    let mut layers = ctx.collection_vec(streams.len(), "collect Parasolid classified layers")?;
     for (schema, carrier) in streams {
         layers.push(classify_layer(ctx, schema, carrier, instance, verified)?);
     }
@@ -331,7 +331,7 @@ pub fn push_extras(
                     "the container produced a duplicate {} dialect layer at carrier {carrier}; the later classification was omitted",
                     rejected.format()
                 ), "retain Parasolid collision message")?;
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut collisions,
                     message,
                     "collect Parasolid collision messages",
@@ -455,7 +455,15 @@ mod tests {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 13 + 9;
+        // Two declared fields each admit the conservative B-tree insertion path.
+        let node_bytes = 11
+            * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>()
+                + std::mem::size_of::<String>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>();
+        let path_nodes = 1 + 2; // empty root, then one populated insertion path
+        policy.limits.max_retained_bytes =
+            13 + 9 + cadmpeg_core::decode::u64_from_index(path_nodes * node_bytes);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = classify_layer(
             &ctx,

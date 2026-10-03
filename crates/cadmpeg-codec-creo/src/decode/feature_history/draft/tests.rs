@@ -48,7 +48,7 @@ fn hole_face_limit_error(
     operation: &'static str,
 ) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     if resolved {
         ir.model.faces.push(resolved_hole_face());
@@ -58,11 +58,57 @@ fn hole_face_limit_error(
     if let Some(limit) = collection {
         policy.limits.max_collection_items = limit;
     }
-    if let Some(limit) = retained {
-        policy.limits.max_retained_bytes = limit;
+    if retained.is_some() {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                hole_face_selection(
+                    &trial_ctx,
+                    &scan,
+                    &ir,
+                    9,
+                    11,
+                    &std::collections::BTreeMap::new(),
+                    &std::collections::BTreeSet::new(),
+                )
+            },
+        );
     }
-    if let Some(limit) = materialized {
-        policy.limits.max_materialized_bytes = limit;
+    if materialized.is_some() {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_materialized_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                hole_face_selection(
+                    &trial_ctx,
+                    &scan,
+                    &ir,
+                    9,
+                    11,
+                    &std::collections::BTreeMap::new(),
+                    &std::collections::BTreeSet::new(),
+                )
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
@@ -118,7 +164,7 @@ fn hole_resolved_face_vector_refuses_collection_limit() {
 
 #[test]
 fn hole_resolved_face_keeps_its_native_reference() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.faces.push(resolved_hole_face());
     let selection = crate::decode::with_test_decode_ctx(|ctx| {
@@ -150,13 +196,33 @@ fn hole_generated_native_copy_refuses_retained_limit() {
             "creo:model:feature#3",
         )
         .expect("identity grammar")]);
-    let native = "creo:visibgeom:surface#11";
-    let producer = "creo:model:feature#3";
-    let local = "surface#11";
+
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(native.len() + producer.len() + local.len());
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo hole generated native selection"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            hole_face_selection(
+                &trial_ctx,
+                &scan,
+                &CadIr::empty(),
+                9,
+                11,
+                &result_surface_ids,
+                &available_features,
+            )
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = hole_face_selection(
@@ -240,7 +306,7 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
             offset: usize::try_from(entity_id).expect("fixture index fits usize"),
             end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
         };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
             17,
@@ -282,8 +348,23 @@ fn thicken_resource_error(collection: Option<u64>, retained: Option<u64>, operat
     if let Some(limit) = collection {
         policy.limits.max_collection_items = limit;
     }
-    if let Some(limit) = retained {
-        policy.limits.max_retained_bytes = limit;
+    if retained.is_some() {
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_retained_bytes = cap;
+                let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                thicken_feature_definition(&trial_ctx, &scan, &CadIr::empty(), 17)
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
@@ -360,7 +441,7 @@ fn thicken_fixture_generates_a_face_under_service_policy() {
 
 #[test]
 fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -437,7 +518,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
 }
 
 fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,

@@ -135,7 +135,7 @@ fn unstamped_material_loss_refuses_collection_limit() {
 #[test]
 fn unstamped_material_loss_text_refuses_retained_limit() {
     assert!(
-        matches!(legacy_material_refusal(5, None), FramingError::Resource(refusal) if refusal.operation == "Rhino material writer-stamp loss text")
+        matches!(legacy_material_refusal(crate::test_support::retained_limit_at("Rhino material writer-stamp loss text", 0, |cap| { match legacy_material_refusal(cap, None) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } }), None), FramingError::Resource(refusal) if refusal.operation == "Rhino material writer-stamp loss text")
     );
 }
 
@@ -305,7 +305,9 @@ macro_rules! v2_material_text_limit {
         #[test]
         fn $name() {
             assert!(matches!(
-                v2_v3_material_refusal($limit),
+                v2_v3_material_refusal(crate::test_support::retained_limit_at($operation,
+                    if $operation == "Rhino V2/V3 texture path" { match $limit { 0 => 0, 10 => 1, 18 => 2, _ => panic!("path occurrence") } } else { 0 },
+                    |cap| { let FramingError::Resource(refusal) = v2_v3_material_refusal(cap) else { panic!("material resource refusal"); }; refusal })),
                 FramingError::Resource(refusal) if refusal.operation == $operation
             ));
         }
@@ -340,18 +342,16 @@ v2_material_text_limit!(
 
 #[test]
 fn v2_material_source_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:material#55555555-5555-5555-5555-555555555555".len();
     assert!(matches!(
-        v2_v3_material_refusal(u64::try_from(42 + id_len).expect("budget fits")),
+        v2_v3_material_refusal(crate::test_support::retained_limit_at("Rhino material source UUID", 0, |cap| { match v2_v3_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })),
         FramingError::Resource(refusal) if refusal.operation == "Rhino material source UUID"
     ));
 }
 
 #[test]
 fn v2_material_plugin_uuid_refuses_retained_limit() {
-    let id_len = "rhino:presentation:material#55555555-5555-5555-5555-555555555555".len();
     assert!(matches!(
-        v2_v3_material_refusal(u64::try_from(42 + id_len + 36).expect("budget fits")),
+        v2_v3_material_refusal(crate::test_support::retained_limit_at("Rhino material plugin UUID", 0, |cap| { match v2_v3_material_refusal(cap) { FramingError::Resource(refusal) => refusal, error => panic!("unexpected fixture refusal: {error:?}") } })),
         FramingError::Resource(refusal) if refusal.operation == "Rhino material plugin UUID"
     ));
 }

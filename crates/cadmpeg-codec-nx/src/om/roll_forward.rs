@@ -212,7 +212,7 @@ pub(super) fn operation_state_group_at(
     let count_u64 = cadmpeg_core::decode::u64_from_index(member_count);
     let operation = "NX operation-state group rows";
     ctx.charge_work(count_u64, operation)?;
-    let mut rows = ctx.retained_vec(member_count, operation)?;
+    let mut rows = ctx.collection_vec(member_count, operation)?;
     for _ in 0..member_count {
         let Some((row, row_end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
             return Ok(None);
@@ -269,7 +269,7 @@ impl GroupTableFooter {
 impl OperationStateGroupTable {
     pub(super) fn new(groups: Vec<OperationStateGroup>, trailing_bytes: &[u8]) -> Option<Self> {
         let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
-        let groups = super::nonempty::NonEmpty::from_vec(groups)?;
+        let groups = super::nonempty::NonEmpty::from_admitted_vec(groups)?;
         let mut end = groups.first().offset();
         for group in groups.iter() {
             if group.offset() != end {

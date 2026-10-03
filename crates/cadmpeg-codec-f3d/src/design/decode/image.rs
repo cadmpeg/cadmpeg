@@ -184,6 +184,7 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_retained_bytes = limit;
+
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 assert!(matches!(
                     super::embedded_image_asset(&ctx, scan, NAME),

@@ -97,6 +97,7 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(crate::design::face_resolve::resolved_body_recipe_selection(&ctx, &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
@@ -462,21 +463,31 @@ fn surface_trim_tool_group_id_refuses_retained_limit() {
 
     let (scope, target_group, tool_group, body) = surface_trim_fixture();
 
-    for limit in 0..16_384 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            project_surface_trim(&ctx, &scope, &[target_group.clone(), tool_group.clone()], std::slice::from_ref(&body)),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d SurfaceTrim tool group id",
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_surface_trim(
+                    &ctx,
+                    &scope,
+                    &[target_group.clone(), tool_group.clone()],
+                    std::slice::from_ref(&body),
+                ))
+                .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d SurfaceTrim tool group id"
-        ) {
-            return;
-        }
+                    && failure.operation == "f3d SurfaceTrim tool group id")
+        );
     }
-    panic!("no SurfaceTrim tool group ID refusal");
 }
 
 #[test]
@@ -680,6 +691,7 @@ fn surface_trim_selected_cells_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut refused = [feature];
     assert!(

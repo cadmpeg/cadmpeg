@@ -1238,6 +1238,6 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
         )
         .expect("service resource budget")
         .expect("independent endpoint-port gauge");
-    let coedges = &topology.faces()[0].boundaries[0].coedges;
+    let coedges = &topology.faces[0].boundaries[0].coedges;
     assert!(coedges.iter().all(|coedge| !coedge.reversed));
 }

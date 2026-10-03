@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-
 use crate::design::decode::sketch::decode_lost_edge_references_from_stream;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -45,8 +43,20 @@ fn lost_edge_reference_id_refuses_retained_limit() {
     let bytes = lost_edge_bytes();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        u64_from_index(crate::ids::native_scope("BulkStream.dat").len());
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "f3d lost edge reference ID",
+        |cap| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut references = Vec::new();
+            decode_lost_edge_references_from_stream(&ctx, "BulkStream.dat", &bytes, &mut references)
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut references = Vec::new();
     let error =

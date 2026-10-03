@@ -79,6 +79,7 @@ fn compact_mirror_reference_refuses_guid_text_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = cap;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = compact_feature_reference(&ctx, &bytes, &header);
         assert!(matches!(

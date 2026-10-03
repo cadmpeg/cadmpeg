@@ -1410,7 +1410,8 @@ pub(super) fn project(
             "iges surfaces directory index",
         )?;
     }
-    let composite_index = CompositeIndex::from_ir(ir, ctx)?;
+    let mut index_storage = ctx.reserve_scoped(0, "IGES surface composite index")?;
+    let composite_index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 

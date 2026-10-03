@@ -47,6 +47,7 @@ fn incident_boundary_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut incident = std::collections::HashSet::new();
     assert!(matches!(
@@ -61,6 +62,7 @@ fn immediate_hole_refuses_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let containment = vec![vec![false, true], vec![false, false]];
     assert!(matches!(

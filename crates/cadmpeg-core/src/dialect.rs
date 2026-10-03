@@ -453,7 +453,7 @@ impl DialectLayers {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let primary = self.primary.try_clone_for_decode(ctx, operation)?;
-        let mut extra = ctx.retained_vec(self.extra.len(), operation)?;
+        let mut extra = ctx.collection_vec(self.extra.len(), operation)?;
         ctx.charge_work(crate::decode::u64_from_index(self.extra.len()), operation)?;
         for layer in &self.extra {
             extra.push(layer.try_clone_for_decode(ctx, operation)?);
@@ -505,7 +505,7 @@ impl DialectLayers {
         {
             return Err(DialectLayerError::Duplicate(layer));
         }
-        ctx.reserve_retained_vec_limit(&mut self.extra, 1, operation)
+        ctx.reserve_vec_limit(&mut self.extra, 1, operation)
             .map_err(DialectLayerError::ResourceLimit)?;
         self.extra.push(layer);
         Ok(())
@@ -928,17 +928,21 @@ mod tests {
                 String::new(),
             )]),
         );
+        let node_bytes = 11
+            * (std::mem::size_of::<crate::text::NonBlankString>() + std::mem::size_of::<String>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            crate::decode::u64_from_index(
-                std::mem::size_of::<(crate::text::NonBlankString, String)>(),
-            ) - 1;
+        let nodes =
+            usize::try_from(policy.limits.max_collection_items.ilog2()).expect("test ceiling") + 2;
+        let bytes = nodes * node_bytes;
+        policy.limits.max_retained_bytes = crate::decode::u64_from_index(bytes) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(layer.try_clone_for_decode(&ctx, "copy declaration"),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.additional == crate::decode::u64_from_index(std::mem::size_of::<(crate::text::NonBlankString, String)>()))
+                && limit.additional == crate::decode::u64_from_index(bytes))
         );
     }
 

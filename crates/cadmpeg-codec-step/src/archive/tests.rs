@@ -3,7 +3,7 @@
 #![allow(clippy::default_trait_access)]
 use cadmpeg_test_support::EditableDecodeResult;
 
-use super::{has_root_marker, resolve_uri, root_reference_notes, ReferenceTarget, ROOT_NAME};
+use super::{resolve_uri, root_reference_notes, ReferenceTarget, ROOT_NAME};
 
 fn resolve_uri_for_test<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -108,7 +108,7 @@ fn uri_base_member_refuses_temporary_byte_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes =
-        u64::try_from(ROOT_NAME.len() - 1).expect("member length fits u64");
+        u64::try_from(ROOT_NAME.len() - 1).expect("member and component slots fit u64");
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("test context");
     let error = resolve_uri_for_test(&ctx, ROOT_NAME, "#target")
@@ -117,7 +117,7 @@ fn uri_base_member_refuses_temporary_byte_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "step_zip_uri_member_temp"
+                && limit.operation == "step_zip_uri_member"
     ));
 }
 
@@ -125,7 +125,8 @@ fn uri_base_member_refuses_temporary_byte_limit() {
 fn root_reference_note_refuses_retained_byte_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
+    policy.limits.max_retained_bytes =
+        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("test context");
     let mut notes = Vec::new();
@@ -260,8 +261,14 @@ pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(bytes), Confidence::High);
-    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::Low);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, bytes),
+        Confidence::High
+    );
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, b"PK\x03\x04"),
+        Confidence::Low
+    );
 
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -287,7 +294,10 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
     let source = b"/* preamble */\n  iso-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(source), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, source),
+        Confidence::High
+    );
     codec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("Part 21 leading trivia and case-insensitive magic");
@@ -295,6 +305,7 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
 
 #[test]
 fn zip_root_detection_uses_structured_entry_names() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let marker_payload = b"payload contains ISO-10303.p21 but has no such entry";
     let codec = StepCodec::default();
@@ -303,27 +314,55 @@ fn zip_root_detection_uses_structured_entry_names() {
         ("preview.bin", marker_payload, CompressionMethod::Stored),
         (ROOT_NAME, root, CompressionMethod::Stored),
     ]);
-    assert!(has_root_marker(&root_after_payload));
-    assert_eq!(codec.detect(&root_after_payload), Confidence::Medium);
+    assert!(super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&root_after_payload)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &root_after_payload),
+        Confidence::Medium
+    );
 
     let marker_in_payload = step_zip(&[("preview.bin", marker_payload, CompressionMethod::Stored)]);
-    assert!(!has_root_marker(&marker_in_payload));
-    assert_eq!(codec.detect(&marker_in_payload), Confidence::Low);
+    assert!(!super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&marker_in_payload)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &marker_in_payload),
+        Confidence::Low
+    );
 
     let marker_in_filename = step_zip(&[(
         "parts/ISO-10303.p21.preview",
         b"ancillary",
         CompressionMethod::Stored,
     )]);
-    assert!(!has_root_marker(&marker_in_filename));
-    assert_eq!(codec.detect(&marker_in_filename), Confidence::Low);
+    assert!(!super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&marker_in_filename)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &marker_in_filename),
+        Confidence::Low
+    );
 
     let marker_in_comment = step_zip_with_comment(
         &[("preview.bin", b"ancillary", CompressionMethod::Stored)],
         ROOT_NAME,
     );
-    assert!(!has_root_marker(&marker_in_comment));
-    assert_eq!(codec.detect(&marker_in_comment), Confidence::Low);
+    assert!(!super::has_root_marker(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&marker_in_comment)
+    )
+    .expect("admitted ZIP detection"));
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &marker_in_comment),
+        Confidence::Low
+    );
 }
 
 #[test]
@@ -336,7 +375,10 @@ fn codec_decodes_step_zip_root_and_reports_archive_members() {
     ]);
     let codec = StepCodec::default();
 
-    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bytes),
+        Confidence::Medium
+    );
     let summary = codec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("inspect STEP ZIP");
@@ -1125,4 +1167,50 @@ fn forwarded_anchor_lookup_refuses_caller_work_limit() {
             "#missing"
         );
     });
+}
+
+#[test]
+fn zip_detection_resource_refusals_reach_the_caller() {
+    let bytes = step_zip(&[(ROOT_NAME, b"root", CompressionMethod::Stored)]);
+    for dimension in [
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = 0;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = 0;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
+        assert!(
+            matches!(super::has_root_marker(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+        );
+    }
+}
+
+#[test]
+fn zip_detection_reads_names_without_payload_admission() {
+    for (local_offset, central_offset, value) in [(6, 8, 1), (8, 10, 12)] {
+        let mut bytes = step_zip(&[(ROOT_NAME, b"root", CompressionMethod::Stored)]);
+        let central = bytes
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x01\x02")
+            .expect("central directory");
+        cadmpeg_test_support::bytes::put_u16(&mut bytes, local_offset, value);
+        cadmpeg_test_support::bytes::put_u16(&mut bytes, central + central_offset, value);
+        assert_eq!(
+            cadmpeg_test_support::detection::confidence(&StepCodec::default(), &bytes),
+            Confidence::Medium
+        );
+    }
 }

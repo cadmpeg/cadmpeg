@@ -21,35 +21,32 @@ pub(crate) fn project_local_components(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), cadmpeg_core::CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d component lookup storage")?;
     let mut components = BTreeMap::new();
     let mut occurrences = BTreeMap::new();
     let mut native_by_guid = BTreeMap::new();
     for occurrence in native_occurrences {
-        let (key, reservation) = temporary_lowercase_component_key(
-            ctx,
-            occurrence.occurrence_guid.as_str(),
-            "f3d component native occurrence key",
-        )?;
-        ctx.admit_btree_entry(
-            &native_by_guid,
-            &key,
-            "f3d component native occurrence index",
-        )?;
-        match native_by_guid.entry(key) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_retained(
-                    u64::try_from(occurrence.occurrence_guid.as_str().len()).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d component native occurrence key", 0, 1)
-                    })?,
-                    "f3d component native occurrence key",
-                )?;
-                entry.insert(Some(occurrence));
+        lookup_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+            let mut key = ctx.copy_retained_text(
+                occurrence.occurrence_guid.as_str(),
+                "f3d component native occurrence key",
+            )?;
+            key.make_ascii_lowercase();
+            ctx.admit_btree_entry(
+                &native_by_guid,
+                &key,
+                "f3d component native occurrence index",
+            )?;
+            match native_by_guid.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(occurrence));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    *entry.get_mut() = None;
+                }
             }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = None;
-            }
-        }
-        drop(reservation);
+            Ok(())
+        })?;
     }
 
     for scope in scopes {
@@ -76,7 +73,7 @@ pub(crate) fn project_local_components(
                 };
                 project_occurrence(
                     ctx,
-                    &mut components,
+                    (&mut lookup_storage, &mut components),
                     &mut occurrences,
                     &native_by_guid,
                     &root.component_guid,
@@ -96,7 +93,7 @@ pub(crate) fn project_local_components(
         if let Some(operation) = scope.copy_paste_component_operation() {
             project_occurrence(
                 ctx,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 &operation.component_guid,
@@ -105,7 +102,7 @@ pub(crate) fn project_local_components(
             )?;
             project_occurrence(
                 ctx,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 &operation.component_guid,
@@ -116,7 +113,7 @@ pub(crate) fn project_local_components(
         if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
                 ctx,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 &construction.component_guid,
@@ -139,7 +136,7 @@ pub(crate) fn project_local_components(
         for occurrence in std::iter::once(seed).chain(generated) {
             project_occurrence(
                 ctx,
-                &mut components,
+                (&mut lookup_storage, &mut components),
                 &mut occurrences,
                 &native_by_guid,
                 component_guid,
@@ -293,21 +290,28 @@ fn temporary_lowercase_component_key<'a>(
 
 fn project_occurrence(
     ctx: &DecodeContext<'_>,
-    components: &mut BTreeMap<String, ProductDefinition>,
+    component_storage: (
+        &mut ScopedReservation<'_>,
+        &mut BTreeMap<String, ProductDefinition>,
+    ),
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
     occurrence_guid: &crate::records::mesh::DesignRelaxedGuidText,
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let (lookup_storage, components) = component_storage;
     let component_id = crate::ids::neutral_component_id(component_guid);
     let transform = neutral_transform(transform)?;
-    project_component(ctx, components, component_guid)?;
+    project_component(ctx, lookup_storage, components, component_guid)?;
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     if !occurrences.contains_key(occurrence_id.as_str()) {
-        let key =
-            ctx.copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
-        ctx.admit_btree_entry(occurrences, &key, "f3d component occurrence map entry")?;
+        let key = lookup_storage.with_storage(|| -> Result<String, cadmpeg_core::CodecError> {
+            let key =
+                ctx.copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
+            ctx.admit_btree_entry(occurrences, &key, "f3d component occurrence map entry")?;
+            Ok(key)
+        })?;
         let (native_key, reservation) = temporary_lowercase_component_key(
             ctx,
             occurrence_guid.as_str(),
@@ -347,14 +351,18 @@ fn project_occurrence(
 
 fn project_component(
     ctx: &DecodeContext<'_>,
+    lookup_storage: &mut ScopedReservation<'_>,
     components: &mut BTreeMap<String, ProductDefinition>,
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
     if !components.contains_key(component_id.as_str()) {
-        let key =
-            ctx.copy_retained_text(component_id.as_str(), "f3d component definition map key")?;
-        ctx.admit_btree_entry(components, &key, "f3d component definition map entry")?;
+        let key = lookup_storage.with_storage(|| -> Result<String, cadmpeg_core::CodecError> {
+            let key =
+                ctx.copy_retained_text(component_id.as_str(), "f3d component definition map key")?;
+            ctx.admit_btree_entry(components, &key, "f3d component definition map entry")?;
+            Ok(key)
+        })?;
         components.insert(
             key,
             ProductDefinition {
@@ -501,50 +509,85 @@ mod tests {
 
     #[test]
     fn component_native_key_refuses_retained_limit() {
-        let error = one_component_byte_refusal(35, u64::MAX);
+        let (scope, occurrence) = one_component_fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            "f3d component native occurrence key",
+            0,
+            |ctx| {
+                super::project_local_components(
+                    ctx,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&occurrence),
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component native occurrence key")
+ if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "f3d component native occurrence key")
         );
     }
 
     #[test]
     fn component_definition_key_refuses_retained_limit() {
-        let error = one_component_byte_refusal(36, u64::MAX);
+        let (scope, occurrence) = one_component_fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            "f3d component definition map key",
+            0,
+            |ctx| {
+                super::project_local_components(
+                    ctx,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&occurrence),
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component definition map key")
+ if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "f3d component definition map key")
         );
     }
 
     #[test]
     fn component_occurrence_key_refuses_retained_limit() {
-        let (_, occurrence) = one_component_fixture();
-        let definition = crate::ids::neutral_component_id(&occurrence.component_guid);
-        let maximum = 36 + u64::try_from(definition.as_str().len()).unwrap();
-        let error = one_component_byte_refusal(maximum, u64::MAX);
+        let (scope, occurrence) = one_component_fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            "f3d component occurrence map key",
+            0,
+            |ctx| {
+                super::project_local_components(
+                    ctx,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&occurrence),
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component occurrence map key")
+ if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "f3d component occurrence map key")
         );
     }
 
     #[test]
     fn component_native_reference_refuses_retained_limit() {
-        let (_, occurrence) = one_component_fixture();
-        let definition = crate::ids::neutral_component_id(&occurrence.component_guid);
-        let occurrence_id =
-            crate::ids::neutral_component_occurrence_id(&occurrence.occurrence_guid);
-        let maximum =
-            36 + u64::try_from(definition.as_str().len() + occurrence_id.as_str().len()).unwrap();
-        let error = one_component_byte_refusal(maximum, u64::MAX);
+        let (scope, occurrence) = one_component_fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "f3d component occurrence native reference",
+            0,
+            |ctx| {
+                super::project_local_components(
+                    ctx,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&occurrence),
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component occurrence native reference")
+ if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "f3d component occurrence native reference")
         );
     }
 
@@ -556,20 +599,23 @@ mod tests {
             occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
             Some(&occurrence),
         );
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_materialized_bytes = 35;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_occurrence(
-            &ctx,
-            &mut std::collections::BTreeMap::new(),
-            &mut std::collections::BTreeMap::new(),
-            &native_by_guid,
-            &occurrence.component_guid,
-            &occurrence.occurrence_guid,
-            identity_matrix(),
-        )
-        .expect_err("one native lookup needs 36 temporary bytes");
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            "f3d component native occurrence lookup",
+            0,
+            |ctx| {
+                let mut lookup_storage = ctx.reserve_scoped(0, "f3d component lookup storage")?;
+                super::project_occurrence(
+                    ctx,
+                    (&mut lookup_storage, &mut std::collections::BTreeMap::new()),
+                    &mut std::collections::BTreeMap::new(),
+                    &native_by_guid,
+                    &occurrence.component_guid,
+                    &occurrence.occurrence_guid,
+                    identity_matrix(),
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
@@ -693,13 +739,7 @@ mod tests {
         let (scope, feature) = unresolved_component_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = maximum
-            + u64::try_from(
-                crate::ids::neutral_component_insert_occurrence_id(&scope)
-                    .as_str()
-                    .len(),
-            )
-            .unwrap();
+        policy.limits.max_retained_bytes = maximum;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         super::project_unresolved_component_insert_occurrences(&ctx, &mut [feature], &[scope], 0)
             .expect_err("unresolved component text exceeds the retained limit")
@@ -707,7 +747,11 @@ mod tests {
 
     #[test]
     fn unresolved_component_feature_id_refuses_retained_limit() {
-        let error = unresolved_component_retained_refusal(0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d unresolved component feature occurrence id",
+            |cap| Err::<(), cadmpeg_core::CodecError>(unresolved_component_retained_refusal(cap)),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -717,10 +761,11 @@ mod tests {
 
     #[test]
     fn unresolved_component_name_refuses_retained_limit() {
-        let (scope, _) = unresolved_component_fixture();
-        let feature_id = crate::ids::neutral_component_insert_occurrence_id(&scope);
-        let maximum = u64::try_from(feature_id.as_str().len()).unwrap();
-        let error = unresolved_component_retained_refusal(maximum);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d unresolved component name",
+            |cap| Err::<(), cadmpeg_core::CodecError>(unresolved_component_retained_refusal(cap)),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -730,11 +775,11 @@ mod tests {
 
     #[test]
     fn unresolved_component_native_reference_refuses_retained_limit() {
-        let (scope, _) = unresolved_component_fixture();
-        let feature_id = crate::ids::neutral_component_insert_occurrence_id(&scope);
-        let name = &scope.component_insert_construction().unwrap().neutron_role;
-        let maximum = u64::try_from(feature_id.as_str().len() + name.len()).unwrap();
-        let error = unresolved_component_retained_refusal(maximum);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d unresolved component native reference",
+            |cap| Err::<(), cadmpeg_core::CodecError>(unresolved_component_retained_refusal(cap)),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

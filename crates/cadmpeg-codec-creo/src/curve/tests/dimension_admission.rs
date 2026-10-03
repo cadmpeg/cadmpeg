@@ -27,15 +27,27 @@ fn refuse_with_context(
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    crate::curve::parse_relation_expression(&ctx, expression, values, context)
-        .expect_err("dimension expression allocation must refuse")
+    crate::curve::parse_relation_expression::<DimensionProbeValue>(
+        &ctx, expression, values, context,
+    )
+    .expect_err("dimension expression allocation must refuse")
 }
 
 #[test]
 fn dimension_integer_function_refuses_retained_text() {
-    let error = refuse("itos(2)", &BTreeMap::new(), |policy| {
-        policy.limits.max_retained_bytes = 0;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo dimension integer text",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "itos(2)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension integer text"));
@@ -43,9 +55,19 @@ fn dimension_integer_function_refuses_retained_text() {
 
 #[test]
 fn dimension_real_function_refuses_retained_text() {
-    let error = refuse("rtos(1.25,2)", &BTreeMap::new(), |policy| {
-        policy.limits.max_retained_bytes = 0;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo relation real text",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "rtos(1.25,2)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo relation real text"));
@@ -80,14 +102,21 @@ fn dimension_model_type_refuses_retained_copy() {
 #[test]
 fn dimension_exists_refuses_scoped_lookup_key() {
     let symbols = BTreeSet::from(["driver".to_owned()]);
-    let error = refuse_with_context(
-        "exists('driver')",
-        &BTreeMap::new(),
-        RelationEvaluationContext {
-            existing_symbols: Some(&symbols),
-            ..RelationEvaluationContext::default()
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo dimension exists lookup key",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "exists('driver')",
+                &BTreeMap::new(),
+                RelationEvaluationContext {
+                    existing_symbols: Some(&symbols),
+                    ..RelationEvaluationContext::default()
+                },
+            )
         },
-        |policy| policy.limits.max_materialized_bytes = 0,
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
@@ -97,6 +126,7 @@ fn dimension_exists_refuses_scoped_lookup_key() {
 #[test]
 fn dimension_search_refuses_scan_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo dimension text search work",
         |ctx| {
@@ -126,6 +156,7 @@ fn dimension_extract_refuses_control_constraint_growth() {
 #[test]
 fn dimension_extract_refuses_scan_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo dimension text extract work",
         |ctx| {
@@ -144,9 +175,19 @@ fn dimension_extract_refuses_scan_work() {
 
 #[test]
 fn dimension_extract_refuses_retained_text() {
-    let error = refuse("extract('abc',2,1)", &BTreeMap::new(), |policy| {
-        policy.limits.max_retained_bytes = 3;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo dimension extracted text",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "extract('abc',2,1)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension extracted text"));
@@ -155,6 +196,7 @@ fn dimension_extract_refuses_retained_text() {
 #[test]
 fn dimension_length_refuses_scan_work() {
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::WorkUnits,
         "creo dimension text length work",
         |ctx| {
@@ -173,9 +215,19 @@ fn dimension_length_refuses_scan_work() {
 
 #[test]
 fn dimension_conditional_refuses_retained_text() {
-    let error = refuse("if(1,'a','b')", &BTreeMap::new(), |policy| {
-        policy.limits.max_retained_bytes = 2;
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo dimension conditional text",
+        |ctx| {
+            crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                ctx,
+                "if(1,'a','b')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension conditional text"));

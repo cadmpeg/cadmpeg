@@ -122,7 +122,7 @@ fn assert_compressed_jt_limit(
     let (data, segment) = compressed_jt_fixture();
 
     let container = Container {
-        data: std::borrow::Cow::Borrowed(&data),
+        data: data.as_slice().into(),
         physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
@@ -137,37 +137,45 @@ fn assert_compressed_jt_limit(
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    crate::test_support::with_decode_context_over(&data, adjust, |ctx| {
-        let root = cadmpeg_core::decode::View::over_retained(&data);
-
-        let error = super::super::display_jt_compressed_element_sequences(
-            (ctx, root),
-            &container,
-            std::slice::from_ref(&segment),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &data,
+        |policy| {
+            adjust(policy);
+            if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits {
+                // Admit the bounded-directory pass before the tested payload stage.
+                policy.limits.max_work_units +=
+                    cadmpeg_core::decode::u64_from_index(container.entries.len());
+            }
+        },
+        |ctx| {
+            let error = super::super::display_jt_compressed_element_sequences(
+                ctx,
+                &container,
+                std::slice::from_ref(&segment),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == dimension && limit.operation == operation),
-            "{error}"
-        );
+                "{error}"
+            );
 
-        crate::test_support::with_decode_context_over(
-            &data,
-            |_| {},
-            |service| {
-                let root = cadmpeg_core::decode::View::over_retained(&data);
-
-                let (elements, sequences) = super::super::display_jt_compressed_element_sequences(
-                    (service, root),
-                    &container,
-                    &[segment],
-                )
-                .unwrap();
-                assert_eq!((elements.len(), sequences.len()), (1, 1));
-            },
-        );
-    });
+            crate::test_support::with_decode_context_over(
+                &data,
+                |_| {},
+                |service| {
+                    let (elements, sequences) =
+                        super::super::display_jt_compressed_element_sequences(
+                            service,
+                            &container,
+                            &[segment],
+                        )
+                        .unwrap();
+                    assert_eq!((elements.len(), sequences.len()), (1, 1));
+                },
+            );
+        },
+    );
 }
 
 #[test]
@@ -213,17 +221,10 @@ fn jt_compressed_sequence_refuses_before_vector_reservation() {
 fn jt_compressed_element_fields_refuse_before_string_allocation() {
     use cadmpeg_core::decode::ResourceDimension;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(framed_jt_element().len())
-                + 3
-                + 2
-                + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    super::super::ParsedJtElement<'_>,
-                >())
-                + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>())
-                + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    super::super::DisplayJtCompressedElement,
-                >());
+        policy.limits.max_retained_bytes = compressed_jt_retained_stages().elements
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                super::super::DisplayJtCompressedElement,
+            >());
     };
     assert_compressed_jt_limit(
         adjust_policy,
@@ -236,7 +237,13 @@ fn jt_compressed_element_fields_refuse_before_string_allocation() {
 fn jt_sequence_tail_hash_refuses_before_scoped_validation_allocation() {
     use cadmpeg_core::decode::ResourceDimension;
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_materialized_bytes = 63;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            framed_jt_element().len()
+                + 3
+                + 2
+                + 4 * std::mem::size_of::<super::super::ParsedJtElement<'_>>()
+                + 63,
+        );
     };
     assert_compressed_jt_limit(
         adjust_policy,
@@ -255,27 +262,20 @@ struct CompressedJtRetainedStages {
 
 fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
     let segment = "nx:jt:segment#0";
-    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
-    let before_ids = expanded_len
-        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            super::super::ParsedJtElement<'_>,
-        >());
-    let before_elements =
-        before_ids + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
+    let before_ids = 0;
+    let before_elements = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
     let element_id_len = segment.len() + "-inflated-element-".len() + 1;
-    let element_fields =
-        cadmpeg_core::decode::u64_from_index(element_id_len * 2 + segment.len() + 64);
-    let before_sequence = before_elements
-        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+    let before_sequence_fields = before_elements
+        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             super::super::DisplayJtCompressedElement,
         >())
-        + element_fields;
-    let before_sequence_fields = before_sequence
-        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+        + cadmpeg_core::decode::u64_from_index(element_id_len * 2 + segment.len() + 64);
+    let before_sequence = before_sequence_fields
+        + cadmpeg_core::decode::u64_from_index(segment.len() * 2 + "-inflated-sequence".len());
+    let before_tail = before_sequence
+        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
             super::super::DisplayJtCompressedElementSequence,
         >());
-    let before_tail = before_sequence_fields
-        + cadmpeg_core::decode::u64_from_index(segment.len() * 2 + "-inflated-sequence".len());
     CompressedJtRetainedStages {
         ids: before_ids,
         elements: before_elements,
@@ -359,8 +359,8 @@ fn jt_compressed_element_hash_refuses_before_body_work() {
         "zlib compressed input",
     );
     let (data, _) = compressed_jt_fixture();
-    // This member finishes in one 8192-byte expansion step and copies its whole output;
-    // retaining the inflated payload then copies that output again.
+    // The member finishes in one 8192-byte expansion step. The owned payload
+    // is hashed while its scoped storage remains live.
     let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
     let expansion_work =
         cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + expanded_len;
@@ -383,8 +383,8 @@ fn jt_compressed_sequence_hash_refuses_before_tail_work() {
         "zlib compressed input",
     );
     let (data, _) = compressed_jt_fixture();
-    // This member finishes in one 8192-byte expansion step and copies its whole output;
-    // retaining the inflated payload then copies that output again.
+    // The member finishes in one 8192-byte expansion step. The owned payload
+    // is hashed while its scoped storage remains live.
     let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
     let expansion_work =
         cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + expanded_len;
@@ -407,8 +407,8 @@ fn jt_compressed_sequence_validation_refuses_before_second_hash() {
         "zlib compressed input",
     );
     let (data, _) = compressed_jt_fixture();
-    // This member finishes in one 8192-byte expansion step and copies its whole output;
-    // retaining the inflated payload then copies that output again.
+    // The member finishes in one 8192-byte expansion step. The owned payload
+    // is hashed while its scoped storage remains live.
     let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
     let expansion_work =
         cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + expanded_len;

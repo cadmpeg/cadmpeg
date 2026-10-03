@@ -1087,10 +1087,12 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         if wire.return_members.len() != wire.return_member_offsets.len() {
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
-        let mut return_members = cadmpeg_core::decode::DecodeContext::admitted_vec(
-            wire.return_members.len(),
-            "reconstruct F3D annotation return members",
-        )
+        let mut return_members = {
+            let mut storage = Vec::new();
+            storage
+                .try_reserve_exact(wire.return_members.len())
+                .map(|()| storage)
+        }
         .map_err(|error| error.to_string())?;
         for (value, offset) in wire
             .return_members
@@ -1437,10 +1439,10 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
         if u64::from(wire.unknown_constraint_bits) != unknown {
             return Err("unknown_constraint_bits must match state".into());
         }
-        let mut loci = cadmpeg_core::decode::DecodeContext::admitted_vec(
-            wire.loci.len(),
-            "reconstruct F3D dimension loci",
-        )
+        let mut loci = {
+            let mut storage = Vec::new();
+            storage.try_reserve_exact(wire.loci.len()).map(|()| storage)
+        }
         .map_err(|error| error.to_string())?;
         loci.extend(
             wire.loci

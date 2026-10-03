@@ -133,7 +133,11 @@ fn path_edge_ids_refuse_collection_limit() {
 
 #[test]
 fn path_edge_identity_refuses_retained_limit() {
-    let error = bind_with_limits(u64::MAX, 0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D history input identity",
+        |cap| bind_with_limits(u64::MAX, cap).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D history input identity")

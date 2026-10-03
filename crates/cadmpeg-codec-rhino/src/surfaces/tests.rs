@@ -426,8 +426,7 @@ fn revolution_temporary_lanes_refuse_materialized_limit_before_reserve() {
         None,
         [0.0, 1.0],
     );
-    let needed = 3 * std::mem::size_of::<(f64, f64)>()
-        + 6 * std::mem::size_of::<f64>()
+    let needed = 4 * std::mem::size_of::<(f64, f64)>()
         + 2 * (std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
             + std::mem::size_of::<f64>())
         + 6 * (std::mem::size_of::<Point3>() + std::mem::size_of::<f64>());

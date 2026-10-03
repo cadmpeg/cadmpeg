@@ -256,8 +256,10 @@ fn profile_circle(center: [f64; 2], radius: f64, reversed: bool) -> super::Profi
             radius: cadmpeg_ir::scalar::Length::new(radius).expect("positive radius"),
         },
         reversed,
-        start: [center[0] + radius, center[1]],
-        end: [center[0] + radius, center[1]],
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1]))
+            .expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(center[0] + radius, center[1]))
+            .expect("finite"),
     }
 }
 
@@ -268,8 +270,9 @@ fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
             end: Point2::new(end[0], end[1]),
         },
         reversed: false,
-        start,
-        end,
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(start[0], start[1]))
+            .expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(end[0], end[1])).expect("finite"),
     }
 }
 
@@ -287,8 +290,8 @@ fn profile_nurbs_line() -> super::ProfileEntity {
     super::ProfileEntity {
         geometry: super::ProfileGeometry::Nurbs { curve },
         reversed: false,
-        start: [0.0, 0.0],
-        end: [1.0, 0.0],
+        start: cadmpeg_ir::units::FinitePoint2::new(Point2::new(0.0, 0.0)).expect("finite"),
+        end: cadmpeg_ir::units::FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite"),
     }
 }
 
@@ -308,6 +311,7 @@ fn profile_polyline_pairs_refuse_work_limit() {
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[0.0, 1.0], [1.0, 1.0]],
             0.0,
+            [None, None],
         )
     })
     .expect_err("one segment pair exceeds zero work");
@@ -319,7 +323,7 @@ fn profile_segment_intersection_refuses_work_limit() {
     let first = profile_line([0.0, 0.0], [1.0, 0.0]);
     let second = profile_line([0.0, 1.0], [1.0, 1.0]);
     let error = under_work_limit(0, |ctx| {
-        super::profile_segments_intersect(ctx, &first, &second, 0.0)
+        super::profile_segments_intersect(ctx, &first, &second, 0.0, [None, None])
     })
     .expect_err("one geometry pair exceeds zero work");
     assert_work(&error, "creo profile segment intersection");
@@ -334,7 +338,7 @@ fn profile_nurbs_arc_intersection_refuses_segment_work() {
         "creo profile NURBS arc intersection segments",
         |limit| {
             under_work_limit(limit, |ctx| {
-                super::profile_segments_intersect(ctx, &first, &second, 0.01)
+                super::profile_segments_intersect(ctx, &first, &second, 0.01, [None, None])
             })
         },
     );
@@ -832,7 +836,12 @@ fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
 
-    policy.limits.max_retained_bytes = u64::try_from(REASON.len()).expect("reason length") - 1;
+    let output_slots = cadmpeg_core::decode::u64_from_index(
+        12 * std::mem::size_of::<f64>()
+            + 9 * std::mem::size_of::<cadmpeg_ir::geometry::pcurve::WeightedPole2>(),
+    );
+    policy.limits.max_retained_bytes =
+        output_slots + u64::try_from(REASON.len()).expect("reason length") - 1;
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
@@ -852,8 +861,8 @@ fn overflowing_circular_pcurve_refuses_before_error_text_copy() {
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "creo circular pcurve refusal text");
-    assert_eq!(limit.used, 0);
-    assert_eq!(limit.limit + 1, limit.additional);
+    assert_eq!(limit.used, output_slots);
+    assert_eq!(limit.limit + 1, limit.used + limit.additional);
     assert!(refusal.take_records().is_empty());
     let absent = crate::decode::with_test_decode_ctx(|ctx| {
         super::circular_pcurve(
@@ -921,20 +930,131 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
 
 #[test]
 fn circular_pcurve_refuses_unbounded_span_before_allocation() {
-    let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    for (start, end, requested) in [
+        (0.0, 100_001.0 * std::f64::consts::FRAC_PI_2, 100_001),
+        (0.0, 1.0e20, u64::MAX),
+        (0.0, f64::INFINITY, u64::MAX),
+        (-f64::MAX, f64::MAX, u64::MAX),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let error = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            start,
+            end,
+            &"oversized arc",
+            &mut refusal,
+        )
+        .expect_err("segment ceiling refuses before allocation");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("segment resource refusal expected");
+        };
+        assert_eq!(
+            limit.dimension,
+            ResourceDimension::Codec("creo circular pcurve segments")
+        );
+        assert_eq!(limit.operation, "creo circular pcurve segments");
+        assert_eq!(limit.limit, 100_000);
+        assert_eq!(limit.used + limit.additional, requested);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(refusal.take_records().is_empty());
+    }
+}
+
+#[test]
+fn circular_pcurve_refuses_projection_work_before_each_pass() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    // A quarter circle has three poles and six knots. Knot admission scans twice.
+    for (budget, used, additional, operation) in [
+        (2, 0, 3, "creo circular pcurve pole projection"),
+        (8, 3, 6, "creo circular pcurve knot projection"),
+        (11, 9, 3, "creo circular pcurve weight scan"),
+        (14, 12, 3, "creo circular pcurve weighted pole projection"),
+        (26, 15, 12, "creo circular pcurve knot admission"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let error = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut refusal,
+        )
+        .expect_err("work refuses before the projection pass");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("work resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(limit.limit, budget);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(refusal.take_records().is_empty());
+    }
+    let expected = crate::decode::with_test_decode_ctx(|ctx| {
+        super::circular_pcurve(
             ctx,
             [0.0, 0.0],
             1.0,
             0.0,
-            1.0e20,
-            &"oversized arc",
-            &mut refusal,
-        ))
-        .expect("resource admission")
-        .is_none()
-    );
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+    })
+    .expect("service resources")
+    .expect("quarter circle");
+    for prior_work in [0, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 27;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        ctx.charge_work(prior_work, "caller work")
+            .expect("caller work admitted");
+        let result = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        );
+        if prior_work == 0 {
+            assert_eq!(
+                result
+                    .expect("exact projection allowance")
+                    .expect("quarter circle"),
+                expected
+            );
+            ctx.charge_work(0, "projection complete")
+                .expect("allowance admitted");
+            assert!(matches!(
+                ctx.charge_work(1, "after projection"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        } else {
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "creo circular pcurve knot admission" && limit.used == 16)
+            );
+        }
+    }
 }
 
 #[test]
@@ -976,17 +1096,20 @@ fn large_profile_circle_intersections_stay_finite() {
     assert!(super::line_arc_intersect(
         [[-2. * r, 0.], [2. * r, 0.]],
         arc,
-        1e-9
+        1e-9,
+        [None, None]
     ));
     assert!(super::arcs_intersect(
         arc,
         ([r, 0.], r, 0., std::f64::consts::TAU),
-        1e-9
+        1e-9,
+        [None, None]
     ));
     assert!(!super::arcs_intersect(
         arc,
         ([3. * r, 0.], r, 0., std::f64::consts::TAU),
-        1e-9
+        1e-9,
+        [None, None]
     ));
 }
 
@@ -997,13 +1120,15 @@ fn small_segment_crossings_do_not_depend_on_cross_product_units() {
         assert!(super::segments_intersect(
             [[-scale, 0.0], [scale, 0.0]],
             [[0.0, -scale], [0.0, scale]],
-            DISTANCE_TOLERANCE
+            DISTANCE_TOLERANCE,
+            [None, None]
         ));
     }
     assert!(!super::segments_intersect(
         [[0.0, 0.0], [1e-5, 0.0]],
         [[0.0, 1e-5], [1e-5, 1e-5]],
-        DISTANCE_TOLERANCE
+        DISTANCE_TOLERANCE,
+        [None, None]
     ));
 }
 
@@ -1033,9 +1158,24 @@ fn numerical_ranges_profile_arc_tolerance_is_a_length_at_both_ends() {
 fn audit_regression_line_arc_endpoint_tolerance_has_length_units() {
     let line = [[0., 0.], [1000., 0.]];
     let arc = |center| ([center, 0.], 0.1, 0., std::f64::consts::TAU);
-    assert!(!super::line_arc_intersect(line, arc(1000.5), 0.001));
-    assert!(super::line_arc_intersect(line, arc(1000.1005), 0.001));
-    assert!(super::line_arc_intersect(line, arc(999.5), 0.001));
+    assert!(!super::line_arc_intersect(
+        line,
+        arc(1000.5),
+        0.001,
+        [None, None]
+    ));
+    assert!(super::line_arc_intersect(
+        line,
+        arc(1000.1005),
+        0.001,
+        [None, None]
+    ));
+    assert!(super::line_arc_intersect(
+        line,
+        arc(999.5),
+        0.001,
+        [None, None]
+    ));
 }
 
 #[test]
@@ -1188,3 +1328,5 @@ fn nurbs_profile_point_append_refuses_before_growth_at_the_common_ceiling() {
         assert_eq!(points.last(), Some(&[0.0; 2]));
     });
 }
+
+mod work_admission;

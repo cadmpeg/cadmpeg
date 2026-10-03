@@ -2033,7 +2033,7 @@ fn read_children(
         reader,
         &chunk,
         child_reader,
-        &direct_ranges,
+        direct_ranges.iter().map(Ok),
         warnings,
     )?;
     Ok(RawBrepChildren {
@@ -2486,9 +2486,10 @@ fn read_regions(
     reader.skip(chunk.next_offset() - reader.position())?;
     match parsed {
         Ok((sides, regions, nested, inline_region_loaded)) => {
-            let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested.as_slice())?;
+            let direct =
+                crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), nested.as_slice())?;
             if matches!(
-                verify_checksum_ranges(bytes, &chunk, &direct)?,
+                verify_checksum_ranges(ctx, bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
                 warnings.push_coded_admitted(
@@ -3095,7 +3096,7 @@ fn finish_anonymous(
         )?;
     }
     if matches!(
-        verify_checksum(bytes, chunk)?,
+        verify_checksum(ctx, bytes, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -3120,11 +3121,11 @@ fn finish_anonymous_children(
     children: &[Range<usize>],
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
+    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
     finish_anonymous_ranges(ctx, bytes, parent, chunk, child, &direct, warnings)
 }
 
-fn finish_anonymous_ranges<I>(
+fn finish_anonymous_ranges<I, R>(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     parent: &mut BoundedReader<'_>,
@@ -3134,8 +3135,8 @@ fn finish_anonymous_ranges<I>(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError>
 where
-    I: Clone + IntoIterator,
-    I::Item: std::borrow::Borrow<Range<usize>>,
+    I: Clone + IntoIterator<Item = Result<R, FramingError>>,
+    R: std::borrow::Borrow<Range<usize>>,
 {
     if child.remaining() != 0 {
         warnings.push_admitted(
@@ -3147,7 +3148,7 @@ where
         )?;
     }
     if matches!(
-        verify_checksum_ranges(bytes, chunk, direct_ranges)?,
+        verify_checksum_ranges(ctx, bytes, chunk, direct_ranges)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push_coded_admitted(
@@ -4155,23 +4156,33 @@ mod tests {
     #[test]
     fn brep_trim_reserved_bytes_refuse_retained_limit() {
         let bytes = packed_array(1, &trim_record(true));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 30;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test input fits service profile");
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = read_trims(
-            &ctx,
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            Some(200_206_180),
-            &mut Diagnostics::new(),
-            &mut Vec::new(),
-        )
-        .expect_err("31 reserved bytes exceed a 30-byte retained limit");
+        let run = |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("test input fits service profile");
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            read_trims(
+                &ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                Some(200_206_180),
+                &mut Diagnostics::new(),
+                &mut Vec::new(),
+            )
+            .expect_err("31 reserved bytes exceed a 30-byte retained limit")
+        };
+        let error = run(crate::test_support::retained_limit_at(
+            "Rhino Brep trim reserved bytes",
+            0,
+            |cap| match run(cap) {
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+                error => panic!("unexpected resource refusal: {error:?}"),
+            },
+        ));
         assert!(
             matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "Rhino Brep trim reserved bytes")

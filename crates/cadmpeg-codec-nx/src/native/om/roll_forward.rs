@@ -266,7 +266,7 @@ impl OmRollForwardStateTable {
                     crate::loss::NxLossCode::RollForwardTableRejected.code()
                 ))
             })?;
-            ctx.reserve_retained_vec(&mut groups, 1, "NX roll-forward state groups")?;
+            ctx.reserve_vec(&mut groups, 1, "NX roll-forward state groups")?;
             groups.push(OmRollForwardStateGroup {
                 id: group_id(ctx, section_ordinal, ordinal)?,
                 frame,

@@ -56,7 +56,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter_mut()
         .find(|member| member.entity_suffix == 985)
         .expect("generated body member");
-    assert!(member.byte_offset > 0);
+    assert!(member.byte_offset() > 0);
     member.entity_suffix = 12_345;
     member.flags = 7;
     let header = native
@@ -85,19 +85,21 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         panic!("parsed entity locations");
     };
     assert_eq!(entities.len(), 2);
-    object.type_guid = "91111111-2222-3333-4444-555555555555"
-        .to_owned()
-        .try_into()
-        .expect("type GUID");
+    object.set_type_guid(
+        "91111111-2222-3333-4444-555555555555"
+            .to_owned()
+            .try_into()
+            .expect("type GUID"),
+    );
     let base_offset = object.base_type_guid.offset().expect("located base GUID");
-    object.base_type_guid = crate::records::entity_header::BaseTypeGuid::Guid {
+    object.set_base_type_guid(crate::records::entity_header::BaseTypeGuid::Guid {
         value: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef"
             .to_owned()
             .try_into()
             .expect("base GUID"),
         offset: base_offset,
-    };
-    object.version = 9;
+    });
+    object.set_version(9);
     let act_guid = native
         .act_guids
         .iter_mut()

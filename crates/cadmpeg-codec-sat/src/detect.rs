@@ -51,15 +51,18 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
     let Some(line_end) = prefix.iter().position(|byte| *byte == b'\n') else {
         return false;
     };
-    let fields: Vec<&[u8]> = prefix[..line_end]
+    let mut fields = prefix[..line_end]
         .split(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
-        .filter(|field| !field.is_empty())
-        .collect();
-    fields.len() == 4
-        && fields
-            .iter()
-            .all(|field| std::str::from_utf8(field).is_ok_and(|field| field.parse::<i64>().is_ok()))
-        && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit)
+        .filter(|field| !field.is_empty());
+    for _ in 0..4 {
+        let Some(field) = fields.next() else {
+            return false;
+        };
+        if !std::str::from_utf8(field).is_ok_and(|field| field.parse::<i64>().is_ok()) {
+            return false;
+        }
+    }
+    fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit)
 }
 
 pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
@@ -166,7 +169,10 @@ pub(crate) fn inspect(
             let parsed = match sat::parse(ctx, bytes) {
                 Ok(stream) => Ok((stream.header.as_kernel_header(ctx)?, stream)),
                 Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
-                    return Err(error);
+                    return Err(error.into());
+                }
+                Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+                    return Err(error.into_codec_error());
                 }
                 Err(error) => Err(error),
             };

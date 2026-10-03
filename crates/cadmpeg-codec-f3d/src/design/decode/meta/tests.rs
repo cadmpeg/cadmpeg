@@ -108,33 +108,25 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
                     && limit.operation == operation
         ));
     }
-    let module_len = u64_from_index("Component".len());
-    let prefix_len = u64_from_index(crate::ids::native_scope(meta_name).len());
-    let suffix_len = u64_from_index(":design-type#0".len());
-    // Bytes the MetaStream parse and cache retain before the type copies.
-    let parsed_len = 198;
-    for (allowance, operation) in [
-        (parsed_len + module_len - 1, "f3d design type module"),
-        (
-            parsed_len + module_len + prefix_len - 1,
-            "f3d native stream key",
-        ),
-        (
-            parsed_len + module_len + prefix_len + suffix_len - 1,
-            "f3d design type id suffix",
-        ),
+    for operation in [
+        "f3d design type module",
+        "f3d native stream key",
+        "f3d design type id suffix",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| super::decode_types(&ctx, scan))
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == operation
-        ));
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                with_scan(&archive, |scan| super::decode_types(&ctx, scan))
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        );
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let types = with_scan(&archive, |scan| super::decode_types(&ctx, scan)).unwrap();
@@ -145,8 +137,8 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
         [17]
     );
     assert_eq!(
-        types[0].id,
-        crate::ids::native_design_type_id(meta_name, types[0].byte_offset)
+        types[0].id(),
+        &crate::ids::native_design_type_id(meta_name, types[0].byte_offset)
     );
 }
 
@@ -158,9 +150,13 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
     let bulk_name = format!("{prefix}BulkStream.dat");
     let meta_name = format!("{prefix}MetaStream.dat");
     let type_guid = "11111111-2222-3333-4444-555555555555";
-    let mut design_type =
+    let design_type =
         crate::design::test_support::design_type(type_guid, None, 7, "Fusion", vec![17]);
-    design_type.id = crate::ids::native_design_type_id(&meta_name, 0);
+    let design_type = crate::records::entity_header::SegmentType::try_new(
+        crate::ids::native_design_type_id(&meta_name, 0),
+        design_type,
+    )
+    .unwrap();
     let types = [design_type];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -644,33 +640,26 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
                     && limit.operation == operation
         ));
     }
-    let prefix_len = u64_from_index(crate::ids::native_scope(bulk_name).len());
-    let suffix_len = u64_from_index(":design-component-naming-space#2".len());
-    // Bytes the MetaStream parse and cache retain before the UUID text.
-    let parsed_len = 198;
-    for (allowance, operation) in [
-        (
-            parsed_len + u64_from_index(context_uuid.len()) + prefix_len - 1,
-            "f3d native stream key",
-        ),
-        (
-            parsed_len + u64_from_index(context_uuid.len()) + prefix_len + suffix_len - 1,
-            "f3d component naming space id suffix",
-        ),
+    for operation in [
+        "f3d native stream key",
+        "f3d component naming space id suffix",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| {
-            super::decode_component_naming_spaces(&ctx, scan)
-        })
-        .err()
-        .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == operation
-        ));
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                with_scan(&archive, |scan| {
+                    super::decode_component_naming_spaces(&ctx, scan)
+                })
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        );
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let spaces = with_scan(&archive, |scan| {
@@ -723,15 +712,18 @@ fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
         zip.write_all(&meta).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // 198 bytes are retained by the MetaStream parse and cache first.
-        policy.limits.max_retained_bytes = u64::try_from(UUID.len() - 1).unwrap() + 198;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| {
-            super::decode_component_naming_spaces(&ctx, scan)
-        })
-        .err()
-        .unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d Design UTF-16 text",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                with_scan(&archive, |scan| {
+                    super::decode_component_naming_spaces(&ctx, scan)
+                })
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes

@@ -204,6 +204,7 @@ fn single_target_cycle(
         return Ok(false);
     }
 
+    let mut search_storage = ctx.reserve_scoped(0, "IGES single target cycle search")?;
     let mut path = Vec::new();
     let mut visiting = BTreeSet::new();
     let mut current = sequence;
@@ -215,10 +216,13 @@ fn single_target_cycle(
             }
             return Ok(false);
         }
-        if !ctx.insert_btree_set(&mut visiting, current, "iges structure active cycle nodes")? {
+        if !search_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut visiting, current, "iges structure active cycle nodes")
+        })? {
             return Ok(true);
         }
-        ctx.reserve_vec(&mut path, 1, "iges structure cycle path")?;
+        search_storage
+            .with_storage(|| ctx.reserve_vec(&mut path, 1, "iges structure cycle path"))?;
         path.push(current);
         let Some(target) = targets
             .get(&current)
@@ -1417,26 +1421,6 @@ fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
     distance == 0.0 || (resolution > 0.0 && distance < resolution)
 }
 
-fn polyline_has_forbidden_duplicate(points: &[Point3], resolution: f64) -> bool {
-    let Some(last) = points.len().checked_sub(1) else {
-        return true;
-    };
-    if last < 2 {
-        return true;
-    }
-    for first in 0..=last {
-        for second in first + 1..=last {
-            if first == 0 && second == last {
-                continue;
-            }
-            if points_coincident(points[first], points[second], resolution) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
@@ -1499,14 +1483,18 @@ fn linear_nurbs_is_simple_closed(
     };
     if points.len() < 3
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
-        || polyline_has_forbidden_duplicate(&points, resolution)
+        || super::geometry::closed_polyline_has_duplicate(
+            &points,
+            |left, right| points_coincident(*left, *right, resolution),
+            ctx,
+        )?
     {
         return Ok(false);
     }
     let Some(projected) = plane_coordinates(&points, plane, ctx)? else {
         return Ok(false);
     };
-    Ok(!planar_polyline_has_self_intersection(&projected))
+    Ok(!planar_polyline_has_self_intersection(&projected, ctx)?)
 }
 
 fn analytic_curve_is_simple_closed(
@@ -1645,12 +1633,21 @@ fn bounded_plane_curve_is_simple(
                     *points.last().unwrap_or(&points[0]),
                     context.resolution,
                 )
-                && !polyline_has_forbidden_duplicate(&points, context.resolution))
+                && !super::geometry::closed_polyline_has_duplicate(
+                    &points,
+                    |left, right| points_coincident(*left, *right, context.resolution),
+                    context.ctx,
+                )?)
             {
                 return Ok(false);
             }
-            Ok(plane_coordinates(&points, context.plane, context.ctx)?
-                .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected)))
+            let Some(projected) = plane_coordinates(&points, context.plane, context.ctx)? else {
+                return Ok(false);
+            };
+            Ok(!planar_polyline_has_self_intersection(
+                &projected,
+                context.ctx,
+            )?)
         }
     }
 }

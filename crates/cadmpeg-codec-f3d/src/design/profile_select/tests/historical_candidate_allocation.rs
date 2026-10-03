@@ -47,6 +47,7 @@ fn assert_candidate_refusal(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = limit;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         historical_profile_face_candidates(Some(kind), entity, &topology, &ctx),

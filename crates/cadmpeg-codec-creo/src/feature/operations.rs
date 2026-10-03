@@ -930,8 +930,11 @@ mod tests {
                 .expect("root input is admitted");
             reference_names(&ctx, data)
         };
-        assert_eq!(run(4).expect("four name bytes admitted").len(), 1);
-        let error = run(3).expect_err("fourth retained byte exceeds limit");
+        let slots = cadmpeg_core::decode::u64_from_index(
+            4 * std::mem::size_of::<super::FeatureReferenceName>(),
+        );
+        assert_eq!(run(slots + 4).expect("four name bytes admitted").len(), 1);
+        let error = run(slots + 3).expect_err("fourth retained byte exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo reference name bytes"));

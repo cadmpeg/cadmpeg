@@ -7,39 +7,42 @@ fn design_type(
 ) -> crate::records::entity_header::SegmentType {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, DESIGN_MODULE_FUSION};
     let is_timeline = type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID;
-    SegmentType {
-        id: id.into(),
-        byte_offset: 0,
-        type_guid: type_guid.to_owned().try_into().unwrap(),
-        type_guid_offset: 4,
-        base_type_guid: if is_timeline {
-            BaseTypeGuid::Guid {
-                value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                offset: 8,
-            }
-        } else {
-            BaseTypeGuid::Absent
+    SegmentType::try_new(
+        id.into(),
+        crate::records::entity_header::SegmentTypeData {
+            byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
+            type_guid: type_guid.to_owned().try_into().unwrap(),
+            type_guid_offset: 4,
+            base_type_guid: if is_timeline {
+                BaseTypeGuid::Guid {
+                    value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                    offset: 8,
+                }
+            } else {
+                BaseTypeGuid::Absent
+            },
+            version: if is_timeline {
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
+            } else {
+                1
+            },
+            version_offset: 44,
+            module: DESIGN_MODULE_FUSION.into(),
+            entities: crate::records::identity::ReferenceRun::located(
+                entities
+                    .iter()
+                    .map(|value| crate::records::identity::Located {
+                        value: *value,
+                        offset: 100,
+                    })
+                    .collect(),
+            ),
         },
-        version: if is_timeline {
-            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
-        } else {
-            1
-        },
-        version_offset: 44,
-        module: DESIGN_MODULE_FUSION.into(),
-        entities: crate::records::identity::ReferenceRun::located(
-            entities
-                .iter()
-                .map(|value| crate::records::identity::Located {
-                    value: *value,
-                    offset: 100,
-                })
-                .collect(),
-        ),
-    }
+    )
+    .unwrap()
 }
 
 fn native() -> crate::native::F3dNative {
@@ -227,7 +230,13 @@ fn timeline_duplicate_type_entity_refuses_retained_limit() {
         crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
         &[35],
     ));
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -237,11 +246,12 @@ fn timeline_duplicate_type_entity_refuses_retained_limit() {
 #[test]
 fn timeline_invalid_record_finding_refuses_collection_limit() {
     let mut native = native();
-    native.design_types[1].entities =
-        crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
+    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![
+        crate::records::identity::Located {
             value: 17,
             offset: 100,
-        }]);
+        },
+    ]));
     let error = timeline_error_with(native, 9, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -252,12 +262,19 @@ fn timeline_invalid_record_finding_refuses_collection_limit() {
 #[test]
 fn timeline_invalid_record_entity_refuses_retained_limit() {
     let mut native = native();
-    native.design_types[1].entities =
-        crate::records::identity::ReferenceRun::located(vec![crate::records::identity::Located {
+    native.design_types[1].set_entities(crate::records::identity::ReferenceRun::located(vec![
+        crate::records::identity::Located {
             value: 17,
             offset: 100,
-        }]);
-    let error = timeline_error_with(native, u64::MAX, 0);
+        },
+    ]));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -279,7 +296,13 @@ fn timeline_missing_record_finding_refuses_collection_limit() {
 fn timeline_missing_record_entity_refuses_retained_limit() {
     let mut native = native();
     native.design_feature_timelines.clear();
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -319,7 +342,13 @@ fn timeline_authored_order_entity_refuses_retained_limit() {
                 101,
             ));
     }
-    let error = timeline_error_with(native, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(native.clone(), u64::MAX, cap))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -353,7 +382,7 @@ fn forward_history_native() -> crate::native::F3dNative {
         identity::{Located, ReferenceRun},
     };
     let mut native = native();
-    native.design_types[1].entities = ReferenceRun::located(vec![
+    native.design_types[1].set_entities(ReferenceRun::located(vec![
         Located {
             value: 17,
             offset: 100,
@@ -366,7 +395,7 @@ fn forward_history_native() -> crate::native::F3dNative {
             value: 100,
             offset: 116,
         },
-    ]);
+    ]));
     let timeline = &native.design_feature_timelines[0];
     native.design_feature_timelines[0] = DesignFeatureTimeline::try_new(
         timeline.id().clone(),
@@ -428,7 +457,17 @@ fn timeline_forward_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_forward_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(forward_history_native(), u64::MAX, 330);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(
+                forward_history_native(),
+                u64::MAX,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -446,7 +485,17 @@ fn timeline_cyclic_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_cyclic_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(cyclic_history_native(), u64::MAX, 549);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(timeline_error_with(
+                cyclic_history_native(),
+                u64::MAX,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

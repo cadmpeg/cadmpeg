@@ -32,7 +32,7 @@ pub(super) fn validate_consolidated_owner_packets(
                     && numeric_tail.header()[4] == 0x0d
             }
             CatiaOwnerPacketPayload::Counted { references, tail } => {
-                !references.is_empty() && !tail.is_empty()
+                !references.is_empty() && !tail.as_slice().is_empty()
             }
         };
         if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)

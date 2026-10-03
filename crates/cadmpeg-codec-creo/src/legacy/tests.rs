@@ -146,13 +146,12 @@ fn legacy_conflicting_id_set_refuses_before_new_node() {
 #[test]
 fn legacy_declaration_name_refuses_before_retained_copy() {
     let data = b"@size 1 1\n0 1 9\n";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::scan(&ctx, data, std::iter::once(0..data.len()))
-        .expect_err("four name bytes exceed the retained limit");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo legacy declaration names",
+        |ctx| super::scan(ctx, data, std::iter::once(0..data.len())),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -298,7 +297,22 @@ fn assert_object_retained_refusal(data: &[u8], operation: &'static str) {
     let (persistence, parents) = object_fixture_parts(data);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some(operation),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            super::object_records(&trial_ctx, data, &persistence.scopes, &parents)
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::object_records(&ctx, data, &persistence.scopes, &parents)
@@ -416,7 +430,22 @@ fn legacy_model_name_refuses_before_retained_copy() {
         .expect("the fixture states every scope inside its own bytes");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo legacy model name"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            persistence.model_name(&trial_ctx)
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = persistence
@@ -655,7 +684,8 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
     );
     assert_eq!(
         persistence.real_values.rows[2].payload,
-        RealPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| RealPayload::array(
+            ctx,
             vec![2, 2],
             vec![
                 RealRun {
@@ -671,19 +701,22 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
                     value: Real(1.0f64.to_bits()),
                 },
             ]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(persistence.real_values.rows[2].payload.element_count(), 4);
     assert_eq!(
         persistence.real_values.rows[3].payload,
-        RealPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| RealPayload::array(
+            ctx,
             vec![1],
             vec![RealRun {
                 count: 1,
                 value: Real(2.0f64.to_bits()),
             }]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
 }
@@ -716,7 +749,8 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
     );
     assert_eq!(
         persistence.integer_values.rows[1].payload,
-        IntegerPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| IntegerPayload::array(
+            ctx,
             vec![4],
             vec![
                 IntegerRun { count: 1, value: 1 },
@@ -726,18 +760,21 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
                 },
                 IntegerRun { count: 1, value: 0 },
             ]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(
         persistence.integer_values.rows[2].payload,
-        IntegerPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| IntegerPayload::array(
+            ctx,
             vec![1],
             vec![IntegerRun {
                 count: 1,
                 value: 42,
             }]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
 }
@@ -771,7 +808,8 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
     assert_eq!(persistence.type_5_values.unresolved_count, 0);
     assert_eq!(
         persistence.type_5_values.rows[1].payload,
-        UnsignedPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| UnsignedPayload::array(
+            ctx,
             vec![3],
             vec![
                 NumericRun { count: 1, value: 0 },
@@ -780,7 +818,8 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
                     value: 144,
                 },
             ]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(persistence.type_6_values.rows.len(), 2);
@@ -799,13 +838,15 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
     assert_eq!(persistence.type_11_values.unresolved_count, 0);
     assert_eq!(
         persistence.type_11_values.rows[1].payload,
-        UnsignedPayload::array(
+        crate::decode::with_test_decode_ctx(|ctx| UnsignedPayload::array(
+            ctx,
             vec![1],
             vec![NumericRun {
                 count: 1,
                 value: 14633,
             }]
-        )
+        ))
+        .expect("numeric array work admission")
         .expect("complete numeric array")
     );
     assert_eq!(persistence.type_11_values.rows[1].parent, Some(root_offset));

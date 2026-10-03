@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed planar-sketch records and closed neutral sketch graphs.
 
-use crate::pmdc::unique_by;
-
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -22,8 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, type_id_string, Cursor, PmDcContentHeader,
-    PmDcReference, PmDcReferenceList,
+    content_header, inventor_id, reference_list, Cursor, PmDcContentHeader, PmDcReference,
+    PmDcReferenceList,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -495,7 +493,7 @@ pub(crate) fn inventory(
                 )?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Sketch {
-                        type_id: type_id_string(record.type_id),
+                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
                     },
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
@@ -882,7 +880,7 @@ fn reference_scalar_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferenceScalarMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint scalar map")?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
     for index in 0..count {
         entries.push((
             cursor.reference("constraint scalar-map key")?,
@@ -899,7 +897,7 @@ fn reference_pair_map(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferencePairMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint reference map")?;
-    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor sketch constraint map")?;
+    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
     for _ in 0..count {
         entries.push((
             cursor.reference("constraint reference-map key")?,
@@ -1053,60 +1051,108 @@ pub(crate) fn project(
     inventory: &SketchInventory,
     parameters: &[DesignParameter],
 ) -> Result<SketchProjection, CodecError> {
-    let raw_sketches = unique_by(
-        ctx,
-        &inventory.sketches,
+    let (raw_sketches, _raw_sketches_storage) = ctx.unique_index(
+        inventory.sketches.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor sketches", 0, u64::MAX))
+        },
         "index Inventor sketches",
-        |record| {
-            (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
-            )
-        },
     )?;
-    let raw_entities = unique_by(
-        ctx,
-        &inventory.entities,
+    let (raw_entities, _raw_entities_storage) = ctx.unique_index(
+        inventory.entities.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor sketch entities", 0, u64::MAX)
+                })
+        },
         "index Inventor sketch entities",
-        |record| {
-            (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
-            )
-        },
     )?;
-    let transforms = unique_by(
-        ctx,
-        &inventory.transforms,
+    let (transforms, _transforms_storage) = ctx.unique_index(
+        inventory.transforms.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor sketch transforms", 0, u64::MAX)
+                })
+        },
         "index Inventor sketch transforms",
-        |record| {
-            (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
-            )
-        },
     )?;
-    let directions = unique_by(
-        ctx,
-        &inventory.directions,
+    let (directions, _directions_storage) = ctx.unique_index(
+        inventory.directions.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor sketch directions", 0, u64::MAX)
+                })
+        },
         "index Inventor sketch directions",
-        |record| {
-            (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
-            )
-        },
     )?;
-    let raw_constraints = unique_by(
-        ctx,
-        &inventory.constraints,
-        "index Inventor sketch constraints",
-        |record| {
+    let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
+        inventory.constraints.iter().map(|record| {
             (
-                record.identity.segment_token.as_str(),
-                record.identity.record_ordinal,
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
             )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor sketch constraints", 0, u64::MAX)
+                })
         },
+        "index Inventor sketch constraints",
     )?;
     let mut parameter_index = HashMap::new();
     for parameter in parameters {
@@ -1142,8 +1188,9 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        let Some(sketch) =
-            raw_sketches.get(&(entity.identity.segment_token.as_str(), sketch_ordinal))
+        let Some(sketch) = raw_sketches
+            .get(&(entity.identity.segment_token.as_str(), sketch_ordinal))
+            .and_then(Option::as_ref)
         else {
             unresolved_entities += 1;
             continue;
@@ -1239,6 +1286,7 @@ pub(crate) fn project(
             if let Some(raw) = reference.index().checked_sub(1).and_then(|ordinal| {
                 raw_entities
                     .get(&(sketch.identity.segment_token.as_str(), ordinal))
+                    .and_then(Option::as_ref)
                     .copied()
             }) {
                 ctx.push_vec(
@@ -1992,7 +2040,7 @@ fn native_operand(
 
 fn project_geometry(
     entity: &PmDcSketchEntity,
-    entities: &HashMap<(&str, u32), &PmDcSketchEntity>,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Option<SketchGeometry> {
     match &entity.kind {
         PmDcSketchEntityKind::Point { position, .. } => Some(
@@ -2159,9 +2207,11 @@ fn line_carrier_matches(
 fn resolve_point(
     token: &str,
     reference: u32,
-    entities: &HashMap<(&str, u32), &PmDcSketchEntity>,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Option<[FiniteReal; 2]> {
-    let entity = entities.get(&(token, reference.checked_sub(1)?))?;
+    let entity = entities
+        .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)?;
     let PmDcSketchEntityKind::Point { position, .. } = entity.kind else {
         return None;
     };
@@ -2175,18 +2225,18 @@ fn neutral_point(value: [FiniteReal; 2]) -> Point2 {
 fn entity_endpoint_refs(
     ctx: &DecodeContext<'_>,
     entity: &PmDcSketchEntity,
-    entities: &HashMap<(&str, u32), &PmDcSketchEntity>,
+    entities: &HashMap<(&str, u32), Option<&PmDcSketchEntity>>,
 ) -> Result<Vec<String>, CodecError> {
     let PmDcSketchEntityKind::Line { points, .. } = &entity.kind else {
         return Ok(Vec::new());
     };
     let mut endpoint_refs = Vec::new();
     for reference in points.references() {
-        if let Some(value) = reference
-            .index()
-            .checked_sub(1)
-            .and_then(|ordinal| entities.get(&(entity.identity.segment_token.as_str(), ordinal)))
-        {
+        if let Some(value) = reference.index().checked_sub(1).and_then(|ordinal| {
+            entities
+                .get(&(entity.identity.segment_token.as_str(), ordinal))
+                .and_then(Option::as_ref)
+        }) {
             ctx.charge_collection_items(1, "collect Inventor sketch endpoint reference")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(
@@ -2211,17 +2261,21 @@ fn entity_endpoint_refs(
 
 fn project_placement(
     sketch: &PmDcSketch,
-    transforms: &HashMap<(&str, u32), &PmDcTransform>,
-    directions: &HashMap<(&str, u32), &PmDcDirection>,
+    transforms: &HashMap<(&str, u32), Option<&PmDcTransform>>,
+    directions: &HashMap<(&str, u32), Option<&PmDcDirection>>,
 ) -> Option<SketchPlacement> {
-    let transform = transforms.get(&(
-        sketch.identity.segment_token.as_str(),
-        sketch.transform.index().checked_sub(1)?,
-    ))?;
-    let direction = directions.get(&(
-        sketch.identity.segment_token.as_str(),
-        sketch.direction.index().checked_sub(1)?,
-    ))?;
+    let transform = transforms
+        .get(&(
+            sketch.identity.segment_token.as_str(),
+            sketch.transform.index().checked_sub(1)?,
+        ))
+        .and_then(Option::as_ref)?;
+    let direction = directions
+        .get(&(
+            sketch.identity.segment_token.as_str(),
+            sketch.direction.index().checked_sub(1)?,
+        ))
+        .and_then(Option::as_ref)?;
     let matrix = transform.matrix.rows();
     if matrix[3]
         .iter()

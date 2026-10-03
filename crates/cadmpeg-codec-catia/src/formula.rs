@@ -3194,7 +3194,12 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             }
             (self.at > method_start).then_some(())?;
             let method = &self.source[method_start..self.at];
-            let arguments = self.descend(depth, Self::function_arguments)?;
+            let mut argument_storage =
+                self.admit(self.ctx.reserve_scoped(0, "CATIA formula method arguments"))?;
+            let parsed = argument_storage.with_storage(|| {
+                Ok::<_, cadmpeg_core::CodecError>(self.descend(depth, Self::function_arguments))
+            });
+            let arguments = self.admit(parsed)??;
             value = match (method, value, arguments.as_slice()) {
                 ("Length", EvaluatedFormulaValue::String(value), []) => {
                     self.admit(self.ctx.charge_work(
@@ -3405,7 +3410,12 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             self.at += 1;
         }
         let function = &self.source[function_start..self.at];
-        let arguments = self.descend(depth, Self::function_arguments)?;
+        let mut argument_storage =
+            self.admit(self.ctx.reserve_scoped(0, "CATIA formula argument storage"))?;
+        let parsed = argument_storage.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(self.descend(depth, Self::function_arguments))
+        });
+        let arguments = self.admit(parsed)??;
 
         if function == "ReplaceSubText" {
             let [EvaluatedFormulaValue::String(source), EvaluatedFormulaValue::String(from), EvaluatedFormulaValue::String(to)] =
@@ -3592,11 +3602,13 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         let mut scalar_arguments = Vec::new();
         for argument in arguments {
             let scalar = argument.scalar()?;
-            let pushed = self.ctx.push_vec(
-                &mut scalar_arguments,
-                scalar,
-                "catia_formula_scalar_arguments",
-            );
+            let pushed = argument_storage.with_storage(|| {
+                self.ctx.push_vec(
+                    &mut scalar_arguments,
+                    scalar,
+                    "catia_formula_scalar_arguments",
+                )
+            });
             self.admit(pushed)?;
         }
         let arguments = scalar_arguments;
@@ -4047,11 +4059,14 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         if !self.remaining().starts_with(keyword) {
             return false;
         }
-        let before_is_identifier = self
-            .source
-            .as_bytes()
-            .get(self.at.wrapping_sub(1))
-            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_');
+        let before_is_identifier = match self.at.checked_sub(1) {
+            Some(before) => self
+                .source
+                .as_bytes()
+                .get(before)
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'),
+            None => false, // Position zero has no preceding identifier byte.
+        };
         let after_is_identifier = self
             .source
             .as_bytes()
@@ -4438,7 +4453,7 @@ mod parser_tests {
 
     #[test]
     fn formula_parser_string_operations_refuse_retained_limits() {
-        for (expression, cap, operation) in [
+        for (expression, _cap, operation) in [
             ("\"a\"+\"b\"", 2, "catia_formula_string_concat"),
             ("\"abc\"-\"b\"", 4, "catia_formula_string_subtract"),
             ("\"abc\".Extract(0,1)", 3, "catia_formula_string_extract"),
@@ -4450,7 +4465,7 @@ mod parser_tests {
             ("ToString(2)", 0, "catia_formula_to_string"),
             ("ToUpper(\"é\")", 2, "catia_formula_string_case"),
         ] {
-            let refused = crate::test_support::with_retained_limit(cap, |ctx| {
+            let refused = crate::test_support::with_retained_refusal(&[], operation, |ctx| {
                 super::evaluate_formula_expression_charged(ctx, expression, &BTreeMap::new())
             });
             assert!(

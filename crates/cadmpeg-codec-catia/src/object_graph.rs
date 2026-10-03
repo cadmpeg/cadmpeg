@@ -236,7 +236,7 @@ impl ObjectPayload {
         for field in &self.fields {
             let copy = match field {
                 PayloadField::Blob { bytes, offset } => PayloadField::Blob {
-                    bytes: ctx.copy_retained_slice(bytes, "catia_native_payload_blob")?,
+                    bytes: ctx.copy_slice(bytes, "catia_native_payload_blob")?,
                     offset: *offset,
                 },
                 PayloadField::BulkTable {
@@ -245,7 +245,7 @@ impl ObjectPayload {
                     offset,
                 } => PayloadField::BulkTable {
                     count: *count,
-                    rows: ctx.copy_retained_slice(rows, "catia_native_payload_bulk_rows")?,
+                    rows: ctx.copy_slice(rows, "catia_native_payload_bulk_rows")?,
                     offset: *offset,
                 },
                 PayloadField::List {
@@ -254,7 +254,7 @@ impl ObjectPayload {
                     offset,
                 } => PayloadField::List {
                     declared_count: *declared_count,
-                    items: ctx.copy_retained_slice(items, "catia_native_payload_list_items")?,
+                    items: ctx.copy_slice(items, "catia_native_payload_list_items")?,
                     offset: *offset,
                 },
                 other => other.clone(),
@@ -907,7 +907,7 @@ fn alias_group_membership(
         prototype,
         group_id,
         target_slot,
-        storage_prefix: ctx.copy_retained_slice(storage, "catia_alias_group_storage")?,
+        storage_prefix: ctx.copy_slice(storage, "catia_alias_group_storage")?,
     }))
 }
 
@@ -1071,7 +1071,7 @@ fn parse_candidate(
                     (
                         lead,
                         ObjectRecordBody::Inline(admitted!(
-                            ctx.copy_retained_slice(body, "catia_object_inline_body")
+                            ctx.copy_slice(body, "catia_object_inline_body")
                         )),
                     )
                 }
@@ -1080,7 +1080,7 @@ fn parse_candidate(
                     (
                         lead,
                         ObjectRecordBody::Inline(admitted!(
-                            ctx.copy_retained_slice(body, "catia_object_inline_body")
+                            ctx.copy_slice(body, "catia_object_inline_body")
                         )),
                     )
                 }
@@ -1731,7 +1731,7 @@ fn decode_payload(
                     admitted!(ctx.push_vec(
                         &mut fields,
                         PayloadField::Blob {
-                            bytes: admitted!(ctx.copy_retained_slice(
+                            bytes: admitted!(ctx.copy_slice(
                                 &bytes[at + 5..end],
                                 "catia_object_payload_blob"
                             )),

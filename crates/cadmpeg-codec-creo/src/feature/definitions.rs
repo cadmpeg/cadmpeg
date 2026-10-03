@@ -1390,6 +1390,48 @@ pub(crate) struct FeatureDefinition {
     pub(crate) offset: usize,
 }
 
+/// A position inside one definition's copied body.
+pub(crate) struct DefinitionBodyPosition<'a> {
+    definition: &'a FeatureDefinition,
+    relative: usize,
+}
+
+/// A checked position in the source stream.
+pub(crate) struct SourcePosition(usize);
+
+impl FeatureDefinition {
+    pub(crate) fn body_position(
+        &self,
+        relative: usize,
+    ) -> Result<DefinitionBodyPosition<'_>, CodecError> {
+        if relative >= self.body.len() {
+            return Err(CodecError::malformed(
+                "Creo definition body position is outside its body",
+            ));
+        }
+        Ok(DefinitionBodyPosition {
+            definition: self,
+            relative,
+        })
+    }
+}
+
+impl DefinitionBodyPosition<'_> {
+    pub(crate) fn source(self) -> Result<SourcePosition, CodecError> {
+        self.definition
+            .offset
+            .checked_add(self.relative)
+            .map(SourcePosition)
+            .ok_or_else(|| CodecError::malformed("Creo definition source position overflows"))
+    }
+}
+
+impl SourcePosition {
+    pub(crate) fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// Definition naming before and after a join selects the owner as its identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DefinitionIdentity {
@@ -1448,6 +1490,7 @@ fn decode_parameter_scalar(
         let (first, second) = if prefix == 0xb7 {
             (0x3f, 0xe4)
         } else {
+            // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
             let second = prefix.wrapping_sub(0x8b);
             (if second >= 0x80 { 0x3f } else { 0x40 }, second)
         };
@@ -1541,11 +1584,11 @@ fn decode_variable_scalar(
         0x51 => Some([0x3f, 0xc6]),
         0x53..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
         0xad => Some([0x3f, 0xd9]),
-        0xa7..=0xac | 0xae => Some([0xbf, prefix.wrapping_add(0x2c)]),
+        0xa7..=0xac | 0xae => Some((0xbf2c_u16 + u16::from(prefix)).to_be_bytes()),
         0xb3 => Some([0xbf, 0xe0]),
         0xbd => Some([0xbf, 0xea]),
         0xc3 => Some([0xbf, 0xf0]),
-        0xc6..=0xce => Some([0xbf, prefix.wrapping_add(0x2d)]),
+        0xc6..=0xce => Some((0xbf2d_u16 + u16::from(prefix)).to_be_bytes()),
         0xd0 => Some([0xbf, 0xfe]),
         0xd2 => Some([0xc0, 0x00]),
         0xd4 => Some([0xc0, 0x02]),
@@ -5871,6 +5914,7 @@ fn saved_section_scalar(
     if matches!(prefix, 0x74 | 0x75) && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         raw[1] = prefix.wrapping_sub(0x8b);
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         // endian-exception: reconstructed-scalar
@@ -6268,6 +6312,7 @@ fn saved_positional_generated_entities(
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
         return Ok(Vec::new());
     };
+    let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut generated_segments = BTreeMap::new();
     for row in &order_table.rows {
         if order_table.internal_id(row.external_id) != Some(row.internal_id)
@@ -6278,12 +6323,14 @@ fn saved_positional_generated_entities(
         let Some(segment) = segments.unique_segment(row.external_id) else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut generated_segments,
-            row.internal_id,
-            segment,
-            "creo saved generated segment nodes",
-        )?;
+        generated_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut generated_segments,
+                row.internal_id,
+                segment,
+                "creo saved generated segment nodes",
+            )
+        })?;
     }
     let mut starts = Vec::new();
     for separator in start..end {
@@ -6307,11 +6354,18 @@ fn saved_positional_generated_entities(
             continue;
         }
         if payload[after_id..header_end].contains(&0xe2) {
-            ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")?;
+            generated_storage.with_storage(|| {
+                ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")
+            })?;
             starts.push(row_start);
         }
     }
-    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo saved generated row starts sort")?;
+    ctx.sort_unstable_by(
+        &mut starts,
+        Ord::cmp,
+        |_| 0,
+        "creo saved generated row starts sort",
+    )?;
     starts.dedup();
 
     let mut entities = Vec::new();
@@ -6824,6 +6878,7 @@ fn saved_spline_parameter(
         return Some((0.0, offset + 1));
     }
     if matches!(prefix, 0x6d | 0x85 | 0x93 | 0x9e) {
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         let second = prefix.wrapping_sub(0x8b);
         return scalar::ieee7_with_prefix(
             payload,
@@ -7928,7 +7983,7 @@ pub(crate) fn bind_section_owners(
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations =
-        crate::decode::collect_items(ctx, operations.iter(), "creo section ordered operations")?;
+        ctx.collect_vec(operations.iter(), "creo section ordered operations")?;
     ctx.stable_sort_by(
         ordered_operations.as_mut_slice(),
         |left, right| left.offset.cmp(&right.offset),

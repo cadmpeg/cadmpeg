@@ -4014,12 +4014,12 @@ fn rechart_equivalent_surface_pcurve(
             let mut poles = match nurbs.pole_rows() {
                 PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
                     points: ctx
-                        .copy_retained_slice(points, "catia_freeform_rechart_poles")
+                        .copy_slice(points, "catia_freeform_rechart_poles")
                         .map_err(RechartFailure::Resource)?,
                 },
                 PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
                     points: ctx
-                        .copy_retained_slice(points, "catia_freeform_rechart_poles")
+                        .copy_slice(points, "catia_freeform_rechart_poles")
                         .map_err(RechartFailure::Resource)?,
                 },
             };
@@ -4687,16 +4687,21 @@ mod tests {
             source_object: None,
         });
         let wires = [(curve_id.clone(), [0.0, 1.0], 0)];
-        let limit = super::u64_from_index(curve_id.as_str().len());
-        let limited = crate::test_support::with_retained_limit(limit, |ctx| {
-            let mut admission = super::FamilyEntityAdmission::new(ctx);
-            attach_standalone_wires(
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                &wires,
-                &mut admission,
-            )
-        });
+        let limited =
+            crate::test_support::with_retained_refusal(&[], "catia_freeform_wire_body_id", |ctx| {
+                let mut trial_ir = ir.clone();
+                let mut admission = super::FamilyEntityAdmission::new(ctx);
+                let result = attach_standalone_wires(
+                    &mut trial_ir,
+                    &mut AnnotationBuilder::new(),
+                    &wires,
+                    &mut admission,
+                );
+                if result.is_err() {
+                    assert!(trial_ir.model.bodies.is_empty());
+                }
+                result
+            });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_freeform_wire_body_id")

@@ -100,8 +100,16 @@ fn loop_array_refuses_section_record_before_growth() {
 #[test]
 fn loop_array_refuses_body_before_retained_copy() {
     let payload = frame(1, &row(1, &[0xe2, 0x10]));
-    let error = scan_with_limits(&payload, u64::MAX, 0)
-        .expect_err("loop array body exceeds retained limit");
+    let error = scan_with_limits(
+        &payload,
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo loop array record body"),
+            |cap| scan_with_limits(&payload, u64::MAX, cap),
+        ),
+    )
+    .expect_err("loop array body exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo loop array record body"));

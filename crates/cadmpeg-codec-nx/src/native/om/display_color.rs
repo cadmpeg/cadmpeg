@@ -77,7 +77,7 @@ fn push_assignment(
     color_definition: &str,
     source_entry: &str,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(assignments, 1, "NX display color assignments")?;
+    ctx.reserve_vec(assignments, 1, "NX display color assignments")?;
     assignments.push(RmDisplayColorAssignment {
         id: String::new(),
         ordinal: 0,

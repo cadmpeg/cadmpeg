@@ -1,3 +1,4 @@
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -111,7 +112,7 @@ fn assert_normalization_refusal(
     operation: &'static str,
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let parameters = owned_parameter_cycle();
@@ -119,27 +120,17 @@ fn assert_normalization_refusal(
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
-    let mut found = false;
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let dimension = if dimension == ResourceDimension::RetainedBytes {
+        ResourceDimension::MaterializedBytes
+    } else {
+        dimension
+    };
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
         let mut copy = parameters.clone();
-        if matches!(normalize_parameter_ordinals(&ctx, &mut copy, &owners),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no resource limit reached {operation}");
+        normalize_parameter_ordinals(ctx, &mut copy, &owners)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 macro_rules! normalization_limit_test {
@@ -216,7 +207,7 @@ normalization_limit_test!(
 );
 
 fn assert_cycle_collection_refusal(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let parameters = two_parameter_cycle();
@@ -224,6 +215,7 @@ fn assert_cycle_collection_refusal(limit: u64, operation: &'static str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = limit;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),
@@ -309,7 +301,7 @@ cycle_collection_limit_test!(
 );
 
 fn assert_cycle_work_refusal(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let parameters = two_parameter_cycle();
@@ -317,6 +309,7 @@ fn assert_cycle_work_refusal(limit: u64, operation: &'static str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = limit;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),

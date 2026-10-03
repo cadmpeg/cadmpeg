@@ -59,19 +59,31 @@ fn pmi_retained_refuses(records: &str, operation: &str) {
         crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx).expect("carrier setup");
     let topology = crate::reader::topology::decode(&exchange, &mut setup_ir, &index, &setup_ctx)
         .expect("topology setup");
-    let refused = (0..=256).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            super::super::decode(&exchange, &geometry.value, &topology.value, &mut setup_ir.clone(), &ctx),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                    .expect("root fits retained policy");
+
+                (super::super::decode(
+                    &exchange,
+                    &geometry.value,
+                    &topology.value,
+                    &mut setup_ir.clone(),
+                    &ctx,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == operation
-        )
-    });
+                    && refusal.operation == operation)
+    };
     assert!(refused, "no retained limit refused {operation}");
 }
 

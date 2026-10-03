@@ -10,7 +10,7 @@ const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
 
 #[test]
 fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
@@ -41,7 +41,7 @@ fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let row = crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
@@ -229,7 +229,7 @@ fn support_tangent_next_origin_refuses_collection_limit() {
 }
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -340,7 +340,7 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
 }
 
 fn split_outline_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -464,20 +464,24 @@ fn reference_bound_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::Code
             &std::collections::BTreeSet::new(),
             0,
         ));
-    scan.references
-        .circles
-        .push(crate::reference::ReferenceCircle {
-            entity_id: 99,
-            center: cadmpeg_ir::features::FinitePoint3::ZERO,
-            center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
-            axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
-            start: cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.0].into())
-                .expect("finite start"),
-            end: cadmpeg_ir::features::FinitePoint3::new([0.0, 1.0, 0.0].into())
-                .expect("finite end"),
-            offset: 0,
-        });
+    scan.references.circles.push(
+        crate::reference::ReferenceCircle::try_new(
+            99,
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::ZERO,
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            [
+                cadmpeg_ir::features::FinitePoint3::new([1.0, 0.0, 0.0].into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new([0.0, 1.0, 0.0].into())
+                    .expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry"),
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -605,7 +609,7 @@ fn positional_support_plane_nodes_refuse_collection_limit() {
 
 #[test]
 fn constant_round_radius_nodes_refuse_collection_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -743,7 +747,28 @@ fn split_outline_identity_refuses_retained_limit() {
     let scan = split_outline_scan();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo split cylinder identities"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            super::transfer_split_outline_cylinders(
+                &trial_ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error = super::transfer_split_outline_cylinders(
@@ -870,7 +895,7 @@ fn constrained_slot_fillet_plane_rows_refuse_collection_limit() {
 #[test]
 fn active_datum_cylinder_source_id_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.planes
         .datum_cylinders
         .push(crate::datum::DatumCylinder {
@@ -1020,7 +1045,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
 
 #[test]
 fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 916,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
@@ -1082,7 +1107,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
 
 #[test]
 fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -1155,7 +1180,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
 }
 
 fn inline_type24_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -1245,7 +1270,11 @@ fn inline_type24_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn positional_cylinder_identity_refuses_retained_limit() {
-    let error = inline_type24_retained_refusal(0);
+    let error = inline_type24_retained_refusal(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo positional cylinder identity"),
+        |cap| Err::<(), _>(inline_type24_retained_refusal(cap)),
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional cylinder identity")
@@ -1267,7 +1296,7 @@ fn positional_cylinder_source_id_refuses_retained_limit() {
 
 #[test]
 fn positional_frame_reconciles_an_existing_model_cylinder() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 917,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
@@ -1426,7 +1455,7 @@ fn round_edge_support_frame_rejects_parallel_supports() {
 }
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 42,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
@@ -1650,7 +1679,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         next_surface: 0,
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -1702,7 +1731,7 @@ fn rowless_round_identity_input() -> (
     crate::container::ContainerScan<'static>,
     cadmpeg_ir::document::CadIr,
 ) {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -1765,7 +1794,11 @@ fn rowless_round_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn rowless_round_cylinder_identity_refuses_retained_limit() {
-    let error = rowless_round_retained_refusal(0);
+    let error = rowless_round_retained_refusal(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo rowless round cylinder identity"),
+        |cap| Err::<(), _>(rowless_round_retained_refusal(cap)),
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo rowless round cylinder identity")
@@ -1858,18 +1891,29 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
 
 #[test]
 fn round_envelope_rejects_an_extra_reference_circle() {
-    let circle =
-        |entity_id, axis, start: [f64; 3], end: [f64; 3]| crate::reference::ReferenceCircle {
+    let circle = |entity_id, axis, start: [f64; 3], end: [f64; 3]| {
+        let mut center = start;
+        let radial_lane = (0..3)
+            .find(|lane| start[*lane] != end[*lane])
+            .expect("distinct cap endpoints");
+        center[radial_lane] = end[radial_lane];
+        crate::reference::ReferenceCircle::try_new(
             entity_id,
-            center: cadmpeg_ir::features::FinitePoint3::ZERO,
-            center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-            axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            crate::reference::ReferenceCircleCenter::Stored(
+                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                    .expect("finite circle center"),
+            ),
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
-            start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-            end: cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
-            offset: 0,
-        };
+            [
+                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
+                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+            ],
+            0,
+        )
+        .expect("checked reference geometry")
+    };
     let envelope = crate::surface::Type24RoundEnvelope {
         diameter: 2.0,
         extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],

@@ -412,16 +412,19 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                     .expect("finite interval"),
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
-        native.body_visibilities = vec![crate::records::bodies::BodyVisibility {
-            id: "f3d:design:body-visibility#generated".into(),
-            body: visible_body,
-            stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
-            byte_offset: 0,
-            asm_body_key_offset: 0,
-            asm_body_key: 42,
-            entity_suffix: 42,
-            visible: false,
-        }];
+        native.body_visibilities = vec![crate::records::bodies::BodyVisibility::try_from(
+            crate::records::bodies::BodyVisibilityWire {
+                id: "f3d:design:body-visibility#42".into(),
+                body: visible_body,
+                stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
+                byte_offset: 0,
+                asm_body_key_offset: 0,
+                asm_body_key: 42,
+                entity_suffix: 42,
+                visible: false,
+            },
+        )
+        .unwrap()];
     }
     let mut encoded = Vec::new();
     crate::native::reset_load_count();
@@ -484,7 +487,13 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 
     {
         let mut invalid = source_less.clone();
-        f3d_native_mut(&mut invalid).body_visibilities[0].asm_body_key = 43;
+        {
+            let visibility = &mut f3d_native_mut(&mut invalid).body_visibilities[0];
+            let mut wire = crate::records::bodies::BodyVisibilityWire::from(visibility.clone());
+            wire.id = "f3d:design:body-visibility#43".into();
+            wire.asm_body_key = 43;
+            *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
+        }
         let error = F3dCodec
             .plan(EncodeInput::new(&invalid, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -503,7 +512,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(f3d_native(round_trip.ir()).body_visibilities.len(), 1);
     assert!(!f3d_native(round_trip.ir()).body_visibilities[0].visible);
     assert_eq!(
-        f3d_native(round_trip.ir()).body_visibilities[0].id,
+        f3d_native(round_trip.ir()).body_visibilities[0].id(),
         "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh:body-visibility#42"
     );
     assert_eq!(
@@ -623,7 +632,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         Some(84)
     );
     assert_eq!(
-        f3d_native(retained.ir()).body_visibilities[0].asm_body_key,
+        f3d_native(retained.ir()).body_visibilities[0].asm_body_key(),
         84
     );
     assert!(f3d_native(retained.ir()).body_visibilities[0].visible);

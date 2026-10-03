@@ -120,9 +120,11 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     bytes.extend([0x05, 0x01, 0x00, 0x01, 0x01, 0x4e]);
     bytes.extend([0x05, 0x02, 0x01, 0x01, 0x01, 0x4e]);
 
-    let table = crate::test_support::with_decode_context(|ctx| {
-        operation_state_group_table_before_counter_map(ctx, &bytes, map_start, 0)
-    })
+    let table = crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| operation_state_group_table_before_counter_map(ctx, &bytes, map_start, 0),
+    )
     .unwrap()
     .expect("long adjacent group run");
     assert_eq!(table.groups().len(), GROUP_COUNT);

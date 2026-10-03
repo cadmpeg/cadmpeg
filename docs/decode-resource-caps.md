@@ -12,7 +12,7 @@ charges entities through `DecodeContext`. `cadmpeg-asm` has none.
 | Kind | Meaning                     | Enforcement                                                                                                                                                                            |
 | ---- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | Format invariant            | Keep. A higher count is an unsupported form. An operator profile must not accept an illegal form or reject a legal file.                                                               |
-| 2    | Per-input allocation bound  | `bounded_len`, `View::read_counted`, or `req_take`. Do not add a `ResourceLimits` field.                                                                                               |
+| 2    | Per-input allocation bound  | `bounded_len`, `View::counted`, or `req_take`. Do not add a `ResourceLimits` field.                                                                                               |
 | 3    | Cumulative resource ceiling | Charge through `DecodeContext` (`charge_entities`, `admit_entities`, `charge_collection_items`, `charge_retained`, `reserve_scoped`, `alloc_filled`, `enter_nested`).                  |
 | 4    | Algorithmic work cap        | `ctx.work_budget(min(format_cap, policy.max_work_units))` / `charge_work`. CATIA `b5` object-stream selection and F3D arrangement walks already do this; do not duplicate those sites. |
 

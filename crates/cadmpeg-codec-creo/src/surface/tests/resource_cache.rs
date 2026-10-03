@@ -82,8 +82,16 @@ fn named_prototype_body_refuses_before_retained_copy() {
             .body,
         [0x2e, 0x05, 0x33, 0xf1, 0xf7, 0x0e]
     );
-    let error =
-        named_records_with_limits(payload, u64::MAX, 0).expect_err("body needs retained bytes");
+    let error = named_records_with_limits(
+        payload,
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo named prototype parameter body"),
+            |cap| named_records_with_limits(payload, u64::MAX, cap),
+        ),
+    )
+    .expect_err("body needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo named prototype parameter body"));

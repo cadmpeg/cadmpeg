@@ -25,6 +25,7 @@ fn thread_payload_refuses_each_text_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = parse_thread_payload(&ctx, &bytes, 0, ThreadPrefix::Standard, Vec::new());
         assert!(matches!(
@@ -62,6 +63,7 @@ fn thread_face_group_limit_refuses_before_payload() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = exact_thread_construction(&ctx, &bytes, &scope);
     assert!(matches!(
@@ -98,6 +100,7 @@ fn thread_compact_face_group_limit_refuses_second_item() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = exact_thread_construction(&ctx, &bytes, &scope);
     assert!(matches!(

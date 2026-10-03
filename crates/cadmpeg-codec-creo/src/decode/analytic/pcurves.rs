@@ -2461,7 +2461,7 @@ mod tests {
     }
 
     fn one_plane_pcurve_fixture() -> (crate::container::ContainerScan<'static>, CadIr) {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
             curve_id: 7,
             faces: [std::num::NonZeroU32::new(10), None],
@@ -2819,31 +2819,27 @@ mod tests {
 
     #[test]
     fn analytic_pcurve_transfer_refuses_retained_model_identity_copy() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let mut found = false;
-        for cap in 0..2048 {
-            let (scan, mut ir) = one_plane_pcurve_fixture();
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) =
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "creo analytic pcurve curve identity copy",
+            |ctx| {
+                let (scan, mut ir) = one_plane_pcurve_fixture();
                 transfer_analytic_pcurve_carriers(
-                    &ctx,
+                    ctx,
                     &scan,
                     &mut ir,
                     &mut cadmpeg_ir::AnnotationBuilder::new(),
                     &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
                 )
-            {
-                if resource.operation == "creo analytic pcurve curve identity copy" {
-                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                    found = true;
-                    break;
-                }
-            }
-        }
-        assert!(found, "retained identity boundary must be reached");
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo analytic pcurve curve identity copy")
+        );
     }
 
     #[test]
@@ -2961,7 +2957,7 @@ mod tests {
         )
         .expect("evaluation root");
 
-        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let scan = crate::test_support::empty_container_scan();
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
@@ -3067,7 +3063,7 @@ mod tests {
     #[test]
     fn two_chart_endpoint_carrier_proof_ignores_interior_disagreement() {
         const EPS_EXPECTED_POINT: f64 = 1.0e-12;
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .two_chart_pcurves
             .push(crate::curve::TwoChartPcurveSamples {
@@ -3180,7 +3176,7 @@ mod tests {
 
     #[test]
     fn pcurve_diagnostics_count_inactive_face_paths() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .topology_rows
             .push(crate::curve::CurveTopologyRow {
@@ -3302,7 +3298,7 @@ mod tests {
             body_offset: 100,
             suffix_offset: 122,
         };
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves.parameters.push(record);
         scan.curves
             .topology_rows
@@ -3466,7 +3462,7 @@ mod tests {
 
     #[test]
     fn pcurve_carrier_join_keeps_one_valid_face_path() {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .topology_rows
             .push(crate::curve::CurveTopologyRow {
@@ -3710,7 +3706,7 @@ mod tests {
         )
         .expect("evaluation root");
 
-        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let scan = crate::test_support::empty_container_scan();
         let mut ir = CadIr::empty();
         ir.model
             .surfaces
@@ -3769,7 +3765,7 @@ mod tests {
         // Face 11's path lifts one endpoint to a point without a finite x. It
         // is a mapped path that no endpoint evidence agrees with, and an
         // evaluable path without a line carrier, so the curve keeps no carrier.
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .topology_rows
             .push(crate::curve::CurveTopologyRow {
@@ -3927,7 +3923,7 @@ mod tests {
         // The placed sample reaches x = +inf. It is a mapped sample on both
         // charts, and a point outside the finite range agrees with no point,
         // so the charts do not agree.
-        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let scan = crate::test_support::empty_container_scan();
         let mut ir = CadIr::empty();
         ir.model
             .surfaces
@@ -3986,7 +3982,7 @@ mod tests {
         // Face 11's path lifts one endpoint to a point without a finite x. It
         // is a mapped path that no endpoint evidence agrees with, and an
         // evaluable path without a line carrier, so the curve keeps no carrier.
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.curves
             .topology_rows
             .push(crate::curve::CurveTopologyRow {

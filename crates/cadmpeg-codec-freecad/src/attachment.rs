@@ -127,19 +127,23 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<AttachmentRecord>, CodecError> {
+    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD attachment owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         let owner = property.owner.as_str();
         if !by_owner.contains_key(owner) {
-            ctx.reserve_map(&mut by_owner, 1, "FreeCAD attachment owner lookup")?;
+            owner_storage.with_storage(|| {
+                ctx.reserve_map(&mut by_owner, 1, "FreeCAD attachment owner lookup")
+            })?;
         }
         let owned = by_owner.entry(owner).or_default();
-        ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties")?;
+        owner_storage
+            .with_storage(|| ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties"))?;
         owned.push(property);
     }
     let mut records = Vec::new();
     for object in objects {
-        let Some(owned) = by_owner.get(object.id.as_str()) else {
+        let Some(owned) = by_owner.get(object.id().as_str()) else {
             continue;
         };
         let support = sole_named_property(ctx, "attachment", owned, "AttachmentSupport")?;
@@ -156,8 +160,8 @@ pub(crate) fn transfer(
             continue;
         }
         let record = AttachmentRecord::try_new(
-            crate::native::native_id_charged(ctx, "attachment", &object.name)?,
-            ctx.copy_retained_text(&object.id, "FreeCAD attachment object")?,
+            crate::native::native_id_charged(ctx, "attachment", object.name())?,
+            ctx.copy_retained_text(object.id(), "FreeCAD attachment object")?,
             support
                 .map(|property| support_links(ctx, property))
                 .transpose()?

@@ -22,15 +22,29 @@ fn assert_numeric_refusal(
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::super::numeric_records(
-        &ctx,
-        data,
-        &persistence.scopes,
-        ValueKind::INTEGER,
-        super::super::signed_integer,
-        &parents,
-    )
-    .expect_err("the next numeric allocation exceeds the limit");
+    let error = if dimension == ResourceDimension::RetainedBytes {
+        crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            super::super::numeric_records(
+                ctx,
+                data,
+                &persistence.scopes,
+                ValueKind::INTEGER,
+                super::super::signed_integer,
+                &parents,
+            )
+        })
+    } else {
+        super::super::numeric_records(
+            &ctx,
+            data,
+            &persistence.scopes,
+            ValueKind::INTEGER,
+            super::super::signed_integer,
+            &parents,
+        )
+        .expect_err("the next numeric allocation exceeds the limit")
+    };
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == dimension && resource.operation == operation)

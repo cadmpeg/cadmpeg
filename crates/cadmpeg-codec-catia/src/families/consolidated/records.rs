@@ -5,7 +5,7 @@
 //! against typed analytic and NURBS charts.
 
 use crate::math::distance;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::FinitePoint3;
@@ -324,6 +324,35 @@ impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {
         Self { marker, trailing }
     }
 }
+/// A finite scalar lane with an admitted serialized arity.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct ScalarLane<const LOWER: usize, const UPPER: usize>(Vec<FiniteReal>);
+
+impl<const LOWER: usize, const UPPER: usize> TryFrom<Vec<FiniteReal>> for ScalarLane<LOWER, UPPER> {
+    type Error = &'static str;
+    fn try_from(values: Vec<FiniteReal>) -> Result<Self, Self::Error> {
+        if !(LOWER..=UPPER).contains(&values.len()) {
+            return Err("edge-definition scalar arity is outside its grammar");
+        }
+        Ok(Self(values))
+    }
+}
+
+impl<const LOWER: usize, const UPPER: usize> std::ops::Deref for ScalarLane<LOWER, UPPER> {
+    type Target = [FiniteReal];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de, const LOWER: usize, const UPPER: usize> Deserialize<'de> for ScalarLane<LOWER, UPPER> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<FiniteReal>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// Closed payload grammar of a consolidated edge-definition frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -338,7 +367,7 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Two compact operands followed by one persistent operand.
         operands: [u32; 3],
         /// Complete finite scalar lane.
-        values: Vec<FiniteReal>,
+        values: ScalarLane<8, 9>,
     },
     /// Class-`0x25` three-operand form with one uninterrupted scalar lane.
     Scalar25 {
@@ -347,7 +376,7 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
         persistent_lead: Class25PersistentLead,
         /// Complete finite scalar lane.
-        values: Vec<FiniteReal>,
+        values: ScalarLane<7, 10>,
     },
     /// Class-`0x25` three-operand form with a tagged scalar-lane boundary.
     SegmentedScalar25 {
@@ -420,7 +449,7 @@ fn edge_definition_data_with<E>(
                 return Some(Ok(ConsolidatedEdgeDefinitionData::Scalar25 {
                     operands,
                     persistent_lead,
-                    values,
+                    values: values.try_into().ok()?,
                 }));
             }
             let leading = read_f64_array::<5>(scalar_bytes, 0)?;
@@ -484,7 +513,7 @@ fn edge_definition_data_with<E>(
         }
         Some(Ok(ConsolidatedEdgeDefinitionData::Scalar {
             operands,
-            values,
+            values: values.try_into().ok()?,
         }))
     })()
     .transpose()
@@ -707,11 +736,11 @@ fn consolidated_edge_blocks_from_records(
             continue;
         };
         if records_are_contiguous(window)
-            && first_record.class == 0x20
-            && second_record.class == 0x20
-            && first_record.family == second_record.family
-            && parameter_record.family == ConsolidatedFamily::B
-            && parameter_record.class == 0x23
+            && first_record.class() == 0x20
+            && second_record.class() == 0x20
+            && first_record.family() == second_record.family()
+            && parameter_record.family() == ConsolidatedFamily::B
+            && parameter_record.class() == 0x23
         {
             if let (Some(first), Some(second), Some(parameter)) = (
                 pcurves.get(&first_record.byte_offset()),
@@ -783,17 +812,17 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
             continue;
         };
         if records_are_contiguous(window)
-            && pcurve0.class == 0x20
-            && pcurve1.class == 0x20
-            && pcurve0.family == pcurve1.family
-            && parameters.family == ConsolidatedFamily::B
-            && parameters.class == 0x23
-            && use0.family == ConsolidatedFamily::B
-            && use0.class == 0x06
-            && use1.family == ConsolidatedFamily::B
-            && use1.class == 0x06
-            && node.family == ConsolidatedFamily::B
-            && node.class == 0x5e
+            && pcurve0.class() == 0x20
+            && pcurve1.class() == 0x20
+            && pcurve0.family() == pcurve1.family()
+            && parameters.family() == ConsolidatedFamily::B
+            && parameters.class() == 0x23
+            && use0.family() == ConsolidatedFamily::B
+            && use0.class() == 0x06
+            && use1.family() == ConsolidatedFamily::B
+            && use1.class() == 0x06
+            && node.family() == ConsolidatedFamily::B
+            && node.class() == 0x5e
         {
             if let (Some(edge), Some(use_run)) = (
                 edges.remove(&pcurve0.byte_offset()),
@@ -830,23 +859,30 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedAnalyticCircleEdgeRun>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut circles = BTreeMap::new();
     for value in b2_circles_from_records(data, records) {
-        ctx.insert_btree_map(
-            &mut circles,
-            value.pos,
-            value,
-            "catia_analytic_circle_carriers",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut circles,
+                value.pos,
+                value,
+                "catia_analytic_circle_carriers",
+            )
+        })?;
     }
     let mut use_runs = BTreeMap::new();
-    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
-            &mut use_runs,
-            value.uses[0].pos,
-            value,
-            "catia_analytic_circle_use_runs",
-        )?;
+    for value in
+        temporary.with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))?
+    {
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut use_runs,
+                value.uses[0].pos,
+                value,
+                "catia_analytic_circle_use_runs",
+            )
+        })?;
     }
     let mut runs = Vec::new();
     for window in records.windows(6) {
@@ -857,18 +893,18 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             if !records_are_contiguous(window) {
                 return None;
             }
-            if parameter.family != ConsolidatedFamily::B
-                || parameter.class != 0x18
-                || circle.family != ConsolidatedFamily::B
-                || circle.class != 0x19
-                || definition.family != ConsolidatedFamily::B
-                || definition.class != 0x23
-                || use0.family != ConsolidatedFamily::B
-                || use0.class != 0x06
-                || use1.family != ConsolidatedFamily::B
-                || use1.class != 0x06
-                || node.family != ConsolidatedFamily::B
-                || node.class != 0x5e
+            if parameter.family() != ConsolidatedFamily::B
+                || parameter.class() != 0x18
+                || circle.family() != ConsolidatedFamily::B
+                || circle.class() != 0x19
+                || definition.family() != ConsolidatedFamily::B
+                || definition.class() != 0x23
+                || use0.family() != ConsolidatedFamily::B
+                || use0.class() != 0x06
+                || use1.family() != ConsolidatedFamily::B
+                || use1.class() != 0x06
+                || node.family() != ConsolidatedFamily::B
+                || node.class() != 0x5e
             {
                 return None;
             }
@@ -897,7 +933,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 definition.frame.width(),
                 definition.frame.flag,
                 definition.frame.header_token(),
-                ctx.copy_retained_slice(
+                ctx.copy_slice(
                     &definition.frame.payload,
                     "catia_analytic_circle_test_definition_payload",
                 )?,
@@ -907,7 +943,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
         };
         let descriptor = ConsolidatedRawFrame::from_record(
             parameter,
-            ctx.copy_retained_slice(&data[payload], "catia_analytic_circle_descriptor_payload")?,
+            ctx.copy_slice(&data[payload], "catia_analytic_circle_descriptor_payload")?,
         )?;
         ctx.push_vec(
             &mut runs,
@@ -940,23 +976,32 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut descriptors = BTreeMap::new();
-    for value in b2_class25_descriptors_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
-            &mut descriptors,
-            value.pos,
-            value,
-            "catia_class25_edge_descriptors",
-        )?;
+    for value in
+        temporary.with_storage(|| b2_class25_descriptors_from_records(ctx, data, records))?
+    {
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut descriptors,
+                value.pos,
+                value,
+                "catia_class25_edge_descriptors",
+            )
+        })?;
     }
     let mut use_runs = BTreeMap::new();
-    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(
-            &mut use_runs,
-            value.uses[0].pos,
-            value,
-            "catia_class25_edge_use_runs",
-        )?;
+    for value in
+        temporary.with_storage(|| consolidated_edge_use_runs_from_records(ctx, data, records))?
+    {
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut use_runs,
+                value.uses[0].pos,
+                value,
+                "catia_class25_edge_use_runs",
+            )
+        })?;
     }
     let mut runs = Vec::new();
     for window in records.windows(5) {
@@ -967,16 +1012,16 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             if !records_are_contiguous(window) {
                 return None;
             }
-            if descriptor.family != ConsolidatedFamily::B
-                || descriptor.class != 0x18
-                || definition.family != ConsolidatedFamily::B
-                || definition.class != 0x25
-                || use0.family != ConsolidatedFamily::B
-                || use0.class != 0x06
-                || use1.family != ConsolidatedFamily::B
-                || use1.class != 0x06
-                || node.family != ConsolidatedFamily::B
-                || node.class != 0x5e
+            if descriptor.family() != ConsolidatedFamily::B
+                || descriptor.class() != 0x18
+                || definition.family() != ConsolidatedFamily::B
+                || definition.class() != 0x25
+                || use0.family() != ConsolidatedFamily::B
+                || use0.class() != 0x06
+                || use1.family() != ConsolidatedFamily::B
+                || use1.class() != 0x06
+                || node.family() != ConsolidatedFamily::B
+                || node.class() != 0x5e
             {
                 return None;
             }
@@ -997,10 +1042,8 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
                     pos: descriptor.pos,
                     record_id: descriptor.record_id,
                     control: descriptor.control,
-                    values: ctx.copy_retained_slice(
-                        &descriptor.values,
-                        "catia_class25_edge_descriptor_values",
-                    )?,
+                    values: ctx
+                        .copy_slice(&descriptor.values, "catia_class25_edge_descriptor_values")?,
                 },
                 node,
             },
@@ -1026,13 +1069,18 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedEdgeUseRun>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut uses = BTreeMap::new();
-    for value in b2_use_metadata_from_records(ctx, data, records)? {
-        ctx.insert_btree_map(&mut uses, value.pos, value, "catia_edge_use_metadata_index")?;
+    for value in temporary.with_storage(|| b2_use_metadata_from_records(ctx, data, records))? {
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(&mut uses, value.pos, value, "catia_edge_use_metadata_index")
+        })?;
     }
     let mut nodes = BTreeMap::new();
     for value in b2_edge_nodes_from_records(data, records) {
-        ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_edge_use_node_index")?;
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_edge_use_node_index")
+        })?;
     }
     let mut runs = Vec::new();
     for (index, window) in records.windows(3).enumerate() {
@@ -1043,12 +1091,12 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             if !records_are_contiguous(window) {
                 return None;
             }
-            if use0.family != ConsolidatedFamily::B
-                || use0.class != 0x06
-                || use1.family != ConsolidatedFamily::B
-                || use1.class != 0x06
-                || node.family != ConsolidatedFamily::B
-                || node.class != 0x5e
+            if use0.family() != ConsolidatedFamily::B
+                || use0.class() != 0x06
+                || use1.family() != ConsolidatedFamily::B
+                || use1.class() != 0x06
+                || node.family() != ConsolidatedFamily::B
+                || node.class() != 0x5e
             {
                 return None;
             }
@@ -1070,10 +1118,10 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .checked_sub(1)
                 .and_then(|preceding| records.get(preceding))
                 .filter(|record| {
-                    record.source_index == use0.source_index
-                        && record.source_range.end == use0.source_range.start
-                        && record.family == ConsolidatedFamily::B
-                        && matches!(record.class, 0x23..=0x25)
+                    record.source_index() == use0.source_index()
+                        && record.source_range().end == use0.source_range().start
+                        && record.family() == ConsolidatedFamily::B
+                        && matches!(record.class(), 0x23..=0x25)
                 });
             identity_chain_consistent.then_some((definition, uses, node))
         })();
@@ -1084,13 +1132,13 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             Some((
                 record,
                 record.payload()?,
-                ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
+                ConsolidatedEdgeDefinitionClass::try_from(record.class()).ok()?,
             ))
         }) {
             Some((record, payload, class)) => Some(ConsolidatedEdgeDefinition {
                 frame: ConsolidatedRawFrame::from_record(
                     record,
-                    ctx.copy_retained_slice(
+                    ctx.copy_slice(
                         &data[payload],
                         "catia_edge_use_preceding_definition_payload",
                     )?,
@@ -1116,14 +1164,14 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 return None;
             };
             if !records_are_contiguous(window)
-                || node_record.family != ConsolidatedFamily::B
-                || node_record.class != 0x5e
-                || definition_record.family != ConsolidatedFamily::B
-                || definition_record.class != 0x24
-                || use0.family != ConsolidatedFamily::B
-                || use0.class != 0x06
-                || use1.family != ConsolidatedFamily::B
-                || use1.class != 0x06
+                || node_record.family() != ConsolidatedFamily::B
+                || node_record.class() != 0x5e
+                || definition_record.family() != ConsolidatedFamily::B
+                || definition_record.class() != 0x24
+                || use0.family() != ConsolidatedFamily::B
+                || use0.class() != 0x06
+                || use1.family() != ConsolidatedFamily::B
+                || use1.class() != 0x06
             {
                 return None;
             }
@@ -1160,13 +1208,13 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         let Some(payload) = definition_record.payload() else {
             continue;
         };
-        let Ok(class) = ConsolidatedEdgeDefinitionClass::try_from(definition_record.class) else {
+        let Ok(class) = ConsolidatedEdgeDefinitionClass::try_from(definition_record.class()) else {
             continue;
         };
         let definition = Some(ConsolidatedEdgeDefinition {
             frame: ConsolidatedRawFrame::from_record(
                 definition_record,
-                ctx.copy_retained_slice(
+                ctx.copy_slice(
                     &data[payload],
                     "catia_edge_use_succeeding_definition_payload",
                 )?,
@@ -1193,21 +1241,28 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedOwnedEdgeNode>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia edge resolution workspace")?;
     let mut indices = BTreeMap::new();
     for (index, record) in records.iter().enumerate() {
-        ctx.insert_btree_map(
-            &mut indices,
-            record.byte_offset(),
-            index,
-            "catia_owned_edge_record_indices",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut indices,
+                record.byte_offset(),
+                index,
+                "catia_owned_edge_record_indices",
+            )
+        })?;
     }
     let mut nodes = BTreeMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
-        ctx.insert_btree_map(&mut nodes, node.pos, node, "catia_owned_edge_nodes")?;
+        temporary.with_storage(|| {
+            ctx.insert_btree_map(&mut nodes, node.pos, node, "catia_owned_edge_nodes")
+        })?;
     }
     let mut owned = Vec::new();
-    for relation in b2_adjacent_face_counted_owners_from_records(ctx, data, records)? {
+    for relation in temporary
+        .with_storage(|| b2_adjacent_face_counted_owners_from_records(ctx, data, records))?
+    {
         let Some(&owner_index) = indices.get(&relation.owner.pos) else {
             continue;
         };
@@ -1231,7 +1286,7 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
                 continue;
             }
             let target = &records[target_index];
-            if target.family != ConsolidatedFamily::B || target.class != 0x5e {
+            if target.family() != ConsolidatedFamily::B || target.class() != 0x5e {
                 continue;
             }
             let Some(&node) = nodes.get(&target.byte_offset()) else {
@@ -1273,6 +1328,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         allocation_scopes: &'a [Vec<usize>],
         active: HashSet<(usize, usize)>,
         memo: HashMap<(usize, usize), Option<usize>>,
+        storage: ScopedReservation<'a>,
     }
 
     impl EndpointResolver<'_, '_> {
@@ -1290,10 +1346,10 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                 .enter_nested("catia_compact_endpoint_resolution_depth")?;
             self.ctx
                 .charge_work(1, "catia_compact_endpoint_resolution_work")?;
-            if !self
-                .ctx
-                .insert_hash_set(&mut self.active, key, "catia_compact_endpoint_active")?
-            {
+            if !self.storage.with_storage(|| {
+                self.ctx
+                    .insert_hash_set(&mut self.active, key, "catia_compact_endpoint_active")
+            })? {
                 return Ok(None);
             }
             let result = (|| {
@@ -1315,10 +1371,10 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                     AllocationReferenceEncoding::WidthCoded => {
                         let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
                         let target_record = self.records.get(target)?;
-                        if target_record.source_index
-                            != self.records.get(record_index)?.source_index
-                            || target_record.family != ConsolidatedFamily::B
-                            || target_record.class != 0x18
+                        if target_record.source_index()
+                            != self.records.get(record_index)?.source_index()
+                            || target_record.family() != ConsolidatedFamily::B
+                            || target_record.class() != 0x18
                         {
                             return None;
                         }
@@ -1329,10 +1385,10 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                     | AllocationReferenceEncoding::TaggedU16 => return None,
                 };
                 let target_record = self.records.get(target)?;
-                if target_record.family != ConsolidatedFamily::B {
+                if target_record.family() != ConsolidatedFamily::B {
                     return None;
                 }
-                match target_record.class {
+                match target_record.class() {
                     0x5d => Some(Ok(target)),
                     0x5e => self.resolve(target, 1).transpose(),
                     _ => None,
@@ -1340,68 +1396,84 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
             })();
             self.active.remove(&key);
             let result = result.transpose()?;
-            self.ctx
-                .insert_hash_map(&mut self.memo, key, result, "catia_compact_endpoint_memo")?;
+            self.storage.with_storage(|| {
+                self.ctx
+                    .insert_hash_map(&mut self.memo, key, result, "catia_compact_endpoint_memo")
+            })?;
             Ok(result)
         }
     }
 
+    let mut temporary = ctx.reserve_scoped(0, "catia compact endpoint workspace")?;
     let mut by_pos = HashMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
-        ctx.insert_hash_map(
-            &mut by_pos,
-            node.pos,
-            node,
-            "catia_compact_endpoint_nodes_by_pos",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut by_pos,
+                node.pos,
+                node,
+                "catia_compact_endpoint_nodes_by_pos",
+            )
+        })?;
     }
     let mut nodes = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if let Some(node) = by_pos.get(&record.byte_offset()).copied() {
-            ctx.insert_hash_map(
-                &mut nodes,
-                index,
-                node,
-                "catia_compact_endpoint_nodes_by_index",
-            )?;
+            temporary.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut nodes,
+                    index,
+                    node,
+                    "catia_compact_endpoint_nodes_by_index",
+                )
+            })?;
         }
     }
     let mut allocation_scopes = Vec::new();
-    ctx.push_vec(
-        &mut allocation_scopes,
-        Vec::new(),
-        "catia_compact_endpoint_scopes",
-    )?;
+    temporary.with_storage(|| {
+        ctx.push_vec(
+            &mut allocation_scopes,
+            Vec::new(),
+            "catia_compact_endpoint_scopes",
+        )
+    })?;
     let mut allocation_locations = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if index > 0
-            && (records[index - 1].source_index != record.source_index
-                || records[index - 1].source_range.end != record.source_range.start)
+            && (records[index - 1].source_index() != record.source_index()
+                || records[index - 1].source_range().end != record.source_range().start)
         {
-            ctx.push_vec(
-                &mut allocation_scopes,
-                Vec::new(),
-                "catia_compact_endpoint_scopes",
-            )?;
+            temporary.with_storage(|| {
+                ctx.push_vec(
+                    &mut allocation_scopes,
+                    Vec::new(),
+                    "catia_compact_endpoint_scopes",
+                )
+            })?;
         }
-        if record.family == ConsolidatedFamily::B && matches!(record.class, 0x5d | 0x5e) {
+        if record.family() == ConsolidatedFamily::B && matches!(record.class(), 0x5d | 0x5e) {
             let scope = allocation_scopes.len() - 1;
             let ordinal = allocation_scopes[scope].len();
-            ctx.push_vec(
-                &mut allocation_scopes[scope],
-                index,
-                "catia_compact_endpoint_scope_entries",
-            )?;
-            ctx.insert_hash_map(
-                &mut allocation_locations,
-                index,
-                (scope, ordinal),
-                "catia_compact_endpoint_locations",
-            )?;
+            temporary.with_storage(|| {
+                ctx.push_vec(
+                    &mut allocation_scopes[scope],
+                    index,
+                    "catia_compact_endpoint_scope_entries",
+                )
+            })?;
+            temporary.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut allocation_locations,
+                    index,
+                    (scope, ordinal),
+                    "catia_compact_endpoint_locations",
+                )
+            })?;
         }
     }
     let mut resolver = EndpointResolver {
         ctx,
+        storage: ctx.reserve_scoped(0, "catia compact endpoint memo workspace")?,
         records,
         nodes: &nodes,
         allocation_locations: &allocation_locations,
@@ -1474,7 +1546,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
         ctx.insert_hash_map(
             &mut record_sources,
             record.byte_offset(),
-            record.source_index,
+            record.source_index(),
             "catia_owner_boundary_record_sources",
         )?;
     }
@@ -1520,8 +1592,9 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 }
                 let span = &records[first_edge_index..owner_index];
                 if span.iter().any(|record| {
-                    record.family != ConsolidatedFamily::B || !matches!(record.class, 0x5d | 0x5e)
-                }) || span.iter().filter(|record| record.class == 0x5e).count() != 4
+                    record.family() != ConsolidatedFamily::B
+                        || !matches!(record.class(), 0x5d | 0x5e)
+                }) || span.iter().filter(|record| record.class() == 0x5e).count() != 4
                 {
                     return None;
                 }
@@ -2235,6 +2308,10 @@ fn object_stream_vertex_row_ranges_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Result<Vec<Range<usize>>, CodecError> {
+    let scan_work = u64_from_index(data.len()).checked_mul(4).ok_or_else(|| {
+        ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
     let mut ranges = ctx.collect_vec(
         records
             .iter()

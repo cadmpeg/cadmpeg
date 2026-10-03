@@ -1283,6 +1283,7 @@ fn component_insert_scanned_role_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 35;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(exact_component_insert_construction(&ctx, bytes, &records, scope),
@@ -1328,21 +1329,17 @@ fn accepted_component_insert_roles_preserve_retained_refusals() {
             return;
         }
         let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 35;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error =
-                exact_component_insert_construction(ctx, bytes, &records, scope).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("role ownership must refuse");
-            };
-            assert_eq!(
-                limit.dimension,
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            );
-            assert_eq!(limit.operation, "f3d Design UTF-16 text");
-            assert_eq!(Some(limit), ctx.resource_refusal());
-        });
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d Design UTF-16 text",
+            0,
+            |ctx| exact_component_insert_construction(ctx, bytes, &records, scope),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d Design UTF-16 text")
+        );
     };
     run_component_insert_scope_fixture(Some(probe));
 }

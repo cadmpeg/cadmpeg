@@ -1077,7 +1077,13 @@ fn standalone_polygon_parameters_refuse_at_collection_limit() {
 fn polygon_curve_identity_refuses_at_retained_limit() {
     const ID: &str = "fcstd:model:edge#Payload:1:polygon:1";
     assert_standalone_polygon_refusal(
-        Some(cadmpeg_core::decode::u64_from_index(ID.len()) - 1),
+        Some(
+            cadmpeg_core::decode::u64_from_index(
+                ID.len()
+                    + 2 * std::mem::size_of::<FinitePoint3>()
+                    + 2 * std::mem::size_of::<FiniteReal>(),
+            ) - 1,
+        ),
         None,
         "FreeCAD polygon curve identity",
     );
@@ -1087,7 +1093,14 @@ fn polygon_curve_identity_refuses_at_retained_limit() {
 fn polygon_curve_record_identity_refuses_at_retained_limit() {
     const ID: &str = "fcstd:model:edge#Payload:1:polygon:1";
     assert_standalone_polygon_refusal(
-        Some(2 * cadmpeg_core::decode::u64_from_index(ID.len()) - 1),
+        Some(
+            cadmpeg_core::decode::u64_from_index(
+                2 * ID.len()
+                    + 2 * std::mem::size_of::<FinitePoint3>()
+                    + 2 * std::mem::size_of::<FiniteReal>()
+                    + 4 * std::mem::size_of::<cadmpeg_ir::geometry::Curve>(),
+            ) - 1,
+        ),
         None,
         "FreeCAD polygon curve record identity",
     );

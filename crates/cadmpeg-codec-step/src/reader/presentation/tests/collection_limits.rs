@@ -188,21 +188,45 @@ fn transparency_refuses(operation: &str, retained: bool) {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("transparency exchange");
     let record = exchange.records().get(&1).expect("rendering record");
-    let refused = (0..=4).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
+    let refused = if retained {
+        {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                operation,
+                |limit| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    if retained {
+                        policy.limits.max_retained_bytes = limit;
+                    } else {
+                        policy.limits.max_collection_items = limit;
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                        .expect("root fits policy");
+
+                    super::super::surface_transparency(1, record, &exchange, &mut Vec::new(), &ctx)
+                        .map(|_| ())
+                },
+            );
+            matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation)
         }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
-        matches!(
-            super::super::surface_transparency(1, record, &exchange, &mut Vec::new(), &ctx),
-            Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
-        )
-    });
+    } else {
+        (0..=4).any(|limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if retained {
+                policy.limits.max_retained_bytes = limit;
+            } else {
+                policy.limits.max_collection_items = limit;
+            }
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
+            matches!(
+                super::super::surface_transparency(1, record, &exchange, &mut Vec::new(), &ctx),
+                Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+            )
+        })
+    };
     assert!(refused, "no refusal for {operation}");
 }
 
@@ -222,7 +246,41 @@ fn invalid_side_refuses(operation: &str, retained: bool) {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("surface side exchange");
     let record = exchange.records().get(&1).expect("style usage record");
-    let refused = (0..=2).any(|limit| {
+    let refused = if retained {
+        {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                operation,
+                |limit| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    if retained {
+                        policy.limits.max_retained_bytes = limit;
+                    } else {
+                        policy.limits.max_collection_items = limit;
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                        .expect("root fits policy");
+
+                    let result = (super::super::surface_side_rank(
+                        1,
+                        record,
+                        &mut Vec::new(),
+                        &mut BTreeSet::new(),
+                        &std::cell::RefCell::new(
+                            ctx.reserve_scoped(0, "step invalid surface side storage")
+                                .unwrap(),
+                        ),
+                        &ctx,
+                    ))
+                    .map(|_| ());
+                    result
+                },
+            );
+            matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation)
+        }
+    } else {
+        (0..=2).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         if retained {
@@ -232,11 +290,13 @@ fn invalid_side_refuses(operation: &str, retained: bool) {
         }
         let (ctx, _) =
             DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
-        matches!(
-            super::super::surface_side_rank(1, record, &mut Vec::new(), &mut BTreeSet::new(), &ctx),
+        let result = matches!(
+            super::super::surface_side_rank(1, record, &mut Vec::new(), &mut BTreeSet::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "step invalid surface side storage").unwrap()), &ctx),
             Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
-        )
-    });
+        );
+        result
+    })
+    };
     assert!(refused, "no refusal for {operation}");
 }
 
@@ -619,17 +679,57 @@ fn color_search_refuses(
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("colour exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    policy.limits.max_recursion_depth = depth_limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
-    assert!(matches!(
-        super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { active: &mut BTreeSet::new(), cache: &mut std::collections::BTreeMap::new(), losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx),
-        Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
-    ));
+    let dimension = if operation == "step_presentation_color_cache_value" {
+        ResourceDimension::MaterializedBytes
+    } else if retained_limit != 100 {
+        ResourceDimension::RetainedBytes
+    } else if depth_limit == 0 {
+        ResourceDimension::RecursionDepth
+    } else {
+        ResourceDimension::CollectionItems
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_limit;
+        if dimension == ResourceDimension::MaterializedBytes {
+            policy.limits.max_materialized_bytes = cap;
+        } else if dimension == ResourceDimension::RetainedBytes {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_retained_bytes = u64::MAX;
+            policy.limits.max_collection_items = cap;
+        }
+        policy.limits.max_recursion_depth = if dimension == ResourceDimension::RecursionDepth {
+            cap
+        } else {
+            depth_limit
+        };
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
+        let result = (super::super::find_color(
+            1,
+            &exchange,
+            super::super::StyleDomain::Any,
+            super::super::ColorSearchState {
+                storage: &std::cell::RefCell::new(
+                    ctx.reserve_scoped(0, "color search fixture")
+                        .expect("scope"),
+                ),
+                active: &mut BTreeSet::new(),
+                cache: &mut std::collections::BTreeMap::new(),
+                losses: &mut Vec::new(),
+                invalid_surface_sides: &mut BTreeSet::new(),
+            },
+            0,
+            &ctx,
+        ))
+        .map(|_| ());
+        result
+    });
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation)
+    );
 }
 
 #[test]
@@ -677,7 +777,7 @@ fn presentation_color_cache_copy_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
     assert!(matches!(
-        super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { active: &mut BTreeSet::new(), cache: &mut cache, losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx),
+        super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { storage: &std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope")), active: &mut BTreeSet::new(), cache: &mut cache, losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_presentation_color_cache_copy"

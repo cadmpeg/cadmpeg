@@ -362,7 +362,7 @@ impl<A> ModelDraft<A> {
             };
         }
         crate::document::arena_registry!(check_identity);
-        ctx.reserve_retained_vec(T::arena_mut(&mut self.model), 1, "draft entity arena")?;
+        ctx.reserve_vec(T::arena_mut(&mut self.model), 1, "draft entity arena")?;
         T::arena_mut(&mut self.model).push(entity);
         Ok(())
     }
@@ -655,7 +655,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         &mut self,
         record: crate::unknown::UnknownRecord,
     ) -> Result<(), CodecError> {
-        self.ctx.reserve_retained_vec(
+        self.ctx.reserve_vec(
             &mut self.state.unknowns,
             1,
             "staged unknown record slots",
@@ -1118,7 +1118,7 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
         macro_rules! reserve_arenas {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(if !draft.model.$field.is_empty() {
-                    ctx.reserve_retained_vec(&mut base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
+                    ctx.reserve_vec(&mut base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
                 })*
             };
         }

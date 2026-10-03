@@ -125,9 +125,15 @@ fn planar_relation_projection_refuses_collection_limit() {
 
 #[test]
 fn planar_relation_projection_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("relation".len());
-    let error = project_with_policy(policy).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "format SLDPRT planar relation constraint identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            project_with_policy(policy)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "format SLDPRT planar relation constraint identity"));
@@ -155,9 +161,15 @@ fn solved_point_projection_refuses_collection_limit() {
 
 #[test]
 fn solved_point_projection_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let error = project_solved_point_with_policy(policy).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT relation identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            project_solved_point_with_policy(policy)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT relation identity"));
@@ -185,9 +197,15 @@ fn solved_line_projection_refuses_collection_limit() {
 
 #[test]
 fn solved_line_projection_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let error = project_solved_line_with_policy(policy).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT planar sketch identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            project_solved_line_with_policy(policy)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT planar sketch identity"));
@@ -215,9 +233,15 @@ fn relation_point_projection_refuses_collection_limit() {
 
 #[test]
 fn relation_point_projection_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let error = project_relation_point_with_policy(policy).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy SLDPRT planar sketch identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            project_relation_point_with_policy(policy)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT planar sketch identity"));

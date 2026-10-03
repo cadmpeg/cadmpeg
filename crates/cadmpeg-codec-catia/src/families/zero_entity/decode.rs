@@ -1600,9 +1600,11 @@ mod tests {
             7,
             CurveId::mint("catia:test:wire#0".to_string()).expect("identity grammar"),
         )]);
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            closed_wire_loop_members(ctx, &run, &loop_record, &curve_ids)
-        });
+        let limited = crate::test_support::with_retained_refusal(
+            &[],
+            "catia_zero_wire_member_curve_id",
+            |ctx| closed_wire_loop_members(ctx, &run, &loop_record, &curve_ids),
+        );
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_zero_wire_member_curve_id")

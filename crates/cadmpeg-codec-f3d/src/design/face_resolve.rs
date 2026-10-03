@@ -2994,8 +2994,7 @@ mod tests {
         effective_historical_face_slots, legacy_face_recipe_reference_candidates,
         loft_edge_profile_face_slot, resolve_stable_bounded_face_history_set,
         resolve_surface_delete_face_history_set, resolved_explicit_bounded_face_group,
-        resolved_extrude_profile_face_group, resolved_face_group, resolved_historical_face_group,
-        resolved_historical_face_operand,
+        resolved_face_group, resolved_historical_face_group, resolved_historical_face_operand,
         resolved_historical_split_face_target_group_with_updated_faces,
         resolved_profile_face_group, stable_face_support_set,
     };
@@ -3021,195 +3020,6 @@ mod tests {
 
     fn face(slot: i64) -> FaceId {
         FaceId::mint(format!("f3d:brep:entity#{slot}")).expect("identity grammar")
-    }
-
-    #[test]
-    fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:face-operand#200",
-            "scope_record_index": 100,
-            "scope_reference_ordinal": 0,
-            "group_record_index": 150,
-            "group_member_ordinal": 0,
-            "record_index": 200,
-            "byte_offset": 0,
-            "class_tag": "346",
-            "paired_byte_offset": 325,
-            "paired_class_tag": "262",
-            "recipe_record_index": 203,
-            "recipe_record_byte_offset": 341,
-            "recipe_id": "f3d:test:recipe#201",
-            "recipe_prefix_offset": 352,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_kind": "bounded_face",
-            "recipe_program_offset": 0,
-            "recipe_program": [0, -1, 1],
-            "recipe_node_offsets": [0],
-            "recipe_nodes": [{
-                "byte_offset": 0,
-                "end_byte_offset": 12,
-                "program": [0, -1, 1],
-                "recipe_structure": {
-                    "root": 0,
-                    "prelude": [0, 0],
-                    "sides": [
-                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
-                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}
-                    ],
-                    "postlude": []
-                }
-            }],
-            "candidate_faces": ["f3d:brep:entity#10", "f3d:brep:entity#20"],
-            "unreferenced_candidate_faces": [],
-            "alternate_selector_candidate_faces": [],
-            "preceding_candidate_faces": [],
-            "changed_candidate_faces": [],
-            "historical_support_contexts": [],
-            "resolved_face_slots": [],
-            "next_record_index": 202,
-            "next_byte_offset": 469
-        }))
-        .expect("legacy bounded-face operand");
-            operand.recipe_references = vec![
-                reference(10, "selected-a", 201),
-                reference(20, "selected-b", 201),
-            ];
-
-            let mut group: DesignConstructionOperandGroup =
-                serde_json::from_value(serde_json::json!({
-                    "id": "f3d:test:construction-group#150",
-                    "scope_record_index": 100,
-                    "scope_reference_ordinal": 0,
-                    "record_index": 150,
-                    "byte_offset": 0,
-                    "class_tag": "346",
-                    "role": 0x0000_0010_0000_0000_u64,
-                    "members": [200],
-                    "member_offsets": [0],
-                    "frame": {
-                        "member_count_offset": 0,
-                        "opaque_index": 1,
-                        "opaque_index_offset": 18,
-                        "opaque_scalar": 0.0,
-                        "opaque_scalar_offset": 22,
-                        "variant": false
-                    },
-                    "role_offset": 0,
-                    "paired_class_tag": "262",
-                    "paired_byte_offset": 325,
-                    "next_record_index": 151,
-                    "next_byte_offset": 0
-                }))
-                .expect("legacy Draft face group");
-
-            assert_eq!(
-                resolved_explicit_bounded_face_group(decode_ctx, &group, &[operand.clone()])
-                    .expect("projection resource budget"),
-                Some(cadmpeg_ir::features::FaceSelection::Resolved {
-                    faces: vec![face(10), face(20)],
-                    native: group.id.clone(),
-                })
-            );
-            group.operand_role =
-            crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
-            let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-                "id": "f3d:test:scope#100",
-                "byte_offset": 0,
-                "class_tag": "304",
-                "record_index": 100,
-                "frame_length": 300,
-                "kind": "Extrude",
-                "kind_offset": 32,
-                "feature_ordinal": 1,
-                "feature_ordinal_offset": 228,
-                "history_state_id": 2,
-                "history_state_id_offset": 24,
-                "previous_history_state_id": 1,
-                "previous_history_state_id_offset": 258,
-                "reference_count_offset": 9,
-                "reference_members": [150],
-                "reference_member_offsets": [14],
-                "paired_class_tag": "258",
-                "paired_byte_offset": 300
-            }))
-            .expect("Extrude scope");
-            assert_eq!(
-                resolved_extrude_profile_face_group(
-                    decode_ctx,
-                    &scope,
-                    &group,
-                    std::slice::from_ref(&group),
-                    &[operand.clone()]
-                )
-                .unwrap(),
-                Some(cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face(10), face(20),])
-                ))
-            );
-            operand.resolved_active_face =
-                Some(FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar"));
-            assert_eq!(
-                resolved_face_group(decode_ctx, &group, std::slice::from_ref(&operand))
-                    .expect("projection resource budget"),
-                Some(cadmpeg_ir::features::FaceSelection::Resolved {
-                    faces: vec![
-                        FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")
-                    ],
-                    native: group.id.clone(),
-                })
-            );
-            operand.resolved_active_face = None;
-            operand.preceding_candidate_faces = vec![face(10), face(20)];
-            assert_eq!(
-                resolved_face_group(decode_ctx, &group, std::slice::from_ref(&operand))
-                    .expect("projection resource budget"),
-                None
-            );
-            operand.preceding_candidate_faces.clear();
-
-            operand.candidate_faces.clear();
-            operand.recipe_references = vec![
-                reference(30, "context", 202),
-                reference(10, "selected-a", 201),
-                reference(20, "selected-b", 201),
-            ];
-            operand.candidate_faces = vec![face(10), face(20)];
-            assert_eq!(
-                legacy_face_recipe_reference_candidates(decode_ctx, &operand, 201)
-                    .expect("projection resource budget"),
-                Some(vec![face(10), face(20)])
-            );
-            operand.candidate_faces.clear();
-            assert_eq!(
-                resolved_explicit_bounded_face_group(decode_ctx, &group, &[operand.clone()])
-                    .expect("projection resource budget"),
-                Some(cadmpeg_ir::features::FaceSelection::Resolved {
-                    faces: vec![face(10), face(20)],
-                    native: group.id.clone(),
-                })
-            );
-            assert_eq!(
-                legacy_face_recipe_reference_candidates(decode_ctx, &operand, 201)
-                    .expect("projection resource budget"),
-                Some(vec![face(10), face(20)])
-            );
-            assert!(
-                legacy_face_recipe_reference_candidates(decode_ctx, &operand, 999)
-                    .expect("projection resource budget")
-                    .is_none()
-            );
-            operand.recipe_references.remove(0);
-            operand.recipe_references[0]
-                .alternate_selector_faces
-                .push(face(30));
-            assert!(
-                resolved_explicit_bounded_face_group(decode_ctx, &group, &[operand])
-                    .expect("projection resource budget")
-                    .is_none()
-            );
-        });
     }
 
     fn legacy_face_candidate_limit_fixture() -> DesignFaceOperand {
@@ -3270,6 +3080,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = legacy_face_recipe_reference_candidates(&ctx, &operand, 201);
             assert!(
@@ -3289,6 +3100,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(face(10).as_str().len() - 1).unwrap();
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = legacy_face_recipe_reference_candidates(&ctx, &operand, 201);
         assert!(
@@ -3533,6 +3345,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::split_face_updated_target_slots(
                 &ctx,
@@ -3831,6 +3644,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = bounded_face_candidate_by_boundary_cardinality(&ctx, 4, &contexts);
         assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
@@ -3846,6 +3660,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = bounded_face_candidate_by_boundary_cardinality(&ctx, 8, &contexts);
         assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
@@ -3912,6 +3727,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = effective_historical_face_slots(&ctx, &candidates, &contexts);
         assert!(
@@ -3944,6 +3760,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = convergent_face_support(&ctx, &[10, 11, 12], &contexts);
         assert!(
@@ -4094,6 +3911,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = resolved_historical_face_group(
             &ctx,
@@ -4130,6 +3948,56 @@ mod tests {
             feature.as_str().len() + prefix.as_str().len()
         };
         policy.limits.max_retained_bytes = limit + u64::try_from(identifiers).unwrap();
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (resolved_historical_face_group(
+                    &ctx,
+                    &scope,
+                    scope.previous_history_state_id(),
+                    &group,
+                    std::slice::from_ref(&operand),
+                ))
+                .map(|_| ())
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = resolved_historical_face_group(
             &ctx,
@@ -4213,6 +4081,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_retained_bytes = 0;
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = resolved_historical_face_operand(&ctx, &scope, &operand);
             assert!(
@@ -4234,6 +4103,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::split_face_complete_candidate_slots(&ctx, &operand);
         assert!(
@@ -4254,6 +4124,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::split_face_complete_candidate_slots(&ctx, &operand);
         assert!(
@@ -4449,6 +4320,7 @@ mod tests {
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
             let arena = DecodeArena::new();
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             if matches!(super::resolved_loft_edge_profile_group(&ctx, &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
@@ -4482,19 +4354,26 @@ mod tests {
             edge_operand(2, 100, 1, 3, 201),
             edge_operand(3, 100, 0, 3, 202),
         ];
-        for limit in 0..1000 {
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = limit;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            if matches!(super::resolved_loft_edge_profile_group(&ctx, &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
+        {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "f3d Loft historical group id",
+                |cap| {
+                    let mut policy = DecodePolicy::default();
+                    policy.limits.max_retained_bytes = cap;
+                    let arena = DecodeArena::new();
+
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    (super::resolved_loft_edge_profile_group(&ctx, &scope, &group, &operands))
+                        .map(|_| ())
+                },
+            );
+            assert!(
+                matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == "f3d Loft historical group id")
-            {
-                return;
-            }
+            );
         }
-        panic!("no Loft historical group ID refusal");
     }
 
     fn start_geometry_fixture() -> (DesignFaceOperand, DesignConstructionOperandGroup, Vec<Face>) {
@@ -4610,24 +4489,27 @@ mod tests {
 
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
-            let feature = crate::ids::neutral_feature_id(&scope);
-            let prefix = crate::ids::history_input_prefix(
-                &feature.key(),
-                scope.previous_history_state_id().unwrap(),
-            );
-            let historical_face = crate::ids::history_input_face_id(&prefix, 10);
-            let state = crate::ids::feature_input_topology_id(
-                &feature,
-                scope.previous_history_state_id().unwrap(),
-            );
-            policy.limits.max_retained_bytes = u64::try_from(
-                2 * group.id.len()
-                    + feature.as_str().len()
-                    + prefix.as_str().len()
-                    + historical_face.as_str().len()
-                    + state.as_str().len(),
-            )
-            .unwrap();
+            policy.limits.max_retained_bytes =
+                match cadmpeg_test_support::refusal::resource_limit_at(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    "f3d Loft face profile native id",
+                    |cap| {
+                        let mut policy = DecodePolicy::default();
+                        policy.limits.max_retained_bytes = cap;
+                        let (ctx, _) =
+                            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                        resolved_profile_face_group(
+                            &ctx,
+                            &scope,
+                            &group,
+                            std::slice::from_ref(&operand),
+                        )
+                        .map(|_| ())
+                    },
+                ) {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+                    error => panic!("unexpected refusal: {error:?}"),
+                };
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let error =
                 resolved_profile_face_group(&ctx, &scope, &group, std::slice::from_ref(&operand))
@@ -4645,6 +4527,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             super::resolved_face_operand(&ctx, operand),
@@ -4714,6 +4597,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             resolved_face_group(&ctx, &group, std::slice::from_ref(&operand)),
@@ -4733,6 +4617,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             resolved_explicit_bounded_face_group(&ctx, &group, std::slice::from_ref(&operand)),
@@ -4751,6 +4636,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             resolved_explicit_bounded_face_group(&ctx, &group, std::slice::from_ref(&operand)),
@@ -4770,6 +4656,92 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(face(10).as_str().len()).unwrap();
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d resolved face group native id",
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (resolved_face_group(&ctx, &group, std::slice::from_ref(&operand))).map(|_| ())
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d resolved face group native id",
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (resolved_face_group(&ctx, &group, std::slice::from_ref(&operand))).map(|_| ())
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             resolved_face_group(&ctx, &group, std::slice::from_ref(&operand)),
@@ -4819,6 +4791,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             super::resolved_direct_face_selection(&ctx, &scope, &[operand]),

@@ -151,31 +151,38 @@ pub(in super::super) fn generated_curve_edge_refs(
     available_features: &BTreeSet<IrFeatureId>,
     result_edge_ids: &BTreeMap<u32, Vec<u32>>,
 ) -> Result<Option<Vec<GeneratedEdgeRef>>, CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut unique_curve_ids = BTreeSet::new();
     for &curve_id in curve_ids {
         if unique_curve_ids.contains(&curve_id) {
             return Ok(None);
         }
-        ctx.insert_btree_set(
-            &mut unique_curve_ids,
-            curve_id,
-            "creo generated curve identity nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut unique_curve_ids,
+                curve_id,
+                "creo generated curve identity nodes",
+            )
+        })?;
     }
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        ctx.admit_btree_entry(&counts, &row.id, "creo generated curve count nodes")?;
+        local_storage.with_storage(|| {
+            ctx.admit_btree_entry(&counts, &row.id, "creo generated curve count nodes")
+        })?;
         *counts.entry(row.id).or_default() += 1;
     }
     let mut unique_rows = BTreeMap::new();
     for row in rows {
         if counts.get(&row.id) == Some(&1) {
-            ctx.insert_btree_map(
-                &mut unique_rows,
-                row.id,
-                row,
-                "creo generated unique curve row nodes",
-            )?;
+            local_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut unique_rows,
+                    row.id,
+                    row,
+                    "creo generated unique curve row nodes",
+                )
+            })?;
         }
     }
     let mut generated = Vec::new();
@@ -219,9 +226,12 @@ pub(in super::super) fn feature_result_edge_ids(
     rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        ctx.admit_btree_entry(&counts, &row.id, "creo feature result edge count nodes")?;
+        local_storage.with_storage(|| {
+            ctx.admit_btree_entry(&counts, &row.id, "creo feature result edge count nodes")
+        })?;
         *counts.entry(row.id).or_default() += 1;
     }
     let mut edge_ids = Vec::new();
@@ -325,8 +335,23 @@ mod tests {
         if let Some(limit) = collection {
             policy.limits.max_collection_items = limit;
         }
-        if let Some(limit) = retained {
-            policy.limits.max_retained_bytes = limit;
+        if retained.is_some() {
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    generated_curve_edge_refs(&trial_ctx, &[77], &rows, &available, &results)
+                },
+            );
         }
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
@@ -380,7 +405,7 @@ mod tests {
     }
 
     fn one_selected_edge() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.features
             .affected_ids
             .push(crate::feature::rows::FeatureAffectedIds {
@@ -420,13 +445,12 @@ mod tests {
     #[test]
     fn generated_edge_selection_native_copy_refuses_retained_limit() {
         let scan = one_generated_edge();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 139;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
-        let error = feature_edge_selection(&ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10)
-            .expect_err("the generated native copy exceeds the retained limit");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "creo generated edge selection native",
+            |ctx| feature_edge_selection(ctx, &scan, &cadmpeg_ir::document::CadIr::empty(), 10),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -446,8 +470,28 @@ mod tests {
         if let Some(limit) = collection {
             policy.limits.max_collection_items = limit;
         }
-        if let Some(limit) = retained {
-            policy.limits.max_retained_bytes = limit;
+        if retained.is_some() {
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    feature_edge_selection(
+                        &trial_ctx,
+                        &scan,
+                        &cadmpeg_ir::document::CadIr::empty(),
+                        10,
+                    )
+                },
+            );
         }
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");

@@ -168,7 +168,7 @@ pub(super) fn linear_knots(
         cadmpeg_core::decode::u64_from_index(count),
         "form nx linear knots",
     )?;
-    let mut knots = ctx.retained_vec(count, "nx linear knots")?;
+    let mut knots = ctx.collection_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -289,7 +289,7 @@ pub(super) fn validate_serialized_support_uv_with_index(
         )? {
             admitted[side] = Some(
                 crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_retained_slice(values.as_slice(), "NX solved support-UV lane copy")?,
+                    ctx.copy_slice(values.as_slice(), "NX solved support-UV lane copy")?,
                     values.as_slice().len(),
                 )
                 .ok_or_else(|| {
@@ -426,7 +426,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
             .as_ref()
             .map(|lane| {
                 crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                     lane.as_slice().len(),
                 )
                 .ok_or_else(|| {
@@ -450,7 +450,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
                 .as_ref()
                 .map(|lane| {
                     crate::intersection::SupportUvLane::from_checked(
-                        ctx.copy_retained_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                        ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
                         lane.as_slice().len(),
                     )
                     .ok_or_else(|| {
@@ -1942,11 +1942,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         };
         ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
         for lane in &mut lanes {
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                lane,
-                1,
-                "nx coupled support UV boundary lanes",
-            )?;
+            ctx.reserve_capacity(lane, 1, "nx coupled support UV boundary lanes")?;
         }
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);
@@ -2938,7 +2934,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let source_offset = source
             .graph
             .get(NodeKind::Fin, fin_xmt)
-            .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos));
+            .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos()));
         annotations.note(
             ctx,
             &pcurve_id,

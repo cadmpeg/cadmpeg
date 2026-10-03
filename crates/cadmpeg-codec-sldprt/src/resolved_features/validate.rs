@@ -26,6 +26,7 @@ pub(crate) fn validate_native(
         Ok(native) => native,
         Err(error) => return invalid_namespace(ctx, &error),
     };
+    let mut temporary = ctx.reserve_scoped(0, "SLDPRT validation workspace")?;
     let mut findings = Vec::new();
     for history in &native.feature_histories {
         if let Err(error) = crate::writer::validate_feature_graph(ctx, &history.features) {
@@ -45,35 +46,43 @@ pub(crate) fn validate_native(
             )?;
         }
         if !history.content.is_empty() {
-            let configurations = collect_history_ids(
-                ctx,
-                history
-                    .configurations
-                    .iter()
-                    .map(|configuration| configuration.id.as_str()),
-            )?;
-            let root_features = collect_history_ids(
-                ctx,
-                history
-                    .features
-                    .iter()
-                    .filter(|feature| feature.tree_parent.is_none())
-                    .map(|feature| feature.id.as_str()),
-            )?;
-            let all_features = collect_history_ids(
-                ctx,
-                history.features.iter().map(|feature| feature.id.as_str()),
-            )?;
+            let configurations = temporary.with_storage(|| {
+                collect_history_ids(
+                    ctx,
+                    history
+                        .configurations
+                        .iter()
+                        .map(|configuration| configuration.id.as_str()),
+                )
+            })?;
+            let root_features = temporary.with_storage(|| {
+                collect_history_ids(
+                    ctx,
+                    history
+                        .features
+                        .iter()
+                        .filter(|feature| feature.tree_parent.is_none())
+                        .map(|feature| feature.id.as_str()),
+                )
+            })?;
+            let all_features = temporary.with_storage(|| {
+                collect_history_ids(
+                    ctx,
+                    history.features.iter().map(|feature| feature.id.as_str()),
+                )
+            })?;
             let mut seen_configurations = HashSet::new();
             let mut seen_features = HashSet::new();
             for item in &history.content {
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
-                        ctx.reserve_set(
-                            &mut seen_configurations,
-                            1,
-                            "index SLDPRT native history content",
-                        )?;
+                        temporary.with_storage(|| {
+                            ctx.reserve_set(
+                                &mut seen_configurations,
+                                1,
+                                "index SLDPRT native history content",
+                            )
+                        })?;
                         if !configurations.contains(id.as_str()) {
                             Some(ctx.format_retained(
                                 format_args!(
@@ -91,11 +100,13 @@ pub(crate) fn validate_native(
                         }
                     }
                     crate::records::HistoryContent::Feature(id) => {
-                        ctx.reserve_set(
-                            &mut seen_features,
-                            1,
-                            "index SLDPRT native history content",
-                        )?;
+                        temporary.with_storage(|| {
+                            ctx.reserve_set(
+                                &mut seen_features,
+                                1,
+                                "index SLDPRT native history content",
+                            )
+                        })?;
                         if !all_features.contains(id.as_str()) {
                             Some(ctx.format_retained(
                                 format_args!(
@@ -166,7 +177,7 @@ pub(crate) fn validate_native(
             }
         }
     }
-    let (mut expected_histories, _history_reservation) =
+    let (mut expected_histories, mut history_reservation) =
         ctx.with_scoped_storage("validate SLDPRT expected histories", || {
             ctx.try_collect_retained_with(
                 native.feature_histories.iter(),
@@ -185,11 +196,13 @@ pub(crate) fn validate_native(
                 |record| record.clone_charged(ctx, "validate SLDPRT history lanes"),
             )
         })?;
-    crate::resolved_features::classes::bind_history_classes(
-        ctx,
-        &mut expected_histories,
-        &history_lanes,
-    )?;
+    history_reservation.with_storage(|| {
+        crate::resolved_features::classes::bind_history_classes(
+            ctx,
+            &mut expected_histories,
+            &history_lanes,
+        )
+    })?;
     for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
         for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
             if feature.input_class != expected_feature.input_class {

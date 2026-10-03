@@ -47,8 +47,11 @@ fn body_link_error(
             .push(body_link(target, ordinal));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items =
-            u64::try_from(ir.model.bodies.len()).unwrap() + extra_items;
+        policy.limits.max_collection_items = if retained != u64::MAX {
+            DecodePolicy::service().limits.max_collection_items
+        } else {
+            u64::try_from(ir.model.bodies.len()).unwrap() + extra_items
+        };
         policy.limits.max_retained_bytes = retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
@@ -77,8 +80,11 @@ fn subentity_tag_error(
             .push(subentity_tag(target, ordinal));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items =
-            u64::try_from(ir.model.faces.len() + ir.model.edges.len()).unwrap() + extra_items;
+        policy.limits.max_collection_items = if retained != u64::MAX {
+            DecodePolicy::service().limits.max_collection_items
+        } else {
+            u64::try_from(ir.model.faces.len() + ir.model.edges.len()).unwrap() + extra_items
+        };
         policy.limits.max_retained_bytes = retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
@@ -136,7 +142,11 @@ fn persistent_body_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn persistent_body_invalid_entity_refuses_retained_limit() {
-    let error = body_link_error(false, 0, 0, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(body_link_error(false, 0, 0, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -215,7 +225,11 @@ fn persistent_subentity_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn persistent_subentity_invalid_entity_refuses_retained_limit() {
-    let error = subentity_tag_error(false, 0, 0, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(subentity_tag_error(false, 0, 0, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

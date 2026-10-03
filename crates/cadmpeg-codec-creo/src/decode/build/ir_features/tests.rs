@@ -71,7 +71,26 @@ fn regeneration_edge_refuses_each_storage_boundary() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = items;
-        policy.limits.max_retained_bytes = bytes;
+        policy.limits.max_retained_bytes = if dimension == ResourceDimension::CollectionItems {
+            bytes
+        } else {
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some(operation),
+                |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = policy;
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[],
+                        &trial_arena,
+                        &trial_policy,
+                    )
+                    .expect("root");
+                    append_regeneration_edge(&trial_ctx, &mut Vec::new(), &child, &parent)
+                },
+            )
+        };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error = append_regeneration_edge(&ctx, &mut Vec::new(), &child, &parent)
             .expect_err("below-need edge cap");
@@ -154,7 +173,7 @@ fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
 
 #[test]
 fn feature_output_refresh_refuses_before_update_rows() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
     let arena = DecodeArena::new();
@@ -174,7 +193,7 @@ fn feature_output_refresh_refuses_before_update_rows() {
 
 #[test]
 fn feature_output_refresh_preserves_feature_order() {
-    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let scan = crate::test_support::empty_container_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
     crate::decode::with_test_decode_ctx(|ctx| refresh_feature_outputs(ctx, &scan, &mut ir))
@@ -270,7 +289,7 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
 
 #[test]
 fn native_operation_feature_refuses_kind_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -285,7 +304,29 @@ fn native_operation_feature_refuses_kind_retained_limit() {
         });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo native Feature kind"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            emit_model_features(
+                &trial_ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -326,10 +367,11 @@ fn native_operation_feature_refuses_kind_retained_limit() {
 
 #[test]
 fn native_row_feature_refuses_kind_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let mut reached_kind = false;
-    for limit in 0..256 {
+    let mut limit = 0_u64;
+    for _ in 0..4096 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
@@ -342,12 +384,25 @@ fn native_row_feature_refuses_kind_retained_limit() {
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
-        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo native row Feature kind")
         {
             reached_kind = true;
             break;
+        }
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("retained need");
+                assert!(need > limit);
+                limit = need;
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected resource route error: {error:?}"),
         }
     }
     assert!(
@@ -377,10 +432,11 @@ fn native_row_feature_refuses_kind_retained_limit() {
 
 #[test]
 fn native_row_feature_refuses_name_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let mut reached_name = false;
-    for limit in 0..256 {
+    let mut limit = 0_u64;
+    for _ in 0..4096 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
@@ -393,12 +449,25 @@ fn native_row_feature_refuses_name_retained_limit() {
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
-        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo row Feature name")
         {
             reached_name = true;
             break;
+        }
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("retained need");
+                assert!(need > limit);
+                limit = need;
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected resource route error: {error:?}"),
         }
     }
     assert!(
@@ -425,7 +494,7 @@ fn native_row_feature_refuses_name_retained_limit() {
 
 #[test]
 fn stored_operation_feature_name_refuses_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -444,7 +513,28 @@ fn stored_operation_feature_name_refuses_retained_limit() {
         });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 56;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo stored Feature name"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = policy;
+            trial_policy.limits.max_retained_bytes = cap;
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            emit_model_features(
+                &trial_ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = emit_model_features(
@@ -481,7 +571,7 @@ fn stored_operation_feature_name_refuses_retained_limit() {
 
 #[test]
 fn recipe_source_tag_refuses_retained_limit() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .operations
         .push(crate::feature::operations::FeatureOperation {
@@ -497,7 +587,8 @@ fn recipe_source_tag_refuses_retained_limit() {
             state_offset: 0,
         });
     let mut reached_source_tag = false;
-    for limit in 0..256 {
+    let mut limit = 0_u64;
+    for _ in 0..4096 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
@@ -510,12 +601,25 @@ fn recipe_source_tag_refuses_retained_limit() {
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
-        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo Feature source tag")
         {
             reached_source_tag = true;
             break;
+        }
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("retained need");
+                assert!(need > limit);
+                limit = need;
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected resource route error: {error:?}"),
         }
     }
     assert!(

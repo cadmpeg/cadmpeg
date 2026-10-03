@@ -331,7 +331,10 @@ fn database_issues_preserve_the_unframed_database_instead_of_a_database_record()
 #[test]
 fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
     let source = primary_envelope_fixture();
-    assert_eq!(InventorCodec.detect(&source), Confidence::High);
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&InventorCodec, &source),
+        Confidence::High
+    );
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("synthetic primary Inventor envelope decodes");

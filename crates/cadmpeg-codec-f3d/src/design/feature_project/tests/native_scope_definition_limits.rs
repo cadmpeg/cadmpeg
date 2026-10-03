@@ -99,6 +99,7 @@ fn native_scope_kind_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(kind.len() - 1).unwrap();
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(native_scope_definition(&ctx, &scope, &[]),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d native feature kind"

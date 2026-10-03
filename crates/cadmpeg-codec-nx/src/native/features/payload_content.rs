@@ -57,7 +57,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
     ) -> Result<Option<Self>, CodecError> {
         let mut hash = Sha256::new();
         let mut rows = Vec::new();
-        let mut reservation = ctx.reserve_scoped(0, "retain NX feature payload blocks")?;
+
         let mut byte_len = 0u64;
         for id in ids {
             let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
@@ -73,10 +73,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
                     .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
                 "hash NX feature payload bytes",
             )?;
-            let record_bytes = std::mem::size_of::<FeaturePayloadBlock>()
-                .checked_add(id.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature payload blocks", 0, 1))?;
-            reservation.grow(u64_from_index(record_bytes))?;
+
             ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
             hash.update(bytes);
             rows.push(FeaturePayloadBlock {
@@ -88,7 +85,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
         let Ok(blocks) = B::try_from(rows) else {
             return Ok(None);
         };
-        reservation.commit()?;
+
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
             ctx,
             hash.finalize().into(),

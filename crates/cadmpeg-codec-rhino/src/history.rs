@@ -1839,26 +1839,37 @@ fn extended_geometry_json(
             }
         }
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
-        let polyedge =
-            match crate::polyedge::decode(expand, value.class_data_range.clone(), archive) {
-                Ok(polyedge) => polyedge,
-                Err(FramingError::Resource(limit)) => {
-                    *refusal = Some(CodecError::ResourceLimit(limit));
-                    return None;
-                }
-                Err(error) => {
-                    optional_warning(
-                        expand.ctx(),
-                        warnings,
-                        refusal,
-                        format_args!(
-                            "embedded history polyedge at offset {}: {error}",
-                            value.class_data_range.start
-                        ),
-                    )?;
-                    return None;
-                }
-            };
+        let mut polyedge_storage = match expand
+            .ctx()
+            .reserve_scoped(0, "Rhino embedded polyedge storage")
+        {
+            Ok(storage) => storage,
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
+        };
+        let polyedge = match polyedge_storage.with_storage(|| {
+            crate::polyedge::decode(expand, value.class_data_range.clone(), archive)
+        }) {
+            Ok(polyedge) => polyedge,
+            Err(FramingError::Resource(limit)) => {
+                *refusal = Some(CodecError::ResourceLimit(limit));
+                return None;
+            }
+            Err(error) => {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history polyedge at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+                return None;
+            }
+        };
         match crate::polyedge::semantic_json(expand.ctx(), &polyedge) {
             Ok(semantic) => semantic,
             Err(error) => {

@@ -88,7 +88,7 @@ impl E5RollingBallJet {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
         let stations =
-            ctx.copy_retained_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
+            ctx.copy_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
         Ok(
             cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations, ctx)?
                 .ok()
@@ -805,13 +805,13 @@ fn e5_nurbs_surface(
     }
     let mut point_rows = Vec::new();
     for row in control_points.chunks(v_count) {
-        let copied = ctx.copy_retained_slice(row, "catia_e5_nurbs_point_row")?;
+        let copied = ctx.copy_slice(row, "catia_e5_nurbs_point_row")?;
         ctx.push_vec(&mut point_rows, copied, "catia_e5_nurbs_point_rows")?;
     }
     let weight_rows = if let Some(weights) = weights {
         let mut rows = Vec::new();
         for row in weights.chunks(v_count) {
-            let copied = ctx.copy_retained_slice(row, "catia_e5_nurbs_weight_row")?;
+            let copied = ctx.copy_slice(row, "catia_e5_nurbs_weight_row")?;
             ctx.push_vec(&mut rows, copied, "catia_e5_nurbs_weight_rows")?;
         }
         Some(rows)

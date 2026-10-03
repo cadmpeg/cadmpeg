@@ -44,25 +44,6 @@ fn located_base_guid(guid: &crate::records::entity_header::BaseTypeGuid) -> Opti
     }
 }
 
-/// The before base-type GUID carried at the after-record's location.
-fn normalized_base_type_guid(
-    before: &crate::records::entity_header::BaseTypeGuid,
-    after: &crate::records::entity_header::BaseTypeGuid,
-) -> crate::records::entity_header::BaseTypeGuid {
-    match (before, after.offset()) {
-        (crate::records::entity_header::BaseTypeGuid::Absent, _) | (_, None) => after.clone(),
-        (crate::records::entity_header::BaseTypeGuid::EmptyRoot { .. }, Some(offset)) => {
-            crate::records::entity_header::BaseTypeGuid::EmptyRoot { offset }
-        }
-        (crate::records::entity_header::BaseTypeGuid::Guid { value, .. }, Some(offset)) => {
-            crate::records::entity_header::BaseTypeGuid::Guid {
-                value: value.clone(),
-                offset,
-            }
-        }
-    }
-}
-
 /// The before-value carried at the after-record's location, for comparing an
 /// edited record against the record it replaces.
 fn normalized_token<T: Clone>(
@@ -1525,11 +1506,11 @@ pub(super) fn validate_design_type_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|design_type| (design_type.id.as_str(), design_type))
+        .map(|design_type| (design_type.id().as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|design_type| (design_type.id.as_str(), design_type))
+        .map(|design_type| (design_type.id().as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1539,13 +1520,11 @@ pub(super) fn validate_design_type_edits(
     let mut edits: BTreeMap<String, Vec<DesignTypeEdit>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
-        let mut normalized = after.clone();
-        normalized.entities.clone_from(&before.entities);
-        normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid =
-            normalized_base_type_guid(&before.base_type_guid, &after.base_type_guid);
-        normalized.version = before.version;
-        if &normalized != before {
+        if before.type_guid_offset != after.type_guid_offset
+            || before.version_offset != after.version_offset
+            || before.module != after.module
+            || before.base_type_guid.offset() != after.base_type_guid.offset()
+        {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
@@ -1784,11 +1763,11 @@ pub(super) fn validate_body_member_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|member| (member.id.as_str(), member))
+        .map(|member| (member.id().as_str(), member))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|member| (member.id.as_str(), member))
+        .map(|member| (member.id().as_str(), member))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1817,7 +1796,7 @@ pub(super) fn validate_body_member_edits(
                 CodecError::malformed(format_args!("invalid design-body-member id {id}"))
             })?;
         edits.entry(stream).or_default().push(BodyMemberEdit {
-            offset: after.byte_offset,
+            offset: after.byte_offset(),
             entity_suffix: after.entity_suffix,
             flags: after.flags,
         });
@@ -1872,7 +1851,7 @@ pub(super) fn validate_body_visibility_edits(
             ))
         })?;
         edits
-            .entry(record.stream.clone())
+            .entry(record.stream().to_owned())
             .or_default()
             .push((record.byte_offset, visible));
     }
@@ -1969,9 +1948,14 @@ pub(in crate::writer) fn validate_body_native_key_edits(
                     .iter()
                     .filter(|visibility| {
                         visibility.body == before.body
-                            && before.asm_body_key == Some(visibility.asm_body_key)
+                            && before.asm_body_key == Some(visibility.asm_body_key())
                     })
-                    .map(|visibility| (visibility.stream.clone(), visibility.asm_body_key_offset)),
+                    .map(|visibility| {
+                        (
+                            visibility.stream().to_owned(),
+                            visibility.asm_body_key_offset,
+                        )
+                    }),
             );
             if let Some(old_key) = before.asm_body_key {
                 joined.extend(

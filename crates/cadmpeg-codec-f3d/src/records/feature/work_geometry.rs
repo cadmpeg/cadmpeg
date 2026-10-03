@@ -359,14 +359,14 @@ impl DesignVertexRecipe {
             paired_class_tag: self.paired_class_tag.try_clone_for_decode(ctx, operation)?,
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: ctx.copy_retained_text(&self.recipe_id, operation)?,
-            recipe_prefix_bytes: ctx.copy_retained_slice(&self.recipe_prefix_bytes, operation)?,
+            recipe_prefix_bytes: ctx.copy_slice(&self.recipe_prefix_bytes, operation)?,
             recipe_references: ctx.try_collect_retained_with(
                 &self.recipe_references,
                 operation,
                 |value| value.try_clone_for_decode(ctx, operation),
             )?,
             recipe_program_offset: self.recipe_program_offset,
-            recipe_program: ctx.copy_retained_slice(&self.recipe_program, operation)?,
+            recipe_program: ctx.copy_slice(&self.recipe_program, operation)?,
             resolution: self.resolution,
             next_byte_offset: self.next_byte_offset,
         })

@@ -110,11 +110,13 @@ fn surface_stitch_group_refuses_collection_limit() {
 #[test]
 fn surface_stitch_native_id_refuses_retained_limit() {
     let (scope, stitch_group) = stitch_fixture();
-    let (arena, policy) = context(0, ResourceDimension::RetainedBytes);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(project_surface_stitch(&ctx, &scope,
-        std::slice::from_ref(&stitch_group)),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d SurfaceStitch native id"));
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "f3d SurfaceStitch native id",
+        0,
+        |ctx| project_surface_stitch(ctx, &scope, std::slice::from_ref(&stitch_group)),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d SurfaceStitch native id"));
 }

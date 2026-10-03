@@ -316,6 +316,10 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -369,6 +373,10 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -428,6 +436,10 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -480,6 +492,10 @@ fn incidence_selection_validates_only_its_affected_faces() {
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
+        search_storage: RefCell::new(
+            ctx.reserve_scoped(0, "search test storage")
+                .expect("storage"),
+        ),
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),

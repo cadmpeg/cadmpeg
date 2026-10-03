@@ -185,12 +185,20 @@ pub(crate) fn inspect(
         Err(InspectError::Io(error)) => {
             return Err(inspect_io_error(path, limits.max_input_bytes, error).into());
         }
+        Err(InspectError::Detection(error)) => return Err(error.into()),
+        Err(InspectError::Unresolved(cadmpeg_registry::ResolveSourceError::Codec(error))) => {
+            return Err(error.into())
+        }
         Err(InspectError::Unresolved(error)) => {
             return Err(loader::detection_failure(&error).into());
         }
         Err(InspectError::Cadir | InspectError::Unrecognized) => {
             return Err(inspect_unrecognized(path).into());
         }
+        Err(InspectError::Codec {
+            error: cadmpeg_core::CodecError::ResourceLimit(limit),
+            ..
+        }) => return Err(cadmpeg_core::CodecError::ResourceLimit(limit).into()),
         Err(InspectError::Codec {
             selection,
             error: cadmpeg_core::CodecError::UnsupportedDialect { dialects, message },

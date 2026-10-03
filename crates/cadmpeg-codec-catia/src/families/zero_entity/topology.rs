@@ -201,9 +201,10 @@ fn endpoint_pair_candidates_with_budget(
             continue;
         }
         face_components.union(
+            ctx,
             face_indices[&occurrences[index].face_record_ordinal],
             face_indices[&occurrences[*neighbor].face_record_ordinal],
-        );
+        )?;
     }
 
     let mut candidates = Vec::new();
@@ -254,7 +255,7 @@ fn endpoint_pair_candidates_with_budget(
         let mut by_face_component = HashMap::<usize, Vec<usize>>::new();
         for index in group {
             let component =
-                face_components.find(face_indices[&occurrences[index].face_record_ordinal]);
+                face_components.find(ctx, face_indices[&occurrences[index].face_record_ordinal])?;
             if let Some(group) = by_face_component.get_mut(&component) {
                 ctx.push_vec(group, index, "catia_zero_pair_face_members")?;
             } else {
@@ -411,7 +412,12 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                 }
             }
         }
-        ctx.sort_unstable_by(&mut component, Ord::cmp, |_| 0, "catia_zero_locus_component_sort")?;
+        ctx.sort_unstable_by(
+            &mut component,
+            Ord::cmp,
+            |_| 0,
+            "catia_zero_locus_component_sort",
+        )?;
         let representative_point = endpoints[component[0]].2;
         let mut maximum_deviation = 0.0_f64;
         let mut complete = true;

@@ -51,25 +51,31 @@ fn drawing_retained_refuses_with_typed(records: &str, operation: &str, typed: &[
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid drawing exchange");
     let known_typed = typed.iter().copied().collect::<HashSet<_>>();
-    let refused = (0..=4096).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-            .expect("root fits retained policy");
-        matches!(
-            super::super::decode(
-                &exchange,
-                &mut cadmpeg_ir::document::CadIr::empty(),
-                &known_typed,
-                &BTreeMap::new(),
-                &ctx,
-            ),
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                    .expect("root fits retained policy");
+
+                (super::super::decode(
+                    &exchange,
+                    &mut cadmpeg_ir::document::CadIr::empty(),
+                    &known_typed,
+                    &BTreeMap::new(),
+                    &ctx,
+                ))
+                .map(|_| ())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == operation
-        )
-    });
+                    && refusal.operation == operation)
+    };
     assert!(refused, "no retained limit refused {operation}");
 }
 
@@ -251,20 +257,31 @@ fn drawing_ambiguous_identities_text_refuses_retained_limit() {
 
 #[test]
 fn drawing_ambiguous_loss_text_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 13;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
-    assert!(matches!(
-        super::super::note_ambiguous_target(
-            &mut Vec::new(), "drawing #1", "items", 2, &identities, &ctx,
-        ),
-        Err(CodecError::ResourceLimit(refusal))
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_drawing_ambiguous_loss_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits retained policy");
+            let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
+            super::super::note_ambiguous_target(
+                &mut Vec::new(),
+                "drawing #1",
+                "items",
+                2,
+                &identities,
+                &ctx,
+            )
+        },
+    );
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_drawing_ambiguous_loss_text"
-    ));
+                && refusal.operation == "step_drawing_ambiguous_loss_text")
+    );
 }
 
 #[test]
@@ -366,17 +383,23 @@ fn drawing_wrapper_identity_text_refuses_retained_limit() {
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid wrapper exchange");
     let targets = BTreeMap::from([(2, ["target".to_owned()].into_iter().collect())]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("root fits retained policy");
-    assert!(matches!(
-        super::super::wrapper_target_resolution(1, &targets, &exchange, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_drawing_wrapper_identity_text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("root fits retained policy");
+            (super::super::wrapper_target_resolution(1, &targets, &exchange, &ctx)).map(|_| ())
+        },
+    );
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_drawing_wrapper_identity_text"
-    ));
+                && refusal.operation == "step_drawing_wrapper_identity_text")
+    );
 }
 
 #[test]

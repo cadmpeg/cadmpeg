@@ -674,3 +674,24 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn copious_closed_path_intersection_refuses_work() {
+    let points = [
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        assert!(matches!(has_form_63_self_intersection(&points, ctx),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "iges planar self-intersection comparisons"));
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(!has_form_63_self_intersection(&points, ctx).unwrap());
+    });
+}

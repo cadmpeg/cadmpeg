@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonempty printable ASCII values shared by parsed and retained records.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PrintableString<S>(S);
 
-impl<S: AsRef<str>> PrintableString<S> {
+impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         let text = value.as_ref();
         if text.is_empty()
@@ -32,6 +31,12 @@ impl PrintableString<&str> {
     #[cfg(test)]
     pub(crate) fn into_owned(self) -> PrintableString<String> {
         PrintableString(self.0.to_owned())
+    }
+}
+
+impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PrintableString<S> {
+    fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -65,6 +70,24 @@ mod tests {
             let json = serde_json::to_string(text).unwrap();
             let error = serde_json::from_str::<PrintableString<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
+        }
+    }
+    #[test]
+    fn printablestring_serializes_the_checked_borrowed_and_owned_text() {
+        let text = "Name";
+        let borrowed = super::PrintableString::new(text).unwrap();
+        let owned = super::PrintableString::new(text.to_owned()).unwrap();
+        for _ in 0..3 {
+            assert_eq!(borrowed.as_str(), text);
+            assert_eq!(owned.as_str(), text);
+            assert_eq!(
+                serde_json::to_string(&borrowed).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
+            assert_eq!(
+                serde_json::to_string(&owned).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
         }
     }
 }

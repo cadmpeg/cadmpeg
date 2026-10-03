@@ -234,9 +234,12 @@ fn aggregates_object_classes_after_table_entries() {
 #[test]
 fn container_only_returns_empty_current_ir_for_full_bands() {
     for version in ["50", "60", "70", "80", "90"] {
-        let archive = parse_header(&header(version))
-            .expect("required invariant")
-            .archive_version;
+        let archive = parse_header(
+            &cadmpeg_test_support::service_decode_context(),
+            &header(version),
+        )
+        .expect("required invariant")
+        .archive_version;
         let bytes = minimal_document(
             version,
             &[
@@ -265,9 +268,12 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
 #[test]
 fn container_only_returns_empty_current_ir_for_v3_and_v4() {
     for version in ["3", "4"] {
-        let archive = parse_header(&header(version))
-            .expect("required invariant")
-            .archive_version;
+        let archive = parse_header(
+            &cadmpeg_test_support::service_decode_context(),
+            &header(version),
+        )
+        .expect("required invariant")
+        .archive_version;
         let bytes = minimal_document(
             version,
             &[

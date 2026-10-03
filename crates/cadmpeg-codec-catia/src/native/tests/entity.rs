@@ -379,9 +379,10 @@ fn reference_signature_cohort_refuses_nested_member_and_id_limits() {
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_cohort_members")
     );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::derive_reference_signature_cohorts(ctx, &native.entity_records)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_native_cohort_id", |ctx| {
+            super::super::derive_reference_signature_cohorts(ctx, &native.entity_records)
+        });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_cohort_id")
@@ -426,7 +427,8 @@ fn native_reference_signature_wire_refuses_text_and_instruction_limits() {
         ),
     ] {
         let mut found = false;
-        for cap in 0..=512 {
+        let mut cap = 0;
+        for _ in 0..4096 {
             let result = match dimension {
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
                     crate::test_support::with_retained_limit(cap, |ctx| {
@@ -445,7 +447,11 @@ fn native_reference_signature_wire_refuses_text_and_instruction_limits() {
                     break;
                 }
                 Ok(_) => break,
-                _ => {}
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert!(limit.used + limit.additional > cap);
+                    cap = limit.used + limit.additional;
+                }
+                Err(error) => panic!("unexpected fixture refusal: {error:?}"),
             }
         }
         assert!(found, "limit sweep must reach {expected}");
@@ -811,9 +817,11 @@ fn entity_value_selection_refuses_collection_and_retained_limits() {
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_selector_indices")
     );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::entity_value_schema_selections(ctx, &fields, catalog, &packets)
-    });
+    let retained = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_value_selection_entry",
+        |ctx| super::super::entity_value_schema_selections(ctx, &fields, catalog, &packets),
+    );
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_selection_entry")

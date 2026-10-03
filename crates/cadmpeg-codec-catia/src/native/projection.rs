@@ -244,8 +244,8 @@ pub(crate) fn consolidated_owner_packets(
     ctx.stable_sort_by(
         &mut packets,
         |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
-        (left_pos, left_source).cmp(&(right_pos, right_source))
-    },
+            (left_pos, left_source).cmp(&(right_pos, right_source))
+        },
         |_| 0,
         "catia_native_owner_packet_sort",
     )?;
@@ -311,37 +311,46 @@ pub(crate) fn consolidated_edge_runs(
     nodes: &[CatiaConsolidatedEdgeNode],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<CatiaConsolidatedEdgeRun>, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "CATIA native edge run lookup")?;
     let mut pcurve_ids = HashMap::new();
     for pcurve in pcurves {
-        let id = ctx.copy_retained_text(&pcurve.id, "catia_native_edge_run_pcurve_index_id")?;
-        ctx.insert_hash_map(
-            &mut pcurve_ids,
-            pcurve.byte_offset,
-            id,
-            "catia_native_edge_run_pcurve_index",
-        )?;
+        let id = lookup_storage.with_storage(|| {
+            ctx.copy_retained_text(&pcurve.id, "catia_native_edge_run_pcurve_index_id")
+        })?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut pcurve_ids,
+                pcurve.byte_offset,
+                id,
+                "catia_native_edge_run_pcurve_index",
+            )
+        })?;
     }
     let mut resolved = HashMap::new();
-    for block in
+    for block in lookup_storage.with_storage(|| {
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             ctx, bytes, records, refusal,
-        )?
-    {
-        ctx.insert_hash_map(
-            &mut resolved,
-            block.block.pcurves[0].pos,
-            block,
-            "catia_native_edge_run_resolved_index",
-        )?;
+        )
+    })? {
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut resolved,
+                block.block.pcurves[0].pos,
+                block,
+                "catia_native_edge_run_resolved_index",
+            )
+        })?;
     }
     let mut nodes_by_offset = HashMap::new();
     for node in nodes {
-        ctx.insert_hash_map(
-            &mut nodes_by_offset,
-            node.byte_offset,
-            node,
-            "catia_native_edge_run_node_index",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut nodes_by_offset,
+                node.byte_offset,
+                node,
+                "catia_native_edge_run_node_index",
+            )
+        })?;
     }
     let mut output = Vec::new();
     for (index, run) in
@@ -413,49 +422,60 @@ pub(crate) fn consolidated_edge_nodes(
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<Vec<CatiaConsolidatedEdgeNode>, CodecError> {
+    let mut temporary = ctx.reserve_scoped(0, "catia native edge node workspace")?;
     let mut circle_ids = HashMap::new();
     for circle in circles {
-        ctx.insert_hash_map(
-            &mut circle_ids,
-            circle.byte_offset,
-            circle.id.as_str(),
-            "catia_native_edge_circle_ids",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut circle_ids,
+                circle.byte_offset,
+                circle.id.as_str(),
+                "catia_native_edge_circle_ids",
+            )
+        })?;
     }
     let mut frames = HashMap::new();
     for record in records.iter().filter(|record| {
-        record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
+        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x5e
     }) {
-        ctx.insert_hash_map(
-            &mut frames,
-            record.byte_offset(),
-            (record.width, record.flag, record.source_index),
-            "catia_native_edge_frames",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut frames,
+                record.byte_offset(),
+                (record.width(), record.flag(), record.source_index()),
+                "catia_native_edge_frames",
+            )
+        })?;
     }
     let mut owned_nodes = HashMap::new();
-    for owned in crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-        ctx, bytes, records,
-    )? {
-        ctx.insert_hash_map(
-            &mut owned_nodes,
-            owned.node.pos,
-            (owned.owner_pos, owned.allocation_ordinal),
-            "catia_native_owned_edge_nodes",
-        )?;
+    for owned in temporary.with_storage(|| {
+        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+            ctx, bytes, records,
+        )
+    })? {
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut owned_nodes,
+                owned.node.pos,
+                (owned.owner_pos, owned.allocation_ordinal),
+                "catia_native_owned_edge_nodes",
+            )
+        })?;
     }
     let mut compact_endpoints = HashMap::new();
-    for binding in
+    for binding in temporary.with_storage(|| {
         crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
             ctx, bytes, records,
-        )?
-    {
-        ctx.insert_hash_map(
-            &mut compact_endpoints,
-            binding.node.pos,
-            binding.endpoint_records.map(u64_from_index),
-            "catia_native_edge_compact_endpoints",
-        )?;
+        )
+    })? {
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut compact_endpoints,
+                binding.node.pos,
+                binding.endpoint_records.map(u64_from_index),
+                "catia_native_edge_compact_endpoints",
+            )
+        })?;
     }
     let mut use_runs = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
@@ -464,17 +484,18 @@ pub(crate) fn consolidated_edge_nodes(
         let Some(uses) = native_consolidated_edge_uses(&run.uses) else {
             continue;
         };
-        ctx.insert_hash_map(
-            &mut use_runs,
-            run.node.pos,
-            (
-                uses,
-                run.definition
-                    .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition))
-                    .transpose()?,
-            ),
-            "catia_native_edge_use_runs",
-        )?;
+        let definition = run
+            .definition
+            .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition))
+            .transpose()?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut use_runs,
+                run.node.pos,
+                (uses, definition),
+                "catia_native_edge_use_runs",
+            )
+        })?;
     }
     let mut analytic_circles = HashMap::new();
     for run in
@@ -486,31 +507,35 @@ pub(crate) fn consolidated_edge_nodes(
             continue;
         };
         let circle = ctx.copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?;
-        ctx.insert_hash_map(
-            &mut analytic_circles,
-            run.node.pos,
-            CatiaConsolidatedAnalyticCircleBinding {
-                descriptor: run.descriptor.into(),
-                circle,
-            },
-            "catia_native_analytic_edge_bindings",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut analytic_circles,
+                run.node.pos,
+                CatiaConsolidatedAnalyticCircleBinding {
+                    descriptor: run.descriptor.into(),
+                    circle,
+                },
+                "catia_native_analytic_edge_bindings",
+            )
+        })?;
     }
     let mut class25_descriptors = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
         ctx, bytes, records,
     )? {
-        ctx.insert_hash_map(
-            &mut class25_descriptors,
-            run.node.pos,
-            CatiaConsolidatedClass25Descriptor {
-                byte_offset: u64_from_index(run.descriptor.pos),
-                record_id: run.descriptor.record_id,
-                control: run.descriptor.control,
-                values: run.descriptor.values,
-            },
-            "catia_native_class25_edge_descriptors",
-        )?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut class25_descriptors,
+                run.node.pos,
+                CatiaConsolidatedClass25Descriptor {
+                    byte_offset: u64_from_index(run.descriptor.pos),
+                    record_id: run.descriptor.record_id,
+                    control: run.descriptor.control,
+                    values: run.descriptor.values,
+                },
+                "catia_native_class25_edge_descriptors",
+            )
+        })?;
     }
     let mut output = Vec::new();
     for (index, node) in
@@ -727,7 +752,7 @@ pub(crate) fn preview_views(
                 format_args!("catia:outer:preview#{}", views.len()),
                 "catia_native_preview_id",
             )?;
-            let data = ctx.copy_retained_slice(
+            let data = ctx.copy_slice(
                 &segment.data[preview.range.clone()],
                 "catia_native_preview_bytes",
             )?;
@@ -1117,10 +1142,10 @@ pub(crate) fn native_object_graph(
             byte_offset: u64_from_index(record.pos),
             byte_len: u64_from_index(record.total_len),
             lead: record.lead,
-            head: ctx.copy_retained_slice(record.head(), "catia_native_record_head")?,
+            head: ctx.copy_slice(record.head(), "catia_native_record_head")?,
             inline_body: record
                 .inline_body()
-                .map(|bytes| ctx.copy_retained_slice(bytes, "catia_native_record_inline_body"))
+                .map(|bytes| ctx.copy_slice(bytes, "catia_native_record_inline_body"))
                 .transpose()?,
             owner: roles.owner.map(CatiaObjectOwner::from),
             class: roles.class_ref.map(|class_ref| CatiaObjectClass {
@@ -1312,6 +1337,7 @@ mod consolidated_edge_run_limit_tests {
         ];
         let mut collection_refusals = HashSet::new();
         let mut retained_refusals = HashSet::new();
+        let mut scoped_refusals = HashSet::new();
         for bytes in fixtures {
             let native = super::super::CatiaNative::decode(&bytes);
             assert_eq!(native.consolidated_edge_runs.len(), 1);
@@ -1330,6 +1356,9 @@ mod consolidated_edge_run_limit_tests {
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
                     collection_refusals.insert(error.operation);
                 }
+            }
+            let mut limit = 0;
+            for _ in 0..4096 {
                 let result = crate::test_support::with_retained_limit(limit, |ctx| {
                     super::consolidated_edge_runs(
                         ctx,
@@ -1342,6 +1371,32 @@ mod consolidated_edge_run_limit_tests {
                 });
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
                     retained_refusals.insert(error.operation);
+                    assert!(error.used + error.additional > limit);
+                    limit = error.used + error.additional;
+                } else {
+                    assert!(result.is_ok());
+                    break;
+                }
+            }
+            let mut limit = 0;
+            for _ in 0..4096 {
+                let result = crate::test_support::with_materialized_limit(limit, |ctx| {
+                    super::consolidated_edge_runs(
+                        ctx,
+                        &bytes,
+                        &records,
+                        &native.consolidated_pcurves,
+                        &native.consolidated_edge_nodes,
+                        &mut crate::nurbs::LaneRefusals::new(),
+                    )
+                });
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                    scoped_refusals.insert(error.operation);
+                    assert!(error.used + error.additional > limit);
+                    limit = error.used + error.additional;
+                } else {
+                    assert!(result.is_ok());
+                    break;
                 }
             }
         }
@@ -1358,7 +1413,6 @@ mod consolidated_edge_run_limit_tests {
             );
         }
         for operation in [
-            "catia_native_edge_run_pcurve_index_id",
             "catia_native_edge_run_id",
             "catia_native_edge_run_first_pcurve_id",
             "catia_native_edge_run_second_pcurve_id",
@@ -1369,5 +1423,6 @@ mod consolidated_edge_run_limit_tests {
                 "{operation} did not refuse"
             );
         }
+        assert!(scoped_refusals.contains("catia_native_edge_run_pcurve_index_id"));
     }
 }

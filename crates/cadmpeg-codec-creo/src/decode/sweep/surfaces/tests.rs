@@ -251,7 +251,7 @@ fn extrusion_solved_segment_ids_refuse_before_tree_node() {
 
 #[test]
 fn malformed_saved_spline_reports_transfer_loss() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.definitions.push(saved_spline_definition());
     scan.features.section_transforms.push(
         crate::placement::FeatureSectionTransform::new(
@@ -325,7 +325,7 @@ fn numerical_followup_revolution_refuses_skew_line_specialization() {
 
 #[test]
 fn saved_spline_extrusion_refuses_construction_identity_copies() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     let mut definition = saved_spline_definition();
     let Some(crate::feature::definitions::FeatureSavedEntity::Spline(spline)) = definition
         .saved_section

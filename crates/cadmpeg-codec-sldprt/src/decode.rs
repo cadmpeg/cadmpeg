@@ -713,6 +713,7 @@ fn append_design_losses(
         )))?;
     }
 
+    let mut lookup_storage = ctx.reserve_scoped(0, "SLDPRT design parameter lookup storage")?;
     let mut feature_names = HashMap::new();
     for feature in &ir.model.features {
         const OPERATION: &str = "index SLDPRT feature names";
@@ -724,14 +725,15 @@ fn append_design_losses(
             cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
             OPERATION,
         )?;
-        ctx.admit_hash_map_entry(&mut feature_names, &feature.id, OPERATION)?;
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
-            ctx,
-            feature.id.as_str(),
-            OPERATION,
-        )?)
+        lookup_storage.with_storage(|| {
+            ctx.admit_hash_map_entry(&mut feature_names, &feature.id, OPERATION)
+        })?;
+        let id = cadmpeg_ir::features::FeatureId::mint(
+            lookup_storage
+                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
+        )
         .map_err(CodecError::malformed)?;
-        let name = copy_retained_string(ctx, name, OPERATION)?;
+        let name = lookup_storage.with_storage(|| copy_retained_string(ctx, name, OPERATION))?;
         feature_names.insert(id, name);
     }
     let mut global_parameter_owners = HashSet::new();
@@ -746,12 +748,12 @@ fn append_design_losses(
         {
             continue;
         }
-        ctx.reserve_set(&mut global_parameter_owners, 1, OPERATION)?;
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
-            ctx,
-            feature.id.as_str(),
-            OPERATION,
-        )?)
+        lookup_storage
+            .with_storage(|| ctx.reserve_set(&mut global_parameter_owners, 1, OPERATION))?;
+        let id = cadmpeg_ir::features::FeatureId::mint(
+            lookup_storage
+                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
+        )
         .map_err(CodecError::malformed)?;
         global_parameter_owners.insert(id);
     }
@@ -2867,7 +2869,7 @@ fn build_geometry_ir(
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut lanes,
         supplemental_config_lanes.len(),
         "merge SLDPRT feature input lanes",
@@ -3001,7 +3003,7 @@ fn build_geometry_ir(
     stamp_feature_baseline(ctx, &mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut attributes,
         custom_properties.len(),
         "append SLDPRT custom properties",
@@ -3623,7 +3625,7 @@ fn build_geometry_ir(
     )?;
     let remaining_assignments =
         crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model)?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut assigned_tessellations,
         remaining_assignments.len(),
         "merge SLDPRT assigned tessellations",
@@ -3706,7 +3708,7 @@ fn build_geometry_ir(
                 "opaque geometry record {record_id} was not retained"
             )));
         };
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             source.links_mut(),
             links.len(),
             "append SLDPRT opaque geometry links",
@@ -3990,7 +3992,7 @@ fn build_geometry_report(
         ctx.reserve_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut losses,
         decoded.losses.len(),
         "move SLDPRT B-rep losses to report",
@@ -4100,7 +4102,7 @@ fn build_metadata_ir(
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut model_attributes,
         custom_properties.len(),
         "append SLDPRT custom properties",
@@ -4256,7 +4258,7 @@ fn build_metadata_ir(
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+    ctx.reserve_capacity(
         &mut lanes,
         supplemental_config_lanes.len(),
         "merge SLDPRT feature input lanes",
@@ -5175,11 +5177,7 @@ fn assign_configuration_bodies(
                 "merge SLDPRT configuration bodies",
             )?;
             if !merged.contains(&body) {
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                    merged,
-                    1,
-                    "merge SLDPRT configuration bodies",
-                )?;
+                ctx.reserve_capacity(merged, 1, "merge SLDPRT configuration bodies")?;
                 merged.push(body);
             }
         }

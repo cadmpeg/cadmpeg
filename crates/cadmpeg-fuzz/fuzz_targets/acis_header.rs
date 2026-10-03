@@ -16,6 +16,8 @@ fuzz_target!(|data: &[u8]| {
             &ctx, data,
         )));
         std::hint::black_box(cadmpeg_asm::acis_header::record_stream_start(data));
-        std::hint::black_box(cadmpeg_asm::acis_header::solved_record_limit(data));
+        drop(std::hint::black_box(
+            cadmpeg_asm::acis_header::solved_record_limit(&ctx, data),
+        ));
     }
 });

@@ -439,10 +439,15 @@ pub(crate) fn scan<'a>(
         let buf = view.window();
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
-                asm_header::parse(ctx, buf)?.map(|header| KernelFraming::Asm {
-                    solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
-                    header,
-                })
+                match asm_header::parse(ctx, buf)? {
+                    Some(header) => Some(KernelFraming::Asm {
+                        solved_record_limit: asm_header::solved_record_limit_with_header(
+                            ctx, buf, &header,
+                        )?,
+                        header,
+                    }),
+                    None => None,
+                }
             } else {
                 acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
             };
@@ -706,7 +711,12 @@ pub(crate) fn scan<'a>(
             Err(cadmpeg_asm::stream_error::StreamFailure::NotImplemented(error)) => {
                 TextBrepFraming::UnsupportedLength(error)
             }
-            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
+                return Err(error.into())
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
+                return Err(error.into_codec_error())
+            }
         };
         ctx.reserve_map(&mut scan.text_breps, 1, "retain F3D text B-rep framing")?;
         let name = ctx.copy_retained_text(&entry.name, "retain F3D text B-rep name")?;
@@ -894,11 +904,10 @@ pub(crate) fn design_breps<'s>(
 
 /// Names of the text-encoded ASM BREP entries, in archive order.
 ///
-/// These entries stay out of [`ContainerScan::breps`] because that set holds the
-/// streams whose binary ASM header decoded, and the text encoding has no such
-/// header. A caller that reports on geometry must still count them: a document
-/// whose only carrier is text has a carrier that is present and not read, which
-/// is a different finding from a document that declares no carrier.
+/// [`ContainerScan::breps`] holds binary BREP candidate facts. Text streams are
+/// admitted separately into [`ContainerScan::text_breps`]. Carrier presence is
+/// independent of geometry transfer: a text-only document has a carrier even
+/// when its transfer fails.
 pub(crate) fn text_brep_names<'s>(
     scan: &'s ContainerScan<'_>,
 ) -> impl Iterator<Item = &'s str> + 's {
@@ -922,7 +931,6 @@ fn asm_magic_label(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::u64_from_index;
 
     use super::is_f3d_name;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
@@ -985,19 +993,18 @@ mod tests {
 
     #[test]
     fn container_entry_name_refuses_retained_limit() {
-        let mut policy = DecodePolicy::service();
         let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
-        let mut name_bytes = 0_u64;
-        for index in 0..archive.len() {
-            name_bytes += u64_from_index(archive.by_index(index).unwrap().name().len());
-        }
-        policy.limits.max_retained_bytes = name_bytes * 4;
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let Err(error) = super::scan(&ctx, root) else {
-            panic!("entry name must refuse");
-        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain F3D entry name",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                super::scan(&ctx, root).map(|_| ())
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain F3D entry name")
@@ -1082,18 +1089,21 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let scan = super::scan(&ctx, root).unwrap();
-        let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_retained_bytes = u64_from_index(
-            "Design".len()
-                + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
-                + "FusionDesignSegmentType".len()
-                + "Fusion".len(),
+        super::scan(&ctx, root).unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "cache F3D MetaStream name",
+            |cap| {
+                let mut limited_policy = DecodePolicy::service();
+                limited_policy.limits.max_retained_bytes = cap;
+                let (limited, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+                let (unlimited, root) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                let fresh_scan = super::scan(&unlimited, root).unwrap();
+                fresh_scan.parsed_metastream(&limited, name).map(|_| ())
+            },
         );
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
-        let Err(error) = scan.parsed_metastream(&limited, name) else {
-            panic!("MetaStream cache name must refuse");
-        };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "cache F3D MetaStream name")

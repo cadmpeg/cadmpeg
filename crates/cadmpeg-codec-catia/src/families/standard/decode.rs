@@ -2421,7 +2421,7 @@ fn try_decode_standard_population(
         }
     };
     let records = if let Some(selection) = selection {
-        match ctx.copy_retained_slice(&selection.records, "catia_standard_selected_records") {
+        match ctx.copy_slice(&selection.records, "catia_standard_selected_records") {
             Ok(records) => records,
             Err(error) => return Some(Err(error)),
         }
@@ -2480,7 +2480,7 @@ fn try_decode_standard_population(
         count.filter(|count| *count > 0)
     };
     let curve_supports = if let Some(selection) = selection {
-        match ctx.copy_retained_slice(&selection.supports, "catia_standard_selected_supports") {
+        match ctx.copy_slice(&selection.supports, "catia_standard_selected_supports") {
             Ok(supports) => supports,
             Err(error) => return Some(Err(error)),
         }
@@ -3117,7 +3117,7 @@ fn try_decode_standard_population(
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_budget = ctx.work_budget(u64_from_index(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS));
-    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
+    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
         neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Resource)?
             .then_some(())
@@ -4056,8 +4056,14 @@ pub(super) fn standard_object_evidence_from_streams(
     let mut repeated_population_ids = HashSet::new();
     for population in &populations {
         let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
+        let scan_work = u64_from_index(population.len())
+            .checked_mul(4)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_b5_object_frame_scan", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(scan_work, "catia_b5_object_frame_scan")?;
         for frame in crate::families::b5::graph::object_stream_frames(population) {
-            let bytes = ctx.copy_retained_slice(
+            let bytes = ctx.copy_slice(
                 &population[frame.start..frame.end],
                 "catia_standard_population_object_bytes",
             )?;
@@ -5256,6 +5262,7 @@ struct AttachStandardTopologyInputs<
     brep: &'input6 [u8],
     support_override: Option<&'input7 [crate::families::standard::records::StandardCurveSupport]>,
     source: &'input8 [u8],
+    e5_record_range: Option<std::ops::Range<usize>>,
     use_vertex_roster: bool,
     native_edge_faces: &'input9 HashMap<u32, HashSet<u32>>,
     native_edge_supports: &'input10 HashMap<u32, StandardEdgeSupport>,
@@ -5304,6 +5311,7 @@ fn attach_standard_topology(
         brep,
         support_override,
         source,
+        e5_record_range,
         use_vertex_roster,
         native_edge_faces,
         native_edge_supports,
@@ -5336,7 +5344,7 @@ fn attach_standard_topology(
                     Some(edge_count),
                 )
             },
-            |supports| ctx.copy_retained_slice(supports, "catia_topology_support_override"),
+            |supports| ctx.copy_slice(supports, "catia_topology_support_override"),
         )
         .map_err(StandardTopologyError::Resource)?;
     if supports.is_empty() {
@@ -5523,7 +5531,7 @@ fn attach_standard_topology(
                     )
                     .map_err(StandardTopologyError::Resource)?;
                 }
-                ctx.copy_retained_slice(
+                ctx.copy_slice(
                     &incidence_candidates[&faces],
                     "catia_incidence_candidate_copy",
                 )
@@ -5549,7 +5557,7 @@ fn attach_standard_topology(
         None => crate::families::b5::graph::edge_vertex_references(ctx, source)
             .map_err(StandardTopologyError::Resource)?,
     };
-    let e5_topology = match crate::container::e5_record_stream(source) {
+    let e5_topology = match e5_record_range {
         Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
             .map_err(StandardTopologyError::Resource)?,
         None => None,
@@ -5934,7 +5942,7 @@ fn attach_standard_topology(
         };
         let endpoint_completed = match endpoint_closures.as_deref() {
             Some([closure]) => Some(
-                ctx.copy_retained_slice(closure, "catia_repeated_endpoint_completed")
+                ctx.copy_slice(closure, "catia_repeated_endpoint_completed")
                     .map_err(StandardTopologyError::Resource)?,
             ),
             _ => None,
@@ -6579,7 +6587,6 @@ fn attach_standard_topology(
             "catia_standard_circle_anchors",
         )
         .map_err(StandardTopologyError::Resource)?;
-    let mut mesh_search_exhausted = false;
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
         if let Some(pairs) = native_endpoint_pairs.as_ref() {
@@ -6923,11 +6930,9 @@ fn attach_standard_topology(
         } else {
             solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)?
         };
-        Ok(match outcome {
+        Ok(match outcome.require_work(ctx, work_budget)? {
             mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
             mesh_quotient::MeshSolve::Failed(failure) => {
-                mesh_search_exhausted |=
-                    matches!(failure, mesh_quotient::MeshCandidateFailure::Exhausted(_));
                 diagnostics.mesh_failure = Some(failure);
                 None
             }
@@ -6982,9 +6987,16 @@ fn attach_standard_topology(
             .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else {
-        return Err((if mesh_search_exhausted || work_budget.exhausted() {
-            StandardTopologyFailure::TopologySearchExhausted
-        } else if matches!(
+        if work_budget.exhausted() {
+            ctx.charge_work(0, "catia_mesh_topology_work")
+                .map_err(StandardTopologyError::Resource)?;
+            return Err(StandardTopologyError::Resource(ctx.refuse_codec_limit(
+                "catia_mesh_topology_work",
+                0,
+                1,
+            )));
+        }
+        return Err((if matches!(
             diagnostics.mesh_failure,
             Some(mesh_quotient::MeshCandidateFailure::Ambiguous(_))
         ) {
@@ -7013,6 +7025,12 @@ fn attach_standard_topology(
         admission,
     )
     .map_err(StandardTopologyError::Resource)?
+    else {
+        return Err(StandardTopologyFailure::InvalidTopologySolution.into());
+    };
+    let Some(topology) =
+        crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
+            .map_err(StandardTopologyError::Resource)?
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
@@ -7075,7 +7093,7 @@ fn validate_standard_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    topology: &mut crate::families::standard::topology::StandardTopology,
+    topology: &mut crate::families::standard::topology::StandardTopologyDraft,
     point_assignment: &[usize],
     validation: StandardTopologyValidation<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -7174,7 +7192,7 @@ fn standard_face_loops(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
-    topology: &crate::families::standard::topology::StandardTopology,
+    topology: &crate::families::standard::topology::admitted::StandardTopology,
     face_index: usize,
     point_assignment: &[usize],
 ) -> Result<cadmpeg_ir::topology::FaceLoops, CodecError> {
@@ -7184,10 +7202,10 @@ fn standard_face_loops(
     let mut ids = Vec::new();
     ctx.reserve_vec(
         &mut ids,
-        face_topology.boundaries.len(),
+        face_topology.boundaries().len(),
         "catia_standard_face_loop_ids",
     )?;
-    for loop_index in 0..face_topology.boundaries.len() {
+    for loop_index in 0..face_topology.boundaries().len() {
         ids.push(standard_id(
             ctx,
             "loop",
@@ -7220,9 +7238,9 @@ fn standard_face_loops(
         return unspecified();
     };
     let mut rows = Vec::new();
-    for (boundary, id) in face_topology.boundaries.iter().zip(&ids) {
+    for (boundary, id) in face_topology.boundaries().iter().zip(&ids) {
         let mut points = Vec::new();
-        for coedge in &boundary.coedges {
+        for coedge in boundary.coedges() {
             let Some(point) = point_assignment
                 .get(coedge.start_vertex)
                 .and_then(|index| ir.model.points.get(*index))
@@ -7270,7 +7288,7 @@ struct EmitStandardTopologyInputs<
     supports: &'input5 [crate::families::standard::records::StandardCurveSupport],
     edge_vertices: &'input6 [[usize; 2]],
     point_assignment: &'input7 [usize],
-    topology: &'input8 crate::families::standard::topology::StandardTopology,
+    topology: &'input8 crate::families::standard::topology::admitted::StandardTopology,
     native_edge_supports: &'input9 [Option<&'input10 StandardEdgeSupport>],
     limit_curve_bindings: &'input11 [Option<StandardLimitCurveBinding>],
     limit_curves: &'input12 [NurbsCurve],
@@ -7317,6 +7335,14 @@ fn emit_standard_topology(
         refusal,
         admission,
     } = inputs;
+    if topology.vertex_points().len() != ir.model.points.len()
+        || topology.edge_rows().len() != edge_vertices.len()
+        || topology.logical_vertex_count() != point_assignment.len()
+    {
+        return Err(CodecError::malformed(
+            "admitted topology does not match its emission tables",
+        ));
+    }
 
     let mut edge_reversed = Vec::new();
     ctx.reserve_vec(
@@ -7469,7 +7495,7 @@ fn emit_standard_topology(
             face_index,
             point_assignment,
         )?;
-        for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
+        for (loop_index, boundary) in face_topology.boundaries().iter().enumerate() {
             let loop_id = standard_id(
                 ctx,
                 "loop",
@@ -7478,7 +7504,7 @@ fn emit_standard_topology(
                 "catia_standard_loop_identity",
             )?;
             let mut vertices = Vec::new();
-            for edge_use in &boundary.coedges {
+            for edge_use in boundary.coedges() {
                 let point = point_assignment[edge_use.end_vertex];
                 let vertex = standard_id(
                     ctx,
@@ -7517,7 +7543,7 @@ fn emit_standard_topology(
                 .map_err(cadmpeg_core::CodecError::from)?
                 .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();
-            for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
+            for (coedge_index, edge_use) in boundary.coedges().iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
                 let start = ir.model.points[point_assignment[logical_vertices[0]]]
@@ -8038,7 +8064,7 @@ fn resolve_standard_endpoint_pairs(
         } else {
             for edge in edges {
                 resolved[edge] =
-                    ctx.copy_retained_slice(&pairs, "catia_standard_line_pair_copy")?;
+                    ctx.copy_slice(&pairs, "catia_standard_line_pair_copy")?;
             }
         }
     }
@@ -8371,7 +8397,7 @@ fn merge_native_endpoint_evidence(
             // relation. Graph coordinates are reconstructed from independent
             // object records and only supply identities absent from the roster.
             if roster.iter().all(Option::is_some) {
-                return Ok(Ok(Some(ctx.copy_retained_slice(
+                return Ok(Ok(Some(ctx.copy_slice(
                     roster,
                     "catia_native_roster_evidence_copy",
                 )?)));
@@ -8395,7 +8421,7 @@ fn merge_native_endpoint_evidence(
             Ok(Ok(Some(merged)))
         }
         (Some(pairs), None) | (None, Some(pairs)) => Ok(Ok(Some(
-            ctx.copy_retained_slice(pairs, "catia_native_endpoint_evidence_copy")?,
+            ctx.copy_slice(pairs, "catia_native_endpoint_evidence_copy")?,
         ))),
         (None, None) => Ok(Ok(None)),
     }

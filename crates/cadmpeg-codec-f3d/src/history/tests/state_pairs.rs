@@ -121,7 +121,11 @@ fn scope_history_binding_refuses_collection_limit() {
 
 #[test]
 fn scope_history_identity_refuses_retained_limit() {
-    let error = scoped_history_with_limits(u64::MAX, 0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D bound scope identity",
+        |cap| scoped_history_with_limits(u64::MAX, cap).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D bound scope identity")
@@ -261,8 +265,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         200,
     );
     let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-        id: format!("{stream}:design-body-binding#150"),
-        stream: stream.into(),
+        id: format!("{stream}:design-body-binding#0"),
+        stream: "Design/BulkStream.dat".into(),
         pair_count: 1,
         pair_ordinal: 0,
         asm_body_key: 1,

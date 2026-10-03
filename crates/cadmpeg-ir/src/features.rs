@@ -2143,7 +2143,7 @@ impl FeatureContent {
                 }
             }
         }
-        ctx.reserve_retained_vec_limit(&mut self.0, 1, operation)?;
+        ctx.reserve_vec_limit(&mut self.0, 1, operation)?;
         self.0.push(value);
         Ok(())
     }
@@ -2155,7 +2155,7 @@ impl FeatureContent {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_retained_capacity_limit(&mut self.0, additional, operation)
+        ctx.reserve_capacity_limit(&mut self.0, additional, operation)
             .map_err(Into::into)
     }
 
@@ -6743,7 +6743,7 @@ impl<T> DistinctMembers<T> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_retained_capacity_limit(&mut self.0, additional, operation)
+        ctx.reserve_capacity_limit(&mut self.0, additional, operation)
             .map_err(Into::into)
     }
 

@@ -92,11 +92,17 @@ fn brep_face_loop_ids_refuse_collection_limit() {
 
 #[test]
 fn brep_loop_identities_refuse_retained_limit() {
-    let [face, shell, ..] = fixture_lengths();
     assert_refusal(
-        &references_result(16, face + shell)
-            .err()
-            .expect("loop ID refused"),
+        &references_result(
+            16,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo B-rep loop identities"),
+                |cap| references_result(16, cap),
+            ),
+        )
+        .err()
+        .expect("loop ID refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep loop identities",
     );
@@ -104,11 +110,17 @@ fn brep_loop_identities_refuse_retained_limit() {
 
 #[test]
 fn brep_outer_loop_id_copy_refuses_retained_limit() {
-    let [face, shell, outer, inner] = fixture_lengths();
     assert_refusal(
-        &references_result(16, face + shell + outer + inner)
-            .err()
-            .expect("outer copy refused"),
+        &references_result(
+            16,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo B-rep outer loop ID copy"),
+                |cap| references_result(16, cap),
+            ),
+        )
+        .err()
+        .expect("outer copy refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep outer loop ID copy",
     );
@@ -127,11 +139,17 @@ fn brep_inner_loop_ids_refuse_collection_limit() {
 
 #[test]
 fn brep_inner_loop_id_copies_refuse_retained_limit() {
-    let [face, shell, outer, inner] = fixture_lengths();
     assert_refusal(
-        &references_result(16, face + shell + outer * 2 + inner)
-            .err()
-            .expect("inner copy refused"),
+        &references_result(
+            16,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo B-rep inner loop ID copies"),
+                |cap| references_result(16, cap),
+            ),
+        )
+        .err()
+        .expect("inner copy refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep inner loop ID copies",
     );

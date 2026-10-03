@@ -228,12 +228,22 @@ fn class_outcome_label_refuses_retained_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let retained_record_bytes =
         u64::try_from(scan.objects[0].range().len()).expect("bounded point-cloud fixture");
-    let error = with_transaction_limits(&scan, 6, Some(retained_record_bytes), None, |expand| {
-        let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .class_outcomes(expand.ctx())
-            .expect_err("class label exceeds retained record bytes")
-    });
+    let error = with_transaction_limits(
+        &scan,
+        6,
+        Some(
+            retained_record_bytes
+                + u64::try_from(4 * std::mem::size_of::<cadmpeg_ir::UnknownRecord>())
+                    .expect("unknown slots"),
+        ),
+        None,
+        |expand| {
+            let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+            context
+                .class_outcomes(expand.ctx())
+                .expect_err("class label exceeds retained record bytes")
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.operation == "Rhino class outcome label")
@@ -301,10 +311,16 @@ fn source_association_refuses_retained_copy_and_path_limits() {
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino source association instance path"
     ));
-    let refusal = with_transaction_limits(&scan, 1, Some(36), None, |expand| {
-        source_association(expand.ctx(), identity, &path, None, None)
-            .expect_err("instance ID exceeds object UUID-only retained budget")
-    });
+    let refusal = with_transaction_limits(
+        &scan,
+        1,
+        Some(36 + u64::try_from(std::mem::size_of::<String>()).expect("path slot")),
+        None,
+        |expand| {
+            source_association(expand.ctx(), identity, &path, None, None)
+                .expect_err("instance ID exceeds object UUID and vector-slot budget")
+        },
+    );
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)

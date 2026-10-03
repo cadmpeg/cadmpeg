@@ -598,6 +598,7 @@ pub(crate) fn decode_round_edge_coordinate(
 ) -> Option<(f64, usize)> {
     let prefix = *data.get(offset)?;
     if (0x4b..=0xa3).contains(&prefix) {
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         let byte_1 = prefix.wrapping_add(0x75);
         let byte_0: u8 = if byte_1 >= 0x80 { 0x3f } else { 0x40 };
         return ieee7_dict(data, offset, u16::from(byte_0) << 8 | u16::from(byte_1));
@@ -2292,6 +2293,7 @@ pub(crate) fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, u
     let (byte_0, byte_1) = if prefix == 0xb7 {
         (0x3f, 0xe4)
     } else if (0x5b..=0xa3).contains(&prefix) {
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         let byte_1 = prefix.wrapping_add(0x75);
         (if byte_1 >= 0x80 { 0x3f } else { 0x40 }, byte_1)
     } else {
@@ -2686,12 +2688,29 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = b"double_xar\0\xf8\x02\x46\x08\x00\x00\x00\x00\x00\x00\xe0";
         assert_eq!(
-            double_xar_with_limits(bytes, 3, 8)
-                .expect("literal admitted")
-                .len(),
+            double_xar_with_limits(
+                bytes,
+                3,
+                crate::test_support::allocation_limit_at(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    None,
+                    |cap| double_xar_with_limits(bytes, u64::MAX, cap)
+                )
+            )
+            .expect("literal admitted")
+            .len(),
             1
         );
-        let error = double_xar_with_limits(bytes, 3, 7).expect_err("literal bytes need admission");
+        let error = double_xar_with_limits(
+            bytes,
+            3,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo double_xar literal bytes"),
+                |cap| double_xar_with_limits(bytes, 3, cap),
+            ),
+        )
+        .expect_err("literal bytes need admission");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes

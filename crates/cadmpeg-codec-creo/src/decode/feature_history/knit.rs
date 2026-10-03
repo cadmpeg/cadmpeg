@@ -124,6 +124,7 @@ fn knit_operand_entity_ids(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<Option<(Vec<u32>, &'static str)>, CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     if let Some(ids) = surface_merge_quilt_ids(
         &scan.features.affected_ids,
         &scan.features.surface_merge_replay_affected_ids,
@@ -135,7 +136,9 @@ fn knit_operand_entity_ids(
             if seen.contains(&id) {
                 return Ok(None);
             }
-            ctx.insert_btree_set(&mut seen, id, "creo knit quilt identity nodes")?;
+            local_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut seen, id, "creo knit quilt identity nodes")
+            })?;
             ctx.reserve_vec(&mut copied, 1, "creo knit quilt IDs")?;
             copied.push(id);
         }
@@ -319,6 +322,7 @@ pub(in super::super) fn feature_surface_transitions(
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Result<Option<Vec<(u32, u32)>>, CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let outputs = tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
@@ -369,16 +373,20 @@ pub(in super::super) fn feature_surface_transitions(
         {
             return Ok(None);
         }
-        ctx.insert_btree_set(
-            &mut output_ids,
-            output.entity_id,
-            "creo transition output identity nodes",
-        )?;
-        ctx.insert_btree_set(
-            &mut intermediate_ids,
-            intermediate_id,
-            "creo transition intermediate identity nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut output_ids,
+                output.entity_id,
+                "creo transition output identity nodes",
+            )
+        })?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut intermediate_ids,
+                intermediate_id,
+                "creo transition intermediate identity nodes",
+            )
+        })?;
         let mut matches = output_table.entries.iter().filter(|predecessor| {
             predecessor.class_id() == 214
                 && predecessor.entity_id == intermediate_id
@@ -401,11 +409,13 @@ pub(in super::super) fn feature_surface_transitions(
         {
             return Ok(None);
         }
-        ctx.insert_btree_set(
-            &mut source_ids,
-            source_id,
-            "creo transition source identity nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut source_ids,
+                source_id,
+                "creo transition source identity nodes",
+            )
+        })?;
         ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
         transitions.push((source_id, output.entity_id));
     }
@@ -510,6 +520,7 @@ pub(in super::super) fn feature_result_surface_ids(
     rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut surface_ids = Vec::new();
     let mut seen = BTreeSet::new();
     for table in tables.iter().filter(|table| table.feature_id == feature_id) {
@@ -520,11 +531,13 @@ pub(in super::super) fn feature_result_surface_ids(
             if row.feature_id != feature_id || seen.contains(&surface_id) {
                 return Ok(None);
             }
-            ctx.insert_btree_set(
-                &mut seen,
-                surface_id,
-                "creo feature result surface identity nodes",
-            )?;
+            local_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut seen,
+                    surface_id,
+                    "creo feature result surface identity nodes",
+                )
+            })?;
             ctx.reserve_vec(&mut surface_ids, 1, "creo feature result surface IDs")?;
             surface_ids.push(surface_id);
         }
@@ -537,6 +550,7 @@ pub(super) fn feature_result_surface_ids_by_feature(
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut unique_features = BTreeSet::new();
     let mut by_feature = BTreeMap::new();
     for table in tables {
@@ -544,11 +558,13 @@ pub(super) fn feature_result_surface_ids_by_feature(
         if unique_features.contains(&feature_id) {
             continue;
         }
-        ctx.insert_btree_set(
-            &mut unique_features,
-            feature_id,
-            "creo feature result feature identity nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut unique_features,
+                feature_id,
+                "creo feature result feature identity nodes",
+            )
+        })?;
         if let Some(surface_ids) = feature_result_surface_ids(ctx, tables, rows, feature_id)? {
             ctx.insert_btree_map(
                 &mut by_feature,

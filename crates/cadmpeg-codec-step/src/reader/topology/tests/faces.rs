@@ -882,25 +882,26 @@ fn face_name_refuses_retained_limit() {
         crate::test_support::with_service_context(named.as_bytes(), crate::parse::parse_inner)
             .expect("valid named-face exchange");
     let arena = DecodeArena::new();
-    let refused = (0..4096).any(|limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(named.as_bytes(), &arena, &policy)
-            .expect("root fits retained policy");
-        let result = (|| {
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
-            let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
-            super::super::decode(&exchange, &mut ir, &index, &ctx)?;
-            Ok::<(), CodecError>(())
-        })();
-        matches!(
-            result,
-            Err(CodecError::ResourceLimit(refusal))
+    let refused = {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "step_string_text",
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(named.as_bytes(), &arena, &policy)
+                    .expect("root fits retained policy");
+                let mut ir = cadmpeg_ir::document::CadIr::empty();
+                crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
+                let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
+                super::super::decode(&exchange, &mut ir, &index, &ctx)?;
+                Ok::<(), CodecError>(())
+            },
+        );
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "step_string_text"
-        )
-    });
+                    && refusal.operation == "step_string_text")
+    };
     assert!(refused, "no retained limit refused the advanced face name");
 }
 

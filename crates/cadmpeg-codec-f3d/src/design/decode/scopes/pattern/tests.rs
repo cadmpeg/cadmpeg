@@ -1504,6 +1504,7 @@ fn circular_pattern_historical_wrappers_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(super::exact_legacy_circular_pattern_axis(
         &ctx, &bytes, &records, 0, 129, 50, &scope),

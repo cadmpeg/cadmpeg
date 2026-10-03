@@ -7,7 +7,7 @@ use crate::records::feature::path_features::DesignLoftConstruction;
 use crate::records::feature::scope::DesignScopePayload;
 use crate::records::topology::construction::DesignConstructionOperandRole;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftSection};
 
@@ -66,23 +66,13 @@ fn assert_loft_limit_with_roles(
             if sections.len() == 2
                 && sections.iter().any(|section| matches!(section, LoftSection::Point(_))) == has_point
     ));
-    for limit in 0..256 {
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported Loft test resource dimension"),
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(project(&ctx, &scope, &groups),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation
-        ) {
-            return;
-        }
-    }
-    panic!("no Loft refusal at {operation}");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project(ctx, &scope, &groups)
+    });
+    assert!(
+        matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation)
+    );
 }
 
 #[test]

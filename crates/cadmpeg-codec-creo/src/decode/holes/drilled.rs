@@ -991,7 +991,7 @@ mod resource_tests {
     fn axis_placement_with_limit(
         limit: u64,
     ) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 1,
             kind: crate::surface::SurfaceKind::Cylinder,

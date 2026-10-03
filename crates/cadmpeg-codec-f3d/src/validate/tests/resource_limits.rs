@@ -164,7 +164,25 @@ fn validation_sketch_owner_finding_refuses_collection_limit() {
 fn validation_sketch_owner_finding_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D sketch owner finding ID",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut findings = Vec::new();
+            super::super::emit_sketch_relation_finding(
+                &ctx,
+                &mut findings,
+                "f3d:native:sketch#1",
+                "conflicting owner",
+            )
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
     let error = super::super::emit_sketch_relation_finding(
@@ -261,7 +279,20 @@ fn native_duplicate_configuration_id_refuses_retained_limit() {
     native.design_configurations.push(configuration);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D configuration entry ID",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, &decode).unwrap();
+            super::super::validate_configurations(&ctx, &mut Vec::new())
+        },
+    ) {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+        error => panic!("unexpected refusal: {error:?}"),
+    };
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let ctx = super::super::Ctx::new(&ir, &native, &decode).unwrap();
     let error = super::super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
@@ -391,7 +422,21 @@ fn native_parameter_validator_entity_refuses_retained_limit() {
         native.design_parameters.push(parameter);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain F3D parameter finding entity",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                super::super::validate_parameters(&ctx, &mut Vec::new())
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;

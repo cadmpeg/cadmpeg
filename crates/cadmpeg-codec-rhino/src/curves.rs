@@ -1482,7 +1482,7 @@ fn read_cloud(
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
     let point_count = crate::wire::element_count(reader, 24)?;
-    let mut points = ctx.retained_vec(point_count, "Rhino point-cloud points")?;
+    let mut points = ctx.collection_vec(point_count, "Rhino point-cloud points")?;
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(

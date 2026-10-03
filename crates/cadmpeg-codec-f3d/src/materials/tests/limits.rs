@@ -264,11 +264,17 @@ fn schema_texture_key_refuses_retained_limit() {
     let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let path = "textures/a.png";
     let record = texture_record(guid, path);
-    let already_retained = path.len() + guid.len() + "UnifiedBitmapSchema".len();
-    let error = schema_appearance_error(
-        &[record],
-        u64::MAX,
-        u64::try_from(already_retained).unwrap(),
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D texture asset key",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(schema_appearance_error(
+                std::slice::from_ref(&record),
+                u64::MAX,
+                cap,
+            ))
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

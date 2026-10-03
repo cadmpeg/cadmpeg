@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::u64_from_index;
 
 use super::graph_ops::AdjacencyRow;
 use super::graph_ops::{collect_brep_references, insert_brep_adjacency};
@@ -371,14 +370,17 @@ fn brep_replacement_index_refuses_collection_limit() {
 
 #[test]
 fn brep_remapped_id_refuses_retained_limit() {
-    let mut brep = one_body_brep();
-    let original = "f3d:brep:entity#1";
-    let replacement = format!("f3d:brep/source/{}", original.strip_prefix("f3d:").unwrap());
-    let before_remap = original.len() + "f3d:".len() + replacement.len();
-    let error = with_limits(u64::MAX, u64_from_index(before_remap), |ctx| {
-        brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
-            .unwrap_err()
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D BREP remapped ID",
+        |cap| {
+            let mut brep = one_body_brep();
+            Err::<(), cadmpeg_core::CodecError>(with_limits(u64::MAX, cap, |ctx| {
+                brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
+                    .unwrap_err()
+            }))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "identity rewrite sequence")
@@ -1018,3 +1020,40 @@ fn brep_append_refuses_statistic_index_limit() {
 }
 
 mod work;
+
+#[test]
+fn fusion_attribute_family_scan_preserves_work_refusal() {
+    let attribute = SourceAttribute {
+        id: "f3d:brep:attribute#1".try_into().unwrap(),
+        target: AttributeTarget::Document,
+        name: "foreign".into(),
+        values: vec![AttributeValue::String("foreign payload".repeat(32))],
+    };
+    for family in [
+        "sketch_attrib_def",
+        "generic_tag_attrib_def",
+        "Timestamp_attrib_def",
+    ] {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let error = super::attribute_family(ctx, &attribute, family).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "compare Fusion attribute family"
+                    && ctx.resource_refusal() == Some(limit))
+            );
+        });
+    }
+    let mut asm = AsmBrep::default();
+    asm.attributes.push(attribute);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let error = super::Brep::from_asm(ctx, asm).err().expect("scan refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan Fusion attribute family" && ctx.resource_refusal() == Some(limit))
+        );
+    });
+}

@@ -25,7 +25,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
-use cadmpeg_container::compression::inflate_zlib_exact;
+use cadmpeg_container::compression::inflate_zlib_member_owned;
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -112,13 +112,20 @@ fn inflate_display_jt(
     ctx: &DecodeContext<'_>,
     member: View<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let view = match inflate_zlib_exact(ctx, member) {
-        Ok(view) => view,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
-    ctx.copy_retained(view.window(), "retain inflated DisplayJT payload")
-        .map(Some)
+    let (buffer, consumed) =
+        match inflate_zlib_member_owned(ctx, member, cadmpeg_core::decode::ExpandSpec::Unknown) {
+            Ok(output) => output,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(None),
+        };
+    if consumed != member.window().len() {
+        return Ok(None);
+    }
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(buffer.capacity()),
+        "retain inflated DisplayJT payload",
+    )?;
+    Ok(Some(buffer))
 }
 
 /// Outer index of the embedded JT display-model stream.
@@ -161,7 +168,7 @@ impl DisplayJtIndex {
         source_offset: u64,
     ) -> Result<Self, &'static str> {
         u32::try_from(rows.len()).map_err(|_| "rows: count exceeds u32")?;
-        let rows = NonEmpty::from_vec(rows).ok_or("rows: at least one row is required")?;
+        let rows = NonEmpty::from_admitted_vec(rows).ok_or("rows: at least one row is required")?;
         Ok(Self {
             id,
             version,
@@ -2309,7 +2316,7 @@ fn parse_jt_element_sequence<'a>(
         let Some(body) = element.get(21..) else {
             return Ok(None);
         };
-        ctx.reserve_retained_vec(&mut elements, 1, "store DisplayJT element")?;
+        ctx.reserve_vec(&mut elements, 1, "store DisplayJT element")?;
         elements.push(ParsedJtElement {
             offset: cursor,
             object_type_id,
@@ -2478,7 +2485,7 @@ fn jt9_topology_high_degree_lane_count_inner(
     Ok((match_count == 1).then_some(matched_lane_count))
 }
 
-fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, Vec<u32>, &[u8])> {
+fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, &[u8], &[u8])> {
     let (version, flags_offset, count_offset, attributes_offset): (u16, usize, usize, usize) =
         if format_major < 10 {
             (View::u16_le_at(body, 0)?, 2, 6, 10)
@@ -2489,132 +2496,14 @@ fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, 
     let attribute_count = View::u32_le_at(body, count_offset)?;
     let mut view = View::over_retained(body);
     view.seek(attributes_offset)?;
-    let attribute_object_ids = view.read_counted(u64::from(attribute_count), 4, View::u32_le)?;
+    let count = view.counted(u64::from(attribute_count), 4)?.get();
+    let attribute_object_ids = view.take(count.checked_mul(4)?)?;
     Some((
         version,
         flags,
         attribute_object_ids,
         body.get(view.position()..)?,
     ))
-}
-
-type AdmittedJtTail<'a, 'ctx> = Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>;
-
-#[derive(Debug)]
-enum JtOptionalReservation<'a> {
-    Invalid,
-    Admitted(ScopedReservation<'a>),
-}
-
-fn admit_jt_counted_u32<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    bytes: &'a [u8],
-    count_offset: usize,
-    values_offset: usize,
-    operation: &'static str,
-    retained: bool,
-) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
-    let Some(count) = View::u32_le_at(bytes, count_offset) else {
-        return Ok(None);
-    };
-    let Some(byte_len) = usize::try_from(count)
-        .ok()
-        .and_then(|count| count.checked_mul(4))
-    else {
-        return Ok(None);
-    };
-    let Some(end) = values_offset.checked_add(byte_len) else {
-        return Ok(None);
-    };
-    let Some(tail) = bytes.get(end..) else {
-        return Ok(None);
-    };
-    ctx.charge_collection_items(u64::from(count), operation)?;
-    let reservation = if retained {
-        ctx.charge_retained(u64::from(count) * 4, operation)?;
-        None
-    } else {
-        Some(ctx.reserve_scoped(u64::from(count) * 4, operation)?)
-    };
-    Ok(Some((tail, reservation)))
-}
-
-fn admit_jt_base_body<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    body: &'a [u8],
-    major: u16,
-    retained: bool,
-) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
-    let (count_offset, values_offset) = if major < 10 { (6, 10) } else { (5, 9) };
-    admit_jt_counted_u32(
-        ctx,
-        body,
-        count_offset,
-        values_offset,
-        "decode DisplayJT base node attributes",
-        retained,
-    )
-}
-
-fn admit_jt_group_body<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    body: &'a [u8],
-) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
-    let Some((family, base_reservation)) = admit_jt_base_body(ctx, body, 9, false)? else {
-        return Ok(None);
-    };
-    let Some((family, _)) =
-        admit_jt_counted_u32(ctx, family, 2, 6, "decode DisplayJT group children", true)?
-    else {
-        return Ok(None);
-    };
-    Ok(Some((family, base_reservation)))
-}
-
-fn jt_f32_vector_tail(bytes: &[u8]) -> Option<(&[u8], u64)> {
-    let count = View::u32_le_at(bytes, 0)?;
-    let byte_len = usize::try_from(count).ok()?.checked_mul(4)?;
-    let end = 4usize.checked_add(byte_len)?;
-    Some((bytes.get(end..)?, u64::from(count)))
-}
-
-fn admit_jt_range_vectors<'a>(
-    ctx: &'a DecodeContext<'_>,
-    family: &[u8],
-) -> Result<JtOptionalReservation<'a>, CodecError> {
-    let Some(first) = family.get(2..) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some((after_first, first_count)) = jt_f32_vector_tail(first) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some(second) = after_first.get(6..) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let Some((_, second_count)) = jt_f32_vector_tail(second) else {
-        return Ok(JtOptionalReservation::Invalid);
-    };
-    let total = first_count
-        .checked_add(second_count)
-        .ok_or_else(|| ctx.refuse_codec_limit("decode DisplayJT range values", 0, u64::MAX))?;
-    ctx.charge_work(total, "decode DisplayJT range values")?;
-    ctx.charge_collection_items(
-        total
-            .checked_mul(2)
-            .ok_or_else(|| ctx.refuse_codec_limit("decode DisplayJT range values", 0, u64::MAX))?,
-        "decode DisplayJT range values",
-    )?;
-    ctx.charge_retained(
-        total
-            .checked_mul(4)
-            .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT range values", 0, u64::MAX))?,
-        "retain DisplayJT range values",
-    )?;
-    let reservation = ctx.reserve_scoped(
-        first_count.max(second_count) * 4,
-        "decode DisplayJT range values",
-    )?;
-    Ok(JtOptionalReservation::Admitted(reservation))
 }
 
 fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
@@ -2729,15 +2618,32 @@ struct ParsedJtPartitionNode {
     bounds: DisplayJtPartitionBounds,
 }
 
-fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+fn read_jt_object_ids(
+    ctx: &DecodeContext<'_>,
+    encoded: &[u8],
+    operation: &'static str,
+) -> Result<Vec<u32>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(encoded.len()),
+        operation,
+    )?;
+    ctx.try_collect_retained_with(
+        encoded.chunks_exact(4),
+        operation,
+        |bytes| -> Result<u32, CodecError> { Ok(View::over_retained(bytes).req_u32_le()?) },
+    )
+}
+
+fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, &[u8], &[u8])> {
     let mut view = View::over_retained(bytes);
     let version = view.u16_le()?;
     let count = view.u32_le()?;
-    let children = view.read_counted(u64::from(count), 4, View::u32_le)?;
+    let count = view.counted(u64::from(count), 4)?.get();
+    let children = view.take(count.checked_mul(4)?)?;
     Some((version, children, bytes.get(view.position()..)?))
 }
 
-fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, &[u8], &[u8])> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     parse_jt9_group_data(family)
 }
@@ -2748,7 +2654,12 @@ fn parse_jt9_partition_node_body(
 ) -> Result<Option<ParsedJtPartitionNode>, CodecError> {
     let parsed = (|| {
         let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-        let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
+        let (group_version, child_bytes, family) = parse_jt9_group_data(family)?;
+        let child_object_ids =
+            match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
         let mut view = View::over_retained(family);
         let partition_flags = view.u32_le()?;
         if partition_flags & !1 != 0 {
@@ -2841,46 +2752,76 @@ struct ParsedJtRangeLodNode {
     center: [FiniteBinary32; 3],
 }
 
-fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<FiniteBinary32>, &[u8])> {
-    let mut view = View::over_retained(bytes);
-    let count = view.u32_le()?;
-    let values = view.read_counted(u64::from(count), 4, View::f32_le)?;
-    let values = values
-        .into_iter()
-        .map(FiniteBinary32::new)
-        .collect::<Option<Vec<_>>>()?;
-    Some((values, bytes.get(view.position()..)?))
+fn parse_jt_f32_vector(
+    ctx: &DecodeContext<'_>,
+    view: &mut View<'_>,
+) -> Result<Option<Vec<FiniteBinary32>>, CodecError> {
+    (|| {
+        let count = view.u32_le()?;
+        let count = view.counted(u64::from(count), 4)?.get();
+        if let Err(error) = ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "decode DisplayJT range values",
+        ) {
+            return Some(Err(error));
+        }
+        let mut values = match ctx.collection_vec(count, "decode DisplayJT range values") {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
+        for _ in 0..count {
+            values.push(FiniteBinary32::new(view.f32_le()?)?);
+        }
+        Some(Ok(values))
+    })()
+    .transpose()
 }
 
-fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
-    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    let (group_version, child_object_ids, mut family) = parse_jt9_group_data(family)?;
-    let lod_version = View::u16_le_at(family, 0)?;
-    family = &family[2..];
-    let (reserved_values, remaining) = parse_jt_f32_vector(family)?;
-    family = remaining;
-    let reserved_value = View::i32_le_at(family, 0)?;
-    let range_version = View::u16_le_at(family, 4)?;
-    let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
-    let range_limits = JtRangeLimits::from_finite(range_limits).ok()?;
-    let center = [
-        FiniteBinary32::new(View::f32_le_at(remaining, 0)?)?,
-        FiniteBinary32::new(View::f32_le_at(remaining, 4)?)?,
-        FiniteBinary32::new(View::f32_le_at(remaining, 8)?)?,
-    ];
-    if remaining.len() != 12 {
-        return None;
-    }
-    Some(ParsedJtRangeLodNode {
-        group_version,
-        child_object_ids,
-        lod_version,
-        reserved_values,
-        reserved_value,
-        range_version,
-        range_limits,
-        center,
-    })
+fn parse_jt9_range_lod_node_body(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+) -> Result<Option<ParsedJtRangeLodNode>, CodecError> {
+    (|| {
+        let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+        let (group_version, child_bytes, family) = parse_jt9_group_data(family)?;
+        let child_object_ids =
+            match read_jt_object_ids(ctx, child_bytes, "decode DisplayJT group children") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+        let mut view = View::over_retained(family);
+        let lod_version = view.u16_le()?;
+        let reserved_values = match parse_jt_f32_vector(ctx, &mut view) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error)),
+        };
+        let reserved_value = view.i32_le()?;
+        let range_version = view.u16_le()?;
+        let range_limits = match parse_jt_f32_vector(ctx, &mut view) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error)),
+        };
+        let range_limits = JtRangeLimits::from_finite(range_limits).ok()?;
+        let center = [
+            FiniteBinary32::new(view.f32_le()?)?,
+            FiniteBinary32::new(view.f32_le()?)?,
+            FiniteBinary32::new(view.f32_le()?)?,
+        ];
+        if !view.is_empty() {
+            return None;
+        }
+        Some(Ok(ParsedJtRangeLodNode {
+            group_version,
+            child_object_ids,
+            lod_version,
+            reserved_values,
+            reserved_value,
+            range_version,
+            range_limits,
+            center,
+        }))
+    })()
+    .transpose()
 }
 
 fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, JtTransformMatrix)> {
@@ -3031,7 +2972,7 @@ pub(super) fn display_jt_indices(
             let Some((source_offset, byte_len)) = entry.file_span() else {
                 return Ok(None);
             };
-            let Some(payload) = container.bounded_entry_bytes(source_offset, byte_len) else {
+            let Some(payload) = container.bounded_entry_bytes(ctx, source_offset, byte_len)? else {
                 return Ok(None);
             };
             let (Some(version), Some(declared_count)) =
@@ -3054,23 +2995,9 @@ pub(super) fn display_jt_indices(
             if row_count == 0 {
                 return Ok(None);
             }
-            let row_size = u64::try_from(std::mem::size_of::<DisplayJtIndexRow>())
-                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX))?;
             ctx.charge_collection_items(u64::from(declared_count), "admit DisplayJT index rows")?;
-            ctx.charge_retained(
-                u64::from(declared_count)
-                    .checked_mul(row_size)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
-                    })?,
-                "retain DisplayJT index rows",
-            )?;
             let mut rows = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                &mut rows,
-                row_count,
-                "allocate DisplayJT index rows",
-            )?;
+            ctx.reserve_capacity(&mut rows, row_count, "retain DisplayJT index rows")?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
@@ -3145,7 +3072,7 @@ pub(super) fn display_jt_indices(
             .ok())
         })()?;
         if let Some(index) = parsed {
-            ctx.reserve_retained_vec(&mut indices, 1, "admit DisplayJT index")?;
+            ctx.reserve_vec(&mut indices, 1, "admit DisplayJT index")?;
             indices.push(index);
         }
     }
@@ -3171,7 +3098,8 @@ pub(super) fn display_jt_documents(
     let Some((stream_source_offset, stream_byte_len)) = entry.file_span() else {
         return Ok(Vec::new());
     };
-    let Some(stream) = container.bounded_entry_bytes(stream_source_offset, stream_byte_len) else {
+    let Some(stream) = container.bounded_entry_bytes(ctx, stream_source_offset, stream_byte_len)?
+    else {
         return Ok(Vec::new());
     };
     let [index] = indices else {
@@ -3244,7 +3172,7 @@ pub(super) fn display_jt_documents(
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
         ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
-        let mut toc_entries = ctx.retained_vec(toc_count_usize, "admit DisplayJT toc entries")?;
+        let mut toc_entries = ctx.collection_vec(toc_count_usize, "admit DisplayJT toc entries")?;
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
@@ -3305,7 +3233,7 @@ pub(super) fn display_jt_documents(
             cadmpeg_core::decode::u64_from_index(row.id.len()),
             "retain DisplayJT document index reference",
         )?;
-        ctx.reserve_retained_vec(&mut documents, 1, "admit DisplayJT document")?;
+        ctx.reserve_vec(&mut documents, 1, "admit DisplayJT document")?;
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
@@ -3323,7 +3251,7 @@ pub(super) fn display_jt_documents(
 
 /// Decode every segment declared by complete embedded JT documents.
 pub(super) fn display_jt_segments(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     documents: &[DisplayJtDocument],
 ) -> Result<Vec<DisplayJtSegment>, CodecError> {
@@ -3333,8 +3261,11 @@ pub(super) fn display_jt_segments(
             .id
             .split_once('#')
             .map_or(document.id.as_str(), |(_, key)| key);
-        let Some(bytes) =
-            container.bounded_entry_bytes(document.source_offset, document.physical_byte_len)
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            document.source_offset,
+            document.physical_byte_len,
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -3400,18 +3331,21 @@ pub(super) fn display_jt_segments(
                     .and_then(|start| {
                         start
                             .checked_add(compressed.len())
-                            .and_then(|end| budget.1.child(start, end))
+                            .and_then(|end| container.data.view().child(start, end))
                     })
                 else {
                     return Ok(Vec::new());
                 };
-                let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+                let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+                let Some(inflated) =
+                    inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+                else {
                     return Ok(Vec::new());
                 };
                 Some(DisplayJtCompression {
                     envelope,
                     inflated_sha256: Sha256Digest::digest_for_decode(
-                        budget.0,
+                        ctx,
                         &inflated,
                         "retain DisplayJT hash",
                     )?,
@@ -3419,7 +3353,6 @@ pub(super) fn display_jt_segments(
             } else {
                 None
             };
-            let ctx = budget.0;
             let digits = entry
                 .ordinal
                 .checked_ilog10()
@@ -3458,20 +3391,26 @@ pub(super) fn display_jt_segments(
 
 /// Decode complete object-element sequences from type-7 shape-LOD segments.
 pub(super) fn display_jt_shape_lod_elements(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Result<Vec<DisplayJtShapeLodElement>, CodecError> {
     const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
     let mut elements = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
         let payload = &bytes[24..];
-        let Some((parsed, framed_end)) = parse_jt_element_sequence(budget.0, payload)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((parsed, framed_end)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, payload))?
+        else {
             return Ok(Vec::new());
         };
         if payload.get(framed_end..) != Some(SEGMENT_TAIL.as_slice()) {
@@ -3481,7 +3420,6 @@ pub(super) fn display_jt_shape_lod_elements(
             if element.object_base_type != 4 {
                 return Ok(Vec::new());
             }
-            let ctx = budget.0;
             let text_bytes = display_jt_text_size(
                 ctx,
                 &[&segment.id, "-element-", &segment.id],
@@ -3545,7 +3483,7 @@ pub(super) fn display_jt_tri_strip_lod_headers(
             return Ok(Vec::new());
         };
         let Some(body) =
-            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
+            container.bounded_entry_bytes(ctx, body_start, u64::from(element.body_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -3611,7 +3549,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
             return Ok(Vec::new());
         };
         let Some(body) =
-            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
+            container.bounded_entry_bytes(ctx, body_start, u64::from(element.body_byte_len))?
         else {
             return Ok(Vec::new());
         };
@@ -3679,7 +3617,7 @@ pub(super) fn display_jt_topology_packet_sequences(
             return Ok(DisplayJtTopologyArrays::default());
         };
         let Some(body) =
-            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
+            container.bounded_entry_bytes(ctx, body_start, u64::from(element.body_byte_len))?
         else {
             return Ok(DisplayJtTopologyArrays::default());
         };
@@ -3717,7 +3655,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 TopologyPacketRole::SplitFaceSymbols,
                 TopologyPacketRole::SplitFacePositions,
             ]);
-        let mut packets = ctx.retained_vec(role_count, "nx JT topology packets")?;
+        let mut packets = ctx.collection_vec(role_count, "nx JT topology packets")?;
         for role in roles {
             let Some(remaining) = representation.get(cursor..) else {
                 return Ok(DisplayJtTopologyArrays::default());
@@ -3927,8 +3865,11 @@ pub(super) fn display_jt_vertex_coordinates(
         let Some(start) = header.source_offset.checked_add(32) else {
             return Ok(Vec::new());
         };
-        let Some(bytes) =
-            container.bounded_entry_bytes(start, u64::from(header.compressed_components_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            start,
+            u64::from(header.compressed_components_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -4148,7 +4089,7 @@ pub(super) fn display_jt_vertex_normals(
         else {
             return Ok(Vec::new());
         };
-        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+        let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
             return Ok(Vec::new());
         };
         let Some(crate::jt::DecodedVertexArray {
@@ -4232,7 +4173,7 @@ pub(super) fn display_jt_vertex_colors(
             };
             source_offset = next;
         }
-        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+        let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
             return Ok(Vec::new());
         };
         let Some(crate::jt::DecodedVertexArray {
@@ -4337,7 +4278,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
         for channel in (0..8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
         {
-            let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+            let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
                 return Ok(Vec::new());
             };
             let Some(crate::jt::DecodedVertexArray {
@@ -4474,7 +4415,7 @@ pub(super) fn display_jt_vertex_flags(
             };
             source_offset = next;
         }
-        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
+        let Some(bytes) = container.bounded_entry_tail(ctx, source_offset)? else {
             return Ok(Vec::new());
         };
         let Some((values, byte_len)) = crate::jt::decode_vertex_flags(
@@ -4510,7 +4451,7 @@ pub(super) fn display_jt_vertex_flags(
 
 /// Decode element framing and exact post-marker tails from compressed segments.
 pub(super) fn display_jt_compressed_element_sequences(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Result<
@@ -4526,8 +4467,11 @@ pub(super) fn display_jt_compressed_element_sequences(
         .iter()
         .filter(|segment| segment.compression.is_some())
     {
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok((Vec::new(), Vec::new()));
         };
@@ -4541,67 +4485,42 @@ pub(super) fn display_jt_compressed_element_sequences(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some((parsed, framed_end)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((parsed, framed_end)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok((Vec::new(), Vec::new()));
         };
         {
-            let ctx = budget.0;
             let count = u64::try_from(parsed.len()).map_err(|_| {
                 ctx.refuse_codec_limit("count DisplayJT compressed elements", 0, u64::MAX)
             })?;
-            let id_slots = count
-                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    String,
-                >()))
-                .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element ids", 0, count))?;
-            let element_slots = count
-                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    DisplayJtCompressedElement,
-                >()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("size DisplayJT compressed elements", 0, count)
-                })?;
             ctx.charge_collection_items(count, "store DisplayJT element ids")?;
-            ctx.charge_retained(id_slots, "retain DisplayJT element ids")?;
             ctx.charge_collection_items(count, "store DisplayJT compressed elements")?;
-            ctx.charge_retained(element_slots, "retain DisplayJT compressed elements")?;
         }
         let mut element_ids = Vec::new();
-        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut element_ids,
             parsed.len(),
-            "allocate DisplayJT element ids",
-        )
-        .is_err()
-        {
-            return Err(budget
-                .0
-                .refuse_codec_limit("allocate DisplayJT element ids", 0, 1));
-        }
-        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            "retain DisplayJT element ids",
+        )?;
+        ctx.reserve_capacity(
             &mut elements,
             parsed.len(),
-            "allocate DisplayJT compressed elements",
-        )
-        .is_err()
-        {
-            return Err(budget.0.refuse_codec_limit(
-                "allocate DisplayJT compressed elements",
-                0,
-                1,
-            ));
-        }
+            "retain DisplayJT compressed elements",
+        )?;
         for (ordinal, element) in parsed.into_iter().enumerate() {
             {
-                let ctx = budget.0;
                 let digits = if ordinal == 0 {
                     1
                 } else {
@@ -4637,7 +4556,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                     body_byte_len: u32::try_from(element.body.len())
                         .map_err(|_| display_jt_framing_error("body_byte_len exceeds u32"))?,
                     body_sha256: Sha256Digest::digest_for_decode(
-                        budget.0,
+                        ctx,
                         element.body,
                         "hash DisplayJT compressed element body",
                     )?,
@@ -4650,14 +4569,7 @@ pub(super) fn display_jt_compressed_element_sequences(
         }
         let tail = &inflated[framed_end..];
         {
-            let ctx = budget.0;
             ctx.charge_collection_items(1, "store DisplayJT compressed sequence")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    DisplayJtCompressedElementSequence,
-                >()),
-                "retain DisplayJT compressed sequence",
-            )?;
             let string_bytes = segment
                 .id
                 .len()
@@ -4667,12 +4579,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                 .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT sequence fields", 0, 1))?;
             ctx.charge_retained(string_bytes, "retain DisplayJT compressed sequence fields")?;
         }
-        let ctx = budget.0;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut sequences,
-            1,
-            "allocate DisplayJT compressed sequence",
-        )?;
+        ctx.reserve_capacity(&mut sequences, 1, "retain DisplayJT compressed sequence")?;
         let retained_tail = ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?;
         let tail_work = cadmpeg_core::decode::u64_from_index(tail.len());
         ctx.charge_work(
@@ -4713,7 +4620,7 @@ fn display_jt_framing_error(message: &str) -> cadmpeg_core::CodecError {
 
 /// Decode all string property atoms from complete type-31 segment sequences.
 pub(super) fn display_jt_string_property_atoms(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Result<Vec<DisplayJtStringPropertyAtom>, CodecError> {
@@ -4726,8 +4633,11 @@ pub(super) fn display_jt_string_property_atoms(
         if segment.compression.is_none() {
             return Ok(Vec::new());
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -4741,15 +4651,20 @@ pub(super) fn display_jt_string_property_atoms(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -4757,14 +4672,14 @@ pub(super) fn display_jt_string_property_atoms(
             {
                 return Ok(Vec::new());
             }
-            let Some(value) = parse_jt_string_property_atom_body(budget.0, element.body)? else {
+            let Some(value) = parse_jt_string_property_atom_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut atoms,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[
                         &segment.id,
                         "-string-property-atom-",
@@ -4772,11 +4687,7 @@ pub(super) fn display_jt_string_property_atoms(
                         "-inflated-element-",
                     ],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget.0.refuse_codec_limit(
-                            "store DisplayJT string property atom",
-                            0,
-                            u64::MAX,
-                        )
+                        ctx.refuse_codec_limit("store DisplayJT string property atom", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT string property atom",
@@ -4794,7 +4705,7 @@ pub(super) fn display_jt_string_property_atoms(
 }
 /// Resolve JT 9 logical shape nodes to their late-loaded type-7 LOD segments.
 pub(super) fn display_jt_shape_lod_bindings(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Result<Vec<DisplayJtShapeLodBinding>, CodecError> {
@@ -4810,9 +4721,11 @@ pub(super) fn display_jt_shape_lod_bindings(
     let mut bindings = Vec::new();
     for scene_segment in segments.iter().filter(|segment| segment.segment_type == 1) {
         let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
             scene_segment.source_offset,
             u64::from(scene_segment.segment_byte_len),
-        ) else {
+        )?
+        else {
             return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
@@ -4825,25 +4738,31 @@ pub(super) fn display_jt_shape_lod_bindings(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((_, scene_end)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((_, scene_end)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         let tail = &inflated[scene_end..];
+        let mut property_framing_storage =
+            ctx.reserve_scoped(0, "NX JT property framing storage")?;
         let Some((property_atoms, property_table_offset)) =
-            parse_jt_element_sequence(budget.0, tail)?
+            property_framing_storage.with_storage(|| parse_jt_element_sequence(ctx, tail))?
         else {
             return Ok(Vec::new());
         };
         let _map_reservation = {
-            let ctx = budget.0;
             let count = property_atoms
                 .iter()
                 .filter(|atom| {
@@ -4865,7 +4784,7 @@ pub(super) fn display_jt_shape_lod_bindings(
         let mut late_loaded = BTreeMap::new();
         for atom in property_atoms {
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
-                let Some(value) = parse_jt_string_property_atom_body(budget.0, atom.body)? else {
+                let Some(value) = parse_jt_string_property_atom_body(ctx, atom.body)? else {
                     return Ok(Vec::new());
                 };
                 strings.insert(atom.object_id, value);
@@ -4955,7 +4874,6 @@ pub(super) fn display_jt_shape_lod_bindings(
                     if targets.next().is_some() || target.segment_type != 7 {
                         return Ok(Vec::new());
                     }
-                    let ctx = budget.0;
                     let text_bytes = display_jt_text_size(
                         ctx,
                         &[
@@ -5004,7 +4922,7 @@ pub(super) fn display_jt_shape_lod_bindings(
 }
 /// Decode the common node-data header from every type-1 segment element.
 pub(super) fn display_jt_base_node_data(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5020,8 +4938,11 @@ pub(super) fn display_jt_base_node_data(
         if segment.compression.is_none() {
             return Ok(Vec::new());
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5035,36 +4956,41 @@ pub(super) fn display_jt_base_node_data(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type > 2 {
                 continue;
             }
-            let Some((_, _base_reservation)) =
-                admit_jt_base_body(budget.0, element.body, document.version.major(), true)?
-            else {
-                return Ok(Vec::new());
-            };
             let Some((version, flags, attribute_object_ids, family_data)) =
                 parse_jt_base_node_body(element.body, document.version.major())
             else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            let attribute_object_ids = read_jt_object_ids(
+                ctx,
+                attribute_object_ids,
+                "decode DisplayJT base node attributes",
+            )?;
+            ctx.reserve_record_vec(
                 &mut nodes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[
                         &segment.id,
                         "-base-node-",
@@ -5072,9 +4998,7 @@ pub(super) fn display_jt_base_node_data(
                         "-inflated-element-",
                     ],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget
-                            .0
-                            .refuse_codec_limit("store DisplayJT base node", 0, u64::MAX)
+                        ctx.refuse_codec_limit("store DisplayJT base node", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT base node",
@@ -5088,14 +5012,14 @@ pub(super) fn display_jt_base_node_data(
                 flags,
                 attribute_object_ids,
                 family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
-                    budget.0.refuse_codec_limit(
+                    ctx.refuse_codec_limit(
                         "DisplayJT count exceeds u32",
                         u64::from(u32::MAX),
                         cadmpeg_core::decode::u64_from_index(family_data.len()),
                     )
                 })?,
                 family_data_sha256: Sha256Digest::digest_for_decode(
-                    budget.0,
+                    ctx,
                     family_data,
                     "retain DisplayJT hash",
                 )?,
@@ -5107,7 +5031,7 @@ pub(super) fn display_jt_base_node_data(
 }
 /// Decode common group-node data from every JT 9 group-derived scene node.
 pub(super) fn display_jt_group_node_data(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5123,8 +5047,11 @@ pub(super) fn display_jt_group_node_data(
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5138,42 +5065,44 @@ pub(super) fn display_jt_group_node_data(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type != 1 {
                 continue;
             }
-            let Some((_, _base_reservation)) = admit_jt_group_body(budget.0, element.body)? else {
-                return Ok(Vec::new());
-            };
             let Some((version, child_object_ids, family_data)) =
                 parse_jt9_group_node_body(element.body)
             else {
                 return Ok(Vec::new());
             };
+            let child_object_ids =
+                read_jt_object_ids(ctx, child_object_ids, "decode DisplayJT group children")?;
             if version != 1 {
                 return Ok(Vec::new());
             }
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut nodes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[&segment.id, "-group-node-data-", &segment.id, "-base-node-"],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget
-                            .0
-                            .refuse_codec_limit("store DisplayJT group node", 0, u64::MAX)
+                        ctx.refuse_codec_limit("store DisplayJT group node", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT group node",
@@ -5185,14 +5114,14 @@ pub(super) fn display_jt_group_node_data(
                 version,
                 child_object_ids,
                 family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
-                    budget.0.refuse_codec_limit(
+                    ctx.refuse_codec_limit(
                         "DisplayJT count exceeds u32",
                         u64::from(u32::MAX),
                         cadmpeg_core::decode::u64_from_index(family_data.len()),
                     )
                 })?,
                 family_data_sha256: Sha256Digest::digest_for_decode(
-                    budget.0,
+                    ctx,
                     family_data,
                     "retain DisplayJT hash",
                 )?,
@@ -5204,7 +5133,7 @@ pub(super) fn display_jt_group_node_data(
 }
 /// Decode complete JT 9 instance nodes from logical scene-graph segments.
 pub(super) fn display_jt_instance_nodes(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5224,8 +5153,11 @@ pub(super) fn display_jt_instance_nodes(
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5239,15 +5171,20 @@ pub(super) fn display_jt_instance_nodes(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5257,25 +5194,18 @@ pub(super) fn display_jt_instance_nodes(
             if element.object_base_type != 0 {
                 return Ok(Vec::new());
             }
-            let Some((_, _base_reservation)) =
-                admit_jt_base_body(budget.0, element.body, 9, false)?
-            else {
-                return Ok(Vec::new());
-            };
             let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
             else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut nodes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[&segment.id, "-instance-node-", &segment.id, "-base-node-"],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget
-                            .0
-                            .refuse_codec_limit("store DisplayJT instance node", 0, u64::MAX)
+                        ctx.refuse_codec_limit("store DisplayJT instance node", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT instance node",
@@ -5294,7 +5224,7 @@ pub(super) fn display_jt_instance_nodes(
 }
 /// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
 pub(super) fn display_jt_geometric_transform_attributes(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5314,8 +5244,11 @@ pub(super) fn display_jt_geometric_transform_attributes(
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5329,15 +5262,20 @@ pub(super) fn display_jt_geometric_transform_attributes(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5352,11 +5290,11 @@ pub(super) fn display_jt_geometric_transform_attributes(
             else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut attributes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[
                         &segment.id,
                         "-geometric-transform-",
@@ -5364,11 +5302,7 @@ pub(super) fn display_jt_geometric_transform_attributes(
                         "-inflated-element-",
                     ],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget.0.refuse_codec_limit(
-                            "store DisplayJT geometric transform",
-                            0,
-                            u64::MAX,
-                        )
+                        ctx.refuse_codec_limit("store DisplayJT geometric transform", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT geometric transform",
@@ -5389,7 +5323,7 @@ pub(super) fn display_jt_geometric_transform_attributes(
 }
 /// Decode JT 9 material attributes from logical scene-graph segments.
 pub(super) fn display_jt_material_attributes(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5409,8 +5343,11 @@ pub(super) fn display_jt_material_attributes(
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5424,15 +5361,20 @@ pub(super) fn display_jt_material_attributes(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5447,11 +5389,11 @@ pub(super) fn display_jt_material_attributes(
             else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut attributes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[
                         &segment.id,
                         "-material-attribute-",
@@ -5459,11 +5401,7 @@ pub(super) fn display_jt_material_attributes(
                         "-inflated-element-",
                     ],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget.0.refuse_codec_limit(
-                            "store DisplayJT material attribute",
-                            0,
-                            u64::MAX,
-                        )
+                        ctx.refuse_codec_limit("store DisplayJT material attribute", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT material attribute",
@@ -5490,7 +5428,7 @@ pub(super) fn display_jt_material_attributes(
 }
 /// Decode complete JT 9 partition nodes from logical scene-graph segments.
 pub(super) fn display_jt_partition_nodes(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5510,8 +5448,11 @@ pub(super) fn display_jt_partition_nodes(
         if document.version.major() >= 10 {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5525,38 +5466,37 @@ pub(super) fn display_jt_partition_nodes(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != PARTITION_NODE_TYPE {
                 continue;
             }
-            let ctx = budget.0;
-            let Some((_family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
-                return Ok(Vec::new());
-            };
             let Some(node) = parse_jt9_partition_node_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut nodes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[&segment.id, "-partition-node-", &segment.id, "-base-node-"],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget
-                            .0
-                            .refuse_codec_limit("store DisplayJT partition node", 0, u64::MAX)
+                        ctx.refuse_codec_limit("store DisplayJT partition node", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT partition node",
@@ -5582,7 +5522,7 @@ pub(super) fn display_jt_partition_nodes(
 }
 /// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
 pub(super) fn display_jt_range_lod_nodes(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5602,8 +5542,11 @@ pub(super) fn display_jt_range_lod_nodes(
         if document.version.major() >= 10 {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5617,43 +5560,37 @@ pub(super) fn display_jt_range_lod_nodes(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != RANGE_LOD_NODE_TYPE {
                 continue;
             }
-            let ctx = budget.0;
-            let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
+            let Some(node) = parse_jt9_range_lod_node_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
-            let JtOptionalReservation::Admitted(_vector_reservation) =
-                admit_jt_range_vectors(ctx, family)?
-            else {
-                return Ok(Vec::new());
-            };
-            let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
-                return Ok(Vec::new());
-            };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut nodes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[&segment.id, "-range-lod-node-", &segment.id, "-base-node-"],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget
-                            .0
-                            .refuse_codec_limit("store DisplayJT range LOD node", 0, u64::MAX)
+                        ctx.refuse_codec_limit("store DisplayJT range LOD node", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT range LOD node",
@@ -5678,7 +5615,7 @@ pub(super) fn display_jt_range_lod_nodes(
 }
 /// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
 pub(super) fn display_jt_tri_strip_shape_nodes(
-    budget: (&DecodeContext<'_>, View<'_>),
+    ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
@@ -5698,8 +5635,11 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
         }
-        let Some(bytes) = container
-            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
+        let Some(bytes) = container.bounded_entry_bytes(
+            ctx,
+            segment.source_offset,
+            u64::from(segment.segment_byte_len),
+        )?
         else {
             return Ok(Vec::new());
         };
@@ -5713,15 +5653,20 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             .and_then(|start| {
                 start
                     .checked_add(compressed.len())
-                    .and_then(|end| budget.1.child(start, end))
+                    .and_then(|end| container.data.view().child(start, end))
             })
         else {
             return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+        let mut inflated_storage = ctx.reserve_scoped(0, "NX JT inflated storage")?;
+        let Some(inflated) = inflated_storage.with_storage(|| inflate_display_jt(ctx, member))?
+        else {
             return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+        let mut framing_storage = ctx.reserve_scoped(0, "NX JT framing storage")?;
+        let Some((elements, _)) =
+            framing_storage.with_storage(|| parse_jt_element_sequence(ctx, &inflated))?
+        else {
             return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
@@ -5731,19 +5676,14 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             if element.object_base_type != 2 {
                 return Ok(Vec::new());
             }
-            let Some((_, _base_reservation)) =
-                admit_jt_base_body(budget.0, element.body, 9, false)?
-            else {
-                return Ok(Vec::new());
-            };
             let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
                 return Ok(Vec::new());
             };
-            budget.0.reserve_record_vec(
+            ctx.reserve_record_vec(
                 &mut nodes,
                 1,
                 display_jt_text_size(
-                    budget.0,
+                    ctx,
                     &[
                         &segment.id,
                         "-tri-strip-shape-node-",
@@ -5751,11 +5691,7 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
                         "-base-node-",
                     ],
                     decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
-                        budget.0.refuse_codec_limit(
-                            "store DisplayJT tri strip shape node",
-                            0,
-                            u64::MAX,
-                        )
+                        ctx.refuse_codec_limit("store DisplayJT tri strip shape node", 0, u64::MAX)
                     })?,
                 )?,
                 "store DisplayJT tri strip shape node",
@@ -6005,7 +5941,7 @@ fn resolve_display_jt_node_paths(
         }
         ctx.reserve_vec(&mut path.node_path, 1, "nx JT node path nodes")?;
         path.node_path.push(object_id);
-        ctx.reserve_retained_vec(&mut results, 1, "nx JT resolved paths")?;
+        ctx.reserve_vec(&mut results, 1, "nx JT resolved paths")?;
         results.push(path);
     }
     Ok(Some(results))
@@ -6414,13 +6350,13 @@ fn display_jt_tessellation_rows(
             let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
                 let triangle_vertex_count = required!(rendered.len().checked_mul(3));
                 let mut vertices = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut vertices,
                     triangle_vertex_count,
                     "nx JT tessellation vertices",
                 ))?;
                 let mut triangles = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut triangles,
                     rendered.len(),
                     "nx JT tessellation triangles",
@@ -6429,7 +6365,7 @@ fn display_jt_tessellation_rows(
                 // normal lane.
                 let mut normal_vectors = normal_array.is_some().then(Vec::new);
                 if let Some(normal_vectors) = normal_vectors.as_mut() {
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         normal_vectors,
                         triangle_vertex_count,
                         "nx JT tessellation normals",
@@ -6438,7 +6374,7 @@ fn display_jt_tessellation_rows(
                 let mut color_data = Vec::new();
                 if color_array.is_some() {
                     let color_byte_count = required!(triangle_vertex_count.checked_mul(16));
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         &mut color_data,
                         color_byte_count,
                         "nx JT tessellation colors",
@@ -6460,7 +6396,7 @@ fn display_jt_tessellation_rows(
                     texture_component_counts.push(count);
                 }
                 let mut texture_data = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut texture_data,
                     texture_component_counts.len(),
                     "nx JT tessellation texture buffers",
@@ -6470,17 +6406,13 @@ fn display_jt_tessellation_rows(
                         .checked_mul(*component_count)
                         .and_then(|count| count.checked_mul(4)));
                     let mut data = Vec::new();
-                    (ctx.reserve_retained_vec(
-                        &mut data,
-                        byte_count,
-                        "nx JT tessellation texture bytes",
-                    ))?;
+                    (ctx.reserve_vec(&mut data, byte_count, "nx JT tessellation texture bytes"))?;
                     texture_data.push(data);
                 }
                 let mut vertex_flag_data = Vec::new();
                 if vertex_flag_array.is_some() {
                     let flag_byte_count = required!(triangle_vertex_count.checked_mul(4));
-                    (ctx.reserve_retained_vec(
+                    (ctx.reserve_vec(
                         &mut vertex_flag_data,
                         flag_byte_count,
                         "nx JT tessellation flag bytes",
@@ -6525,11 +6457,7 @@ fn display_jt_tessellation_rows(
                 let channel_count = required!(usize::from(color_array.is_some())
                     .checked_add(texture_arrays.len())
                     .and_then(|count| count.checked_add(usize::from(vertex_flag_array.is_some()))));
-                (ctx.reserve_retained_vec(
-                    &mut channels,
-                    channel_count,
-                    "nx JT tessellation channels",
-                ))?;
+                (ctx.reserve_vec(&mut channels, channel_count, "nx JT tessellation channels"))?;
                 if color_array.is_some() {
                     channels.push(required!(TessellationChannel::new(
                         cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
@@ -6573,7 +6501,7 @@ fn display_jt_tessellation_rows(
                 (vertices, triangles, normal_vectors, channels)
             } else {
                 let mut vertices = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut vertices,
                     coordinates.points_m.len(),
                     "nx JT tessellation vertices",
@@ -6584,7 +6512,7 @@ fn display_jt_tessellation_rows(
                     ))));
                 }
                 let mut triangles = Vec::new();
-                (ctx.reserve_retained_vec(
+                (ctx.reserve_vec(
                     &mut triangles,
                     rendered.len(),
                     "nx JT tessellation triangles",

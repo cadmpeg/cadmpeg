@@ -813,7 +813,7 @@ fn decode_assembly_reports_external_dependency() {
 
 fn directory_retained_bytes(name: &str) -> u64 {
     cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<crate::container::DirEntry>() + name.len(),
+        4 * std::mem::size_of::<crate::container::DirEntry>() + name.len(),
     )
 }
 
@@ -823,7 +823,35 @@ fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
+    // Ten source attributes use conservative B-tree insertion bounds of
+    // 1, 2, 3, 3, 4, 4, 4, 4, 5 and 5 nodes. Each node holds eleven
+    // String pairs, sixteen pointer slots and two alignment paddings.
+    let source_attribute_nodes = 2
+        * 35
+        * cadmpeg_core::decode::u64_from_index(
+            11 * std::mem::size_of::<(String, String)>()
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * std::mem::align_of::<(String, String)>(),
+        );
+    // Geometry and metadata construction each clone three declarations. The
+    // aggregate admission bound follows the service collection ceiling.
+    let declaration_node = cadmpeg_core::decode::u64_from_index(
+        11 * std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<(cadmpeg_core::text::NonBlankString, String)>(),
+    );
+    let declaration_path = u64::from(options.policy.limits.max_collection_items.ilog2()) + 2;
+    let dialect_declarations = (2 * 3 * declaration_path + 3) * declaration_node
+        + 6 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            cadmpeg_core::dialect::DialectMatch,
+        >());
+    // Moving ten named attributes through each source constructor allocates
+    // a second map with the aggregate declaration-path bound.
+    let named_attribute_nodes = 2 * 10 * declaration_path * declaration_node;
+    options.policy.limits.max_retained_bytes = source_attribute_nodes
+        + dialect_declarations
+        + named_attribute_nodes
+        + directory_retained_bytes("/Root/UG_PART/UG_PART")
         + cadmpeg_core::decode::u64_from_index(stream.len() * 3)
         - 1;
 
@@ -844,10 +872,11 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
     stream.resize(64, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(stream.len() * 2);
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
+    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
+        + cadmpeg_core::decode::u64_from_index(stream.len())
+        + cadmpeg_test_support::decode::arena_registry_bytes()
+        - 1;
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
         .expect_err("directory bytes use part of the retained allowance");
     assert!(matches!(
         error,
@@ -862,17 +891,23 @@ fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 8192])]);
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/FastLoad/Structure") + 4096;
-
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
-        .expect_err("opaque payload copy must be budgeted");
-
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX opaque container payload",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX opaque container payload"
     ));
@@ -885,8 +920,7 @@ fn opaque_container_with_one_retained_byte_refuses_directory_entry() {
     let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
         .expect_err("directory entry exceeds one byte");
     assert!(matches!(
         error,
@@ -901,17 +935,23 @@ fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 8192])]);
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/images/preview") + 4096;
-
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
-        .expect_err("invalid preview copy must be budgeted");
-
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain NX invalid JPEG preview",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            NxCodec
+                .decode(&mut Cursor::new(&file), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    error => panic!("unexpected decode refusal: {error}"),
+                })
+        },
+    );
     assert!(matches!(
         error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX invalid JPEG preview"
     ));
@@ -924,8 +964,7 @@ fn invalid_preview_with_one_retained_byte_refuses_directory_entry() {
     let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-    let error = NxCodec
-        .decode(&mut Cursor::new(file), &options)
+    let error = cadmpeg_test_support::decode::full(&NxCodec, &file, &options.policy)
         .expect_err("directory entry exceeds one byte");
     assert!(matches!(
         error,

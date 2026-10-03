@@ -238,11 +238,7 @@ impl Decoder<'_> {
         let faces = ctx.alloc_filled(valence, None, "nx JT vertex face slots")?;
         ctx.charge_collection_items(1, "nx JT topology vertices")?;
         let index = self.vertices.len();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut self.vertices,
-            1,
-            "nx JT topology vertices",
-        )?;
+        ctx.reserve_capacity(&mut self.vertices, 1, "nx JT topology vertices")?;
         self.vertices.push(Vertex {
             faces,
             group,
@@ -587,15 +583,17 @@ impl Decoder<'_> {
     }
 
     fn next_active_face(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
-        // At most sixteen removals shift the active lane, plus the suffix walk.
-        let work = self.active.len().checked_mul(17).ok_or_else(|| {
-            ctx.refuse_codec_limit("select JT active face", u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "select JT active face",
-        )?;
-        while self.active.last().is_some_and(|&face| self.removed[face]) {
+        loop {
+            ctx.charge_work(1, "check JT active suffix")?;
+            let Some(&face) = self.active.last() else {
+                break;
+            };
+            let Some(&removed) = self.removed.get(face) else {
+                return Ok(None);
+            };
+            if !removed {
+                break;
+            }
             self.active.pop();
         }
         let mut best: Option<usize> = None;
@@ -608,13 +606,41 @@ impl Decoder<'_> {
                 break;
             }
             index -= 1;
-            let face = self.active[index];
-            if self.removed[face] {
+            ctx.charge_work(1, "select JT active face")?;
+            let Some(&face) = self.active.get(index) else {
+                return Ok(None);
+            };
+            let Some(&removed) = self.removed.get(face) else {
+                return Ok(None);
+            };
+            if removed {
+                let shifted = self
+                    .active
+                    .len()
+                    .checked_sub(index)
+                    .and_then(|count| count.checked_sub(1))
+                    .ok_or_else(|| CodecError::malformed("JT active index escapes lane"))?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(shifted),
+                    "shift JT active faces",
+                )?;
                 self.active.remove(index);
-            } else if best.is_none_or(|current| {
-                self.faces[face].vertices.empty() < self.faces[current].vertices.empty()
-            }) {
-                best = Some(face);
+            } else {
+                let Some(candidate) = self.faces.get(face) else {
+                    return Ok(None);
+                };
+                let better = match best {
+                    Some(current) => {
+                        let Some(current) = self.faces.get(current) else {
+                            return Ok(None);
+                        };
+                        candidate.vertices.empty() < current.vertices.empty()
+                    }
+                    None => true,
+                };
+                if better {
+                    best = Some(face);
+                }
             }
         }
         Ok(best)

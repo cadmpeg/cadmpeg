@@ -428,6 +428,7 @@ pub(crate) fn assert_work_boundaries<T>(
 
 /// Find the last named refusal after admitting each preceding resource boundary.
 pub(crate) fn last_refusal_at<T>(
+    input: &[u8],
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &'static str,
     run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
@@ -442,9 +443,11 @@ pub(crate) fn last_refusal_at<T>(
         match dimension {
             ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
             _ => panic!("unsupported test boundary dimension"),
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
         match run(&ctx) {
             Err(CodecError::ResourceLimit(resource)) => {
                 assert_eq!(resource.dimension, dimension);
@@ -460,10 +463,16 @@ pub(crate) fn last_refusal_at<T>(
                         ResourceDimension::CollectionItems => {
                             policy.limits.max_collection_items = need - 1;
                         }
+                        ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = need - 1;
+                        }
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = need - 1;
+                        }
                         _ => panic!("unsupported test boundary dimension"),
                     }
                     let (ctx, _) =
-                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                        DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
                     match run(&ctx) {
                         Err(CodecError::ResourceLimit(below)) => {
                             assert_eq!(below.dimension, dimension);
@@ -481,4 +490,50 @@ pub(crate) fn last_refusal_at<T>(
         }
     }
     panic!("route did not finish within boundary bound");
+}
+
+/// Admit preceding element-storage charges and select the named refusal limit.
+/// With no operation, return the first limit that admits the unchanged fixture.
+pub(crate) fn allocation_limit_at<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: Option<&str>,
+    run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+) -> u64 {
+    use cadmpeg_core::CodecError;
+    let mut cap = 0;
+    for _ in 0..4096 {
+        match run(cap) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, dimension);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("resource need");
+                assert!(need > cap);
+                if operation == Some(resource.operation) {
+                    let below = need - 1;
+                    assert!(
+                        matches!(run(below), Err(CodecError::ResourceLimit(ref refusal))
+                        if refusal.dimension == dimension && refusal.operation == resource.operation
+                            && refusal.used.checked_add(refusal.additional) == Some(need))
+                    );
+                    return below;
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
+            Ok(_) => {
+                assert!(operation.is_none(), "fixture did not reach {operation:?}");
+                return cap;
+            }
+        }
+    }
+    panic!("fixture did not finish within the resource boundary bound");
+}
+
+/// An admitted empty container for owner tests that supply their own rows.
+pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(build_prt("test", &[]));
+    scan.framing.data = Vec::new().into();
+    scan
 }

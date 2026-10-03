@@ -25,10 +25,7 @@ pub(super) fn summarize(
         .checked_add(scan.streams.len())
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
     let mut entries = ctx.collection_vec(entry_count, "nx summary entries")?;
-    let semantic_streams = scan
-        .streams
-        .iter()
-        .any(|stream| stream.kind() == parasolid::StreamKind::Partition)
+    let semantic_streams = (scan.count(ctx, parasolid::StreamKind::Partition)? != 0)
         .then(|| native::substrate::topology_streams(ctx, scan))
         .transpose()?;
 
@@ -75,6 +72,7 @@ pub(super) fn summarize(
         });
     }
 
+    let mut storage_notes_storage = ctx.reserve_scoped(0, "nx temporary storage notes")?;
     let mut storage_notes: Vec<String> = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
@@ -123,7 +121,7 @@ pub(super) fn summarize(
                     name,
                     false,
                     SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                        graph.of_kind(kind).count(),
+                        graph.kind_count(kind),
                     )),
                 )?;
             }
@@ -151,7 +149,7 @@ pub(super) fn summarize(
                         name,
                         false,
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            graph.of_kind(kind).count(),
+                            graph.kind_count(kind),
                         )),
                     )?;
                 }
@@ -284,7 +282,9 @@ pub(super) fn summarize(
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-                        ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")?;
+                        storage_notes_storage.with_storage(|| {
+                            ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")
+                        })?;
                         storage_notes.push(ctx.format_retained(
                             format_args!(
                                 "parasolid#{si}: {message}: {}/{inflated_len}",
@@ -358,20 +358,9 @@ fn insert_summary_attribute(
         SummaryValue::Text(text) => text.len(),
         SummaryValue::Number(number) => decimal_len(number),
     };
-    let text_len = key_len
-        .checked_add(value_len)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx summary attribute text", 0, u64::MAX))?;
-    ctx.charge_collection_items(1, "nx summary attributes")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(text_len),
-        "nx summary attribute text",
-    )?;
+
     let mut key = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
-        &mut key,
-        key_len,
-        "nx summary attribute text",
-    )?;
+    ctx.try_reserve_retained_text(&mut key, key_len, "nx summary attribute text")?;
     key.push_str(prefix);
     if lowercase_suffix {
         for character in suffix.chars() {
@@ -381,16 +370,44 @@ fn insert_summary_attribute(
         key.push_str(suffix);
     }
     let mut rendered = String::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
-        &mut rendered,
-        value_len,
-        "nx summary attribute text",
-    )?;
+    ctx.try_reserve_retained_text(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
         SummaryValue::Text(text) => rendered.push_str(text),
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")
             .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,
     }
-    attributes.insert(key, rendered);
+    ctx.insert_btree_map(attributes, key, rendered, "nx summary attributes")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn inspection_partition_search_refuses_unadmitted_stream_work() {
+        let file = crate::test_support::test_prt::single_part_prt();
+        let container =
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+                .unwrap();
+        let scan = crate::decode::Scan {
+            container,
+            streams: vec![crate::parasolid::Stream {
+                file_offset: 0,
+                consumed: 0,
+                inflated: Vec::new(),
+                body: crate::parasolid::StreamBody::Preview,
+            }],
+        };
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = super::summarize(ctx, &scan).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && limit.operation == "count NX streams")
+                );
+            },
+        );
+    }
 }

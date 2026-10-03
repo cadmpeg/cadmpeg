@@ -496,6 +496,7 @@ mod tests {
                 let mut policy = DecodePolicy::default();
                 policy.limits.max_retained_bytes = retained;
                 policy.limits.max_collection_items = items;
+
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let result = super::project_canvas_images(
                     &ctx,

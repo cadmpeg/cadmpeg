@@ -152,21 +152,24 @@ fn assert_profile_fallback(
             profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)), ..
         }) if native == expected_native
     ));
-    for limit in 0..256 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            project_extrude(&ctx, &scope, &owned, groups, &[], &[], &[]),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_extrude(&ctx, &scope, &owned, groups, &[], &[], &[])).map(|_| ())
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ) {
-            return;
-        }
+                    && failure.operation == operation)
+        );
     }
-    panic!("no Extrude profile refusal at {operation}");
 }
 
 #[test]
@@ -223,21 +226,24 @@ fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
     ));
-    for limit in 0..256 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            project_extrude(&ctx, &scope, &owned, &groups, &[], &[], &[]),
-            Err(CodecError::ResourceLimit(failure))
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                (project_extrude(&ctx, &scope, &owned, &groups, &[], &[], &[])).map(|_| ())
+            },
+        );
+        assert!(
+            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ) {
-            return;
-        }
+                    && failure.operation == operation)
+        );
     }
-    panic!("no Extrude face refusal at {operation}");
 }
 
 #[test]

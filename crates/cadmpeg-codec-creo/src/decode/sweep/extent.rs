@@ -284,7 +284,7 @@ mod tests {
         use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
         use cadmpeg_ir::ids::SurfaceId;
         use cadmpeg_ir::math::{Point3, Vector3};
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         for (id, kind) in [
             (31, crate::surface::SurfaceKind::Plane),
             (32, crate::surface::SurfaceKind::Plane),
@@ -418,7 +418,7 @@ mod tests {
         )
         .expect("fixture constructor admission")
         .expect("valid translation surface");
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         for (id, kind) in [
             (
                 31,

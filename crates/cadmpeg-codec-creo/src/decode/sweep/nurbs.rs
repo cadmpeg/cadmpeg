@@ -796,10 +796,10 @@ pub(super) fn copy_pcurve_nurbs(
     let knots = curve.knots().try_clone_for_decode(ctx, knot_operation)?;
     let poles = match curve.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-            points: ctx.copy_retained_slice(points, pole_operation)?,
+            points: ctx.copy_slice(points, pole_operation)?,
         },
         PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-            points: ctx.copy_retained_slice(points, pole_operation)?,
+            points: ctx.copy_slice(points, pole_operation)?,
         },
     };
     cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
@@ -1438,19 +1438,23 @@ mod tests {
     }
 
     fn interpolation_grid() -> crate::interpolation_grid::InterpolationGrid {
-        crate::interpolation_grid::InterpolationGrid::try_new(
-            vec![
-                [0.0, 0.0, 0.0],
-                [0.0, 1.0, 2.0],
-                [1.0, 0.0, 1.0],
-                [1.0, 1.0, 3.0],
-            ],
-            vec![0.0, 1.0],
-            vec![0.0, 1.0],
-            vec![[1.0, 0.0, 1.0]; 4],
-            vec![[0.0, 1.0, 2.0]; 4],
-            [[0.0; 3]; 4],
-        )
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::interpolation_grid::InterpolationGrid::try_new(
+                ctx,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [0.0, 1.0, 2.0],
+                    [1.0, 0.0, 1.0],
+                    [1.0, 1.0, 3.0],
+                ],
+                vec![0.0, 1.0],
+                vec![0.0, 1.0],
+                vec![[1.0, 0.0, 1.0]; 4],
+                vec![[0.0, 1.0, 2.0]; 4],
+                [[0.0; 3]; 4],
+            )
+        })
+        .expect("grid work admission")
         .expect("complete interpolation grid")
     }
 

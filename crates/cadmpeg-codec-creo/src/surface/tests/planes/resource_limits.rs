@@ -35,12 +35,12 @@ fn limit_reaching_operation(
     operation: &'static str,
     run: impl Fn(u64) -> cadmpeg_core::CodecError,
 ) -> u64 {
-    (0..128)
-        .find(|limit| {
-            matches!(run(*limit), cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.operation == operation)
-        })
-        .expect("the fixture reaches the named resource boundary")
+    let cadmpeg_core::CodecError::ResourceLimit(first) = run(0) else {
+        panic!("the fixture must reach a resource boundary");
+    };
+    crate::test_support::allocation_limit_at(first.dimension, Some(operation), |cap| {
+        Err::<(), _>(run(cap))
+    })
 }
 
 #[test]
@@ -63,7 +63,12 @@ fn named_spline_invalid_scalar_refusal_text_obeys_retained_limit() {
     };
     assert!(parse(u64::MAX).expect("service profile").is_none());
     assert_surface_limit(
-        &parse(0).expect_err("refusal text exceeds retained limit"),
+        &parse(crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo scalar body refusal text"),
+            parse,
+        ))
+        .expect_err("refusal text exceeds retained limit"),
         ResourceDimension::RetainedBytes,
         "creo scalar body refusal text",
     );
@@ -87,7 +92,12 @@ fn named_local_system_invalid_scalar_refusal_text_obeys_retained_limit() {
     };
     assert!(parse(u64::MAX).expect("service profile").is_none());
     assert_surface_limit(
-        &parse(0).expect_err("refusal text exceeds retained limit"),
+        &parse(crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo scalar body refusal text"),
+            parse,
+        ))
+        .expect_err("refusal text exceeds retained limit"),
         ResourceDimension::RetainedBytes,
         "creo scalar body refusal text",
     );
@@ -135,10 +145,12 @@ fn surface_parameter_refuses_body_copy() {
         next_surface: 0,
         offset: 0,
     }];
-    let error = with_surface_limits(&payload, u64::MAX, 0, |ctx| {
-        crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
-    })
-    .expect_err("one body byte exceeds zero retained bytes");
+    let error = crate::test_support::last_refusal_at(
+        &payload,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo surface parameter body",
+        |ctx| crate::surface::parameter_records_for_rows(ctx, &payload, &rows),
+    );
     assert_surface_limit(
         &error,
         ResourceDimension::RetainedBytes,
@@ -480,9 +492,6 @@ fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError 
     assert_eq!(service.iter().filter(|token| token.offset >= 12).count(), 6);
     let before_corner = service.iter().filter(|token| token.offset < 12);
     let prior_items = cadmpeg_core::decode::u64_from_index(before_corner.clone().count());
-    let prior_bytes = before_corner
-        .map(|token| cadmpeg_core::decode::u64_from_index(token.raw.len()))
-        .sum();
     let collection_items = if collection_limit {
         prior_items
     } else {
@@ -491,7 +500,20 @@ fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError 
     let retained_bytes = if collection_limit {
         u64::MAX
     } else {
-        prior_bytes
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo surface scalar token bytes"),
+            |cap| {
+                with_surface_limits(&body, u64::MAX, cap, |ctx| {
+                    crate::surface::scalar_tokens(
+                        ctx,
+                        crate::surface::SurfaceKind::Plane,
+                        &body,
+                        &scalar::ScalarCache::default(),
+                    )
+                })
+            },
+        )
     };
     with_surface_limits(&body, collection_items, retained_bytes, |ctx| {
         crate::surface::scalar_tokens(
@@ -583,7 +605,14 @@ fn surface_scalar_frame_refuses_slot_vector() {
 fn surface_scalar_frame_refuses_slot_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        &scalar_frame_limit_error(u64::MAX, 0),
+        &scalar_frame_limit_error(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                Some("creo surface scalar frame bytes"),
+                |cap| Err::<(), _>(scalar_frame_limit_error(u64::MAX, cap)),
+            ),
+        ),
         ResourceDimension::RetainedBytes,
         "creo surface scalar frame bytes",
     );
@@ -635,7 +664,14 @@ fn plane_envelope_refuses_scalar_token_vector() {
 #[test]
 fn plane_envelope_refuses_scalar_token_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_envelope_limit_error(u64::MAX, 0);
+    let error = plane_envelope_limit_error(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo plane envelope scalar token bytes"),
+            |cap| Err::<(), _>(plane_envelope_limit_error(u64::MAX, cap)),
+        ),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -646,7 +682,14 @@ fn plane_envelope_refuses_scalar_token_bytes() {
 #[test]
 fn plane_envelope_refuses_body_copy() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_envelope_limit_error(u64::MAX, 10);
+    let error = plane_envelope_limit_error(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo plane envelope body"),
+            |cap| Err::<(), _>(plane_envelope_limit_error(u64::MAX, cap)),
+        ),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -725,10 +768,14 @@ fn plane_local_system_limit_error(
 #[test]
 fn plane_local_system_refuses_retained_body() {
     use cadmpeg_core::decode::ResourceDimension;
-    let limit = limit_reaching_operation("creo plane local-system body", |limit| {
-        plane_local_system_limit_error(u64::MAX, limit)
-    });
-    let error = plane_local_system_limit_error(u64::MAX, limit);
+    let error = plane_local_system_limit_error(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo plane local-system body"),
+            |cap| Err::<(), _>(plane_local_system_limit_error(u64::MAX, cap)),
+        ),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes

@@ -9,10 +9,19 @@ fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("service decode context");
     let rows: Vec<_> = (0..6)
-        .map(|edge| EdgeRow {
-            kind: 1,
-            handles: vec![edge * 2, edge * 2 + 1],
-            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        .map(|edge| {
+            assert!(EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners
+            )
+            .is_none());
+            EdgeRow::new(
+                1,
+                vec![edge * 2, edge * 2, edge * 2 + 1],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            )
+            .expect("admitted edge row")
         })
         .collect();
     let points = vec![
@@ -28,11 +37,11 @@ fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
         .expect("closed oriented incidence");
     assert_eq!(topology.face_count(), 4);
     assert!(topology
-        .faces()
+        .faces
         .iter()
         .all(|face| { face.boundaries.len() == 1 && face.boundaries[0].coedges.len() == 3 }));
     let mut uses = vec![Vec::new(); 6];
-    for face in topology.faces() {
+    for face in topology.faces {
         for coedge in &face.boundaries[0].coedges {
             uses[coedge.edge_row].push(coedge.reversed);
         }

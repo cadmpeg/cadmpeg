@@ -261,7 +261,7 @@ fn project_column_rows<R, F, T>(
             else {
                 continue;
             };
-            ctx.reserve_retained_vec(&mut result, 1, "NX native column rows")?;
+            ctx.reserve_vec(&mut result, 1, "NX native column rows")?;
             let section_number = u32::try_from(section_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX column row section ordinal", 0, 1))?;
             let row_number = u32::try_from(ordinal)

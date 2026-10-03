@@ -87,7 +87,7 @@ pub(crate) fn extrude_profile_references(
     };
     let count = usize::from(count - 1);
 
-    let mut references = ctx.retained_vec(count, "NX extrude profile references")?;
+    let mut references = ctx.collection_vec(count, "NX extrude profile references")?;
     let mut at = references_start;
     for _ in 0..count {
         let Some(token) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {

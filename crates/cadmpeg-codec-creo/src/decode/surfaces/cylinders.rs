@@ -169,6 +169,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut round_feature_ids = BTreeSet::new();
     for row in scan
         .features
@@ -176,11 +177,13 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        ctx.insert_btree_set(
-            &mut round_feature_ids,
-            row.feature_id,
-            "creo constrained round feature ID nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut round_feature_ids,
+                row.feature_id,
+                "creo constrained round feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
     for feature_id in round_feature_ids {
@@ -393,6 +396,7 @@ pub(in super::super) fn transfer_hole_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut hole_feature_ids = BTreeSet::new();
     for feature_id in scan
         .features
@@ -401,11 +405,13 @@ pub(in super::super) fn transfer_hole_cylinders(
         .filter(|row| row.root_schema_class == Some(SchemaClass::Hole))
         .map(|row| row.feature_id)
     {
-        ctx.insert_btree_set(
-            &mut hole_feature_ids,
-            feature_id,
-            "creo hole cylinder feature ID nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut hole_feature_ids,
+                feature_id,
+                "creo hole cylinder feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
@@ -1452,20 +1458,20 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     let [first, second] = circles else {
         return None;
     };
-    (first.center_stored && second.center_stored).then_some(())?;
-    let radius = first.radius.get();
-    let second_radius = second.radius.get();
+    (first.center_stored() && second.center_stored()).then_some(())?;
+    let radius = first.radius().get();
+    let second_radius = second.radius().get();
     let radius_scale = radius.max(second_radius).max(1.0);
     ((second_radius - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale).then_some(())?;
-    let first_center: [f64; 3] = first.center.get().into();
-    let second_center: [f64; 3] = second.center.get().into();
+    let first_center: [f64; 3] = first.center().get().into();
+    let second_center: [f64; 3] = second.center().get().into();
     let scale = first_center
         .iter()
         .chain(&second_center)
         .map(|value| value.abs())
         .fold(radius_scale, f64::max);
-    let first_axis = crate::vecmath::unit_length(first.axis);
-    let second_axis = crate::vecmath::unit_length(second.axis);
+    let first_axis = crate::vecmath::unit_length(first.axis());
+    let second_axis = crate::vecmath::unit_length(second.axis());
     ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY).then_some(())?;
     let displacement: [f64; 3] =
         std::array::from_fn(|index| second_center[index] - first_center[index]);
@@ -1476,8 +1482,8 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         && (dot(center_direction, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY)
         .then_some(())?;
     let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
-        let start: [f64; 3] = circle.start.get().into();
-        let center: [f64; 3] = circle.center.get().into();
+        let start: [f64; 3] = circle.start().get().into();
+        let center: [f64; 3] = circle.center().get().into();
         let vector: [f64; 3] = std::array::from_fn(|index| start[index] - center[index]);
         let length = dot(vector, vector).sqrt();
         ((length - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale
@@ -1536,7 +1542,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                 second_corner[radial_indices[1]] = first[radial_indices[1]];
             }
             circles.iter().any(|circle| {
-                <[f64; 3]>::from(*circle.axis.as_raw())
+                <[f64; 3]>::from(*circle.axis().as_raw())
                     .iter()
                     .enumerate()
                     .all(|(index, component)| {
@@ -1546,10 +1552,10 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                             component.abs() <= EPS_CYLINDER_GEOMETRY
                         }
                     })
-                    && ((point_matches(circle.start.get().into(), first_corner)
-                        && point_matches(circle.end.get().into(), second_corner))
-                        || (point_matches(circle.end.get().into(), first_corner)
-                            && point_matches(circle.start.get().into(), second_corner)))
+                    && ((point_matches(circle.start().get().into(), first_corner)
+                        && point_matches(circle.end().get().into(), second_corner))
+                        || (point_matches(circle.end().get().into(), first_corner)
+                            && point_matches(circle.start().get().into(), second_corner)))
             })
         };
         if ![false, true].into_iter().any(|crossed| {
@@ -1659,6 +1665,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut sweep_feature_ids = BTreeSet::new();
     for feature_id in scan
         .features
@@ -1674,11 +1681,13 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         })
         .map(|row| row.feature_id)
     {
-        ctx.insert_btree_set(
-            &mut sweep_feature_ids,
-            feature_id,
-            "creo circular sweep feature ID nodes",
-        )?;
+        local_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut sweep_feature_ids,
+                feature_id,
+                "creo circular sweep feature ID nodes",
+            )
+        })?;
     }
     let mut transferred = 0;
     for feature_id in sweep_feature_ids {

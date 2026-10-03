@@ -550,10 +550,11 @@ fn term_use_numeric_tails(
         else {
             continue;
         };
-        if parsed_end != record.end || term_use.xmt != record.xmt {
+        if parsed_end != record.end || u32::from(term_use.xmt) != record.xmt {
             continue;
         }
-        let Some(tail) = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form)
+        let Some(tail) =
+            TermUseNumericTail::read(stream, record.end, u32::from(term_use.xmt), term_use.form)
         else {
             continue;
         };
@@ -1683,20 +1684,9 @@ fn merged_event_spans(
                 u64_from_index(census.records.len()),
             )
         })?;
-    let scratch_bytes = count
-        .checked_mul(std::mem::size_of::<(usize, usize)>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX deltas event span bytes", 0, u64_from_index(count))
-        })?;
-    let _covered_reservation =
-        ctx.reserve_scoped(u64_from_index(scratch_bytes), "NX deltas event spans")?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
-    let mut covered = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut covered,
-        count,
-        "NX deltas event span allocation",
-    )?;
+    let (mut covered, _covered_reservation) =
+        ctx.scoped_vector_storage(count, "NX deltas event span allocation")?;
     covered.extend(
         census
             .transmit_header
@@ -2123,14 +2113,8 @@ fn merge_records(
                     u64_from_index(partition.len()),
                 )
             })?;
-        let reservation =
-            ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
-        let mut merged = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut merged,
-            total_len,
-            "NX merged partition bytes",
-        )?;
+        let (mut merged, reservation) =
+            ctx.scoped_vector_storage(total_len, "NX merged partition bytes")?;
         merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
@@ -2138,7 +2122,7 @@ fn merge_records(
                     .ok()
                     .and_then(|kind| graph.get(kind, xmt))
                 {
-                    merged[node.pos..node.end()].fill(0xff);
+                    merged[node.pos()..node.end()].fill(0xff);
                 }
             }
         }
@@ -2509,13 +2493,8 @@ pub(crate) fn semantic_residual_with_census(
                 )
             })?;
     }
-    ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
     let mut residual = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut residual,
-        total_len,
-        "NX semantic residual bytes",
-    )?;
+    ctx.reserve_capacity(&mut residual, total_len, "NX semantic residual bytes")?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
     for scope in &current_scopes {
@@ -2583,10 +2562,8 @@ impl FixedCandidate {
         stream: &[u8],
         signature: &[Token],
     ) -> Result<Record, CodecError> {
-        let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
-        ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
         let mut canonical_bytes = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut canonical_bytes,
             self.canonical_len,
             "NX deltas fixed record bytes",
@@ -3054,7 +3031,7 @@ fn materialize_attdef_list(
     let count = usize::try_from(shape.slot_count).map_err(|_| {
         ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count))
     })?;
-    let mut references = ctx.retained_vec(count, "NX ATTDEF references")?;
+    let mut references = ctx.collection_vec(count, "NX ATTDEF references")?;
     let mut at = shape.references_start;
     for _ in 0..count {
         let Some((reference, consumed)) = read_xmt(stream, at) else {
@@ -3474,9 +3451,9 @@ fn consume_intersection_auxiliary(
             offset,
             crate::intersection::ChartPointLayout::Ext11,
         )? {
-        (RecordFamily::Chart, chart.xmt, end)
+        (RecordFamily::Chart, u32::from(chart.xmt), end)
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
-        (RecordFamily::TermUse, term.xmt, end)
+        (RecordFamily::TermUse, u32::from(term.xmt), end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
         let headers = bound.state.header_references();
         let references = [
@@ -3499,7 +3476,7 @@ fn consume_intersection_auxiliary(
         else {
             return Ok(None);
         };
-        (RecordFamily::SupportUv, support_uv.xmt, end)
+        (RecordFamily::SupportUv, u32::from(support_uv.xmt), end)
     };
     let Some(bytes) = stream.get(offset..end) else {
         return Ok(None);

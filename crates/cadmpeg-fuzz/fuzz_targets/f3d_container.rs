@@ -17,7 +17,15 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|data: &[u8]| {
     let codec = F3dCodec;
 
-    let _ = codec.detect(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    if let Ok((ctx, root)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ) {
+        let _ = codec.detect(&ctx, root);
+        let _ = ctx.finish_session();
+    }
 
     let mut inspect_cur = Cursor::new(data);
     let _ = codec.inspect(&mut inspect_cur, &InspectOptions::default());

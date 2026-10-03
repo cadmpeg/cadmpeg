@@ -162,8 +162,11 @@ fn base_feature_output_body_id_refuses_retained_limit() {
 
 #[test]
 fn base_feature_native_selection_refuses_retained_limit() {
-    let body_bytes = "test:model:body#2".len() + "test:model:body#1".len();
-    let error = base_feature_error(u64::MAX, u64::try_from(body_bytes).unwrap());
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D BaseFeature native selection",
+        |cap| Err::<(), cadmpeg_core::CodecError>(base_feature_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D BaseFeature native selection")
@@ -273,8 +276,11 @@ fn feature_output_bodies_refuse_collection_limit() {
 
 #[test]
 fn feature_output_body_id_refuses_retained_limit() {
-    let body_bytes = "f3d:brep:entity#1".len();
-    let error = bound_output_error(u64::MAX, u64::try_from(body_bytes).unwrap());
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D feature output body identity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(bound_output_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D feature output body identity")

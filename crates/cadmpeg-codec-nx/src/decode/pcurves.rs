@@ -985,7 +985,7 @@ fn reversed_pole_rows<T: Copy>(
     ctx: &DecodeContext<'_>,
     rows: &[T],
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let mut reversed = ctx.copy_retained_slice(rows, "nx reversed pcurve poles")?;
+    let mut reversed = ctx.copy_slice(rows, "nx reversed pcurve poles")?;
     reversed.reverse();
     Ok(reversed)
 }
@@ -996,7 +996,7 @@ fn reflected_pcurve_knots(
     lower: FiniteReal,
     upper: FiniteReal,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let mut reversed = ctx.retained_vec(knots.len(), "nx reversed pcurve knots")?;
+    let mut reversed = ctx.collection_vec(knots.len(), "nx reversed pcurve knots")?;
     for knot in knots.finite_knots().rev() {
         let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
             return Ok(None);
@@ -4827,14 +4827,14 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 ctx,
                 &curve_id,
                 source_stream,
-                cadmpeg_core::decode::u64_from_index(node.pos),
+                cadmpeg_core::decode::u64_from_index(node.pos()),
                 Some("TOLERANT_EDGE_INTERSECTION"),
             )?;
             annotations.note(
                 ctx,
                 &procedural_id,
                 source_stream,
-                cadmpeg_core::decode::u64_from_index(node.pos),
+                cadmpeg_core::decode::u64_from_index(node.pos()),
                 Some("TOLERANT_EDGE_INTERSECTION"),
             )?;
         }

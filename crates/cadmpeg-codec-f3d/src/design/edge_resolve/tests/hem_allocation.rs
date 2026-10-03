@@ -56,28 +56,27 @@ fn hem_historical_group_id_refuses_retained_limit() {
         })
         .collect();
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#hem").unwrap();
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::edge_resolve::resolved_hem_edge_group(
-            &selection_group,
-            std::slice::from_ref(&selection_group),
-            std::slice::from_ref(&operand),
-            &[],
-            Some(7),
-            &feature_id,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d hem historical group id" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected Hem group ID refusal: {other:?}"),
-        }
+    {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "f3d hem historical group id",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                crate::design::edge_resolve::resolved_hem_edge_group(
+                    &selection_group,
+                    std::slice::from_ref(&selection_group),
+                    std::slice::from_ref(&operand),
+                    &[],
+                    Some(7),
+                    &feature_id,
+                    &ctx,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d hem historical group id" && failure.dimension == (ResourceDimension::RetainedBytes)));
     }
-    panic!("no Hem group ID refusal");
 }

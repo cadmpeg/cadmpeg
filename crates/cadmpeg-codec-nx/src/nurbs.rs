@@ -172,11 +172,11 @@ fn decode_surfaces(
             };
             let poles = if stride == 4 {
                 let mut rows = propagate_resource!(
-                    ctx.retained_vec(descriptor.u_count, "NX NURBS rational grid rows")
+                    ctx.collection_vec(descriptor.u_count, "NX NURBS rational grid rows")
                 );
                 for row in 0..descriptor.u_count {
                     let mut points = propagate_resource!(
-                        ctx.retained_vec(descriptor.v_count, "NX NURBS rational poles")
+                        ctx.collection_vec(descriptor.v_count, "NX NURBS rational poles")
                     );
                     for column in 0..descriptor.v_count {
                         let (point, weight) =
@@ -188,11 +188,11 @@ fn decode_surfaces(
                 NurbsPoleGrid::Rational { rows }
             } else {
                 let mut rows = propagate_resource!(
-                    ctx.retained_vec(descriptor.u_count, "NX NURBS polynomial grid rows")
+                    ctx.collection_vec(descriptor.u_count, "NX NURBS polynomial grid rows")
                 );
                 for row in 0..descriptor.u_count {
                     let mut points = propagate_resource!(
-                        ctx.retained_vec(descriptor.v_count, "NX NURBS polynomial poles")
+                        ctx.collection_vec(descriptor.v_count, "NX NURBS polynomial poles")
                     );
                     for column in 0..descriptor.v_count {
                         points.push(
@@ -222,10 +222,10 @@ fn decode_surfaces(
             let surface = match surface {
                 Ok(surface) => surface,
                 Err(error) => {
-                    propagate_resource!(ctx.push_retained_vec(
+                    propagate_resource!(ctx.push_vec(
                         refusals,
                         CarrierRefusal {
-                            pos: node.pos,
+                            pos: node.pos(),
                             family: "B_SURFACE",
                             error,
                         },
@@ -235,12 +235,12 @@ fn decode_surfaces(
                 }
             };
             Some(Ok(Surface {
-                pos: node.pos,
+                pos: node.pos(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             }))
         })();
         if let Some(record) = candidate.transpose()? {
-            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+            ctx.push_vec(&mut records, record, "NX NURBS geometry records")?;
         }
     }
     Ok(records)
@@ -337,7 +337,7 @@ fn decode_pcurves(
             };
             let poles = if stride == 3 {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS rational poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS rational poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     let (point, weight) = pole_at(index)?;
@@ -346,7 +346,7 @@ fn decode_pcurves(
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points }
             } else {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     points.push(pole_at(index)?.0);
@@ -363,10 +363,10 @@ fn decode_pcurves(
             let nurbs = match nurbs {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
-                    propagate_resource!(ctx.push_retained_vec(
+                    propagate_resource!(ctx.push_vec(
                         refusals,
                         CarrierRefusal {
-                            pos: node.pos,
+                            pos: node.pos(),
                             family: "B_CURVE pcurve",
                             error,
                         },
@@ -376,12 +376,12 @@ fn decode_pcurves(
                 }
             };
             Some(Ok(Pcurve {
-                pos: node.pos,
+                pos: node.pos(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
             }))
         })();
         if let Some(record) = candidate.transpose()? {
-            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+            ctx.push_vec(&mut records, record, "NX NURBS geometry records")?;
         }
     }
     Ok(records)
@@ -483,7 +483,7 @@ fn decode_curves(
             };
             let poles = if stride == 4 {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS rational poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS rational poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     let (point, weight) = pole_at(index)?;
@@ -492,7 +492,7 @@ fn decode_curves(
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points }
             } else {
                 let mut points = propagate_resource!(
-                    ctx.retained_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
+                    ctx.collection_vec(descriptor.basis.poles, "NX NURBS polynomial poles")
                 );
                 for index in 0..descriptor.basis.poles {
                     points.push(pole_at(index)?.0);
@@ -509,10 +509,10 @@ fn decode_curves(
             let curve = match curve {
                 Ok(curve) => curve,
                 Err(error) => {
-                    propagate_resource!(ctx.push_retained_vec(
+                    propagate_resource!(ctx.push_vec(
                         refusals,
                         CarrierRefusal {
-                            pos: node.pos,
+                            pos: node.pos(),
                             family: "B_CURVE",
                             error,
                         },
@@ -522,12 +522,12 @@ fn decode_curves(
                 }
             };
             Some(Ok(Curve {
-                pos: node.pos,
+                pos: node.pos(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             }))
         })();
         if let Some(record) = candidate.transpose()? {
-            ctx.push_retained_vec(&mut records, record, "NX NURBS geometry records")?;
+            ctx.push_vec(&mut records, record, "NX NURBS geometry records")?;
         }
     }
     Ok(records)
@@ -756,7 +756,7 @@ fn array_record_at<'bytes>(
         let count = View::u16_be_at(bytes, pos + 4 + escape).map(usize::from)?;
         (count > 0).then_some(())?;
         let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
-        (reference > 5).then_some(())?;
+        NonNullXmt::try_from(reference).ok()?;
         let data = pos + 6 + escape + reference_len;
         let end = data.checked_add(count.checked_mul(width)?)?;
         let raw = bytes.get(data..end)?;
@@ -819,7 +819,7 @@ fn surface_payload_at<'bytes>(
         (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
         let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-        (xmt > 10).then_some(())?;
+        NonNullXmt::try_from(xmt).ok()?;
         let shift = escape + xmt_len - 2;
         let count_escape = usize::from(bytes.get(pos + 91 + shift) == Some(&0xff));
         let count_at = pos + 91 + shift + count_escape;
@@ -852,7 +852,7 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let mut at = pos.checked_add(2 + escape + xmt_len)?;
     for _ in 0..8 {
         View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
@@ -912,7 +912,7 @@ fn curve_payload_at<'bytes>(
         (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
         let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-        (xmt > 10).then_some(())?;
+        NonNullXmt::try_from(xmt).ok()?;
         let shift = escape + xmt_len - 2;
         let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
         let count_at = pos + 9 + shift + count_escape;
@@ -932,7 +932,7 @@ fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let mut at = pos.checked_add(2 + escape + xmt_len)?;
     matches!(bytes.get(at), Some(1 | 2)).then_some(())?;
     at += 1;
@@ -1045,7 +1045,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     (bytes.get(pos..pos + 2) == Some(&[0, 126])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let shift = escape + xmt_len - 2;
     let u_periodic = logical_at(bytes, pos + surf_desc::U_PERIODIC + shift)?;
     let v_periodic = logical_at(bytes, pos + surf_desc::V_PERIODIC + shift)?;
@@ -1227,7 +1227,7 @@ fn curve_descriptor_at(
     (bytes.get(pos..pos + 2) == Some(&[0, 136])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-    (xmt > 10).then_some(())?;
+    NonNullXmt::try_from(xmt).ok()?;
     let shift = escape + xmt_len - 2;
     let degree = View::u16_be_at(bytes, pos + curve_desc::DEGREE + shift)?;
     let poles = usize::try_from(View::u32_be_at(
@@ -1440,7 +1440,7 @@ fn expand_knots(
         cadmpeg_core::decode::u64_from_index(count),
         "expand NX NURBS knots",
     )?;
-    let mut out = ctx.retained_vec(count, "NX NURBS expanded knots")?;
+    let mut out = ctx.collection_vec(count, "NX NURBS expanded knots")?;
     for (&value, &count) in distinct.iter().zip(multiplicities) {
         for _ in 0..usize::from(count) {
             out.push(value);

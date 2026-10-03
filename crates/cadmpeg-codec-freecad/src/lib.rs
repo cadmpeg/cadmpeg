@@ -182,6 +182,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 None,
             ));
         }
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
@@ -190,7 +191,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     let object_ids = objects
         .iter()
-        .map(|record| record.id.as_str())
+        .map(|record| record.id().as_str())
         .collect::<HashSet<_>>();
     let entry_names = entries
         .iter()
@@ -219,15 +220,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
-                    format!("{} has missing dependency {dependency}", object.id),
-                    Some(object.id.clone()),
+                    format!("{} has missing dependency {dependency}", object.id()),
+                    Some(object.id().clone()),
                 ));
             }
         }
     }
     let object_by_id = objects
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|object| (object.id().as_str(), object))
         .collect::<HashMap<_, _>>();
     let applications_match =
         match application::matches_native(ctx, namespace, &objects, &properties, &entries) {
@@ -331,16 +332,22 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
+    let mut product_storage = ctx.reserve_scoped(0, "fcstd product validation index")?;
     let mut product_by_object = HashMap::new();
-    ctx.reserve_map(
-        &mut product_by_object,
-        product_nodes.len(),
-        "fcstd product validation index",
-    )?;
+    product_storage.with_storage(|| {
+        ctx.reserve_map(
+            &mut product_by_object,
+            product_nodes.len(),
+            "fcstd product validation index",
+        )
+    })?;
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);
     }
-    let cyclic_products = product::product_cycle_nodes(ctx, &product_by_object)?;
+    let (cyclic_products, _cycle_storage) = ctx
+        .with_scoped_storage("fcstd product cycle lookup", || {
+            product::product_cycle_nodes(ctx, &product_by_object)
+        })?;
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
@@ -376,7 +383,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for joint in &joints {
-        let missing_link = !object_ids.contains(joint.object.as_str())
+        let missing_link = !object_ids.contains(joint.object())
             || joint.references().any(|reference| {
                 reference.document().is_none()
                     && reference
@@ -388,9 +395,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 Check::NativeLinks,
                 format!(
                     "{} has missing operands or invalid connector frames",
-                    joint.id
+                    joint.id()
                 ),
-                Some(joint.id.clone()),
+                Some(joint.id().to_owned()),
             ));
         }
     }
@@ -460,7 +467,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let expected_annotation_objects = objects
         .iter()
         .filter(|object| annotation::is_annotation_type(&object.type_name))
-        .map(|object| object.id.as_str())
+        .map(|object| object.id().as_str())
         .collect::<HashSet<_>>();
     let annotation_objects = annotations
         .iter()
@@ -831,16 +838,25 @@ impl CodecBackend for FcstdCodec {
         crate::validate_native(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(prefix.len()),
+            "detect input",
+        )?;
         if !prefix.starts_with(b"PK\x03\x04") {
-            return Confidence::No;
+            return Ok(Confidence::No);
         }
-        if container::has_document_markers(prefix) {
-            Confidence::High
+        if container::has_document_markers(ctx, prefix)? {
+            Ok(Confidence::High)
         } else if contains(prefix, b"Document.xml") {
-            Confidence::Medium
+            Ok(Confidence::Medium)
         } else {
-            Confidence::Low
+            Ok(Confidence::Low)
         }
     }
 

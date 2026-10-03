@@ -133,9 +133,10 @@ fn native_design_objects_refuse_caller_collection_limit() {
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_design_object_id", |ctx| {
+            super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+        });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_object_id")
@@ -344,6 +345,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         object_graph_record(&[0x04, 0x01, 0x81, 0x85], &[0xfe]),
         object_graph_record(&[0x04, 0x01, 0x83, 0x86], &[0xfe]),
     ]);
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let native = crate::native::CatiaNative::decode(&bytes);
     let graph = &native.object_graphs[0];
     let decoded = CatiaCodec
@@ -403,6 +405,7 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
         object_graph_record(&[0x04, 0x01, 0xe5, 0xff, 0xff, 0xff, 0xe4], &[0xfe]),
     ];
     let bytes = sequential_entity_backed_object_graph(&records);
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode relation to unowned field");
@@ -444,6 +447,7 @@ fn native_design_objects_preserve_reflexive_field_relations() {
         &[0x81, 0x81, 0xfe],
     )];
     let bytes = sequential_entity_backed_object_graph(&records);
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode reflexive field relation");
@@ -630,6 +634,7 @@ fn null_storage_roles_are_not_unresolved_storage_links() {
         "BaseFeature",
     ]));
 
+    let bytes = [b"V5_CFV2\0".as_slice(), &[0; 8], bytes.as_slice()].concat();
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode null storage role");

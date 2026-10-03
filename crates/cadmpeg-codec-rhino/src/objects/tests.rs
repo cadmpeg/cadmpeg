@@ -1325,12 +1325,34 @@ fn user_string_entries_refuse_collection_limit() {
 
 #[test]
 fn user_string_key_refuses_retained_limit() {
-    assert_attribute_resource(&user_string_list_refusal(100, 2), "Rhino user-string key");
+    assert_attribute_resource(
+        &user_string_list_refusal(
+            100,
+            crate::test_support::retained_limit_at("Rhino user-string key", 0, |cap| {
+                match user_string_list_refusal(100, cap) {
+                    crate::chunks::FramingError::Resource(limit) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                }
+            }),
+        ),
+        "Rhino user-string key",
+    );
 }
 
 #[test]
 fn user_string_value_refuses_retained_limit() {
-    assert_attribute_resource(&user_string_list_refusal(100, 3), "Rhino user-string value");
+    assert_attribute_resource(
+        &user_string_list_refusal(
+            100,
+            crate::test_support::retained_limit_at("Rhino user-string value", 0, |cap| {
+                match user_string_list_refusal(100, cap) {
+                    crate::chunks::FramingError::Resource(limit) => limit,
+                    error => panic!("unexpected resource refusal: {error:?}"),
+                }
+            }),
+        ),
+        "Rhino user-string value",
+    );
 }
 
 #[test]
@@ -1747,5 +1769,45 @@ fn degraded_object_warning_refuses_retained_limit() {
     .expect("service profile admits degraded warning");
     assert!(
         matches!(result, ObjectRecord::Degraded { warning, .. } if warning.contains("degraded"))
+    );
+}
+
+#[test]
+fn attribute_userdata_checksum_refusal_propagates_without_diagnostic() {
+    use crate::chunks::FramingError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let bytes = class_userdata_v2_with_direct_payload(
+        ArchiveVersion::V5,
+        [1; 16],
+        [2; 16],
+        50,
+        2_348_836_140,
+        &[1, 2, 3, 4],
+    );
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino chunk checksum bytes",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let mut warnings = Diagnostics::new();
+            match crate::objects::parse_attribute_userdata(
+                &ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                &mut warnings,
+            ) {
+                Err(FramingError::Resource(limit)) => {
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                    assert!(warnings.is_empty());
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                }
+                Err(error) => panic!("unexpected userdata error: {error}"),
+                Ok(value) => Ok(value),
+            }
+        },
     );
 }

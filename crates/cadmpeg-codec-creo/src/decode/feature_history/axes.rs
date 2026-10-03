@@ -263,7 +263,7 @@ mod full_turn_carrier_allocation_tests {
         CadIr,
         RevolveExtent,
     ) {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         let mut ir = CadIr::empty();
         let mut add = |id, kind, geometry| {
             scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -506,40 +506,50 @@ pub(in super::super) fn geometry_generator_features(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "Creo generator exclusion lookup")?;
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        ctx.insert_btree_set(
-            &mut operation_feature_ids,
-            operation.feature_id,
-            "creo generator operation feature nodes",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut operation_feature_ids,
+                operation.feature_id,
+                "creo generator operation feature nodes",
+            )
+        })?;
     }
     let mut row_feature_ids = BTreeSet::new();
     for row in &scan.features.rows {
-        ctx.insert_btree_set(
-            &mut row_feature_ids,
-            row.feature_id,
-            "creo generator row feature nodes",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut row_feature_ids,
+                row.feature_id,
+                "creo generator row feature nodes",
+            )
+        })?;
     }
     let mut datum_feature_ids = BTreeSet::new();
     for datum in &scan.planes.datums {
-        ctx.insert_btree_set(
-            &mut datum_feature_ids,
-            datum.feature_id,
-            "creo generator datum feature nodes",
-        )?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut datum_feature_ids,
+                datum.feature_id,
+                "creo generator datum feature nodes",
+            )
+        })?;
     }
+    let mut map_storage = ctx.reserve_scoped(0, "Creo generator map storage")?;
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
     for row in &scan.surfaces.rows {
         if row.feature_id == 0 {
             continue;
         }
-        ctx.admit_btree_entry(
-            &generators,
-            &row.feature_id,
-            "creo generator feature map nodes",
-        )?;
+        map_storage.with_storage(|| {
+            ctx.admit_btree_entry(
+                &generators,
+                &row.feature_id,
+                "creo generator feature map nodes",
+            )
+        })?;
         let generator = match generators.entry(row.feature_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -559,11 +569,13 @@ pub(in super::super) fn geometry_generator_features(
         if row.feature_id == 0 {
             continue;
         }
-        ctx.admit_btree_entry(
-            &generators,
-            &row.feature_id,
-            "creo generator feature map nodes",
-        )?;
+        map_storage.with_storage(|| {
+            ctx.admit_btree_entry(
+                &generators,
+                &row.feature_id,
+                "creo generator feature map nodes",
+            )
+        })?;
         let generator = match generators.entry(row.feature_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -611,6 +623,7 @@ pub(in super::super) fn model_feature_ids(
     scan: &ContainerScan,
 ) -> Result<BTreeSet<IrFeatureId>, CodecError> {
     let mut ids = BTreeSet::new();
+    let mut numeric_storage = ctx.reserve_scoped(0, "Creo model numeric identity lookup")?;
     let mut numeric_ids = BTreeSet::new();
     for feature_id in scan
         .features
@@ -620,7 +633,8 @@ pub(in super::super) fn model_feature_ids(
         .chain(scan.features.rows.iter().map(|row| row.feature_id))
         .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
         .chain(
-            geometry_generator_features(ctx, scan)?
+            numeric_storage
+                .with_storage(|| geometry_generator_features(ctx, scan))?
                 .into_iter()
                 .map(|generator| generator.feature_id),
         )
@@ -628,11 +642,13 @@ pub(in super::super) fn model_feature_ids(
         if numeric_ids.contains(&feature_id) {
             continue;
         }
-        ctx.insert_btree_set(
-            &mut numeric_ids,
-            feature_id,
-            "creo model feature numeric identity nodes",
-        )?;
+        numeric_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut numeric_ids,
+                feature_id,
+                "creo model feature numeric identity nodes",
+            )
+        })?;
         let text = ctx.format_retained(
             format_args!("creo:model:feature#{feature_id}"),
             "creo model feature identity text",
@@ -651,7 +667,7 @@ mod allocation_tests {
     use std::collections::BTreeSet;
 
     fn generator_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 61,
             kind: crate::surface::SurfaceKind::Plane,
@@ -762,14 +778,12 @@ mod allocation_tests {
     #[test]
     fn model_feature_identity_text_refuses_retained_limit() {
         let scan = generator_scan();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:model:feature#50".len()) - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error =
-            model_feature_ids(&ctx, &scan).expect_err("one feature ID exceeds the retained limit");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "creo model feature identity text",
+            |ctx| model_feature_ids(ctx, &scan),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes

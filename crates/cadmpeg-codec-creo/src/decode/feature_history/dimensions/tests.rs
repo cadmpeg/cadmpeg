@@ -50,7 +50,7 @@ fn dimension_row_identity_refuses_before_formatting() {
 }
 
 fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr) {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
         .push(crate::feature::definitions::FeatureDefinition {
@@ -266,12 +266,12 @@ fn dimension_layout_refuses_before_occurrence_node() {
 
 #[test]
 fn dimension_layout_refuses_before_retained_name() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_dimension_parameter_layout(&ctx, &[(layout_key(), 3)])
-        .expect_err("dimension name exceeds retained allowance");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo dimension parameter name",
+        |ctx| feature_dimension_parameter_layout(ctx, &[(layout_key(), 3)]),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -369,7 +369,7 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
 
 #[test]
 fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .definitions
         .push(crate::feature::definitions::FeatureDefinition {
@@ -440,7 +440,7 @@ fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
 
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
-    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Section),

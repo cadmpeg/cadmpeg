@@ -257,7 +257,7 @@ use crate::native::om::roll_forward::OmRollForwardStateTable;
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use crate::parasolid::Stream;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -641,17 +641,20 @@ pub(crate) fn terminal_feature_body_ids(
     bindings: &[SegmentBodyBinding],
     statuses: &[SegmentBodyLineageStatus],
 ) -> Result<Option<BTreeSet<BodyId>>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "nx terminal body workspace")?;
     let mut statuses_by_binding = BTreeMap::new();
     for status in statuses {
         if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
             return Ok(None);
         }
-        ctx.insert_btree_map(
-            &mut statuses_by_binding,
-            status.segment_body_binding.as_str(),
-            status,
-            "nx terminal body status index",
-        )?;
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut statuses_by_binding,
+                status.segment_body_binding.as_str(),
+                status,
+                "nx terminal body status index",
+            )
+        })?;
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
@@ -666,14 +669,17 @@ pub(crate) fn terminal_feature_body_ids(
             digits += 1;
         }
         let prefix_len = 5_u64 + digits;
-        let _prefix_reservation = ctx.reserve_scoped(prefix_len, "nx terminal body prefix")?;
+        let mut prefix_reservation = ctx.reserve_scoped(0, "nx terminal body prefix")?;
         let mut prefix = String::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
-            &mut prefix,
-            cadmpeg_core::decode::index_from_u64(prefix_len)
-                .ok_or_else(|| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?,
-            "nx terminal body prefix",
-        )?;
+        prefix_reservation.with_storage(|| {
+            ctx.try_reserve_retained_text(
+                &mut prefix,
+                cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
+                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
+                })?,
+                "nx terminal body prefix",
+            )
+        })?;
         write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
         ctx.charge_work(
@@ -685,7 +691,9 @@ pub(crate) fn terminal_feature_body_ids(
             .filter(|body| body.as_str().starts_with(&prefix))
         {
             if !mapped.contains(body) {
-                ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")
+                })?;
             }
             if status.terminal && !selected.contains(body) {
                 let body_id =
@@ -718,7 +726,6 @@ impl NativeModel {
     /// families depend on earlier ones, and some record ids embed position.
     pub(crate) fn extract(
         ctx: &DecodeContext<'_>,
-        root: View<'_>,
         container: &Container,
         streams: &[Stream],
         parsed: &mut ParsedStreams,
@@ -944,10 +951,9 @@ impl NativeModel {
             feature_input_block_identity_groups(ctx, &feature_input_blocks)?;
         let display_jt_indices = display_jt_indices(ctx, container)?;
         let display_jt_documents = display_jt_documents(ctx, container, &display_jt_indices)?;
-        let budget = (ctx, root);
-        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents)?;
+        let display_jt_segments = display_jt_segments(ctx, container, &display_jt_documents)?;
         let display_jt_shape_lod_elements =
-            display_jt_shape_lod_elements(budget, container, &display_jt_segments)?;
+            display_jt_shape_lod_elements(ctx, container, &display_jt_segments)?;
         let display_jt_tri_strip_lod_headers =
             display_jt_tri_strip_lod_headers(ctx, container, &display_jt_shape_lod_elements)?;
         let display_jt_initial_face_degree_symbols =
@@ -1001,55 +1007,47 @@ impl NativeModel {
             &display_jt_coordinate_array_headers,
         )?;
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
-            display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
+            display_jt_compressed_element_sequences(ctx, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
-            display_jt_string_property_atoms(budget, container, &display_jt_segments)?;
+            display_jt_string_property_atoms(ctx, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
-            display_jt_shape_lod_bindings(budget, container, &display_jt_segments)?;
-        let display_jt_base_node_data = display_jt_base_node_data(
-            budget,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
+            display_jt_shape_lod_bindings(ctx, container, &display_jt_segments)?;
+        let display_jt_base_node_data =
+            display_jt_base_node_data(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let display_jt_group_node_data = display_jt_group_node_data(
-            budget,
+            ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,
         )?;
-        let display_jt_instance_nodes = display_jt_instance_nodes(
-            budget,
-            container,
-            &display_jt_segments,
-            &display_jt_documents,
-        )?;
+        let display_jt_instance_nodes =
+            display_jt_instance_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
-            budget,
+            ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,
         )?;
         let display_jt_material_attributes = display_jt_material_attributes(
-            budget,
+            ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,
         )?;
         let display_jt_partition_nodes = display_jt_partition_nodes(
-            budget,
+            ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,
         )?;
         let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
-            budget,
+            ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,
         )?;
         let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
-            budget,
+            ctx,
             container,
             &display_jt_segments,
             &display_jt_documents,

@@ -66,6 +66,65 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   `if __name__ == "__main__":` block fails: discovery imports the module and
   never runs that block.
 
+## Numeric casts
+
+Workspace Clippy lints deny `as_conversions`, `cast_possible_truncation`,
+`cast_possible_wrap`, `cast_sign_loss`, `cast_precision_loss` and `cast_lossless`.
+Numeric casts occur only in `cadmpeg-core/src/convert.rs`, under its one module
+expectation. Each conversion checks exactness or the finite target range. All
+other conversions use the core functions, `From`, or `TryFrom` with an explicit
+refusal branch.
+
+## Checked arithmetic
+
+Production `saturating_*` calls fail with `saturating_arithmetic`. Use checked
+arithmetic. The overflow branch propagates the caller context's resource refusal
+in decode code or a typed error elsewhere. Constant expressions must preserve
+the exact value or reject the invalid constant.
+
+## Decode context parameters
+
+`optional_decode_context` rejects production function parameters with type
+`Option<&DecodeContext<...>>`. Qualified paths, explicit borrow lifetimes,
+mutable borrows, trait methods and function-pointer parameters are included.
+The decode path passes its caller context. Context-free reconstruction and
+writers take no context. Fields, local bindings and returned values are not
+function parameters and stay outside this rule. The checker recognizes the
+named type in source and does not resolve type aliases.
+
+## Lint suppressions
+
+`lint_suppression` rejects production `#[allow(...)]` and `#[expect(...)]`,
+including inner attributes and conditional suppressions active in production.
+Suppressions under `cfg_attr(test, ...)` or a flat `all(..., test, ...)`
+predicate apply only to tests and are exempt. Fix the code covered
+by the lint. Test modules and test files retain their suppressions. The one
+exception is the module-level expectation in `cadmpeg-core/src/convert.rs` for
+`as_conversions`, `cast_possible_truncation`, `cast_precision_loss` and
+`cast_sign_loss`. It has a nonempty reason and appears once. Function-level
+expectations, nested module expectations and additional lints are rejected.
+
+## Integer limits
+
+`integer_clamp` rejects integer `MAX` or `MIN` defaults in `unwrap_or`,
+`unwrap_or_else`, `map_or` and `map_or_else`. Qualified primitive paths,
+parenthesized bounds, closure parameter patterns, closure blocks and explicit
+closure return types are included. Use an exact core conversion or `From` when
+the conversion cannot fail on supported targets; use `TryFrom` with a refusal
+branch when it can fail. Missing range endpoints and sort keys use `Option`.
+Limits in successful mapping arms and arguments to refusal functions are not
+default bounds.
+
+## Wrapping exceptions
+
+Production `wrapping_*` calls fail with `wrapping_arithmetic` unless the file
+format defines modular arithmetic and a standalone `// wrapping-exception:
+<reason>` comment immediately precedes exactly one call. The nonempty reason
+states the modular operation. Index and length arithmetic use checked operations
+and an explicit overflow branch. Stale markers and markers before multiple calls
+fail with `wrapping_exception`. Test-only markers and calls are excluded. Comments
+inside literals and trailing comments grant no exception.
+
 ## Endian exceptions
 
 A standalone line comment immediately before a conversion admits exactly one

@@ -233,8 +233,7 @@ pub(crate) fn parse_property_set_stream<'a>(
         cadmpeg_core::decode::u64_from_index(section_count),
         "admit OLE section directories",
     )?;
-    let mut directories =
-        DecodeContext::admitted_vec(section_count, "admit OLE section directories")?;
+    let mut directories = ctx.vector_storage(section_count, "admit OLE section directories")?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(section_count),
         "admit OLE section FMTIDs",
@@ -261,8 +260,7 @@ pub(crate) fn parse_property_set_stream<'a>(
         cadmpeg_core::decode::u64_from_index(section_count),
         "admit OLE property-set sections",
     )?;
-    let mut sections =
-        DecodeContext::admitted_vec(section_count, "admit OLE property-set sections")?;
+    let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
     for (fmtid, offset) in directories {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
@@ -331,8 +329,7 @@ fn parse_section<'a>(
         cadmpeg_core::decode::u64_from_index(property_count),
         "admit OLE property directory",
     )?;
-    let mut directory =
-        DecodeContext::admitted_vec(property_count, "admit OLE property directory")?;
+    let mut directory = ctx.vector_storage(property_count, "admit OLE property directory")?;
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {
@@ -349,7 +346,12 @@ fn parse_section<'a>(
         directory.push((offset, id));
     }
     let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
-    ctx.sort_unstable_by(&mut directory, Ord::cmp, |_| 0, "OLE property directory sort")?;
+    ctx.sort_unstable_by(
+        &mut directory,
+        Ord::cmp,
+        |_| 0,
+        "OLE property directory sort",
+    )?;
     for pair in directory.windows(2) {
         if pair[0].0 == pair[1].0 {
             return Err(CodecError::Malformed(
@@ -400,7 +402,7 @@ fn parse_section<'a>(
         cadmpeg_core::decode::u64_from_index(property_count),
         "admit OLE properties",
     )?;
-    let mut properties = DecodeContext::admitted_vec(property_count, "admit OLE properties")?;
+    let mut properties = ctx.vector_storage(property_count, "admit OLE properties")?;
     for (id, start, end) in ranges {
         let raw = source
             .child(source.start() + start, source.start() + end)
@@ -541,7 +543,7 @@ fn parse_vector<'a>(
         cadmpeg_core::decode::u64_from_index(count),
         "admit OLE property vector elements",
     )?;
-    let mut values = DecodeContext::admitted_vec(count, "admit OLE property vector elements")?;
+    let mut values = ctx.vector_storage(count, "admit OLE property vector elements")?;
     for _ in 0..count {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;

@@ -3,6 +3,7 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
@@ -4669,8 +4670,12 @@ fn native_conic_interval_curve(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    ctx.charge_collection_items(
+        u64_from_index(pole_count),
+        "f3d generated conic control points",
+    )?;
     let mut control_points =
-        ctx.collection_vec(pole_count, "f3d generated conic control points")?;
+        ctx.vector_storage(pole_count, "f3d generated conic control points")?;
     let mut weights = ctx.collection_vec(pole_count, "f3d generated conic weights")?;
     let mut knots = ctx.collection_vec(knot_count, "f3d generated conic knots")?;
     let point = |angle: f64, scale: f64| {

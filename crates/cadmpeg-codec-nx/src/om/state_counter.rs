@@ -181,7 +181,7 @@ impl StateCounterMap {
         };
         let rest_count = row_count - 2;
         let operation = "NX operation-state counter rows";
-        let mut rest = ctx.retained_vec(rest_count, operation)?;
+        let mut rest = ctx.collection_vec(rest_count, operation)?;
         let Some(mut cursor) = second_at.checked_add(second.byte_len()) else {
             return Ok(None);
         };

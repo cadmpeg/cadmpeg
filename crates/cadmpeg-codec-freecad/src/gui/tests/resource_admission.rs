@@ -693,7 +693,8 @@ fn gui_shape_payload_prefix_refuses_at_caller_collection_limit() {
 fn gui_shape_payload_prefix_text_refuses_at_caller_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let error = super::super::shape_payload_prefixes(
@@ -873,7 +874,8 @@ fn gui_material_string_refuses_at_caller_limit() {
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::super::GuiMaterial>());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let error = super::super::parse_material_list(
@@ -1263,8 +1265,11 @@ fn gui_object_name_index_refuses_at_caller_limit() {
     let text = "<Document><Camera/></Document>";
     let xml = roxmltree::Document::parse(text).expect("GUI document XML");
     let object = crate::native::ObjectRecord {
-        id: "fcstd:native:object#P".into(),
-        name: "P".into(),
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#P".into(),
+            "P".into(),
+        )
+        .expect("object identity"),
         type_name: "Part::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -1497,7 +1502,12 @@ fn gui_asset_identity_refuses_at_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        document_id.len() + "Other".len() + crate::native::native_id("entry", "asset").len() - 1,
+        document_id.len()
+            + std::mem::size_of::<cadmpeg_ir::presentation::PresentationState>()
+            + "Other".len()
+            + std::mem::size_of::<String>()
+            + crate::native::native_id("entry", "asset").len()
+            - 1,
     );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");

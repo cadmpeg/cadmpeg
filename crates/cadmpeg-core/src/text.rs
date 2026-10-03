@@ -284,14 +284,14 @@ pub fn named_entries_reporting<V>(
                     let key = NonBlankString(
                         ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
                     );
-                    ctx.reserve_retained_vec(&mut refused, 1, "named entry refusals")?;
+                    ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
                 }
             },
             None => {
                 let record =
                     ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
-                ctx.reserve_retained_vec(&mut refused, 1, "named entry refusals")?;
+                ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                 refused.push(NamedEntryError::Blank { record });
             }
         }
@@ -604,7 +604,11 @@ mod tests {
 
     #[test]
     fn named_entry_map_storage_refuses_before_insertion() {
-        let bytes = std::mem::size_of::<(NonBlankString, i32)>();
+        let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<NonBlankString>().max(std::mem::align_of::<usize>());
+        // A one-item ceiling admits one split node and a new root.
+        let bytes = 2 * node_bytes;
         let error = checked_reporting(
             vec![("k".into(), 1)],
             1,
@@ -677,11 +681,14 @@ mod tests {
     fn checked_named_entry_refusals_refuse_before_vec_growth() {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
         assert_eq!(
-            checked_reporting(entries.clone(), 2, 1000).unwrap().1.len(),
+            checked_reporting(entries.clone(), 2, 10_000)
+                .unwrap()
+                .1
+                .len(),
             1
         );
         assert!(matches!(
-            checked_reporting(entries, 1, 1000),
+            checked_reporting(entries, 1, 10_000),
             Err(crate::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "named entry refusals"
@@ -703,7 +710,7 @@ mod tests {
     fn checked_named_entry_restated_key_refuses_before_text_growth() {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
         assert!(matches!(
-            checked_reporting(entries, 10, crate::decode::u64_from_index(std::mem::size_of::<(NonBlankString, i32)>()) + 1),
+            checked_reporting(entries, 10, crate::decode::u64_from_index(5 * (11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>()) + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<NonBlankString>())) + 1),
             Err(crate::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "named entry refused key"
@@ -720,7 +727,7 @@ mod tests {
             ("width".to_owned(), 2),
             ("depth".to_owned(), 3),
         ];
-        let (kept, refused) = checked_reporting(entries.clone(), 10, 1000).unwrap();
+        let (kept, refused) = checked_reporting(entries.clone(), 10, 10_000).unwrap();
         assert_eq!(kept.get("width"), Some(&1));
         assert_eq!(
             kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(),

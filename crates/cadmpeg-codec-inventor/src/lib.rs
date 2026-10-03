@@ -64,15 +64,21 @@ impl CodecBackend for InventorCodec {
         validate::validate_native(ctx, ir)
     }
 
-    fn detect_impl(&self, prefix: &[u8]) -> Confidence {
-        let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix)
-        else {
-            return Confidence::No;
+    fn detect_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        let prefix = prefix.window();
+        let (probe, _storage) =
+            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
+            return Ok(Confidence::No);
         };
-        if container::has_inventor_evidence(&paths) {
-            Confidence::High
+        if container::has_inventor_evidence(ctx, &paths)? {
+            Ok(Confidence::High)
         } else {
-            Confidence::No
+            Ok(Confidence::No)
         }
     }
 

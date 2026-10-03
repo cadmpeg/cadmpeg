@@ -1413,5 +1413,185 @@ let text = "cadmpeg_ir::eval::curve_point(0.).ok()";
         self.assertEqual(self.scan(body), [])
 
 
+class SaturatingArithmetic(TempSourceCase):
+    def test_saturating_calls_require_checked_branches(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    count.saturating_add(1);
+    usize::saturating_mul(count, 2);
+    NonZeroU32::MIN.saturating_add(1);
+    count.saturating_sub
+        (1);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("saturating_arithmetic")], [2, 3, 4, 5])
+
+    def test_checked_arithmetic_and_test_code_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    count.checked_add(1).ok_or(error)?;
+    // count.saturating_add(1);
+    let text = "count.saturating_mul(2)";
+}
+#[cfg(test)] mod tests { fn f() { count.saturating_sub(1); } }
+""")
+        self.assertEqual(self.findings("saturating_arithmetic"), [])
+
+
+class WrappingArithmetic(TempSourceCase):
+    def test_marker_admits_only_one_next_line_call(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    // wrapping-exception: checksum is an eight-bit modular sum
+    sum = sum.wrapping_add(byte);
+    sum = sum.wrapping_add(byte);
+    // wrapping-exception: two calls are not one operation
+    sum = sum.wrapping_add(byte).wrapping_add(byte);
+}
+""")
+        self.assertEqual([f.line for f in self.findings("wrapping_arithmetic")], [4, 6, 6])
+        self.assertEqual([f.line for f in self.findings("wrapping_exception")], [5])
+
+    def test_empty_stale_inline_and_literal_reasons_grant_nothing(self) -> None:
+        for reason in ["// wrapping-exception: ", "// wrapping-exception: checksum\n\n",
+                       'let s = "// wrapping-exception: checksum";',
+                       "let n = 0; // wrapping-exception: checksum"]:
+            self.write("crates/demo/src/lib.rs", f"fn f() {{\n{reason}\nsum.wrapping_add(byte);\n}}\n")
+            self.assertEqual(len(self.findings("wrapping_arithmetic")), 1)
+        self.assertEqual(len(self.findings("wrapping_exception")), 0)
+
+    def test_test_only_markers_and_calls_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#[cfg(test)] mod tests {
+    // wrapping-exception: stale marker in a test
+    fn f() { sum.wrapping_add(byte); }
+}
+fn f() { count.checked_sub(1); }
+""")
+        self.assertEqual(self.findings("wrapping_arithmetic"), [])
+        self.assertEqual(self.findings("wrapping_exception"), [])
+
+
+class IntegerLimitDefaults(TempSourceCase):
+    def test_combinators_qualified_types_and_closure_bindings(self) -> None:
+        expressions = [
+            "value.map_or(u64::MAX, identity)",
+            "value.map_or_else(|error| i16::MIN, identity)",
+            "value.unwrap_or_else(|error: Error| usize::MAX)",
+            "value.map_or_else(move || { core::primitive::u32::MAX }, identity)",
+            "value.unwrap_or_else(|error| -> u64 { return <u64>::MAX; })",
+            "value.map_or((::std::primitive::isize::MIN), identity)",
+            "value.map_or_else(|(_, error)| { std::u8::MAX }, identity)",
+            "value.unwrap_or::<u32>(u32::MAX)",
+            "value.unwrap_or_else(|error: Result<A, B>| u64::MAX)",
+            "value.map_or_else(|(A | B)| u32::MIN, identity)",
+        ]
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                self.write("crates/demo/src/lib.rs", f"fn f() {{ {expression}; }}")
+                self.assertEqual(len(self.findings("integer_clamp")), 1)
+
+    def test_bounds_in_success_arm_and_nonbound_defaults_are_not_clamps(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    value.map_or(0, |_| u64::MAX);
+    value.unwrap_or_else(|error| refuse(error, u64::MAX));
+    value.map_or_else(|| limit, identity);
+    value.map_or(Some(NonZeroU32::MIN), identity);
+    value.map_or(native::MAX_RECORDS, identity);
+}
+""")
+        self.assertEqual(self.findings("integer_clamp"), [])
+
+    def test_multiline_closures_report_the_method_line(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    value.map_or_else(
+        |error| {
+            u64::MAX
+        },
+        identity,
+    );
+}
+""")
+        self.assertEqual([f.line for f in self.findings("integer_clamp")], [2])
+
+
+class LintSuppressions(TempSourceCase):
+    EXPECT = """#![expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "conversions check exactness and target range"
+)]
+"""
+
+    def test_outer_inner_and_conditional_suppressions_fail(self) -> None:
+        self.write("crates/demo/src/lib.rs", """#![allow(dead_code)]
+#[expect(clippy::too_many_arguments, reason = "many inputs")]
+fn f() {}
+#[cfg_attr(feature = "x", allow(unused))]
+fn g() {}
+""")
+        self.assertEqual([f.line for f in self.findings("lint_suppression")], [1, 2, 4])
+        for predicate in ['not(test)', 'any(test, feature = "x")']:
+            self.write("crates/demo/src/lib.rs",
+                       f"#[cfg_attr({predicate}, allow(unused))] fn f() {{}}")
+            self.assertEqual(len(self.findings("lint_suppression")), 1)
+
+    def test_only_one_exact_module_conversion_expectation_is_exempt(self) -> None:
+        path = "crates/cadmpeg-core/src/convert.rs"
+        self.write(path, self.EXPECT + "fn f() {}")
+        self.assertEqual(self.findings("lint_suppression"), [])
+        self.write(path, self.EXPECT + self.EXPECT + "fn f() {}")
+        self.assertEqual(len(self.findings("lint_suppression")), 1)
+        for source in [self.EXPECT.replace("#!", "#"),
+                       self.EXPECT.replace("clippy::cast_sign_loss,", "dead_code,"),
+                       self.EXPECT.replace("conversions check exactness and target range", ""),
+                       "mod inner {\n" + self.EXPECT + "fn f() {}\n}"]:
+            with self.subTest(source=source):
+                self.write(path, source)
+                self.assertEqual(len(self.findings("lint_suppression")), 1)
+        self.write(path, self.EXPECT + "fn f() {}")
+        self.write("crates/demo/src/lib.rs", self.EXPECT)
+        self.assertEqual(len(self.findings("lint_suppression")), 1)
+
+    def test_comments_literals_and_test_suppressions_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """// #[allow(unused)]
+fn f() { let s = "#[expect(unused)]"; }
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+#[cfg_attr(all(feature = "x", test), expect(unused))]
+fn g() {}
+#[cfg_attr(feature = "x", cfg_attr(test, allow(unused)))]
+fn h() {}
+#[cfg(test)]
+#[allow(dead_code)]
+mod tests { #![allow(clippy::unwrap_used)] fn f() {} }
+""")
+        self.write("crates/demo/src/owner/tests.rs", "#![allow(dead_code)]")
+        self.assertEqual(self.findings("lint_suppression"), [])
+
+
+class OptionalDecodeContexts(TempSourceCase):
+    def test_function_method_trait_and_function_pointer_parameters_fail(self) -> None:
+        sources = [
+            "fn f(ctx: Option<&DecodeContext<'_>>) {}",
+            "fn f<'a, T>(ctx: std::option::Option<&'a cadmpeg_core::decode::DecodeContext<'a>>) {}",
+            "impl X { fn f(&self, ctx: Option<&mut DecodeContext<'_>>) {} }",
+            "trait X { fn f(ctx: core::option::Option<&DecodeContext<'_>>); }",
+            "fn f(callback: fn(Option<&DecodeContext<'_>>)) {}",
+            "fn r#context(ctx: Option<&::cadmpeg_core::decode::DecodeContext<'_>>) {}",
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.write("crates/demo/src/lib.rs", source)
+                self.assertEqual(len(self.findings("optional_decode_context")), 1)
+
+    def test_required_context_context_free_and_nonsignature_types_are_exempt(self) -> None:
+        self.write("crates/demo/src/lib.rs", """struct X { ctx: Option<&'static DecodeContext<'static>> }
+fn decode(ctx: &DecodeContext<'_>) {}
+fn reconstruct() {}
+fn context() -> Option<&'static DecodeContext<'static>> { None }
+fn f() { let ctx: Option<&DecodeContext<'_>> = None; }
+#[cfg(test)] mod tests { fn f(ctx: Option<&DecodeContext<'_>>) {} }
+""")
+        self.assertEqual(self.findings("optional_decode_context"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

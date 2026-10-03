@@ -68,8 +68,7 @@ pub(super) fn section_equation_function_six_distance_values(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         section_equation_function_six_distance_rows(
             ctx,
             definition,
@@ -116,8 +115,7 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         equations.rows.iter().filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
@@ -262,8 +260,7 @@ pub(super) fn section_equation_unsigned_coordinate_distances(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?
             .into_iter()
             .filter(|constraint| constraint.active),
@@ -306,8 +303,7 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         equations
             .rows
             .iter()
@@ -393,8 +389,7 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         equations
             .rows
             .iter()
@@ -470,8 +465,7 @@ pub(super) fn section_equation_point_on_line_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, u32, u32)>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?
             .into_iter()
             .filter(|constraint| constraint.active)
@@ -508,8 +502,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(ctx,
-    equations
+    ctx.collect_vec(equations
         .rows
         .iter()
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
@@ -579,8 +572,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        })
-        , "creo section equation point on line constraint rows")
+        }), "creo section equation point on line constraint rows")
 }
 
 #[derive(Clone, Copy)]
@@ -597,8 +589,7 @@ pub(super) fn section_equation_equal_length_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
-    crate::decode::collect_items(
-        ctx,
+    ctx.collect_vec(
         section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?
             .into_iter()
             .filter(|constraint| constraint.active),
@@ -634,8 +625,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    crate::decode::collect_items(ctx,
-    equations
+    ctx.collect_vec(equations
         .rows
         .iter()
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
@@ -686,8 +676,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
                 offset: equation.offset,
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
-        })
-        , "creo section equation equal length constraint rows")
+        }), "creo section equation equal length constraint rows")
 }
 
 pub(super) type SectionCoordinateVariable = (u32, SectionAxis);
