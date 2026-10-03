@@ -353,7 +353,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(u) })
-                if !ids.contains(u.as_str()) =>
+                if !ids.contains(u.as_str(), ctx)? =>
             {
                 ref_error(findings, s.id.as_str(), "unknown record", u.as_str());
             }
@@ -375,7 +375,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown),
             }) => {
-                if !ids.contains(unknown.as_str()) {
+                if !ids.contains(unknown.as_str(), ctx)? {
                     ref_error(
                         findings,
                         curve.id.as_str(),
@@ -1103,7 +1103,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 record: Some(record),
                 ..
             } => {
-                if !ids.contains(record.as_str()) {
+                if !ids.contains(record.as_str(), ctx)? {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
@@ -1509,7 +1509,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 record: Some(record),
                 ..
             } => {
-                if !ids.contains(record.as_str()) {
+                if !ids.contains(record.as_str(), ctx)? {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
