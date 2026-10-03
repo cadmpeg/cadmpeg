@@ -261,8 +261,8 @@ impl DecodeContext<'_> {
         let mut lower = 0;
         let mut upper = values.len();
         while lower < upper {
-            let middle = lower + (upper - lower) / 2;
             self.charge_work(1, operation)?;
+            let middle = lower + (upper - lower) / 2;
             if predicate(&values[middle])? {
                 lower = middle + 1;
             } else {

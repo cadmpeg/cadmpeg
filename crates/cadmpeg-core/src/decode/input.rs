@@ -64,6 +64,7 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         let max = self.policy().limits.max_input_bytes;
         loop {
+            self.charge_work(1, "complete input iteration")?;
             let remaining = max
                 .checked_sub(u64_from_index(bytes.len()))
                 .ok_or_else(|| self.refuse_input_limit(0, "complete input prefix"))?;
@@ -123,6 +124,26 @@ mod tests {
         assert!(matches!(ctx.read_input_prefix(&mut reader, 1),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
         assert_eq!(reader.position(), 0);
+    }
+
+    #[test]
+    fn input_completion_iteration_refuses_before_read_or_growth() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut reader = Cursor::new(b"a");
+        let mut bytes = Vec::new();
+        let CodecError::ResourceLimit(first) = ctx.complete_input(&mut reader, &mut bytes)
+            .expect_err("iteration refusal") else { panic!("resource refusal") };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.operation, "complete input iteration");
+        assert_eq!(reader.position(), 0);
+        assert!(bytes.is_empty());
+        assert_eq!(bytes.capacity(), 0);
+        let CodecError::ResourceLimit(repeated) = ctx.charge_work(1, "later")
+            .expect_err("original refusal") else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
     }
 
     #[test]
