@@ -383,6 +383,33 @@ mod tests {
     use crate::CodecError;
 
     #[test]
+    fn empty_needle_is_never_a_match() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        assert_eq!(ctx.find_bytes(b"abc", b"", "search").expect("admission"), None);
+        assert_eq!(ctx.find_bytes_from(b"abc", b"", 1, "search").expect("admission"), None);
+        assert_eq!(ctx.find_bytes_in(b"abc", b"", 0, 3, "search").expect("admission"), None);
+        assert!(!ctx.contains_bytes(b"abc", b"", "search").expect("admission"));
+        assert_eq!(
+            ctx.find_bytes_iter(b"abc", b"", "search").expect("admission").collect::<Vec<_>>(),
+            Vec::<usize>::new()
+        );
+    }
+
+    #[test]
+    fn finds_absolute_and_ranged_offsets() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let haystack = b"xxabcxxabc";
+        assert_eq!(ctx.find_bytes(haystack, b"abc", "search").expect("admission"), Some(2));
+        assert_eq!(ctx.find_bytes_from(haystack, b"abc", 3, "search").expect("admission"), Some(7));
+        assert_eq!(ctx.find_bytes_in(haystack, b"abc", 3, 10, "search").expect("admission"), Some(7));
+        assert_eq!(ctx.find_bytes_in(haystack, b"abc", 3, 6, "search").expect("admission"), None);
+        assert!(ctx.contains_bytes(haystack, b"abc", "search").expect("admission"));
+        assert_eq!(ctx.find_bytes_iter(haystack, b"abc", "search").expect("admission").collect::<Vec<_>>(), [2, 7]);
+    }
+
+    #[test]
     fn charged_byte_searches_preserve_binary_offsets_and_nonoverlapping_matches() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
