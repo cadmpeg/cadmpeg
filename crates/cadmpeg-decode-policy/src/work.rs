@@ -120,6 +120,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         };
         if self.tcx.trait_of_assoc(definition).is_some()
             && self.implementation(expression, definition).is_none()
+            && !self.provider_reader_call(expression, definition)
         {
             self.work_report(
                 expression.span,

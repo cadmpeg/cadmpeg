@@ -11,9 +11,9 @@ const INPUT_CHUNK: usize = 8192;
 impl DecodeContext<'_> {
     /// Reads at most `length` bytes and admits each copied byte before growth.
     /// Input storage is governed by the input-byte dimension.
-    pub fn read_input_prefix(
+    pub fn read_input_prefix<R: Read + ?Sized>(
         &self,
-        reader: &mut dyn Read,
+        reader: &mut R,
         length: usize,
     ) -> Result<Vec<u8>, CodecError> {
         let mut bytes = Vec::new();
@@ -22,9 +22,9 @@ impl DecodeContext<'_> {
     }
 
     /// Extends admitted input storage up to a total bounded length.
-    pub fn extend_input_prefix(
+    pub fn extend_input_prefix<R: Read + ?Sized>(
         &self,
-        reader: &mut dyn Read,
+        reader: &mut R,
         bytes: &mut Vec<u8>,
         length: usize,
     ) -> Result<(), CodecError> {
@@ -61,9 +61,9 @@ impl DecodeContext<'_> {
     }
 
     /// Acquires the remaining input without reading or charging the prefix twice.
-    pub fn complete_input(
+    pub fn complete_input<R: Read + ?Sized>(
         &self,
-        reader: &mut dyn Read,
+        reader: &mut R,
         bytes: &mut Vec<u8>,
     ) -> Result<(), CodecError> {
         let max = self.policy().limits.max_input_bytes;
@@ -99,9 +99,9 @@ impl DecodeContext<'_> {
 
     /// Admits one end probe and validates the reader's reported byte count.
     /// Returns whether input remains without retaining or admitting that byte.
-    pub fn probe_input_end(
+    pub fn probe_input_end<R: Read + ?Sized>(
         &self,
-        reader: &mut dyn Read,
+        reader: &mut R,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         self.charge_work(1, operation)?;

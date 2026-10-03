@@ -1517,9 +1517,9 @@ impl CompoundPrefixProbe {
 
 /// Reads the bounded detection prefix in the caller's session.
 /// CFB prefixes grow until the directory evidence settles or the input limit refuses.
-pub fn read_detection_prefix(
+pub fn read_detection_prefix<R: Read + ?Sized>(
     ctx: &DecodeContext<'_>,
-    source: &mut dyn Read,
+    source: &mut R,
     prefix_len: usize,
 ) -> Result<Vec<u8>, CodecError> {
     let max_bytes = ctx.policy().limits.max_input_bytes;
