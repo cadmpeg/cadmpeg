@@ -239,14 +239,29 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .first()
                     .and_then(|operand| self.extent_terms(operand, seen));
             }
-            if types::standard(self.tcx, definition) && name.as_str() == "checked_add" {
-                let mut terms = self.extent_terms(operands.first()?, &mut seen.clone())?;
-                terms.extend(self.extent_terms(operands.get(1)?, &mut seen.clone())?);
+            let arithmetic = if types::standard(self.tcx, definition) {
+                match name.as_str() {
+                    "checked_add" => Some((false, 0)),
+                    "checked_mul" => Some((true, 0)),
+                    _ => None,
+                }
+            } else if self.trusted_context_callee(expression) && self.context_operation(expression) {
+                match name.as_str() {
+                    "cost_sum" => Some((false, 1)),
+                    "cost_product" => Some((true, 1)),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some((false, offset)) = arithmetic {
+                let mut terms = self.extent_terms(operands.get(offset)?, &mut seen.clone())?;
+                terms.extend(self.extent_terms(operands.get(offset + 1)?, &mut seen.clone())?);
                 return Some(terms);
             }
-            if types::standard(self.tcx, definition) && name.as_str() == "checked_mul" {
-                let left = self.extent_terms(operands.first()?, &mut seen.clone())?;
-                let right = self.extent_terms(operands.get(1)?, &mut seen.clone())?;
+            if let Some((true, offset)) = arithmetic {
+                let left = self.extent_terms(operands.get(offset)?, &mut seen.clone())?;
+                let right = self.extent_terms(operands.get(offset + 1)?, &mut seen.clone())?;
                 let mut product = Vec::new();
                 for left in left {
                     for right in &right {

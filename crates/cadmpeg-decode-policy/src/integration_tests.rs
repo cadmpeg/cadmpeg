@@ -817,3 +817,8 @@ fn container_classifiers_keep_their_child_work_and_allocation_obligations() {
 fn linear_growth_receipts_bind_the_collection_element_and_returned_count() {
     check_fixture("work_linear_growth");
 }
+
+#[test]
+fn checked_core_cost_arithmetic_preserves_exact_operand_credits() {
+    check_fixture("work_cost");
+}
