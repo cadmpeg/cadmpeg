@@ -216,16 +216,11 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .expect("round-trip revolution surface");
         let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
         let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
-        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &source_index,
-            &source_surface.id,
-            1.0,
-            0.7,
-        )
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, 1.0, 0.7)
         .expect("source line revolution evaluates")
         .get();
         let round_point =
-            cadmpeg_ir::eval::model_surface_point_by_id(&round_index, &round_surface.id, 1.0, 0.7)
+            cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, 1.0, 0.7)
                 .expect("round-trip line revolution evaluates")
                 .get();
         assert!(
@@ -334,20 +329,10 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .expect("round-trip extrusion surface");
         let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
         let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
-        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &source_index,
-            &source_surface.id,
-            source_carrier_end * 0.5,
-            0.25,
-        )
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_carrier_end * 0.5, 0.25)
         .expect("source line extrusion evaluates")
         .get();
-        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &round_index,
-            &round_surface.id,
-            round_carrier_end * 0.5,
-            0.25,
-        )
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_carrier_end * 0.5, 0.25)
         .expect("round-trip line extrusion evaluates")
         .get();
         assert!(
@@ -669,20 +654,10 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
         for fraction in [0.25, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
-            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &source_index,
-                &source_surface.id,
-                source_parameter,
-                1.0,
-            )
+            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_parameter, 1.0)
             .expect("source extrusion evaluates")
             .get();
-            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &round_index,
-                &round_surface.id,
-                round_parameter,
-                1.0,
-            )
+            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_parameter, 1.0)
             .expect("round-trip extrusion evaluates")
             .get();
             assert!(
@@ -802,20 +777,10 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
         for fraction in [0.25, 0.5, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
-            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &source_index,
-                &source_surface.id,
-                source_parameter,
-                1.0,
-            )
+            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_parameter, 1.0)
             .expect("source placed extrusion evaluates")
             .get();
-            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &round_index,
-                &round_surface.id,
-                round_parameter,
-                1.0,
-            )
+            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_parameter, 1.0)
             .expect("round-trip placed extrusion evaluates")
             .get();
             assert!(
@@ -998,20 +963,10 @@ fn assert_type120_round_trip(version: IgesVersion) {
     for (fraction, angle) in [(0.25, 0.0), (0.75, 0.7)] {
         let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
         let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
-        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &source_index,
-            &source_surface.id,
-            source_parameter,
-            angle,
-        )
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_parameter, angle)
         .expect("source revolution evaluates")
         .get();
-        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &round_index,
-            &round_surface.id,
-            round_parameter,
-            angle,
-        )
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_parameter, angle)
         .expect("round-trip revolution evaluates")
         .get();
         assert!(

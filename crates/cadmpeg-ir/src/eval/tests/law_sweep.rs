@@ -89,9 +89,9 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
     let index = crate::index::ModelIndex::new(&ir);
     let range = [finite(-f64::MAX), finite(f64::MAX)];
     let parameter = finite(-f64::MAX * 0.5);
-    let forward = sweep_profile_differential(&index, &profile, range, false, parameter)
+    let forward = sweep_profile_differential(crate::eval::admission::EvaluationAdmission::Standard, &index, &profile, range, false, parameter)
         .expect("forward interior profile point");
-    let reversed = sweep_profile_differential(&index, &profile, range, true, parameter)
+    let reversed = sweep_profile_differential(crate::eval::admission::EvaluationAdmission::Standard, &index, &profile, range, true, parameter)
         .expect("reversed interior profile point");
     assert_eq!(forward.point.get(), Point3::new(1.25, 0.0, 0.0));
     assert_eq!(reversed.point.get(), Point3::new(1.75, 0.0, 0.0));
@@ -300,14 +300,14 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
 
     let index = crate::index::ModelIndex::new(&ir);
     let expected = Point3::new(-0.5, 0.5, 0.25);
-    let point = model_surface_point_by_id(&index, &surface_id, -0.25, 0.25)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, -0.25, 0.25)
         .expect("profile-frame sweep point")
         .get();
     assert!((point.x - expected.x).abs() <= f64::EPSILON * 64.0);
     assert!((point.y - expected.y).abs() <= f64::EPSILON * 64.0);
     assert!((point.z - expected.z).abs() <= f64::EPSILON * 64.0);
 
-    let partials = model_surface_partials_by_id(&index, &surface_id, -0.25, 0.25)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, -0.25, 0.25)
         .expect("profile-frame sweep partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(0.0, -2.0, 0.0));
@@ -343,11 +343,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.5, 0.0))
     );
-    let cached_partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
+    let cached_partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5)
         .expect("current sweep cache partials");
     assert_eq!(cached_partials.point, Point3::new(0.25, 0.5, 0.0));
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
@@ -385,10 +385,10 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
-    assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_err());
+    assert!(model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5).is_err());
 }
 
 #[test]
@@ -548,8 +548,8 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     for route in [
-        model_surface_point_by_id(&index, &surface_id, 0.5, 1.0),
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 1.0),
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 1.0),
+        model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &ir, &ir.model.surfaces[0].geometry, 0.5, 1.0),
     ] {
         assert!(
             matches!(
@@ -576,19 +576,19 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
         value: cadmpeg_core::nonblank_literal!("X"),
     });
     let expected =
-        model_surface_point_by_id(&crate::index::ModelIndex::new(&plain), &plain_id, 0.5, 0.0)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &crate::index::ModelIndex::new(&plain), &plain_id, 0.5, 0.0)
             .expect("sweep of the law X");
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.5, 0.0),
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 0.0),
         Ok(expected)
     );
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.0),
+        model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &ir, &ir.model.surfaces[0].geometry, 0.5, 0.0),
         Ok(expected)
     );
     assert_eq!(
-        model_surface_partials_by_id(&index, &surface_id, 0.5, 0.0)
+        model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 0.0)
             .map(crate::eval::SurfacePartials::into_raw),
         Err(crate::eval::EvaluationFailure::NoValue)
     );

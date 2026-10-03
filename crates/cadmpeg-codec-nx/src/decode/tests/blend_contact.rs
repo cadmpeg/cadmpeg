@@ -251,19 +251,9 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         .unwrap();
         assert_eq!(lanes[0].len(), chart.len());
         for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
-            let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
-                &first,
-                lanes[0][ordinal].u,
-                lanes[0][ordinal].v,
-            )
+            let first_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &first, lanes[0][ordinal].u, lanes[0][ordinal].v)
             .unwrap();
-            let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
-                &second,
-                lanes[1][ordinal].u,
-                lanes[1][ordinal].v,
-            )
+            let second_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &second, lanes[1][ordinal].u, lanes[1][ordinal].v)
             .unwrap();
             assert!((first_point.x - second_point.x).abs() < 1.0e-10);
             assert!((first_point.y - second_point.y).abs() < 1.0e-10);
@@ -332,19 +322,9 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         )
         .unwrap();
         for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
-            let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
-                &cylinder,
-                cylinder_uv.u,
-                cylinder_uv.v,
-            )
+            let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &cylinder, cylinder_uv.u, cylinder_uv.v)
             .unwrap();
-            let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
-                &section_plane,
-                plane_uv.u,
-                plane_uv.v,
-            )
+            let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &section_plane, plane_uv.u, plane_uv.v)
             .unwrap();
             assert!((cylinder_point.x - plane_point.x).abs() < 1.0e-8);
             assert!((cylinder_point.y - plane_point.y).abs() < 1.0e-8);

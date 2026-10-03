@@ -101,7 +101,7 @@ pub(super) fn check_procedural_support_consistency(
             let evaluated = parameterization
                 .parameter_range()
                 .endpoints()
-                .map(|parameter| measured_point(model_curve_point_by_id(&index, owner, parameter)));
+                .map(|parameter| measured_point(model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Decode(ctx), &index, owner, parameter)));
             let [Some(start), Some(end)] = [evaluated[0]?, evaluated[1]?] else {
                 super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(procedural.id.as_str()), format_args!("charted tolerant intersection does not evaluate at both endpoints"))?;
                 continue;
@@ -302,7 +302,7 @@ fn check_support_sides(
                         uv
                     }
                 };
-                match model_surface_point_by_id(index, surface_id, uv.u, uv.v) {
+                match model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, uv.u, uv.v) {
                     Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 }
@@ -669,12 +669,7 @@ pub(super) fn check_pcurve_surface_consistency(
                 Ok(uv) => Ok(Some(uv.get())),
                 Err(failure) => failure.non_finite(),
             };
-            let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(
-                &index,
-                &face.surface,
-                uv.u,
-                uv.v,
-            ) {
+            let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Decode(ctx), &index, &face.surface, uv.u, uv.v) {
                 Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
             };
@@ -861,7 +856,7 @@ fn mapped_pcurve_parameter_near_point(
         let Some(uv) = uv_at(parameter)? else {
             return Ok(None);
         };
-        match model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v) {
+        match model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Decode(ctx), context.index, context.surface_id, uv.u, uv.v) {
             Ok(point) => Ok(Some(point.get())),
             Err(failure) => failure.non_finite(),
         }
@@ -877,7 +872,7 @@ fn mapped_pcurve_parameter_near_point(
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
         };
         let partials =
-            match model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v) {
+            match model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Decode(ctx), context.index, context.surface_id, uv.u, uv.v) {
                 Ok(partials) => partials,
                 Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
                 Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => {

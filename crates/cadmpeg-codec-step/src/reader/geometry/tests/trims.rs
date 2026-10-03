@@ -64,16 +64,16 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     let index = ModelIndex::new(decoded.ir());
     let trimmed_id = SurfaceId::mint("step:data:surface#8").expect("identity grammar");
     assert_eq!(
-        model_surface_point_by_id(&index, &trimmed_id, 0.0, 0.0)
+        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &trimmed_id, 0.0, 0.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(3.0, 4.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(&index, &trimmed_id, 2.0, 2.0)
+        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &trimmed_id, 2.0, 2.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(1.0, 2.0, 0.0))
     );
-    let partials = model_surface_partials_by_id(&index, &trimmed_id, 1.0, 1.0)
+    let partials = model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &trimmed_id, 1.0, 1.0)
         .expect("trimmed surface partials");
     assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, -1.0, 0.0));
@@ -182,12 +182,7 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     assert!((parameter_ranges[0][0] - 5.5).abs() < 1.0e-12);
     assert!((parameter_ranges[0][1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-12);
     let index = ModelIndex::new(decoded.ir());
-    let point = model_surface_point_by_id(
-        &index,
-        &SurfaceId::mint("step:data:surface#6").expect("identity grammar"),
-        parameter_ranges[0][1] - parameter_ranges[0][0],
-        1.0,
-    )
+    let point = model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &SurfaceId::mint("step:data:surface#6").expect("identity grammar"), parameter_ranges[0][1] - parameter_ranges[0][0], 1.0)
     .expect("cyclic trimmed endpoint");
     assert!((point.x - 2.0 * 0.5_f64.cos()).abs() < 1.0e-12);
     assert!((point.y - 2.0 * 0.5_f64.sin()).abs() < 1.0e-12);

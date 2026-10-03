@@ -14,9 +14,10 @@ use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::eval::model_surface_partials_by_id;
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, finite_or_refusal, model_surface_partials_by_id_with_budget,
-    model_surface_point_by_id_with_budget, nurbs_surface_closest_parameter_with_budget,
+    analytic_surface_parameters, finite_or_refusal, nurbs_surface_closest_parameter_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials,
 };
 use cadmpeg_ir::features::FiniteVector3;
@@ -1352,13 +1353,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                     break;
                 }
             }
-            let Some(position) = finite_or_refusal(model_surface_point_by_id_with_budget(
-                index,
-                surface,
-                parameters.u,
-                parameters.v,
-                geometry_budget,
-            ))?
+            let Some(position) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
             else {
                 return Ok(None);
             };
@@ -1506,13 +1501,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             }
             // A non-finite candidate position is measured as a finite one is,
             // and its non-finite distance halves the step.
-            let Some(candidate_position) = (match model_surface_point_by_id_with_budget(
-                index,
-                surface,
-                candidate.u,
-                candidate.v,
-                geometry_budget,
-            ) {
+            let Some(candidate_position) = (match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, candidate.u, candidate.v)) {
                 Ok(point) => Some(point.get()),
                 Err(failure) => failure.non_finite()?,
             }) else {
@@ -1542,13 +1531,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             break;
         }
     }
-    let Some(position) = finite_or_refusal(model_surface_point_by_id_with_budget(
-        index,
-        surface,
-        parameters.u,
-        parameters.v,
-        geometry_budget,
-    ))?
+    let Some(position) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
     else {
         return Ok(None);
     };
@@ -1605,13 +1588,7 @@ pub(super) fn coarse_model_surface_parameters(
                 return Ok(None);
             };
             let parameters = Point2::new(u.get(), v.get());
-            let Some(candidate) = finite_or_refusal(model_surface_point_by_id_with_budget(
-                index,
-                surface,
-                parameters.u,
-                parameters.v,
-                geometry_budget,
-            ))?
+            let Some(candidate) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
             else {
                 continue;
             };
@@ -1796,13 +1773,7 @@ fn model_surface_derivative(
         periods,
     } = surface_derivative;
 
-    if let Some(partials) = finite_or_refusal(model_surface_partials_by_id_with_budget(
-        index,
-        surface,
-        parameters.u,
-        parameters.v,
-        geometry_budget,
-    ))? {
+    if let Some(partials) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, index, surface, parameters.u, parameters.v)))? {
         return Ok(Some(if along_u { partials.du } else { partials.dv }.get()));
     }
 
@@ -1825,23 +1796,11 @@ fn model_surface_derivative(
     if !width.is_finite() || width == 0.0 {
         return Ok(None);
     }
-    let Some(first) = finite_or_refusal(model_surface_point_by_id_with_budget(
-        index,
-        surface,
-        before.u,
-        before.v,
-        geometry_budget,
-    ))?
+    let Some(first) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, before.u, before.v)))?
     else {
         return Ok(None);
     };
-    let Some(second) = finite_or_refusal(model_surface_point_by_id_with_budget(
-        index,
-        surface,
-        after.u,
-        after.v,
-        geometry_budget,
-    ))?
+    let Some(second) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, after.u, after.v)))?
     else {
         return Ok(None);
     };
@@ -1859,23 +1818,11 @@ fn model_surface_point_and_derivatives(
     domain: Option<([f64; 2], [f64; 2])>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<(Point3, Vector3, Vector3)>, cadmpeg_core::decode::ResourceLimit> {
-    if let Some(partials) = finite_or_refusal(model_surface_partials_by_id_with_budget(
-        index,
-        surface,
-        parameters.u,
-        parameters.v,
-        geometry_budget,
-    ))? {
+    if let Some(partials) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, index, surface, parameters.u, parameters.v)))? {
         let partials = partials.into_raw();
         return Ok(Some((partials.point, partials.du, partials.dv)));
     }
-    let Some(position) = finite_or_refusal(model_surface_point_by_id_with_budget(
-        index,
-        surface,
-        parameters.u,
-        parameters.v,
-        geometry_budget,
-    ))?
+    let Some(position) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
     else {
         return Ok(None);
     };
@@ -2100,13 +2047,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     else {
         return Ok(None);
     };
-    let Some(first_point) = finite_or_refusal(model_surface_point_by_id_with_budget(
-        index,
-        surfaces[0],
-        current[0],
-        current[1],
-        geometry_budget,
-    ))?
+    let Some(first_point) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[0], current[0], current[1])))?
     else {
         return Ok(None);
     };
@@ -2192,13 +2133,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         else {
             return Ok(None);
         };
-        let Some(point) = finite_or_refusal(model_surface_point_by_id_with_budget(
-            index,
-            surfaces[0],
-            corrected[0],
-            corrected[1],
-            geometry_budget,
-        ))?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[0], corrected[0], corrected[1])))?
         else {
             return Ok(None);
         };
@@ -2325,23 +2260,11 @@ fn correct_intersection_parameters(
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
-        let Some(first) = finite_or_refusal(model_surface_point_by_id_with_budget(
-            index,
-            surfaces[0],
-            corrected[0],
-            corrected[1],
-            geometry_budget,
-        ))?
+        let Some(first) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[0], corrected[0], corrected[1])))?
         else {
             return Ok(None);
         };
-        let Some(second) = finite_or_refusal(model_surface_point_by_id_with_budget(
-            index,
-            surfaces[1],
-            corrected[2],
-            corrected[3],
-            geometry_budget,
-        ))?
+        let Some(second) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[1], corrected[2], corrected[3])))?
         else {
             return Ok(None);
         };
@@ -3258,7 +3181,7 @@ mod tests {
             let fit_tolerance = f64::EPSILON.sqrt();
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let target = Point3::new(3.0, 0.25, 1.0);
-            let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, 3.0, 0.25)
+            let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &offset, 3.0, 0.25)
                 .expect("linear offset evaluation")
                 .get();
             assert!(Point3::distance(evaluated, target) <= fit_tolerance);
@@ -3595,7 +3518,7 @@ mod tests {
             let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
             let first_candidate =
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, offset, -0.2, 0.0);
+                cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, offset, -0.2, 0.0);
             assert!(
                 matches!(
                     first_candidate,

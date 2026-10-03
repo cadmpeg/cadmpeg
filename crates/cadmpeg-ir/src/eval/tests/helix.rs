@@ -110,8 +110,8 @@ fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
     for parameter in [0.25, 0.75, 1.7, 2.0] {
         let (expected_point, expected_tangent, expected_acceleration) = expected_helix(parameter);
         let actual_point =
-            super::model_curve_point_by_id(&index, &curve_id, parameter).expect("helix point");
-        let actual = super::model_curve_differential_by_id(&index, &curve_id, parameter)
+            super::model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, parameter).expect("helix point");
+        let actual = super::model_curve_differential_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, parameter)
             .expect("helix differential");
         assert_point_close(actual_point.get(), expected_point);
         assert_point_close(actual.point.get(), expected_point);
@@ -187,11 +187,11 @@ fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
     let index = crate::index::ModelIndex::new(&ir);
 
     assert_eq!(
-        super::model_curve_point_by_id(&index, &curve_id, 0.24),
+        super::model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, 0.24),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(matches!(
-        super::model_curve_differential_by_id(&index, &curve_id, 2.01),
+        super::model_curve_differential_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, 2.01),
         Err(crate::eval::EvaluationFailure::NoValue)
     ));
 }
@@ -202,7 +202,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     let index = crate::index::ModelIndex::new(&ir);
     let target_parameter = 1.7;
     let target =
-        super::model_curve_point_by_id(&index, &curve_id, target_parameter).expect("helix target");
+        super::model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, target_parameter).expect("helix target");
 
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new(&ir),
@@ -213,7 +213,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     .expect("helix inverse")
     .get();
     assert!((0.25..=2.0).contains(&inverse));
-    let resolved = super::model_curve_point_by_id(&index, &curve_id, inverse)
+    let resolved = super::model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, inverse)
         .expect("forward-validated helix inverse");
     let residual = Vector3::new(
         resolved.x - target.x,

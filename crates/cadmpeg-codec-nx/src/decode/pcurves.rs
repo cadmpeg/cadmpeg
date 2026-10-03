@@ -28,11 +28,11 @@ use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::model_curve_point_by_id;
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::eval::model_surface_partials_by_id;
 use cadmpeg_ir::eval::analytic_surface_parameters;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::eval::model_curve_point_by_id_with_budget;
-use cadmpeg_ir::eval::model_surface_partials_by_id_with_budget;
-use cadmpeg_ir::eval::model_surface_point_by_id_with_budget;
 use cadmpeg_ir::eval::nurbs_curve_speed_bound;
 use cadmpeg_ir::eval::nurbs_surface_isocurve;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_budget;
@@ -918,13 +918,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                             return Ok(None);
                         };
                         let Some(partials) =
-                            finite_or_refusal(model_surface_partials_by_id_with_budget(
-                                index,
-                                support,
-                                uv.u,
-                                uv.v,
-                                geometry_budget,
-                            ))?
+                            finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, index, support, uv.u, uv.v)))?
                         else {
                             return Ok(None);
                         };
@@ -2417,12 +2411,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         else {
             return Ok(false);
         };
-        let Some(actual) = finite_or_refusal(model_curve_point_by_id_with_budget(
-            index,
-            curve,
-            parameter,
-            geometry_budget,
-        ))?
+        let Some(actual) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_curve_point_by_id(admission, index, curve, parameter)))?
         else {
             return Ok(false);
         };
@@ -3555,7 +3544,7 @@ fn decoded_solved_surface_point_with_budget(
     }
     let evaluated = match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::surface_point_solved(admission, geometry, u, v)) {
         Err(EvaluationFailure::NoValue) => {
-            model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, u, v))
         }
         direct => direct,
     };
@@ -3642,12 +3631,7 @@ fn transferred_pcurve_sample_with_budget<'a>(
         )?;
     }
     if point.is_none() {
-        point = finite_or_refusal(model_curve_point_by_id_with_budget(
-            index,
-            curve,
-            parameter,
-            geometry_budget,
-        ))?
+        point = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_curve_point_by_id(admission, index, curve, parameter)))?
         .map(cadmpeg_ir::features::FinitePoint3::get);
     }
     let Some(point) = point else {
@@ -3915,12 +3899,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
         return Ok(false);
     };
-    let Some(center) = finite_or_refusal(model_curve_point_by_id_with_budget(
-        index,
-        spine,
-        parameters.u,
-        geometry_budget,
-    ))?
+    let Some(center) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_curve_point_by_id(admission, index, spine, parameters.u)))?
     else {
         return Ok(false);
     };
@@ -4051,12 +4030,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                     )?;
                 }
                 if source_point.is_none() {
-                    source_point = finite_or_refusal(model_curve_point_by_id_with_budget(
-                        index,
-                        curve,
-                        parameter,
-                        geometry_budget,
-                    ))?
+                    source_point = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_curve_point_by_id(admission, index, curve, parameter)))?
                     .map(cadmpeg_ir::features::FinitePoint3::get);
                 }
                 let Some(source_point) = source_point else {

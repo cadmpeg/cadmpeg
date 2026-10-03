@@ -86,16 +86,16 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         "ruled",
     );
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5)
         .expect("cacheless ruled point")
         .get();
     assert_eq!(point, Point3::new(3.25, 6.375, 8.0));
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.25, 0.5)
+        model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &ir, &ir.model.surfaces[0].geometry, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
         Ok(point)
     );
-    let partials = model_surface_second_partials_by_id(&index, &surface_id, 0.25, 0.5)
+    let partials = model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5)
         .expect("cacheless ruled second partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(1.0, 1.5, 0.0));
@@ -120,11 +120,11 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
         "sum",
     );
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5)
         .expect("cacheless sum point")
         .get();
     assert_eq!(point, Point3::new(6.0, 12.5, 14.0));
-    let partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5)
         .expect("cacheless sum partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
@@ -149,18 +149,8 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
             matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
             if point.x.is_nan() && point.y.is_nan() && point.z.is_nan())
         };
-    assert!(reached(model_surface_point_by_id(
-        &index,
-        &surface_id,
-        0.25,
-        f64::MAX
-    )));
-    assert!(reached(model_surface_point(
-        &ir,
-        &ir.model.surfaces[0].geometry,
-        0.25,
-        f64::MAX
-    )));
+    assert!(reached(model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, f64::MAX)));
+    assert!(reached(model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &ir, &ir.model.surfaces[0].geometry, 0.25, f64::MAX)));
 }
 
 #[test]
@@ -202,7 +192,7 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
     }
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NonFinite(Point3::new(
             f64::INFINITY,
             13.0,

@@ -276,7 +276,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
                     let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter)
                         .expect("pcurve endpoint")
                         .get();
-                    model_surface_point_by_id(&index, &surface, uv.u, uv.v)
+                    model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface, uv.u, uv.v)
                         .expect("surface endpoint")
                         .get()
                 })
@@ -459,12 +459,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         let points = offset_parameters
             .into_iter()
             .map(|parameter| {
-                cadmpeg_ir::eval::model_surface_point_by_id(
-                    &index,
-                    &offset,
-                    parameter.u,
-                    parameter.v,
-                )
+                cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &offset, parameter.u, parameter.v)
                 .expect("offset chart point")
                 .get()
             })

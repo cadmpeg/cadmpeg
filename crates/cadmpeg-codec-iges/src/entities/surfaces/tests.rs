@@ -1367,12 +1367,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
         let source_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
         let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
-        let quarter_turn = cadmpeg_ir::eval::model_surface_point_by_id(
-            &index,
-            &surface.id,
-            parameter,
-            std::f64::consts::FRAC_PI_2,
-        )
+        let quarter_turn = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface.id, parameter, std::f64::consts::FRAC_PI_2)
         .expect("hyperbola revolution evaluates");
         let expected = Point3::new(-source_point.y, source_point.x, source_point.z);
         assert!(quarter_turn.distance(expected) < EPS_REVOLUTION_POINT);
@@ -1662,7 +1657,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .expect("hyperbola directrix evaluates");
         let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
         let surface_point =
-            cadmpeg_ir::eval::model_surface_point_by_id(&index, &surface.id, parameter, 1.0)
+            cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface.id, parameter, 1.0)
                 .expect("hyperbola tabulated surface evaluates");
         assert!(
             surface_point.distance(directrix_point.translated(direction.get(), 1.0))
@@ -1765,7 +1760,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .expect("placed hyperbola directrix evaluates");
         let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
         let surface_point =
-            cadmpeg_ir::eval::model_surface_point_by_id(&index, &surface.id, parameter, 1.0)
+            cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface.id, parameter, 1.0)
                 .expect("placed hyperbola tabulated surface evaluates");
         assert!(
             surface_point.distance(directrix_point.translated(direction.get(), 1.0))

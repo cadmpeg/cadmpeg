@@ -68,14 +68,7 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
             CacheContract::from_form(None),
         )
     };
-    let partials = super::super::model_native_extrusion_jet(
-        &index,
-        &extrusion(direction).unwrap(),
-        crate::scalar::FiniteReal::array([0.0, 1.0]),
-        0.5,
-        0.0,
-        None,
-    )
+    let partials = super::super::model_native_extrusion_jet(crate::eval::admission::EvaluationAdmission::Standard, &index, &extrusion(direction).unwrap(), crate::scalar::FiniteReal::array([0.0, 1.0]), 0.5, 0.0)
     .and_then(super::super::SurfaceJet::second_partials)
     .unwrap()
     .into_raw();

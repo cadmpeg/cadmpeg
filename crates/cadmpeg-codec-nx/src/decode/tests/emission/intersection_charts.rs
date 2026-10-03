@@ -1180,11 +1180,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 .model
                 .procedural_curve_owner(&ir.model.procedural_curves[0].id)
                 .expect("tolerant intersection owner");
-            let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
-                owner,
-                parameter,
-            )
+            let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), owner, parameter)
             .expect("charted tolerant intersection evaluates");
             let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
                 &cadmpeg_ir::index::ModelIndex::new(&ir),

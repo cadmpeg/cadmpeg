@@ -6,7 +6,6 @@
 use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
-use crate::eval::model_surface_point_by_id_with_budget;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
 use crate::features::FinitePoint3;
@@ -81,15 +80,9 @@ fn surface_routes(
 ) -> [Result<FinitePoint3, EvaluationFailure<Point3>>; 3] {
     let index = crate::index::ModelIndex::new(ir);
     [
-        model_surface_point(ir, geometry, u, v),
-        model_surface_point_by_id(&index, surface, u, v),
-        model_surface_point_by_id_with_budget(
-            &index,
-            surface,
-            u,
-            v,
-            &cadmpeg_core::decode::WorkBudget::new(1_000_000),
-        ),
+        model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, ir, geometry, u, v),
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, surface, u, v),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&cadmpeg_core::decode::WorkBudget::new(1_000_000), |admission| model_surface_point_by_id(admission, &index, surface, u, v)),
     ]
 }
 
@@ -225,7 +218,7 @@ fn a_replica_curve_whose_placement_overflows_reports_the_point_it_reached() {
         });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_curve_point_by_id(&index, &replica, f64::MAX),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &replica, f64::MAX),
         Err(EvaluationFailure::NonFinite(Point3::new(
             f64::INFINITY,
             2.0,
@@ -233,7 +226,7 @@ fn a_replica_curve_whose_placement_overflows_reports_the_point_it_reached() {
         )))
     );
     assert_eq!(
-        model_curve_point_by_id(&index, &replica, -f64::MAX).map(FinitePoint3::get),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &replica, -f64::MAX).map(FinitePoint3::get),
         Ok(Point3::new(0.0, 2.0, 0.0))
     );
 }
@@ -257,15 +250,15 @@ fn a_subset_curve_whose_span_overflows_keeps_its_finite_local_point() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_curve_point_by_id(&index, &subset, 1.0).map(FinitePoint3::get),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset, 1.0).map(FinitePoint3::get),
         Ok(Point3::new(-f64::MAX, 0.0, 0.0))
     );
     assert_eq!(
-        model_curve_point_by_id(&index, &subset, f64::MAX).map(FinitePoint3::get),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset, f64::MAX).map(FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_curve_point_by_id(&index, &subset, -1.0),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset, -1.0),
         Err(EvaluationFailure::NoValue)
     );
 }
@@ -300,11 +293,11 @@ fn a_helix_whose_tangent_overflows_has_its_finite_point() {
     let (ir, helix) = procedural_curve_model(Vec::new(), |_| large_helix(10.0));
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_curve_point_by_id(&index, &helix, 0.0).map(FinitePoint3::get),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &helix, 0.0).map(FinitePoint3::get),
         Ok(Point3::new(0.9 * f64::MAX, 0.0, 0.0))
     );
     assert_eq!(
-        model_curve_point_by_id(&index, &helix, 2.0),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &helix, 2.0),
         Err(EvaluationFailure::NoValue)
     );
 }
@@ -627,17 +620,17 @@ fn assert_second_order_alone_overflows(
     let budget = cadmpeg_core::decode::WorkBudget::new(1_000_000);
     let expected = Ok(crate::eval::SurfacePartials { point, du, dv });
     assert_eq!(
-        crate::eval::model_surface_partials_by_id(&index, &surface, u, v)
+        crate::eval::model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface, u, v)
             .map(crate::eval::SurfacePartials::into_raw),
         expected
     );
     assert_eq!(
-        crate::eval::model_surface_partials_by_id_with_budget(&index, &surface, u, v, &budget)
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::model_surface_partials_by_id(admission, &index, &surface, u, v))
             .map(crate::eval::SurfacePartials::into_raw),
         expected
     );
     assert_eq!(
-        crate::eval::model_surface_second_partials_by_id(&index, &surface, u, v)
+        crate::eval::model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface, u, v)
             .map(crate::eval::SurfaceSecondPartials::into_raw),
         Err(EvaluationFailure::NonFinite(point))
     );
@@ -847,7 +840,7 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
     ));
     let index = crate::index::ModelIndex::new(&ir);
     let point = Point3::new(0.9 * f64::MAX, 0.0, 2.0);
-    let partials = crate::eval::model_surface_partials_by_id(&index, &surface, 0.0, 2.0)
+    let partials = crate::eval::model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface, 0.0, 2.0)
         .expect("first partials")
         .into_raw();
     assert_eq!(partials.point, point);
@@ -857,7 +850,7 @@ fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partia
     assert!((partials.du.z * std::f64::consts::TAU - 1.0).abs() <= 8.0 * f64::EPSILON);
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
-        crate::eval::model_surface_second_partials_by_id(&index, &surface, 0.0, 2.0)
+        crate::eval::model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface, 0.0, 2.0)
             .map(crate::eval::SurfaceSecondPartials::into_raw),
         Err(EvaluationFailure::NonFinite(point))
     );
@@ -886,7 +879,7 @@ fn a_helix_whose_axis_length_overflows_has_its_point() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_curve_point_by_id(&index, &helix, 0.0).map(FinitePoint3::get),
+        model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &helix, 0.0).map(FinitePoint3::get),
         Ok(Point3::new(1.0, 0.0, 0.0))
     );
 }
