@@ -42,10 +42,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One group and one or five set members admit 496 + 232 backing bytes.
 storage_case!(
     insert_btree_group_set_storage,
     728,
-    3512,
+    728,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::<u64, BTreeSet<u64>>::new();
         for value in 0..count {
@@ -227,10 +228,11 @@ storage_case!(
         Ok(values)
     }
 );
+// One or five map entries admit one 320-byte backing node.
 storage_case!(
     admit_btree_node_storage,
     320,
-    4160,
+    320,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::new();
         for value in 0..count {
@@ -240,13 +242,13 @@ storage_case!(
         Ok(values)
     }
 );
+// Each record admits one 320-byte node: one or five records cost 320 or 1600 bytes.
 storage_case!(
     admit_retained_btree_record_storage,
-    6720,
-    33600,
+    320,
+    1600,
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::new();
-        // The service item ceiling is 1,000,000: ilog2 + 2 = 21 node bounds.
         for value in 0..count {
             ctx.admit_retained_btree_record::<u64, u64>(0, "tree record storage")?;
             values.insert(u64::try_from(value).expect("small key"), 0u64);
