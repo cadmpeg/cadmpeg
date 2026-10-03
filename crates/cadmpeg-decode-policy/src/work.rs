@@ -525,8 +525,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match expression.kind {
             ExprKind::Block(block, _) => self.prefix_block(block),
             ExprKind::Match(scrutinee, _, MatchSource::TryDesugar(_)) => {
-                let (_, args) = self.call(scrutinee)?;
-                let call = args.first()?;
+                let (branch, args) = self.call(scrutinee)?;
+                if !types::standard(self.tcx, branch) || self.tcx.item_name(branch).as_str() != "branch" { return Some(false); }
+                let mut call = *args.first()?;
+                while let Some((definition, operands)) = self.call(call) {
+                    if !types::standard(self.tcx, definition) || self.tcx.item_name(definition).as_str() != "map_err" { break; }
+                    let receiver = *operands.first()?;
+                    let rustc_middle::ty::Adt(owner, _) = self.expr_ty(receiver).peel_refs().kind() else { return Some(false); };
+                    if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Result" { return Some(false); }
+                    call = receiver;
+                }
                 let (definition, operands) = self.call(call)?;
                 if !self.context_operation(call) {
                     return Some(false);
