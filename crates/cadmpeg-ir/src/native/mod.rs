@@ -767,7 +767,6 @@ impl NativeNamespace {
             .map(u64_from_index)
             .ok_or_else(|| ctx.refuse_codec_limit("store native arena", u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(comparisons, "store native arena")?;
-        let vacant = !self.arenas.contains_key(&name);
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
             Ok(converted) => converted,
@@ -783,10 +782,8 @@ impl NativeNamespace {
                 });
             }
         };
-        if vacant {
-            ctx.admit_retained_btree_record::<String, Vec<NativeRecord>>(0, "store native arena")?;
-        }
-        self.arenas.insert(name, converted);
+        ctx.charge_work(1, "store native arena")?;
+        ctx.insert_btree_map(&mut self.arenas, name, converted, "store native arena")?;
         Ok(())
     }
 
