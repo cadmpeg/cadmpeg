@@ -225,6 +225,7 @@ fn check_fixture(name: &str) {
                     | "parser_zstd"
                     | "reader_callbacks"
                     | "sealed_traits"
+                    | "constant_scope"
                     | "byte_capacity"
                     | "byte_search"
                     | "zip"
@@ -900,4 +901,9 @@ fn sealed_traits_require_a_private_closed_implementation_set() {
 #[test]
 fn precharged_byte_capacity_receipts_bind_target_extent_and_refusal() {
     check_fixture("byte_capacity");
+}
+
+#[test]
+fn constant_evaluation_excludes_scans_and_preserves_runtime_callbacks() {
+    check_fixture("constant_scope");
 }

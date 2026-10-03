@@ -139,11 +139,14 @@ class DecodeGraph:
     def resolve(self):
         reached = set(self.roots)
         symbolic = self.symbolic_roots.copy()
+        constants = set()
         edges = {caller: targets.copy() for caller, targets in self.edges.items()}
         while True:
-            before = (len(reached), len(symbolic))
+            before = (len(reached), len(symbolic), len(constants))
             symbolic.update(self.symbolic_instances & reached)
             for caller, targets in self.symbolic_edges.items():
+                if caller in constants:
+                    constants.update(targets)
                 if caller in symbolic:
                     symbolic.update(targets)
                     reached.update(targets)
@@ -183,8 +186,12 @@ class DecodeGraph:
                     edges.setdefault(caller, set()).update((target, "generic instantiation") for target in targets)
             for caller, targets in edges.items():
                 if caller in reached:
-                    reached.update(target for target, _ in targets)
-            if before == (len(reached), len(symbolic)):
+                    reached.update(target for target, kind in targets if kind != "constant evaluation")
+                    constants.update(target for target, kind in targets if kind == "constant evaluation")
+                if caller in constants:
+                    reached.update(target for target, kind in targets if kind == "function address")
+                    constants.update(target for target, kind in targets if kind != "function address")
+            if before == (len(reached), len(symbolic), len(constants)):
                 return reached, edges
 
     def select(self, selector):
@@ -216,7 +223,7 @@ class DecodeGraph:
             return f"decode_path\t{self.location(target)}\tunreachable\n"
         predecessors = {key: None for key in sorted(self.roots)}
         pending = deque(predecessors)
-        order = {kind: index for index, kind in enumerate(("direct call", "function address", "trait-object call", "generic instantiation", "unresolved-indirect candidate"))}
+        order = {kind: index for index, kind in enumerate(("direct call", "function address", "trait-object call", "generic instantiation", "unresolved-indirect candidate", "constant evaluation"))}
         while pending and target not in predecessors:
             caller = pending.popleft()
             for callee, kind in sorted(edges.get(caller, ()), key=lambda edge: (order[edge[1]], edge[0])):
