@@ -1887,3 +1887,26 @@ fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
 mod decode_transfer;
 
 mod curve_and_guide_records;
+
+#[test]
+fn a5_surface_strict_knot_refusal_stays_in_the_outer_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let bytes = a5_surface_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let record = records.first().unwrap();
+    let frame = crate::wire::records::ConsolidatedFrame {
+        pos: record.byte_offset(), payload: record.payload().unwrap().start,
+        end: record.range().unwrap().end, header_token: record.header_token,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(original)) = super::a5_surface(&ctx, &bytes, frame, &mut crate::nurbs::LaneRefusals::new()) else { panic!("strict knot refusal must not disappear as a missing surface"); };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, "IR strict knot order");
+    assert_eq!(original.used, 0);
+    assert_eq!(original.additional, 1);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+}
