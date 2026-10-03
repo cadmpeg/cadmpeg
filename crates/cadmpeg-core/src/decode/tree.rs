@@ -51,6 +51,15 @@ struct XmlBound {
     depth: u64,
 }
 
+/// Couples the exact XML input with its parser work and live storage admission.
+struct XmlParserAdmission<'input, 'ctx> {
+    text: &'input str,
+    nodes: u64,
+    nodes_limit: u32,
+    reservation: ScopedReservation<'ctx>,
+    _depth: (Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>),
+}
+
 /// Counts delimiters and element depth in one pass. Quoted values, comments,
 /// CDATA and processing instructions do not contribute element nesting.
 /// An unmatched closing tag stops depth counting; the parser rejects it.
@@ -201,6 +210,31 @@ impl DecodeContext<'_> {
         text: &'input str,
         operation: &'static str,
     ) -> Result<AdmittedXml<'input, '_>, CodecError> {
+        let admission = self.xml_parser_admission(text, operation)?;
+        let document = roxmltree::Document::parse_with_options(
+                admission.text,
+                roxmltree::ParsingOptions {
+                    nodes_limit: admission.nodes_limit,
+                    ..roxmltree::ParsingOptions::default()
+                },
+            )
+            .map_err(|error| match error {
+                roxmltree::Error::NodesLimitReached => {
+                    self.refuse_codec_limit(operation, u64::from(admission.nodes_limit), admission.nodes)
+                }
+                other => self.tree_malformed(other, operation),
+            })?;
+        Ok(AdmittedXml {
+            document,
+            _reservation: admission.reservation,
+        })
+    }
+
+    fn xml_parser_admission<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+    ) -> Result<XmlParserAdmission<'input, '_>, CodecError> {
         let length = u64_from_index(text.len());
         let bound = xml_bound(self, text, operation)?;
         let nodes = bound
@@ -256,23 +290,13 @@ impl DecodeContext<'_> {
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bytes, operation)?;
         let nodes_limit = u32::try_from(nodes).map_err(|_| self.tree_overflow(operation))?;
-        let _depth = enter_tree_depth(self, bound.depth, operation)?;
-        let document = roxmltree::Document::parse_with_options(
-                text,
-                roxmltree::ParsingOptions {
-                    nodes_limit,
-                    ..roxmltree::ParsingOptions::default()
-                },
-            )
-            .map_err(|error| match error {
-                roxmltree::Error::NodesLimitReached => {
-                    self.refuse_codec_limit(operation, u64::from(nodes_limit), nodes)
-                }
-                other => self.tree_malformed(other, operation),
-            })?;
-        Ok(AdmittedXml {
-            document,
-            _reservation: reservation,
+        let depth = enter_tree_depth(self, bound.depth, operation)?;
+        Ok(XmlParserAdmission {
+            text,
+            nodes,
+            nodes_limit,
+            reservation,
+            _depth: depth,
         })
     }
 }

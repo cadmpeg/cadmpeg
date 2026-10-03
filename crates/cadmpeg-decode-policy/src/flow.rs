@@ -30,6 +30,7 @@ pub(crate) struct Flow {
     pub(crate) storage_extents: Vec<ExtentTerm>,
     pub(crate) scoped_storage: Vec<ScopedStorage>,
     pub(crate) storage_slots: Vec<crate::storage::Slots>,
+    pub(crate) parser_receipts: Vec<crate::parser::ParserReceipt>,
     pub(crate) loop_bounds: Vec<Vec<ExtentTerm>>,
     pub(crate) mutated: std::collections::HashSet<String>,
 }
@@ -43,6 +44,7 @@ impl Default for Flow {
             storage_extents: Vec::new(),
             scoped_storage: Vec::new(),
             storage_slots: Vec::new(),
+            parser_receipts: Vec::new(),
             loop_bounds: Vec::new(),
             iterations: 1,
             mutated: std::collections::HashSet::new(),
@@ -406,6 +408,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         self.record_slots(expression);
+        self.record_parser_admission(expression);
         self.record_key_work(expression);
         self.record_move_work(expression);
         self.record_sort_work(expression);
@@ -492,6 +495,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
 
     pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
         if let Some(key) = self.key(expression, &mut Vec::new()) {
+            self.flow.parser_receipts.retain(|receipt| !factor_depends_on(&receipt.guard, &key));
             self.flow.scoped_storage.retain(|credit| credit.guard != key
                 && !credit.terms.iter().flat_map(|term| &term.factors).any(|factor| factor_depends_on(factor, &key)));
             self.flow.work.retain(|credit| {
@@ -527,6 +531,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.flow.storage_parameters.clear();
             self.flow.storage_extents.clear();
             self.flow.storage_slots.clear();
+            self.flow.parser_receipts.clear();
             for credit in &mut self.flow.work {
                 credit.opaque = true;
             }
@@ -576,6 +581,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if !matches!(self.expr_ty_adjusted(operand).kind(), rustc_middle::ty::Ref(..))
                     && self.key(operand, &mut Vec::new()).is_some_and(|key|
                         self.flow.scoped_storage.iter().any(|credit| credit.guard == key)
+                            || self.flow.parser_receipts.iter().any(|receipt| factor_depends_on(&key, &receipt.guard))
                             || self.flow.storage_slots.iter().any(|credit| credit.scope.as_ref().is_some_and(|scope| scope.guard == key))) {
                     self.invalidate_target(operand);
                 }
