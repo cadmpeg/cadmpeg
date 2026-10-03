@@ -32,13 +32,34 @@ fn exact_vec_charges_before_allocation_and_requires_full_count() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
     let mut values = ExactVec::new(&ctx, count, "test exact vec").expect("service profile");
-    values.push(1_u8).expect("first item fits");
-    values.push(2_u8).expect("second item fits");
-    assert!(values.push(3_u8).is_err());
+    values.push(&ctx, 1_u8, "test exact vec").expect("first item fits");
+    values.push(&ctx, 2_u8, "test exact vec").expect("second item fits");
+    assert!(values.push(&ctx, 3_u8, "test exact vec").is_err());
     assert_eq!(values.finish().expect("exact count"), [1, 2]);
     let mut short = ExactVec::new(&ctx, count, "test exact vec").expect("service profile");
-    short.push(1_u8).expect("first item fits");
+    short.push(&ctx, 1_u8, "test exact vec").expect("first item fits");
     assert!(short.finish().is_err());
+}
+
+#[test]
+fn exact_vec_push_admits_before_mutation_and_keeps_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let count = crate::decode::View::over_retained(&[0_u8; 2]).counted(2, 1).expect("bounded count");
+    let mut values = ExactVec::new(&ctx, count, "exact storage").expect("storage admission");
+    let capacity = values.values.capacity();
+    let CodecError::ResourceLimit(first) = values.push(&ctx, 1_u8, "exact push")
+        .expect_err("work refusal") else { panic!("resource refusal") };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(first.operation, "exact push");
+    assert!(values.values.is_empty());
+    assert_eq!(values.values.capacity(), capacity);
+    let CodecError::ResourceLimit(repeated) = values.push(&ctx, 2_u8, "later push")
+        .expect_err("original refusal") else { panic!("resource refusal") };
+    assert_eq!(first, repeated);
+    assert!(values.values.is_empty());
 }
 collection_case!(
     reserve_vec_charges_before_growth,

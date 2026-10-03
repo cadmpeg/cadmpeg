@@ -34,12 +34,14 @@ impl<T> ExactVec<T> {
     }
 
     /// Appends one value without exceeding the bounded count.
-    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
+    pub fn push(&mut self, ctx: &DecodeContext<'_>, value: T, operation: &'static str) -> Result<(), CodecError> {
         if self.values.len() == self.capacity {
             return Err(CodecError::Malformed(
                 "fixed-capacity vector overflow".to_owned(),
             ));
         }
+        ctx.charge_work(1, operation)?;
+        ctx.reserve_capacity(&mut self.values, 1, operation)?;
         self.values.push(value);
         Ok(())
     }
