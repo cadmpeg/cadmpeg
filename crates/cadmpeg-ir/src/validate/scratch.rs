@@ -24,6 +24,8 @@ impl<'ctx, T> Scratch<'ctx, T> {
         Ok(result)
     }
 
+    pub(super) fn pop(&mut self) -> Option<T> { self.values.pop() }
+
     pub(super) fn stable_sort_by(
         &mut self,
         compare: impl FnMut(&T, &T) -> std::cmp::Ordering,

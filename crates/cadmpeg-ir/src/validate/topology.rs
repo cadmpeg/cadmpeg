@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for topology.
 
-use std::collections::{HashMap, HashSet};
 use super::scratch::Scratch;
 use crate::index::identities::BorrowedIdentities;
 use std::fmt;
@@ -63,6 +62,20 @@ use super::sketches::locus_entity;
 use crate::index::ModelIndex;
 use crate::sketches::SketchConstraintDefinitionInput as Definition;
 
+fn non_blank_native_reference(ctx: &DecodeContext<'_>, native: &str) -> Result<bool, CodecError> {
+    ctx.charge_work(u64_from_index(native.len()), "native reference whitespace scan")?;
+    Ok(!native.trim().is_empty())
+}
+
+fn same_feature_owner(ctx: &DecodeContext<'_>, left: Option<&crate::features::FeatureId>, right: Option<&crate::features::FeatureId>) -> Result<bool, CodecError> {
+    ctx.charge_work(1, "parameter owner gate")?;
+    match (left, right) {
+        (Some(left), Some(right)) => Ok(crate::ids::comparison::equal(ctx, left.as_str(), right.as_str(), "parameter owner comparison")?),
+        (None, None) => Ok(true),
+        _ => Ok(false),
+    }
+}
+
 fn ref_error(ctx: &DecodeContext<'_>, findings: &mut Vec<Finding>, owner: &str, target_kind: impl fmt::Display, target: &str) -> Result<(), CodecError> {
     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("references missing {target_kind} `{target}`"))
 }
@@ -81,7 +94,7 @@ fn check_law_curves<R, V, P>(ctx: &DecodeContext<'_>,
             }
         }
         crate::geometry::LawExpression::Algebraic { operands, .. } => {
-            for operand in operands {
+            for operand in operands { ctx.charge_work(1, "topology validation scan")?;
                 check_law_curves(ctx, operand, ids, procedural, findings)?;
             }
         }
@@ -120,7 +133,7 @@ pub(super) fn check_topology_tolerances(ctx: &DecodeContext<'_>, ir: &CadIr, fin
         )
     {
         ctx.charge_work(1, "topology tolerance row")?;
-        if tolerance.is_some_and(|value| value.get() > 1.0e6) {
+        if tolerance.map_or(Ok::<_, CodecError>(false), |value| Ok::<_, CodecError>(value.get() > 1.0e6))? {
             super::record_finding(ctx, findings, Check::Tolerances, Severity::Warning, Some(id),
                 format_args!("topology tolerance is outside a sane canonical range"))?;
         }
@@ -129,57 +142,57 @@ pub(super) fn check_topology_tolerances(ctx: &DecodeContext<'_>, ir: &CadIr, fin
 }
 
 pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
-    for b in &ir.model.bodies {
-        for l in &b.regions {
+    for b in &ir.model.bodies { ctx.charge_work(1, "topology validation scan")?;
+        for l in &b.regions { ctx.charge_work(1, "topology validation scan")?;
             if ids.regions(l.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, b.id.as_str(), "region", l.as_str())?;
             }
         }
     }
-    for l in &ir.model.regions {
+    for l in &ir.model.regions { ctx.charge_work(1, "topology validation scan")?;
         if ids.bodies(l.body.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, l.id.as_str(), "body", l.body.as_str())?;
         }
-        for s in &l.shells {
+        for s in &l.shells { ctx.charge_work(1, "topology validation scan")?;
             if ids.shells(s.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, l.id.as_str(), "shell", s.as_str())?;
             }
         }
     }
-    for s in &ir.model.shells {
+    for s in &ir.model.shells { ctx.charge_work(1, "topology validation scan")?;
         if ids.regions(s.region.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, s.id.as_str(), "region", s.region.as_str())?;
         }
-        for f in s.faces() {
+        for f in s.faces() { ctx.charge_work(1, "topology validation scan")?;
             if ids.faces(f.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, s.id.as_str(), "face", f.as_str())?;
             }
         }
-        for e in s.wire_edges() {
+        for e in s.wire_edges() { ctx.charge_work(1, "topology validation scan")?;
             if ids.edges(e.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, s.id.as_str(), "wire edge", e.as_str())?;
             }
         }
-        for v in s.free_vertices() {
+        for v in s.free_vertices() { ctx.charge_work(1, "topology validation scan")?;
             if ids.vertices(v.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, s.id.as_str(), "free vertex", v.as_str())?;
             }
         }
     }
-    for f in &ir.model.faces {
+    for f in &ir.model.faces { ctx.charge_work(1, "topology validation scan")?;
         if ids.shells(f.shell.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, f.id.as_str(), "shell", f.shell.as_str())?;
         }
         if ids.surfaces(f.surface.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, f.id.as_str(), "surface", f.surface.as_str())?;
         }
-        for lp in &f.loops {
+        for lp in &f.loops { ctx.charge_work(1, "topology validation scan")?;
             if ids.loops(lp.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, f.id.as_str(), "loop", lp.as_str())?;
             }
         }
     }
-    for lp in &ir.model.loops {
+    for lp in &ir.model.loops { ctx.charge_work(1, "topology validation scan")?;
         if ids.faces(lp.face.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, lp.id.as_str(), "face", lp.face.as_str())?;
         }
@@ -188,7 +201,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 if ids.vertices(vertex.as_str(), ctx)?.is_none() {
                     ref_error(ctx, findings, lp.id.as_str(), "vertex", vertex.as_str())?;
                 }
-                for pcurve in pcurves {
+                for pcurve in pcurves { ctx.charge_work(1, "topology validation scan")?;
                     if ids.pcurves(pcurve.pcurve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -200,12 +213,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             crate::topology::LoopBoundary::Ring(ring) => {
-                for ce in ring.coedges() {
+                for ce in ring.coedges() { ctx.charge_work(1, "topology validation scan")?;
                     if ids.coedges(ce.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, lp.id.as_str(), "coedge", ce.as_str())?;
                     }
                 }
-                for use_ in ring.vertex_uses() {
+                for use_ in ring.vertex_uses() { ctx.charge_work(1, "topology validation scan")?;
                     if ids.vertices(use_.vertex.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, lp.id.as_str(), "vertex", use_.vertex.as_str())?;
                     }
@@ -218,7 +231,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             after.as_str(),
                         )?;
                     }
-                    for pcurve in &use_.pcurves {
+                    for pcurve in &use_.pcurves { ctx.charge_work(1, "topology validation scan")?;
                         if ids.pcurves(pcurve.pcurve.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
                                 findings,
@@ -232,7 +245,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
         }
     }
-    for ce in &ir.model.coedges {
+    for ce in &ir.model.coedges { ctx.charge_work(1, "topology validation scan")?;
         if ids.loops(ce.owner_loop.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, ce.id.as_str(), "loop", ce.owner_loop.as_str())?;
         }
@@ -247,7 +260,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 ce.radial_next.as_str(),
             )?;
         }
-        for use_ in &ce.pcurves {
+        for use_ in &ce.pcurves { ctx.charge_work(1, "topology validation scan")?;
             if ids.pcurves(use_.pcurve.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, ce.id.as_str(), "pcurve", use_.pcurve.as_str())?;
             }
@@ -263,7 +276,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
         }
     }
-    for e in &ir.model.edges {
+    for e in &ir.model.edges { ctx.charge_work(1, "topology validation scan")?;
         if let Some(c) = e.curve() {
             if ids.curves(c.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, e.id.as_str(), "curve", c.as_str())?;
@@ -276,12 +289,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ref_error(ctx, findings, e.id.as_str(), "vertex(end)", e.end.as_str())?;
         }
     }
-    for v in &ir.model.vertices {
+    for v in &ir.model.vertices { ctx.charge_work(1, "topology validation scan")?;
         if ids.points(v.point.as_str(), ctx)?.is_none() {
             ref_error(ctx, findings, v.id.as_str(), "point", v.point.as_str())?;
         }
     }
-    for binding in &ir.model.appearance_bindings {
+    for binding in &ir.model.appearance_bindings { ctx.charge_work(1, "topology validation scan")?;
         use crate::appearance::AppearanceTarget;
         let mut owner_storage = ctx.reserve_scoped(0, "appearance binding finding identity")?;
         let owner = ctx.format_scoped_text(&mut owner_storage, format_args!("appearance-binding:{}", binding.appearance.as_str()), "appearance binding finding identity")?;
@@ -319,7 +332,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             _ => {}
         }
     }
-    for attribute in &ir.model.attributes {
+    for attribute in &ir.model.attributes { ctx.charge_work(1, "topology validation scan")?;
         use crate::attributes::AttributeTarget;
         let owner = attribute.id.as_str();
         match &attribute.target {
@@ -342,7 +355,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             _ => {}
         }
     }
-    for s in &ir.model.surfaces {
+    for s in &ir.model.surfaces { ctx.charge_work(1, "topology validation scan")?;
         match &s.geometry {
             SurfaceGeometry::Procedural { construction, .. } => {
                 if ids.procedural_surfaces(construction.as_str(), ctx)?.is_none() {
@@ -362,7 +375,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             SurfaceGeometry::Solved(_) => {}
         }
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.model.curves { ctx.charge_work(1, "topology validation scan")?;
         match &curve.geometry {
             CurveGeometry::Procedural { construction, .. } => {
                 if ids.procedural_curves(construction.as_str(), ctx)?.is_none() {
@@ -387,7 +400,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
-                for segment in segments {
+                for segment in segments { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(segment.curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, curve.id.as_str(), "curve", segment.curve.as_str())?;
                     }
@@ -397,13 +410,13 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         }
     }
     composite::check(ctx, ir, findings)?;
-    for procedural in &ir.model.procedural_surfaces {
+    for procedural in &ir.model.procedural_surfaces { ctx.charge_work(1, "topology validation scan")?;
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact(..) => {}
             ProceduralSurfaceDefinition::Compound(definition_payload) => {
                 let components = definition_payload.components();
 
-                for component in components {
+                for component in components { ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(component.component.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -464,7 +477,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::Loft(definition_payload) => {
                 let sections = definition_payload.sections();
 
-                for entry in sections.iter().flat_map(|section| &section.entries) {
+                ctx.charge_work(u64_from_index(sections.len()), "loft section scan")?;
+                for entry in sections.iter().flat_map(|section| &section.entries) { ctx.charge_work(1, "topology validation scan")?;
                     for curve in entry
                         .path
                         .path
@@ -472,12 +486,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.profile.id))
-                    {
+                    { ctx.charge_work(1, "topology validation scan")?;
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                     }
-                    for member in &entry.profile {
+                    for member in &entry.profile { ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = member.form.surface() {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(ctx, 
@@ -522,12 +536,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                 }
-                for scale in scales {
+                for scale in scales { ctx.charge_work(1, "topology validation scan")?;
                     check_curve(&scale.path, findings)?;
-                    for curve in &scale.auxiliaries {
+                    for curve in &scale.auxiliaries { ctx.charge_work(1, "topology validation scan")?;
                         check_curve(curve, findings)?;
                     }
-                    for member in &scale.members {
+                    for member in &scale.members { ctx.charge_work(1, "topology validation scan")?;
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -577,12 +591,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }
                 }
                 check_curve(&construction.tail_curve, findings)?;
-                for scale in scales {
+                for scale in scales { ctx.charge_work(1, "topology validation scan")?;
                     check_curve(&scale.path, findings)?;
-                    for curve in &scale.auxiliaries {
+                    for curve in &scale.auxiliaries { ctx.charge_work(1, "topology validation scan")?;
                         check_curve(curve, findings)?;
                     }
-                    for member in &scale.members {
+                    for member in &scale.members { ctx.charge_work(1, "topology validation scan")?;
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -607,7 +621,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
                         check_curve(path, findings)?;
-                        for profile in profiles {
+                        for profile in profiles { ctx.charge_work(1, "topology validation scan")?;
                             check_curve(&profile.curve, findings)?;
                             let surface = &profile.data.surface;
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
@@ -630,7 +644,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }
                 }
                 check_curve(&construction.parameter_curve, findings)?;
-                for variable in construction.formula.variables() {
+                for variable in construction.formula.variables() { ctx.charge_work(1, "topology validation scan")?;
                     check_law_curves(ctx, variable, ids, procedural, findings)?;
                 }
             }
@@ -638,19 +652,20 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let construction = definition_payload.construction();
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
-                {
-                    for variable in formula.variables() {
+                { ctx.charge_work(1, "topology validation scan")?;
+                    for variable in formula.variables() { ctx.charge_work(1, "topology validation scan")?;
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
+                ctx.charge_work(u64_from_index(construction.sections.len()), "net section scan")?;
                 for entry in construction
                     .sections
                     .iter()
                     .flat_map(|section| &section.entries)
-                {
+                { ctx.charge_work(1, "topology validation scan")?;
                     for curve in entry
                         .path
                         .path
@@ -658,12 +673,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.profile.id))
-                    {
+                    { ctx.charge_work(1, "topology validation scan")?;
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
                             ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                     }
-                    for member in &entry.profile {
+                    for member in &entry.profile { ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = member.form.surface() {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(ctx, 
@@ -676,8 +691,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                 }
-                for formula in construction.formulas.iter() {
-                    for variable in formula.variables() {
+                for formula in construction.formulas.iter() { ctx.charge_work(1, "topology validation scan")?;
+                    for variable in formula.variables() { ctx.charge_work(1, "topology validation scan")?;
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
                     }
                 }
@@ -688,7 +703,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for surface in [&construction.first.surface, &construction.second.surface]
                     .into_iter()
                     .chain(std::iter::once(&construction.second_exact_surface))
-                {
+                { ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -715,7 +730,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     &construction.first.curve,
                     &construction.second.curve,
                     &construction.center_curve,
-                ] {
+                ] { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
@@ -724,7 +739,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                for side in &construction.sides {
+                for side in &construction.sides { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -756,19 +771,20 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 ]
                 .into_iter()
                 .flatten()
-                {
+                { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
+                ctx.charge_work(u64_from_index(construction.entries().len()), "compound loft profile entry scan")?;
                 for member in construction.base_profile().iter().chain(
                     construction
                         .entries()
                         .iter()
                         .flat_map(|entry| &entry.profile),
-                ) {
+                ) { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(member.profile.id.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -788,6 +804,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                 }
+                ctx.charge_work(u64_from_index(construction.entries().len()), "compound loft path entry scan")?;
+                ctx.charge_work(1, "compound loft base path scan")?;
                 for curve in std::iter::once(construction.base_path())
                     .chain(construction.entries().iter().map(|entry| &entry.path))
                     .flat_map(|path| {
@@ -801,14 +819,14 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
                     })
                     .chain(construction.tail().curve())
-                {
+                { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
-                for side in construction.sides() {
+                for side in construction.sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -842,7 +860,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralSurfaceDefinition::VertexBlend(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                for boundary in &construction.boundaries {
+                for boundary in &construction.boundaries { ctx.charge_work(1, "topology validation scan")?;
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
@@ -923,7 +941,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let profile = definition_payload.profile();
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
-                for curve in [profile, spine] {
+                for curve in [profile, spine] { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
@@ -987,8 +1005,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?
                         }
                     };
-                    for formula in formulas {
-                        for variable in formula.variables() {
+                    for formula in formulas { ctx.charge_work(1, "topology validation scan")?;
+                        for variable in formula.variables() { ctx.charge_work(1, "topology validation scan")?;
                             check_law_curves(ctx, variable, ids, procedural, findings)?;
                         }
                     }
@@ -1034,14 +1052,14 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-                for curve in [first, second] {
+                for curve in [first, second] { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::Sum(definition_payload) => {
-                for curve in [definition_payload.first(), definition_payload.second()] {
+                for curve in [definition_payload.first(), definition_payload.second()] { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
@@ -1052,7 +1070,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
 
-                for support in supports.iter().flatten() {
+                ctx.charge_work(u64_from_index(supports.len()), "optional support scan")?;
+                for support in supports.iter().flatten() { ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(support.surface.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -1087,7 +1106,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         Ok(())
                         };
                     check_curve(&native.slice, findings)?;
-                    for side in &native.sides {
+                    for side in &native.sides { ctx.charge_work(1, "topology validation scan")?;
                         if let Some(curve) = &side.curve {
                             check_curve(&curve.curve, findings)?;
                         }
@@ -1133,12 +1152,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         support.as_str(),
                     )?;
                 }
-                for boundary in boundaries {
+                for boundary in boundaries { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(boundary.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", boundary.as_str())?;
                     }
                 }
-                for pcurve in boundary_pcurves {
+                for pcurve in boundary_pcurves { ctx.charge_work(1, "topology validation scan")?;
                     if ids.pcurves(pcurve.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -1181,7 +1200,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
         }
     }
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.model.procedural_curves { ctx.charge_work(1, "topology validation scan")?;
         match procedural.definition() {
             ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
@@ -1209,7 +1228,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
+                            for operand in operands { ctx.charge_work(1, "topology validation scan")?;
                                 check(ctx, operand, ids, procedural, findings)?;
                             }
                         }
@@ -1218,7 +1237,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 
     Ok(())
 }
-                for side in context.sides() {
+                for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1230,8 +1249,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         }
                     }
                 }
-                for formula in std::iter::once(primary).chain(additional) {
-                    for variable in formula.formula().variables() {
+                for formula in std::iter::once(primary).chain(additional) { ctx.charge_work(1, "topology validation scan")?;
+                    for variable in formula.formula().variables() { ctx.charge_work(1, "topology validation scan")?;
                         check(ctx, variable, ids, procedural, findings)?;
                     }
                 }
@@ -1239,7 +1258,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::Compound(compound) => {
                 let components = compound.components();
 
-                for component in components {
+                for component in components { ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(component.component.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -1251,7 +1270,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                for side in context.sides() {
+                for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1270,7 +1289,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             } => {
                 let supports = intersection.supports();
 
-                for surface in supports {
+                for surface in supports { ctx.charge_work(1, "topology validation scan")?;
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -1285,7 +1304,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let context = definition_payload.context();
                 let third = definition_payload.third();
 
-                for side in context.sides().iter().chain(std::iter::once(third)) {
+                for side in context.sides().iter().chain(std::iter::once(third)) { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1299,7 +1318,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
-                for side in family.context().sides() {
+                for side in family.context().sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1323,7 +1342,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         cast_surface.as_str(),
                     )?;
                 }
-                for side in context.sides() {
+                for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1343,7 +1362,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     if ids.curves(base.as_str(), ctx)?.is_none() {
                         ref_error(ctx, findings, procedural.id.as_str(), "curve", base.as_str())?;
                     }
-                    for side in context.sides() {
+                    for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(ctx, 
@@ -1358,7 +1377,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             }
             ProceduralCurveDefinition::Spring(definition_payload) => {
-                for side in definition_payload.support_context().sides() {
+                for side in definition_payload.support_context().sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1380,7 +1399,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                     }
-                    for side in context.sides() {
+                    for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(ctx, 
@@ -1401,7 +1420,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 if ids.curves(source.as_str(), ctx)?.is_none() {
                     ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                 }
-                for side in context.sides() {
+                for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                             ref_error(ctx, 
@@ -1459,7 +1478,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
                 let context = definition_payload.context();
                 {
-                    for side in context.sides() {
+                    for side in context.sides() { ctx.charge_work(1, "topology validation scan")?;
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
                                 ref_error(ctx, 
@@ -1527,46 +1546,30 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             } => {}
         }
     }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
-    let feature_ordinals = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature.ordinal))
-        .collect::<HashMap<_, _>>();
-    let parameters = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.id, (parameter.owner.as_ref(), parameter.ordinal)))
-        .collect::<HashMap<_, _>>();
-    let mut parameter_names = HashSet::new();
-    let mut parameter_ordinals = HashSet::new();
-    for parameter in &ir.model.parameters {
+    let features = BorrowedIdentities::build(ctx, |add| { for feature in &ir.model.features { add(feature.id.as_str(), ())?; } Ok(()) })?;
+    let feature_ordinals = BorrowedIdentities::build(ctx, |add| { for feature in &ir.model.features { let (identity, value) = (feature.id.as_str(), feature.ordinal); add(identity, value)?; } Ok(()) })?;
+    let parameters = BorrowedIdentities::build(ctx, |add| { for parameter in &ir.model.parameters { let (identity, value) = (parameter.id.as_str(), (parameter.owner.as_ref(), parameter.ordinal)); add(identity, value)?; } Ok(()) })?;
+    let mut scoped_parameters = Scratch::new(ctx)?;
+    for parameter in &ir.model.parameters { ctx.charge_work(1, "topology validation scan")?;
         if let Some(owner) = &parameter.owner {
-            if !features.contains(owner.as_str()) {
+            if !features.contains(ctx, owner.as_str())? {
                 ref_error(ctx, findings, parameter.id.as_str(), "feature", owner.as_str())?;
             }
         }
-        if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
+        if super::scans::any(ctx, scoped_parameters.iter(), |previous: &&crate::features::DesignParameter| Ok(same_feature_owner(ctx, previous.owner.as_ref(), parameter.owner.as_ref())? && crate::ids::comparison::equal(ctx, previous.name.as_str(), parameter.name.as_str(), "parameter name comparison")?))? {
             super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(parameter.id.as_str()), format_args!(
                     "parameter scope {:?} repeats parameter name `{}`",
                     parameter.owner, parameter.name
                 ))?;
         }
-        if !parameter_ordinals.insert((&parameter.owner, parameter.ordinal)) {
+        if super::scans::any(ctx, scoped_parameters.iter(), |previous: &&crate::features::DesignParameter| Ok(same_feature_owner(ctx, previous.owner.as_ref(), parameter.owner.as_ref())? && previous.ordinal == parameter.ordinal))? {
             super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(parameter.id.as_str()), format_args!(
                     "parameter scope {:?} repeats parameter ordinal {}",
                     parameter.owner, parameter.ordinal
                 ))?;
         }
-        for dependency in &parameter.dependencies {
-            let Some((owner, ordinal)) = parameters.get(dependency) else {
+        for dependency in &parameter.dependencies { ctx.charge_work(1, "topology validation scan")?;
+            let Some((owner, ordinal)) = parameters.get(ctx, dependency.as_str())? else {
                 ref_error(ctx, 
                     findings,
                     parameter.id.as_str(),
@@ -1575,17 +1578,14 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 )?;
                 continue;
             };
-            let precedes = if *owner == parameter.owner.as_ref() {
+            let precedes = if same_feature_owner(ctx, *owner, parameter.owner.as_ref())? {
                 *ordinal < parameter.ordinal
             } else {
                 match (*owner, parameter.owner.as_ref()) {
                     (None, Some(_)) => true,
-                    (Some(dependency_owner), Some(parameter_owner)) => feature_ordinals
-                        .get(dependency_owner)
-                        .zip(feature_ordinals.get(parameter_owner))
-                        .is_some_and(|(dependency_owner, parameter_owner)| {
+                    (Some(dependency_owner), Some(parameter_owner)) => feature_ordinals.get(ctx, dependency_owner .as_str())?.zip(feature_ordinals.get(ctx, parameter_owner .as_str())?).map_or(Ok::<_, CodecError>(false), |(dependency_owner, parameter_owner)| Ok::<_, CodecError>({
                             dependency_owner < parameter_owner
-                        }),
+                        }))?,
                     (Some(_) | None, None) => false,
                 }
             };
@@ -1596,34 +1596,16 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     ))?;
             }
         }
+        scoped_parameters.push(parameter)?;
     }
-    let sketches = ir
-        .model
-        .sketches
-        .iter()
-        .map(|sketch| sketch.id.as_str())
-        .collect::<HashSet<_>>();
-    let sketch_entities = ir
-        .model
-        .sketch_entities
-        .iter()
-        .map(|entity| entity.id().as_str())
-        .collect::<HashSet<_>>();
-    let sketch_entity_owners = ir
-        .model
-        .sketch_entities
-        .iter()
-        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
-        .collect::<HashMap<_, _>>();
-    let parameters = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.as_str())
-        .collect::<HashSet<_>>();
-    for sketch in &ir.model.sketches {
-        for entity_use in sketch.profiles.iter().flatten() {
-            if !sketch_entities.contains(entity_use.entity.as_str()) {
+    let sketches = BorrowedIdentities::build(ctx, |add| { for sketch in &ir.model.sketches { add(sketch.id.as_str(), ())?; } Ok(()) })?;
+    let sketch_entities = BorrowedIdentities::build(ctx, |add| { for entity in &ir.model.sketch_entities { add(entity.id().as_str(), ())?; } Ok(()) })?;
+    let sketch_entity_owners = BorrowedIdentities::build(ctx, |add| { for entity in &ir.model.sketch_entities { let (identity, value) = (entity.id().as_str(), entity.sketch.as_str()); add(identity, value)?; } Ok(()) })?;
+    let parameters = BorrowedIdentities::build(ctx, |add| { for parameter in &ir.model.parameters { add(parameter.id.as_str(), ())?; } Ok(()) })?;
+    for sketch in &ir.model.sketches { ctx.charge_work(1, "topology validation scan")?;
+        ctx.charge_work(u64_from_index(sketch.profiles.len()), "sketch profile group scan")?;
+        for entity_use in sketch.profiles.iter().flatten() { ctx.charge_work(1, "topology validation scan")?;
+            if !sketch_entities.contains(ctx, entity_use.entity.as_str())? {
                 ref_error(ctx, 
                     findings,
                     sketch.id.as_str(),
@@ -1633,8 +1615,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
         }
     }
-    for entity in &ir.model.sketch_entities {
-        if !sketches.contains(entity.sketch.as_str()) {
+    for entity in &ir.model.sketch_entities { ctx.charge_work(1, "topology validation scan")?;
+        if !sketches.contains(ctx, entity.sketch.as_str())? {
             ref_error(ctx, 
                 findings,
                 entity.id().as_str(),
@@ -1643,8 +1625,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             )?;
         }
     }
-    for constraint in &ir.model.sketch_constraints {
-        if !sketches.contains(constraint.sketch.as_str()) {
+    for constraint in &ir.model.sketch_constraints { ctx.charge_work(1, "topology validation scan")?;
+        if !sketches.contains(ctx, constraint.sketch.as_str())? {
             ref_error(ctx, 
                 findings,
                 constraint.id.as_str(),
@@ -1667,12 +1649,15 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 parameter: None,
                 ..
             } => { constraint_entities.extend(entities.iter())?; None },
-            Definition::RectangularPattern { pattern } => { constraint_entities.extend(pattern
+            Definition::RectangularPattern { pattern } => {
+                ctx.charge_work(u64_from_index(pattern.rows().len()), "constraint pattern row scan")?;
+                for row in pattern.rows() { ctx.charge_work(u64_from_index(row.len()), "constraint pattern instance scan")?; }
+                constraint_entities.extend(pattern
                     .rows()
                     .iter()
                     .flatten()
                     .flat_map(|instance| instance.entities.iter()))?; None },
-            Definition::CircularPattern { pattern } => { constraint_entities.extend(std::iter::once(pattern.center())
+            Definition::CircularPattern { pattern } => { ctx.charge_work(u64_from_index(pattern.instances().len()), "constraint circular instance scan")?; constraint_entities.extend(std::iter::once(pattern.center())
                     .chain(
                         pattern
                             .instances()
@@ -1746,7 +1731,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             } => { constraint_entities.extend([locus_entity(point), first, second])?; None },
             Definition::Offset {
                 pairs, parameter, ..
-            } => { constraint_entities.extend(pairs
+            } => { ctx.charge_work(u64_from_index(pairs.len()), "constraint offset pair scan")?; constraint_entities.extend(pairs
                     .iter()
                     .flat_map(|pair| [&pair.source, &pair.result]))?; parameter.as_ref().map(|parameter| parameter.id.as_str()) },
             Definition::PointOnObject { point, entity } => {
@@ -1812,7 +1797,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             Definition::RepeatedDistance {
                 measurements,
                 parameter,
-            } => { constraint_entities.extend(measurements
+            } => { ctx.charge_work(u64_from_index(measurements.len()), "constraint measurement scan")?; constraint_entities.extend(measurements
                     .iter()
                     .flat_map(|measurement| {
                         use crate::sketches::SketchDistanceMeasurement as Measurement;
@@ -1869,16 +1854,15 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
-        for entity in constraint_entities {
-            if !sketch_entities.contains(entity.as_str()) {
+        for entity in constraint_entities { ctx.charge_work(1, "topology validation scan")?;
+            if !sketch_entities.contains(ctx, entity.as_str())? {
                 ref_error(ctx, 
                     findings,
                     constraint.id.as_str(),
                     "sketch entity",
                     entity.as_str(),
                 )?;
-            } else if sketch_entity_owners.get(entity.as_str()).copied()
-                != Some(constraint.sketch.as_str())
+            } else if match sketch_entity_owners.get(ctx, entity.as_str())? { Some(owner) => !crate::ids::comparison::equal(ctx, owner, constraint.sketch.as_str(), "constraint sketch ownership")?, None => true }
             {
                 super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(constraint.id.as_str()), format_args!(
                         "sketch entity `{}` belongs to a different sketch",
@@ -1887,11 +1871,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             }
         }
         if let Some(parameter) = parameter {
-            if !parameters.contains(parameter) {
+            if !parameters.contains(ctx, parameter)? {
                 ref_error(ctx, findings, constraint.id.as_str(), "parameter", parameter)?;
             }
         }
         if let Definition::RectangularPattern { pattern } = constraint.definition.kind() {
+            ctx.charge_work(u64_from_index(pattern.directions().len()), "constraint pattern direction scan")?;
             for parameter in pattern.directions().iter().flat_map(|direction| {
                 [
                     direction
@@ -1902,8 +1887,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 ]
                 .into_iter()
                 .flatten()
-            }) {
-                if !parameters.contains(parameter.as_str()) {
+            }) { ctx.charge_work(1, "topology validation scan")?;
+                if !parameters.contains(ctx, parameter.as_str())? {
                     ref_error(ctx, 
                         findings,
                         constraint.id.as_str(),
@@ -1917,8 +1902,8 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
             for parameter in [pattern.angle_parameter(), pattern.count_parameter()]
                 .into_iter()
                 .flatten()
-            {
-                if !parameters.contains(parameter.as_str()) {
+            { ctx.charge_work(1, "topology validation scan")?;
+                if !parameters.contains(ctx, parameter.as_str())? {
                     ref_error(ctx, 
                         findings,
                         constraint.id.as_str(),
@@ -1943,47 +1928,27 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
         super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(error.owner().as_str()), format_args!("{error}"))?;
     }
 
-    let mut configuration_ordinals = HashSet::new();
-    let mut configuration_source_indices = HashSet::new();
+    let mut configuration_ordinals = super::orders::Orders::new(ctx)?;
+    let mut configuration_source_indices = super::orders::Orders::new(ctx)?;
     let mut active_configurations = 0;
-    let parameter_ids = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.as_str())
-        .collect::<HashSet<_>>();
-    let asset_ids = ir
-        .model
-        .assets
-        .iter()
-        .map(|asset| asset.id.as_str())
-        .collect::<HashSet<_>>();
-    let parameter_values = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.as_str(), parameter.value.as_ref()))
-        .collect::<HashMap<_, _>>();
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.as_str(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
-    for configuration in &ir.model.configurations {
+    let parameter_ids = BorrowedIdentities::build(ctx, |add| { for parameter in &ir.model.parameters { add(parameter.id.as_str(), ())?; } Ok(()) })?;
+    let asset_ids = BorrowedIdentities::build(ctx, |add| { for asset in &ir.model.assets { add(asset.id.as_str(), ())?; } Ok(()) })?;
+    let parameter_values = BorrowedIdentities::build(ctx, |add| { for parameter in &ir.model.parameters { let (identity, value) = (parameter.id.as_str(), parameter.value.as_ref()); add(identity, value)?; } Ok(()) })?;
+    let features = BorrowedIdentities::build(ctx, |add| { for feature in &ir.model.features { let (identity, value) = (feature.id.as_str(), feature.ordinal); add(identity, value)?; } Ok(()) })?;
+    for configuration in &ir.model.configurations { ctx.charge_work(1, "topology validation scan")?;
         active_configurations += usize::from(configuration.active);
-        if !configuration_ordinals.insert(configuration.ordinal) {
+        if !configuration_ordinals.insert(configuration.ordinal)? {
             super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(configuration.id.as_str()), format_args!(
                     "design repeats configuration ordinal {}",
                     configuration.ordinal
                 ))?;
         }
         if let Some(source_index) = configuration.source_index {
-            if !configuration_source_indices.insert(source_index) {
+            if !configuration_source_indices.insert(source_index)? {
                 super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(configuration.id.as_str()), format_args!("design repeats configuration source index {source_index}"))?;
             }
         }
-        for body in configuration.bodies.iter().flatten() {
+        for body in configuration.bodies.iter().flatten() { ctx.charge_work(1, "topology validation scan")?;
             if ids.bodies(body.as_str(), ctx)?.is_none() {
                 ref_error(ctx, 
                     findings,
@@ -1993,8 +1958,8 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 )?;
             }
         }
-        for parameter in configuration.parameter_overrides.keys() {
-            if !parameter_ids.contains(parameter.as_str()) {
+        for parameter in configuration.parameter_overrides.keys() { ctx.charge_work(1, "topology validation scan")?;
+            if !parameter_ids.contains(ctx, parameter.as_str())? {
                 ref_error(ctx, 
                     findings,
                     configuration.id.as_str(),
@@ -2003,18 +1968,18 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 )?;
             }
         }
-        let suppressed_features = configuration.suppressed_features().collect::<HashSet<_>>();
+        let suppressed_features = BorrowedIdentities::build(ctx, |add| { for (feature, state) in &configuration.feature_states { ctx.charge_work(1, "configuration suppression scan")?; if state.evaluation.is_suppressed() { add(feature.as_str(), ())?; } } Ok(()) })?;
         if configuration.active {
-            for feature in &ir.model.features {
-                if feature.suppressed.is_some_and(|suppressed| {
-                    suppressed_features.contains(&feature.id) != suppressed
-                }) {
+            for feature in &ir.model.features { ctx.charge_work(1, "topology validation scan")?;
+                if feature.suppressed.map_or(Ok::<_, CodecError>(false), |suppressed| Ok::<_, CodecError>({
+                    suppressed_features.contains(ctx, feature.id.as_str())? != suppressed
+                }))? {
                     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!("active configuration suppression disagrees with current feature state"))?;
                 }
             }
         }
-        for (parameter, value) in &configuration.parameter_values {
-            match parameter_values.get(parameter.as_str()) {
+        for (parameter, value) in &configuration.parameter_values { ctx.charge_work(1, "topology validation scan")?;
+            match parameter_values.get(ctx, parameter.as_str())? {
                 None => ref_error(ctx, 
                     findings,
                     configuration.id.as_str(),
@@ -2022,9 +1987,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     parameter.as_str(),
                 )?,
                 Some(baseline)
-                    if baseline.is_some_and(|baseline| {
+                    if baseline.map_or(Ok::<_, CodecError>(false), |baseline| Ok::<_, CodecError>({
                         std::mem::discriminant(baseline) != std::mem::discriminant(value)
-                    }) =>
+                    }))? =>
                 {
                     geometry_error(ctx, 
                         findings,
@@ -2035,8 +2000,8 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 Some(_) => {}
             }
         }
-        for (feature, state) in &configuration.feature_states {
-            let feature_ordinal = features.get(feature.as_str()).copied();
+        for (feature, state) in &configuration.feature_states { ctx.charge_work(1, "topology validation scan")?;
+            let feature_ordinal = features.get(ctx, feature.as_str())?.copied();
             if feature_ordinal.is_none() {
                 ref_error(ctx, 
                     findings,
@@ -2045,8 +2010,8 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     feature.as_str(),
                 )?;
             }
-            for dependency in &state.dependencies {
-                match features.get(dependency.as_str()) {
+            for dependency in &state.dependencies { ctx.charge_work(1, "topology validation scan")?;
+                match features.get(ctx, dependency.as_str())? {
                     None => ref_error(ctx, 
                         findings,
                         configuration.id.as_str(),
@@ -2054,9 +2019,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         dependency.as_str(),
                     )?,
                     Some(dependency_ordinal)
-                        if feature_ordinal.is_some_and(|feature_ordinal| {
+                        if feature_ordinal.map_or(Ok::<_, CodecError>(false), |feature_ordinal| Ok::<_, CodecError>({
                             *dependency_ordinal >= feature_ordinal
-                        }) =>
+                        }))? =>
                     {
                         super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                                 "configuration feature dependency `{}` does not precede `{}`",
@@ -2067,8 +2032,8 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     Some(_) => {}
                 }
             }
-            for reference in regeneration_references(ctx, state.definition.operation())? {
-                match features.get(reference.as_str()) {
+            for reference in regeneration_references(ctx, state.definition.operation())? { ctx.charge_work(1, "topology validation scan")?;
+                match features.get(ctx, reference.as_str())? {
                     None => ref_error(ctx, 
                         findings,
                         configuration.id.as_str(),
@@ -2076,9 +2041,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         reference.as_str(),
                     )?,
                     Some(reference_ordinal)
-                        if feature_ordinal.is_some_and(|feature_ordinal| {
+                        if feature_ordinal.map_or(Ok::<_, CodecError>(false), |feature_ordinal| Ok::<_, CodecError>({
                             *reference_ordinal >= feature_ordinal
-                        }) =>
+                        }))? =>
                     {
                         super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                                 "configuration definition feature `{}` does not precede `{}`",
@@ -2086,7 +2051,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 feature.as_str()
                             ))?;
                     }
-                    Some(_) if !state.dependencies.contains(reference) => {
+                    Some(_) if !super::scans::any(ctx, state.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), reference.as_str(), "feature dependency comparison")?))? => {
                         super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
                                 feature.as_str(), reference.as_str()
@@ -2095,7 +2060,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     Some(_) => {}
                 }
             }
-            for output in state.evaluation.outputs() {
+            for output in state.evaluation.outputs() { ctx.charge_work(1, "topology validation scan")?;
                 if ids.bodies(output.as_str(), ctx)?.is_none() {
                     ref_error(ctx, 
                         findings,
@@ -2111,59 +2076,31 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
     if active_configurations > 1 {
         super::record_finding(ctx, findings, Check::Counts, Severity::Error, None, format_args!("design has multiple active configurations"))?;
     }
-    let feature_records_storage = ctx.with_scoped_storage("feature reference index", || {
-        let mut records = HashMap::new();
-        let mut longest = 0;
-        for feature in &ir.model.features {
-            ctx.charge_work(1, "feature reference index scan")?;
-            longest = longest.max(feature.id.as_str().len());
-            plane_lookup_work(ctx, records.len(), feature.id.as_str().len(), longest)?;
-            ctx.insert_hash_map(&mut records, feature.id.as_str(), feature, "feature reference index")?;
-        }
-        Ok::<_, CodecError>((records, longest))
+    let feature_records = BorrowedIdentities::build(ctx, |add| {
+        for feature in &ir.model.features { add(feature.id.as_str(), feature)?; }
+        Ok(())
     })?;
-    let (feature_records, longest_feature_id) = &feature_records_storage.0;
-    let longest_feature_id = *longest_feature_id;
-    let sketch_entities = ir
-        .model
-        .sketch_entities
-        .iter()
-        .map(|entity| entity.id().as_str().to_owned())
-        .collect::<HashSet<_>>();
-    let spatial_sketch_entity_owners = ir
-        .model
-        .spatial_sketch_entities
-        .iter()
-        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
-        .collect::<HashMap<_, _>>();
-    let mut reported_storage = ctx.reserve_scoped(0, "datum-plane reported cycles")?;
-    let mut reported_plane_cycles = HashSet::new();
-    for feature in &ir.model.features {
+    let sketch_entities = BorrowedIdentities::build(ctx, |add| { for entity in &ir.model.sketch_entities { add(entity.id().as_str(), ())?; } Ok(()) })?;
+    let spatial_sketch_entity_owners = BorrowedIdentities::build(ctx, |add| { for entity in &ir.model.spatial_sketch_entities { let (identity, value) = (entity.id().as_str(), entity.sketch.as_str()); add(identity, value)?; } Ok(()) })?;
+    let mut reported_plane_cycles = Scratch::new(ctx)?;
+    for feature in &ir.model.features { ctx.charge_work(1, "topology validation scan")?;
         let mut path_storage = ctx.reserve_scoped(0, "datum-plane traversal storage")?;
             let mut path: Vec<(&str, cadmpeg_core::decode::DepthGuard<'_>)> = Vec::new();
-            let mut positions = HashMap::new();
+            let mut positions = BorrowedIdentities::build(ctx, |_| Ok(()))?;
             let mut cursor = feature.id.as_str();
-            let mut longest_path_id = 0;
             loop {
                 ctx.charge_work(1, "datum-plane traversal")?;
-                longest_path_id = longest_path_id.max(cursor.len());
-                plane_lookup_work(ctx, positions.len(), cursor.len(), longest_path_id)?;
-                if let Some(&cycle_start) = positions.get(cursor) {
+
+                if let Some(&cycle_start) = positions.get(ctx, cursor)? {
                     let mut cycle_storage = ctx.with_scoped_storage("datum-plane cycle identities", || {
                         ctx.collect_vec(path[cycle_start..].iter().map(|(id, _)| *id), "datum-plane cycle identities")
                     })?;
                     let cycle = &mut cycle_storage.0;
                     ctx.sort_unstable_by(cycle, Ord::cmp, |id| id.len(), "sort datum-plane cycle identities")?;
-                    ctx.charge_work(u64_from_index(cycle.len()), "datum-plane cycle byte scan")?;
-                    let cycle_bytes = cycle.iter().try_fold(0u64, |bytes, id| {
-                        bytes.checked_add(u64_from_index(id.len()))
-                    }).ok_or_else(|| ctx.refuse_codec_limit("datum-plane cycle hash", u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(cycle_bytes, "datum-plane cycle hash")?;
-                    let comparisons = u64_from_index(reported_plane_cycles.len()).checked_add(1)
-                        .and_then(|count| count.checked_mul(cycle_bytes.checked_mul(2)?.checked_add(1)?))
-                        .ok_or_else(|| ctx.refuse_codec_limit("datum-plane cycle comparisons", u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(comparisons, "datum-plane cycle comparisons")?;
-                    if !reported_plane_cycles.contains(&*cycle) {
+                    if !super::scans::any(ctx, reported_plane_cycles.iter(), |previous: &Scratch<'_, &str>| {
+                        if previous.len() != cycle.len() { return Ok(false); }
+                        super::scans::all(ctx, previous.iter().zip(cycle.iter()), |(left, right)| Ok(crate::ids::comparison::equal(ctx, left, right, "datum-plane cycle comparison")?))
+                    })? {
                         let finding = Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
@@ -2171,21 +2108,16 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             entity: Some(ctx.copy_retained_text(feature.id.as_str(), "datum-plane cycle finding identity")?),
                         };
                         ctx.push_vec(findings, finding, "datum-plane cycle findings")?;
-                        reported_storage.with_storage(|| {
-                            let copy = ctx.collect_vec(cycle.iter().copied(), "datum-plane reported cycle identities")?;
-                            ctx.charge_work(cycle_bytes, "datum-plane reported cycle hash")?;
-                            ctx.charge_work(comparisons, "datum-plane reported cycle comparisons")?;
-                            ctx.insert_hash_set(&mut reported_plane_cycles, copy, "datum-plane reported cycles")
-                        })?;
+                        reported_plane_cycles.push(Scratch::filter_map(ctx, cycle.iter().copied(), |identity| Ok(Some(identity)))?)?;
                     }
                     break;
                 }
-                plane_lookup_work(ctx, positions.len(), cursor.len(), longest_path_id)?;
-                path_storage.with_storage(|| ctx.insert_hash_map(&mut positions, cursor, path.len(), "datum-plane traversal positions"))?;
+
+                positions.insert(cursor, path.len())?;
                 let depth = ctx.enter_nested("datum-plane traversal depth")?;
                 ctx.push_scoped_vec(&mut path_storage, &mut path, (cursor, depth), "datum-plane traversal path")?;
-                plane_lookup_work(ctx, feature_records.len(), cursor.len(), longest_feature_id)?;
-                let Some(next) = feature_records.get(cursor).and_then(|feature| {
+
+                let Some(next) = feature_records.get(ctx, cursor)?.and_then(|feature| {
                     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                         reference: Some(DatumPlaneReference::Feature { feature: reference }),
                         ..
@@ -2196,21 +2128,11 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 cursor = next;
             }
     }
-    let parameters_by_id = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter.owner.as_ref()))
-        .collect::<HashMap<_, _>>();
-    let input_topologies = ir
-        .model
-        .feature_input_topologies
-        .iter()
-        .map(|state| (state.id.as_str(), state))
-        .collect::<HashMap<_, _>>();
-    let mut topology_owners = HashSet::new();
-    for state in &ir.model.feature_input_topologies {
-        if !features.contains_key(state.input_of.as_str()) {
+    let parameters_by_id = BorrowedIdentities::build(ctx, |add| { for parameter in &ir.model.parameters { let (identity, value) = (parameter.id.as_str(), parameter.owner.as_ref()); add(identity, value)?; } Ok(()) })?;
+    let input_topologies = BorrowedIdentities::build(ctx, |add| { for state in &ir.model.feature_input_topologies { let (identity, value) = (state.id.as_str(), state); add(identity, value)?; } Ok(()) })?;
+    let mut topology_owners = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    for state in &ir.model.feature_input_topologies { ctx.charge_work(1, "topology validation scan")?;
+        if !features.contains(ctx, state.input_of.as_str())? {
             ref_error(ctx, 
                 findings,
                 state.id.as_str(),
@@ -2218,13 +2140,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 state.input_of.as_str(),
             )?;
         }
-        if !topology_owners.insert(state.input_of.as_str()) {
+        if !topology_owners.insert_unique(state.input_of.as_str(), ())? {
             super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(state.input_of.as_str()), format_args!("feature has multiple input topology states"))?;
         }
     }
-    let mut result_owners = HashSet::new();
-    for state in &ir.model.feature_result_topologies {
-        if !features.contains_key(state.output_of.as_str()) {
+    let mut result_owners = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    for state in &ir.model.feature_result_topologies { ctx.charge_work(1, "topology validation scan")?;
+        if !features.contains(ctx, state.output_of.as_str())? {
             ref_error(ctx, 
                 findings,
                 state.id.as_str(),
@@ -2232,23 +2154,18 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 state.output_of.as_str(),
             )?;
         }
-        if !result_owners.insert(state.output_of.as_str()) {
+        if !result_owners.insert_unique(state.output_of.as_str(), ())? {
             super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(state.output_of.as_str()), format_args!("feature has multiple result topology states"))?;
         }
     }
-    let result_topologies_by_feature = ir
-        .model
-        .feature_result_topologies
-        .iter()
-        .map(|state| (state.output_of.as_str(), state))
-        .collect::<HashMap<_, _>>();
-    let mut feature_ordinals = HashSet::new();
-    for feature in &ir.model.features {
-        if !feature_ordinals.insert(feature.ordinal) {
+    let result_topologies_by_feature = BorrowedIdentities::build(ctx, |add| { for state in &ir.model.feature_result_topologies { let (identity, value) = (state.output_of.as_str(), state); add(identity, value)?; } Ok(()) })?;
+    let mut feature_ordinals = super::orders::Orders::new(ctx)?;
+    for feature in &ir.model.features { ctx.charge_work(1, "topology validation scan")?;
+        if !feature_ordinals.insert(feature.ordinal)? {
             super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(feature.id.as_str()), format_args!("design repeats feature ordinal {}", feature.ordinal))?;
         }
-        for dependency in &feature.dependencies {
-            match features.get(dependency.as_str()) {
+        for dependency in &feature.dependencies { ctx.charge_work(1, "topology validation scan")?;
+            match features.get(ctx, dependency.as_str())? {
                 None => ref_error(ctx, 
                     findings,
                     feature.id.as_str(),
@@ -2262,11 +2179,11 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 Some(_) => {}
             }
         }
-        for item in &feature.source_content {
+        for item in &feature.source_content { ctx.charge_work(1, "topology validation scan")?;
             match item {
                 FeatureSourceContent::Text(_) => {}
                 FeatureSourceContent::Parameter(parameter) => {
-                    match parameters_by_id.get(parameter) {
+                    match parameters_by_id.get(ctx, parameter .as_str())? {
                         None => {
                             ref_error(ctx, 
                                 findings,
@@ -2275,14 +2192,14 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 parameter.as_str(),
                             )?;
                         }
-                        Some(owner) if *owner != Some(&feature.id) => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+                        Some(owner) if !same_feature_owner(ctx, *owner, Some(&feature.id))? => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                 "content parameter `{}` belongs to another feature",
                                 parameter.as_str()
                             ))?,
                         Some(_) => {}
                     }
                 }
-                FeatureSourceContent::Feature(child) => match features.get(child.as_str()) {
+                FeatureSourceContent::Feature(child) => match features.get(ctx, child.as_str())? {
                     None => ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
@@ -2297,7 +2214,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 },
             }
         }
-        for body in feature.evaluation.outputs() {
+        for body in feature.evaluation.outputs() { ctx.charge_work(1, "topology validation scan")?;
             if ids.bodies(body.as_str(), ctx)?.is_none() {
                 ref_error(ctx, findings, feature.id.as_str(), "output body", body.as_str())?;
             }
@@ -2318,7 +2235,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             | FeatureOperation::SheetMetalBaseFlange { .. }
             | FeatureOperation::PlanarPatch { .. } => {}
             FeatureOperation::ReferenceImage { asset, .. } => {
-                if !asset_ids.contains(asset.as_str()) {
+                if !asset_ids.contains(ctx, asset.as_str())? {
                     ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
@@ -2328,7 +2245,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::Decal { asset, faces, .. } => {
-                if !asset_ids.contains(asset.as_str()) {
+                if !asset_ids.contains(ctx, asset.as_str())? {
                     ref_error(ctx, findings, feature.id.as_str(), "decal asset", asset.as_str())?;
                 }
                 face_selections.push(faces)?;
@@ -2341,9 +2258,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 face_selections.push(operands.second_faces())?;
             }
             FeatureOperation::FullRoundFillet { groups } => {
-                for group in groups {
+                for group in groups { ctx.charge_work(1, "topology validation scan")?;
                     face_selections.push(group.center_faces())?;
-                    for side in [group.side_one_faces(), group.side_two_faces()] {
+                    for side in [group.side_one_faces(), group.side_two_faces()] { ctx.charge_work(1, "topology validation scan")?;
                         if let crate::features::edge_treatments::FullRoundSideSelection::Explicit(
                             selection,
                         ) = side
@@ -2356,7 +2273,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies)?,
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies)?,
             FeatureOperation::MeshImport { tessellations } => {
-                for tessellation in tessellations {
+                for tessellation in tessellations { ctx.charge_work(1, "topology validation scan")?;
                     if ids.tessellations(tessellation, ctx)?.is_none() {
                         ref_error(ctx, 
                             findings,
@@ -2369,11 +2286,10 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
             FeatureOperation::InsertBodies { .. } => {}
             FeatureOperation::InsertComponent { occurrence } => {
-                if !ir
+                if !super::scans::any(ctx, ir
                     .model
                     .occurrences
-                    .iter()
-                    .any(|candidate| candidate.id == *occurrence)
+                    .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), occurrence.as_str(), "topology reference comparison")?))?
                 {
                     ref_error(ctx, 
                         findings,
@@ -2384,11 +2300,10 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
             FeatureOperation::AssemblyJoint { joint } => {
-                if !ir
+                if !super::scans::any(ctx, ir
                     .model
                     .assembly_joints
-                    .iter()
-                    .any(|candidate| candidate.id == *joint)
+                    .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), joint.as_str(), "topology reference comparison")?))?
                 {
                     ref_error(ctx, 
                         findings,
@@ -2457,7 +2372,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::Loft {
                 sections, guidance, ..
             } => {
-                for section in sections {
+                for section in sections { ctx.charge_work(1, "topology validation scan")?;
                     match section {
                         crate::features::LoftSection::Profile(_) => {}
                         crate::features::LoftSection::Point(
@@ -2596,7 +2511,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         "split-face tool plane",
                     )?,
                     SplitFaceTool::Planes { planes } => {
-                        for plane in planes {
+                        for plane in planes { ctx.charge_work(1, "topology validation scan")?;
                             check_plane_feature_reference(ctx, 
                                 findings,
                                 feature,
@@ -2627,11 +2542,11 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::Flex { .. } => {}
             FeatureOperation::Scale { bodies, center, .. } => {
                 body_selections.push(bodies)?;
-                let center_valid = center.as_ref().is_none_or(|center| match center {
+                let center_valid = center.as_ref().map_or(Ok::<_, CodecError>(true), |center| Ok::<_, CodecError>(match center {
                     ScaleCenter::Point(_) => true,
                     ScaleCenter::Native(reference) => !reference.is_empty(),
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
-                });
+                }))?;
                 if !center_valid {
                     geometry_error(ctx, findings, feature.id.as_str(), "scale transform is invalid")?;
                 }
@@ -2654,9 +2569,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::Hole { face, .. } => face_selections.extend(face)?,
             FeatureOperation::Pattern { seeds, pattern } => {
                 collect_pattern_paths(ctx, pattern, &mut paths)?;
-                for seed in seeds {
+                for seed in seeds { ctx.charge_work(1, "topology validation scan")?;
                     match seed {
-                        PatternSeed::Feature(seed) => match features.get(seed.as_str()) {
+                        PatternSeed::Feature(seed) => match features.get(ctx, seed.as_str())? {
                             None => ref_error(ctx, 
                                 findings,
                                 feature.id.as_str(),
@@ -2669,7 +2584,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                         seed.as_str()
                                     ))?;
                             }
-                            Some(_) if !feature.dependencies.contains(seed) => {
+                            Some(_) if !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), seed.as_str(), "feature dependency comparison")?))? => {
                                 super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                         "pattern omits seed feature `{}` from its dependencies",
                                         seed.as_str()
@@ -2680,12 +2595,11 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         PatternSeed::Faces(selection) => face_selections.push(selection)?,
                         PatternSeed::Bodies(selection) => body_selections.push(selection)?,
                         PatternSeed::Occurrences(occurrences) => {
-                            for occurrence in occurrences {
-                                if !ir
+                            for occurrence in occurrences { ctx.charge_work(1, "topology validation scan")?;
+                                if !super::scans::any(ctx, ir
                                     .model
                                     .occurrences
-                                    .iter()
-                                    .any(|candidate| candidate.id == *occurrence)
+                                    .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), occurrence.as_str(), "topology reference comparison")?))?
                                 {
                                     ref_error(ctx, 
                                         findings,
@@ -2701,7 +2615,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
             FeatureOperation::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch.id() {
-                    if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
+                    if !super::scans::any(ctx, ir.model.sketches.iter(), |value| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, value.id.as_str(), sketch.as_str(), "topology reference comparison")?))? {
                         ref_error(ctx, 
                             findings,
                             feature.id.as_str(),
@@ -2713,11 +2627,10 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
             FeatureOperation::SpatialSketch { sketch } => {
                 if let Some(sketch) = sketch {
-                    if !ir
+                    if !super::scans::any(ctx, ir
                         .model
                         .spatial_sketches
-                        .iter()
-                        .any(|value| value.id == *sketch)
+                        .iter(), |value| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, value.id.as_str(), sketch.as_str(), "topology reference comparison")?))?
                     {
                         ref_error(ctx, 
                             findings,
@@ -2774,9 +2687,9 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             }
                             crate::features::BinderConstruction::Shape { .. } => None,
                         })
-                {
+                { ctx.charge_work(1, "topology validation scan")?;
                     if let crate::features::BinderTarget::Feature { feature: target } = target {
-                        match features.get(target.as_str()) {
+                        match features.get(ctx, target.as_str())? {
                             None => ref_error(ctx, 
                                 findings,
                                 feature.id.as_str(),
@@ -2813,12 +2726,11 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 body_selections.push(sources)?;
             }
             FeatureOperation::TreeNode { children, .. } => {
-                for child in children {
-                    if !ir
+                for child in children { ctx.charge_work(1, "topology validation scan")?;
+                    if !super::scans::any(ctx, ir
                         .model
                         .features
-                        .iter()
-                        .any(|candidate| candidate.id == *child)
+                        .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), child.as_str(), "topology reference comparison")?))?
                     {
                         ref_error(ctx, findings, feature.id.as_str(), "tree child", child.as_str())?;
                     }
@@ -2826,7 +2738,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             }
             FeatureOperation::DatumPlane { .. } => {}
             FeatureOperation::DatumThreePointPlane { points, .. } => {
-                for point in points.iter() {
+                for point in points.iter() { ctx.charge_work(1, "topology validation scan")?;
                     vertex_selections.push((point, "three-point datum-plane"))?;
                 }
             }
@@ -2858,10 +2770,10 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         }
                     }
                 }
-                for plane in plane_references {
+                for plane in plane_references { ctx.charge_work(1, "topology validation scan")?;
                     match plane {
                         DatumPlaneReference::Feature { feature: reference } => {
-                            match feature_records.get(reference.as_str()) {
+                            match feature_records.get(ctx, reference.as_str())? {
                                 None => ref_error(ctx, 
                                     findings,
                                     feature.id.as_str(),
@@ -2884,7 +2796,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 Some(record) if record.ordinal >= feature.ordinal => {
                                     geometry_error(ctx, findings, feature.id.as_str(), "datum-point plane does not precede the point")?;
                                 }
-                                Some(_) if !feature.dependencies.contains(reference) => {
+                                Some(_) if !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), reference.as_str(), "feature dependency comparison")?))? => {
                                     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                             "datum point omits plane feature `{}` from its dependencies",
                                             reference.as_str()
@@ -2907,7 +2819,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 placement: _,
             } => {
                 if let Some(block) = block {
-                    match features.get(block.as_str()) {
+                    match features.get(ctx, block.as_str())? {
                         None => ref_error(ctx, 
                             findings,
                             feature.id.as_str(),
@@ -2916,17 +2828,17 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         )?,
                         Some(ordinal) if *ordinal >= feature.ordinal => geometry_error(ctx, findings, feature.id.as_str(), "sketch block does not precede its instance")?,
                         Some(_)
-                            if !ir.model.features.iter().any(|candidate| {
-                                candidate.id == *block
+                            if !super::scans::any(ctx, ir.model.features.iter(), |candidate| Ok::<_, CodecError>({
+                                crate::ids::comparison::equal(ctx, candidate.id.as_str(), block.as_str(), "topology reference comparison")?
                                     && matches!(
                                         candidate.evaluation.definition().operation(),
                                         FeatureOperation::SketchBlockDefinition { .. }
                                     )
-                            }) =>
+                            }))? =>
                         {
                             geometry_error(ctx, findings, feature.id.as_str(), "sketch block target is not a block definition")?;
                         }
-                        Some(_) if !feature.dependencies.contains(block) => {
+                        Some(_) if !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), block.as_str(), "feature dependency comparison")?))? => {
                             super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
                                     block.as_str()
@@ -2936,7 +2848,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     }
                 }
             }
-            FeatureOperation::DerivedGeometry { source } => match features.get(source.as_str()) {
+            FeatureOperation::DerivedGeometry { source } => match features.get(ctx, source.as_str())? {
                 None => ref_error(ctx, 
                     findings,
                     feature.id.as_str(),
@@ -2947,7 +2859,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         "source feature `{}` does not precede its derived geometry",
                         source.as_str()
                     ))?,
-                Some(_) if !feature.dependencies.contains(source) => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+                Some(_) if !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), source.as_str(), "feature dependency comparison")?))? => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                         "derived geometry omits source feature `{}` from its dependencies",
                         source.as_str()
                     ))?,
@@ -2958,7 +2870,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 if let Some(reference) = reference {
                     match reference {
                         DatumPlaneReference::Feature { feature: reference } => {
-                            match feature_records.get(reference.as_str()) {
+                            match feature_records.get(ctx, reference.as_str())? {
                                 None => {
                                     ref_error(ctx, 
                                         findings,
@@ -2986,7 +2898,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                             reference.as_str()
                                         ))?;
                                 }
-                                Some(_) if !feature.dependencies.contains(reference) => {
+                                Some(_) if !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), reference.as_str(), "feature dependency comparison")?))? => {
                                     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                             "offset plane omits reference feature `{}` from its dependencies",
                                             reference.as_str()
@@ -3001,7 +2913,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 }
             }
         }
-        for profile in definition_profiles(ctx, definition)? {
+        for profile in definition_profiles(ctx, definition)? { ctx.charge_work(1, "topology validation scan")?;
             match profile {
                 PlanarProfileRef::Faces(faces) => check_ids(ctx, 
                     findings,
@@ -3023,7 +2935,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         |topology| Scratch::filter_map(ctx, topology.faces.iter().map(crate::ids::HistoricalFaceId::as_str), |id| Ok(Some(id))),
                     )?;
                 }
-                PlanarProfileRef::Feature(producer) => match features.get(producer.as_str()) {
+                PlanarProfileRef::Feature(producer) => match features.get(ctx, producer.as_str())? {
                     None => ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
@@ -3032,26 +2944,24 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     )?,
                     Some(ordinal)
                         if *ordinal >= feature.ordinal
-                            || !feature.dependencies.contains(producer) =>
+                            || !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), producer.as_str(), "feature dependency comparison")?))? =>
                     {
                         geometry_error(ctx, findings, feature.id.as_str(), "profile feature is not a preceding dependency")?;
                     }
                     Some(_) => {}
                 },
                 PlanarProfileRef::Generated { curves, .. }
-                    if curves.iter().any(|curve| {
-                        features
-                            .get(curve.feature.as_str())
-                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                            || !feature.dependencies.contains(&curve.feature)
-                    }) =>
+                    if super::scans::any(ctx, curves.iter(), |curve| Ok::<_, CodecError>({
+                        features.get(ctx, curve.feature.as_str())?.map_or(Ok::<_, CodecError>(true), |ordinal| Ok::<_, CodecError>(*ordinal >= feature.ordinal))?
+                            || !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), curve.feature.as_str(), "feature dependency comparison")?))?
+                    }))? =>
                 {
                     geometry_error(ctx, findings, feature.id.as_str(), "generated profile curve is invalid")?;
                 }
                 _ => {}
             }
         }
-        for path in paths {
+        for path in paths { ctx.charge_work(1, "topology validation scan")?;
             match path {
                 PathRef::Edges(edges) => check_ids(ctx, 
                     findings,
@@ -3072,7 +2982,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     feature.id.as_str(),
                     "sketch path curve",
                     curves.iter().map(crate::sketches::SketchEntityId::as_str),
-                    |identity| Ok(sketch_entities.contains(identity)),
+                    |identity| Ok(sketch_entities.contains(ctx, identity)?),
                 )?,
                 PathRef::SpatialSketchCurves { curves, .. } => check_ids(ctx, 
                     findings,
@@ -3081,7 +2991,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     curves
                         .iter()
                         .map(crate::sketches::SpatialSketchEntityId::as_str),
-                    |identity| Ok(spatial_sketch_entity_owners.contains_key(identity)),
+                    |identity| Ok(spatial_sketch_entity_owners.contains(ctx, identity)?),
                 )?,
                 PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(ctx, 
                     findings,
@@ -3100,7 +3010,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
-        for termination in definition_terminations(ctx, definition)? {
+        for termination in definition_terminations(ctx, definition)? { ctx.charge_work(1, "topology validation scan")?;
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.face()
             {
@@ -3127,21 +3037,16 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 vertex_selections.push((vertex, "termination"))?;
             }
         }
-        for (selection, consumer) in vertex_selections {
+        for (selection, consumer) in vertex_selections { ctx.charge_work(1, "topology validation scan")?;
             match selection {
                 crate::features::VertexSelection::Generated { vertex, .. } => {
-                    if features
-                        .get(vertex.feature.as_str())
-                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                        || !feature.dependencies.contains(&vertex.feature)
-                        || result_topologies_by_feature
-                            .get(vertex.feature.as_str())
-                            .is_some_and(|state| {
-                                !state
+                    if features.get(ctx, vertex.feature.as_str())?.map_or(Ok::<_, CodecError>(true), |ordinal| Ok::<_, CodecError>(*ordinal >= feature.ordinal))?
+                        || !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), vertex.feature.as_str(), "feature dependency comparison")?))?
+                        || result_topologies_by_feature.get(ctx, vertex.feature.as_str())?.map_or(Ok::<_, CodecError>(false), |state| Ok::<_, CodecError>({
+                                !super::scans::any(ctx, state
                                     .vertices()
-                                    .iter()
-                                    .any(|id| id == vertex.local_id.as_str())
-                            })
+                                    .iter(), |id| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, id.as_str(), vertex.local_id.as_str(), "generated topology identity")?))?
+                            }))?
                     {
                         geometry_error(ctx, findings, feature.id.as_str(), format_args!("generated {consumer} vertex is invalid"))?;
                     }
@@ -3162,7 +3067,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 | crate::features::VertexSelection::Native(_) => {}
             }
         }
-        for selection in edge_selections {
+        for selection in edge_selections { ctx.charge_work(1, "topology validation scan")?;
             let historical = match selection {
                 EdgeSelection::Historical { state, edges, .. } => Some((state, edges.as_slice())),
                 EdgeSelection::HistoricalPartial { state, edges, .. } => {
@@ -3193,21 +3098,19 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 )?,
                 EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. } => {}
                 EdgeSelection::Generated { edges, .. } => {
-                    if edges.iter().any(|edge| {
-                        !feature.dependencies.contains(&edge.feature)
-                            || result_topologies_by_feature
-                                .get(edge.feature.as_str())
-                                .is_some_and(|state| {
-                                    !state.edges().iter().any(|id| id == edge.local_id.as_str())
-                                })
-                    }) {
+                    if super::scans::any(ctx, edges.iter(), |edge| Ok::<_, CodecError>({
+                        !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), edge.feature.as_str(), "feature dependency comparison")?))?
+                            || result_topologies_by_feature.get(ctx, edge.feature.as_str())?.map_or(Ok::<_, CodecError>(false), |state| Ok::<_, CodecError>({
+                                    !super::scans::any(ctx, state.edges().iter(), |id| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, id.as_str(), edge.local_id.as_str(), "generated topology identity")?))?
+                                }))?
+                    }))? {
                         geometry_error(ctx, findings, feature.id.as_str(), "generated edge selection is invalid")?;
                     }
                 }
                 EdgeSelection::All | EdgeSelection::Unresolved | EdgeSelection::Native(_) => {}
             }
         }
-        for selection in face_selections {
+        for selection in face_selections { ctx.charge_work(1, "topology validation scan")?;
             let historical = match selection {
                 FaceSelection::Historical { state, faces, .. } => Some((state, faces.as_slice())),
                 FaceSelection::HistoricalPartial { state, faces, .. } => {
@@ -3238,21 +3141,19 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 )?,
                 FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. } => {}
                 FaceSelection::Generated { faces, .. } => {
-                    if faces.iter().any(|face| {
-                        !feature.dependencies.contains(&face.feature)
-                            || result_topologies_by_feature
-                                .get(face.feature.as_str())
-                                .is_some_and(|state| {
-                                    !state.faces().iter().any(|id| id == face.local_id.as_str())
-                                })
-                    }) {
+                    if super::scans::any(ctx, faces.iter(), |face| Ok::<_, CodecError>({
+                        !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), face.feature.as_str(), "feature dependency comparison")?))?
+                            || result_topologies_by_feature.get(ctx, face.feature.as_str())?.map_or(Ok::<_, CodecError>(false), |state| Ok::<_, CodecError>({
+                                    !super::scans::any(ctx, state.faces().iter(), |id| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, id.as_str(), face.local_id.as_str(), "generated topology identity")?))?
+                                }))?
+                    }))? {
                         geometry_error(ctx, findings, feature.id.as_str(), "generated face selection is invalid")?;
                     }
                 }
                 FaceSelection::Unresolved | FaceSelection::Native(_) => {}
             }
         }
-        for selection in body_selections {
+        for selection in body_selections { ctx.charge_work(1, "topology validation scan")?;
             match selection {
                 BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
                     check_ids(ctx, 
@@ -3303,14 +3204,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     )?;
                 }
                 BodySelection::Generated { bodies, .. } => {
-                    if bodies.iter().any(|body| {
-                        !feature.dependencies.contains(&body.feature)
-                            || result_topologies_by_feature
-                                .get(body.feature.as_str())
-                                .is_some_and(|state| {
-                                    !state.bodies().iter().any(|id| id == body.local_id.as_str())
-                                })
-                    }) {
+                    if super::scans::any(ctx, bodies.iter(), |body| Ok::<_, CodecError>({
+                        !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), body.feature.as_str(), "feature dependency comparison")?))?
+                            || result_topologies_by_feature.get(ctx, body.feature.as_str())?.map_or(Ok::<_, CodecError>(false), |state| Ok::<_, CodecError>({
+                                    !super::scans::any(ctx, state.bodies().iter(), |id| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, id.as_str(), body.local_id.as_str(), "generated topology identity")?))?
+                                }))?
+                    }))? {
                         geometry_error(ctx, findings, feature.id.as_str(), "generated body selection is invalid")?;
                     }
                 }
@@ -3336,26 +3235,19 @@ impl fmt::Display for PlaneCyclePath<'_, '_> {
     }
 }
 
-fn plane_lookup_work(ctx: &DecodeContext<'_>, count: usize, key_bytes: usize, longest: usize) -> Result<(), CodecError> {
-    let work = u64_from_index(count).checked_add(1)
-        .and_then(|count| count.checked_mul(u64_from_index(key_bytes).checked_add(u64_from_index(longest))?.checked_add(1)?))
-        .ok_or_else(|| ctx.refuse_codec_limit("datum-plane identity lookup", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, "datum-plane identity lookup")
-}
-
 fn check_historical_members<'ctx, 'a, I, F>(ctx: &'ctx DecodeContext<'_>, 
     findings: &mut Vec<Finding>,
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I),
     kind: &str,
-    states: &HashMap<&str, &'a crate::features::FeatureInputTopology>,
+    states: &BorrowedIdentities<'_, 'a, &'a crate::features::FeatureInputTopology>,
     members: F,
 ) -> Result<(), CodecError> where
     I: IntoIterator<Item = &'a str>,
     F: FnOnce(&'a crate::features::FeatureInputTopology) -> Result<Scratch<'ctx, &'a str>, CodecError>,
 {
     let (state_id, selected) = selection;
-    let Some(state) = states.get(state_id.as_str()) else {
+    let Some(state) = states.get(ctx, state_id.as_str())? else {
         ref_error(ctx, 
             findings,
             feature.as_str(),
@@ -3364,13 +3256,13 @@ fn check_historical_members<'ctx, 'a, I, F>(ctx: &'ctx DecodeContext<'_>,
         )?;
         return Ok(());
     };
-    if state.input_of != *feature {
+    if !crate::ids::comparison::equal(ctx, state.input_of.as_str(), feature.as_str(), "historical topology owner")? {
         super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.as_str()), format_args!("historical {kind} selection uses another feature's input topology"))?;
     }
-    let available = members(state)?.into_iter().collect::<HashSet<_>>();
+    let available = BorrowedIdentities::build(ctx, |add| { for id in members(state)? { add(id, ())?; } Ok(()) })?;
     for id in selected {
         ctx.charge_work(1, "historical selection scan")?;
-        if !available.contains(id) {
+        if !available.contains(ctx, id)? {
             ref_error(ctx, 
                 findings,
                 feature.as_str(),
@@ -3403,6 +3295,7 @@ fn regeneration_references<'ctx, 'a>(
             ..
         } => for reference in construction.feature_references() { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; },
         crate::features::FeatureOperation::DatumThreePointPlane { points, .. } => {
+            ctx.charge_work(u64_from_index(points.len()), "regeneration point filter scan")?;
             for reference in points.iter().filter_map(|point| match point {
                 crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
                 crate::features::VertexSelection::Historical { .. }
@@ -3418,6 +3311,7 @@ fn regeneration_references<'ctx, 'a>(
             references.insert_unique(reference.as_str(), reference)?;
         }
         crate::features::FeatureOperation::Pattern { seeds, .. } => {
+            ctx.charge_work(u64_from_index(seeds.len()), "regeneration seed filter scan")?;
             for reference in seeds.iter().filter_map(|seed| match seed {
                 crate::features::patterns::PatternSeed::Feature(feature) => Some(feature),
                 crate::features::patterns::PatternSeed::Faces(_)
@@ -3427,13 +3321,13 @@ fn regeneration_references<'ctx, 'a>(
         }
         _ => {}
     }
-    for reference in definition_terminations(ctx, definition)?.into_iter().filter_map(|termination| match termination.vertex() {
-            Some(crate::features::VertexSelection::Generated { vertex, .. }) => {
-                Some(&vertex.feature)
-            }
-            _ => None,
-        }) { ctx.charge_work(1, "regeneration reference scan")?; references.insert_unique(reference.as_str(), reference)?; };
-    for profile in definition_profiles(ctx, definition)? {
+    for termination in definition_terminations(ctx, definition)? {
+        ctx.charge_work(1, "regeneration termination scan")?;
+        if let Some(crate::features::VertexSelection::Generated { vertex, .. }) = termination.vertex() {
+            references.insert_unique(vertex.feature.as_str(), &vertex.feature)?;
+        }
+    }
+    for profile in definition_profiles(ctx, definition)? { ctx.charge_work(1, "topology validation scan")?;
         match profile {
             crate::features::PlanarProfileRef::Feature(feature) => {
                 references.insert_unique(feature.as_str(), feature)?;
@@ -3473,10 +3367,10 @@ fn definition_profiles<'ctx, 'a>(
             profiles.push(&construction.profile)?;
         }
         crate::features::FeatureOperation::Loft { sections, .. } => {
-            profiles.extend(sections.iter().filter_map(|section| match section {
-                crate::features::LoftSection::Profile(profile) => profile.planar(),
-                crate::features::LoftSection::Point(_) => None,
-            }))?;
+            for section in sections {
+                ctx.charge_work(1, "planar loft profile scan")?;
+                if let crate::features::LoftSection::Profile(profile) = section { profiles.extend(profile.planar())?; }
+            }
         }
         crate::features::FeatureOperation::Hole {
             profile: Some(profile),
@@ -3572,26 +3466,28 @@ fn check_configuration_state_closure(ctx: &DecodeContext<'_>,
     if configuration.feature_states.is_empty() {
         return Ok(());
     }
-    let mut closure = configuration
-        .feature_states
-        .iter()
-        .filter(|(_, state)| !state.evaluation.is_suppressed())
-        .map(|(feature, _)| feature.clone())
-        .collect::<HashSet<_>>();
-    let mut pending = closure.iter().cloned().collect::<Vec<_>>();
+    let states = BorrowedIdentities::build(ctx, |add| {
+        for (feature, state) in &configuration.feature_states { add(feature.as_str(), state)?; }
+        Ok(())
+    })?;
+    let mut closure = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut pending = Scratch::new(ctx)?;
+    for (feature, state) in &configuration.feature_states {
+        ctx.charge_work(1, "configuration closure seed scan")?;
+        if !state.evaluation.is_suppressed() && closure.insert_unique(feature.as_str(), ())? { pending.push(feature.as_str())?; }
+    }
     while let Some(feature) = pending.pop() {
-        let state = &configuration.feature_states[&feature];
+        ctx.charge_work(1, "configuration closure traversal")?;
+        let Some(state) = states.get(ctx, feature)? else { continue; };
         for dependency in &state.dependencies {
-            match configuration.feature_states.get(dependency) {
-                None => {}
+            ctx.charge_work(1, "configuration dependency traversal")?;
+            match states.get(ctx, dependency.as_str())? {
+                None => {},
                 Some(dependency_state) if dependency_state.evaluation.is_suppressed() => {
-                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
-                            "configuration state closure uses suppressed dependency state `{}`",
-                            dependency.as_str()
-                        ))?;
-                }
-                Some(_) if closure.insert(dependency.clone()) => pending.push(dependency.clone()),
-                Some(_) => {}
+                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!("configuration state closure uses suppressed dependency state `{}`", dependency.as_str()))?;
+                },
+                Some(_) if closure.insert_unique(dependency.as_str(), ())? => pending.push(dependency.as_str())?,
+                Some(_) => {},
             }
         }
     }
@@ -3605,10 +3501,10 @@ fn check_plane_feature_reference(ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
     feature: &Feature,
     reference: &crate::features::FeatureId,
-    feature_records: &HashMap<&str, &Feature>,
+    feature_records: &BorrowedIdentities<'_, '_, &Feature>,
     reference_kind: &str,
 ) -> Result<(), CodecError> {
-    match feature_records.get(reference.as_str()) {
+    match feature_records.get(ctx, reference.as_str())? {
         None => ref_error(ctx, 
             findings,
             feature.id.as_str(),
@@ -3632,7 +3528,7 @@ fn check_plane_feature_reference(ctx: &DecodeContext<'_>,
                 "{reference_kind} `{}` does not precede its consuming feature",
                 reference.as_str()
             ))?,
-        Some(_) if !feature.dependencies.contains(reference) => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+        Some(_) if !super::scans::any(ctx, feature.dependencies.iter(), |dependency| Ok(crate::ids::comparison::equal(ctx, dependency.as_str(), reference.as_str(), "feature dependency comparison")?))? => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                 "feature omits {reference_kind} dependency `{}`",
                 reference.as_str()
             ))?,
@@ -3682,7 +3578,7 @@ impl<'a> From<&'a crate::features::ProfileRef> for ProfileReference<'a> {
 
 fn check_feature_sketch_references(ctx: &DecodeContext<'_>, 
     ir: &CadIr,
-    sketches: &HashSet<&str>,
+    sketches: &BorrowedIdentities<'_, '_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     use crate::features::{
@@ -3690,26 +3586,11 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
         SketchPointSelection,
     };
 
-    let spatial_sketches = ir
-        .model
-        .spatial_sketches
-        .iter()
-        .map(|sketch| sketch.id.as_str())
-        .collect::<HashSet<_>>();
-    let sketch_entity_owners = ir
-        .model
-        .sketch_entities
-        .iter()
-        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
-        .collect::<HashMap<_, _>>();
-    let spatial_sketch_entity_owners = ir
-        .model
-        .spatial_sketch_entities
-        .iter()
-        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
-        .collect::<HashMap<_, _>>();
-    let mut owners = HashMap::new();
-    for feature in &ir.model.features {
+    let spatial_sketches = BorrowedIdentities::build(ctx, |add| { for sketch in &ir.model.spatial_sketches { add(sketch.id.as_str(), ())?; } Ok(()) })?;
+    let sketch_entity_owners = BorrowedIdentities::build(ctx, |add| { for entity in &ir.model.sketch_entities { let (identity, value) = (entity.id().as_str(), entity.sketch.as_str()); add(identity, value)?; } Ok(()) })?;
+    let spatial_sketch_entity_owners = BorrowedIdentities::build(ctx, |add| { for entity in &ir.model.spatial_sketch_entities { let (identity, value) = (entity.id().as_str(), entity.sketch.as_str()); add(identity, value)?; } Ok(()) })?;
+    let mut owners = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    for feature in &ir.model.features { ctx.charge_work(1, "topology validation scan")?;
         let sketch = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch)),
@@ -3721,14 +3602,14 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
             _ => continue,
         };
         if owners
-            .insert(sketch, (feature.id.as_str(), feature.ordinal))
+            .insert(sketch, (feature.id.as_str(), feature.ordinal))?
             .is_some()
         {
             super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!("sketch `{sketch}` has multiple owning features"))?;
         }
     }
 
-    for feature in &ir.model.features {
+    for feature in &ir.model.features { ctx.charge_work(1, "topology validation scan")?;
         let FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             construction: Some(construction),
             ..
@@ -3746,40 +3627,36 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                 point,
                 native,
             } => {
-                !native.trim().is_empty()
-                    && sketches.contains(sketch.as_str())
-                    && sketch_entity_owners
-                        .get(point.as_str())
-                        .is_some_and(|owner| *owner == sketch.as_str())
-                    && ir.model.sketch_entities.iter().any(|entity| {
-                        entity.id() == point
-                            && entity.sketch == *sketch
+                non_blank_native_reference(ctx, native)?
+                    && sketches.contains(ctx, sketch.as_str())?
+                    && sketch_entity_owners.get(ctx, point.as_str())?.map_or(Ok::<_, CodecError>(false), |owner| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, owner, sketch.as_str(), "profile sketch owner")?))?
+                    && super::scans::any(ctx, ir.model.sketch_entities.iter(), |entity| Ok::<_, CodecError>({
+                        crate::ids::comparison::equal(ctx, entity.id().as_str(), point.as_str(), "sketch point identity")?
+                            && crate::ids::comparison::equal(ctx, entity.sketch.as_str(), sketch.as_str(), "sketch ownership comparison")?
                             && matches!(
                                 entity.geometry.definition(),
                                 crate::sketches::SketchGeometryDefinition::Point { .. }
                             )
-                    })
+                    }))?
             }
             SketchPointSelection::Spatial {
                 sketch,
                 point,
                 native,
             } => {
-                !native.trim().is_empty()
-                    && spatial_sketches.contains(sketch.as_str())
-                    && spatial_sketch_entity_owners
-                        .get(point.as_str())
-                        .is_some_and(|owner| *owner == sketch.as_str())
-                    && ir.model.spatial_sketch_entities.iter().any(|entity| {
-                        entity.id() == point
-                            && entity.sketch == *sketch
+                non_blank_native_reference(ctx, native)?
+                    && spatial_sketches.contains(ctx, sketch.as_str())?
+                    && spatial_sketch_entity_owners.get(ctx, point.as_str())?.map_or(Ok::<_, CodecError>(false), |owner| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, owner, sketch.as_str(), "profile sketch owner")?))?
+                    && super::scans::any(ctx, ir.model.spatial_sketch_entities.iter(), |entity| Ok::<_, CodecError>({
+                        crate::ids::comparison::equal(ctx, entity.id().as_str(), point.as_str(), "sketch point identity")?
+                            && crate::ids::comparison::equal(ctx, entity.sketch.as_str(), sketch.as_str(), "sketch ownership comparison")?
                             && matches!(
                                 entity.geometry.definition(),
                                 crate::sketches::SpatialSketchGeometryDefinition::Point { .. }
                             )
-                    })
+                    }))?
             }
-            SketchPointSelection::Native(native) => !native.trim().is_empty(),
+            SketchPointSelection::Native(native) => non_blank_native_reference(ctx, native)?,
             SketchPointSelection::Unresolved => true,
         };
         if !valid {
@@ -3791,7 +3668,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
             SketchPointSelection::Native(_) | SketchPointSelection::Unresolved => None,
         };
         if let Some(sketch_id) = sketch_id {
-            if let Some((owner, ordinal)) = owners.get(sketch_id) {
+            if let Some((owner, ordinal)) = owners.get(ctx, sketch_id)? {
                 if *ordinal >= feature.ordinal {
                     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "sketch owner `{owner}` does not precede its datum-point consumer"
@@ -3801,7 +3678,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
         }
     }
 
-    for feature in &ir.model.features {
+    for feature in &ir.model.features { ctx.charge_work(1, "topology validation scan")?;
         let mut profiles = Scratch::new(ctx)?;
         let mut paths = Scratch::new(ctx)?;
         let definition = match feature.evaluation.definition() {
@@ -3854,10 +3731,10 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
             FeatureOperation::Loft {
                 sections, guidance, ..
             } => {
-                profiles.extend(sections.iter().filter_map(|section| match section {
-                    crate::features::LoftSection::Profile(profile) => Some(ProfileReference::from(profile)),
-                    crate::features::LoftSection::Point(_) => None,
-                }))?;
+                for section in sections {
+                    ctx.charge_work(1, "loft profile reference scan")?;
+                    if let crate::features::LoftSection::Profile(profile) = section { profiles.push(ProfileReference::from(profile))?; }
+                }
                 match guidance {
                     crate::features::LoftGuidance::Guides(guides) => paths.extend(guides)?,
                     crate::features::LoftGuidance::Centerline(centerline) => paths.push(centerline)?,
@@ -3868,7 +3745,7 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
             }
             _ => {}
         }
-        for profile in profiles {
+        for profile in profiles { ctx.charge_work(1, "topology validation scan")?;
             let (sketch, sketch_kind, defined_sketches) = match profile {
                 ProfileReference::SpatialSketchProfiles { sketch, .. }
                 | ProfileReference::SpatialSketchSelection { sketch, .. } => {
@@ -3883,14 +3760,14 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                 ) => (sketch.as_str(), "sketch", sketches),
                 ProfileReference::Planar(_) => continue,
             };
-            if !defined_sketches.contains(sketch) {
+            if !defined_sketches.contains(ctx, sketch)? {
                 ref_error(ctx, 
                     findings,
                     feature.id.as_str(),
                     format_args!("{sketch_kind} profile"),
                     sketch,
                 )?;
-            } else if let Some((owner, ordinal)) = owners.get(sketch) {
+            } else if let Some((owner, ordinal)) = owners.get(ctx, sketch)? {
                 if *ordinal >= feature.ordinal {
                     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "{sketch_kind} owner `{owner}` does not precede its profile consumer"
@@ -3899,75 +3776,69 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
             }
             match profile {
                 ProfileReference::SpatialSketchProfiles { sketch, profiles } => {
-                    let profile_count = ir
+                    let profile_count = super::scans::find(ctx, ir
                         .model
                         .spatial_sketches
-                        .iter()
-                        .find(|candidate| candidate.id == *sketch)
+                        .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), sketch.as_str(), "topology reference comparison")?))?
                         .map_or(0, |sketch| sketch.profiles.len());
-                    if profiles
-                        .iter()
-                        .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= profile_count)
+                    if super::scans::any(ctx, profiles
+                        .iter(), |index| Ok::<_, CodecError>(cadmpeg_core::decode::index_from_u32(*index) >= profile_count))?
                     {
                         geometry_error(ctx, findings, feature.id.as_str(), "spatial sketch profile indices are empty, repeated, or out of range")?;
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
-                    let sketch_profile_count = ir
+                    let sketch_profile_count = super::scans::find(ctx, ir
                         .model
                         .sketches
-                        .iter()
-                        .find(|candidate| candidate.id == *sketch)
+                        .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), sketch.as_str(), "topology reference comparison")?))?
                         .map_or(0, |sketch| sketch.profiles.len());
-                    if profiles.iter().any(|index| {
+                    if super::scans::any(ctx, profiles.iter(), |index| Ok::<_, CodecError>({
                         cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count
-                    }) {
+                    }))? {
                         geometry_error(ctx, findings, feature.id.as_str(), "sketch profile indices are empty, repeated, or out of range")?;
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) => {
-                    let selected_sketch = ir
+                    let selected_sketch = super::scans::find(ctx, ir
                         .model
                         .sketches
-                        .iter()
-                        .find(|candidate| candidate.id == *sketch);
+                        .iter(), |candidate| Ok::<_, CodecError>(crate::ids::comparison::equal(ctx, candidate.id.as_str(), sketch.as_str(), "topology reference comparison")?))?;
                     let sketch_profile_count =
                         selected_sketch.map_or(0, |sketch| sketch.profiles.len());
-                    let invalid = regions.iter().any(|region| match region {
+                    let invalid = super::scans::any(ctx, regions.iter(), |region| Ok::<_, CodecError>(match region {
                         crate::features::SketchProfileRegion::Loops { loops } => {
                             cadmpeg_core::decode::index_from_u32(loops.outer())
                                 >= sketch_profile_count
-                                || loops.holes().iter().any(|index| {
+                                || super::scans::any(ctx, loops.holes().iter(), |index| Ok::<_, CodecError>({
                                     cadmpeg_core::decode::index_from_u32(*index)
                                         >= sketch_profile_count
-                                })
+                                }))?
                         }
                         crate::features::SketchProfileRegion::Trimmed {
                             outer_boundary,
                             hole_boundaries,
                         } => {
                             let valid_ring =
-                                |ring: &[crate::features::SketchProfileBoundaryUse]| {
-                                    ring.iter().all(|use_| {
-                                        ir.model.sketch_entities.iter().any(|entity| {
-                                            entity.id() == &use_.entity && entity.sketch == *sketch
-                                        })
-                                    })
+                                |ring: &[crate::features::SketchProfileBoundaryUse]| -> Result<bool, CodecError> {
+                                    super::scans::all(ctx, ring.iter(), |use_| Ok::<_, CodecError>({
+                                        super::scans::any(ctx, ir.model.sketch_entities.iter(), |entity| Ok::<_, CodecError>({
+                                            crate::ids::comparison::equal(ctx, entity.id().as_str(), use_.entity.as_str(), "sketch boundary identity")? && crate::ids::comparison::equal(ctx, entity.sketch.as_str(), sketch.as_str(), "sketch ownership comparison")?
+                                        }))?
+                                    }))
                                 };
-                            !valid_ring(outer_boundary)
-                                || hole_boundaries.iter().any(|ring| !valid_ring(ring))
+                            !valid_ring(outer_boundary)?
+                                || super::scans::any(ctx, hole_boundaries.iter(), |ring| Ok::<_, CodecError>(!valid_ring(ring)?))?
                         }
-                    });
+                    }))?;
                     if invalid {
                         geometry_error(ctx, findings, feature.id.as_str(), "sketch regions have empty, repeated, invalid, or out-of-range boundaries")?;
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
-                    if entities.iter().any(|entity| {
-                        sketch_entity_owners
-                            .get(entity.as_str())
-                            .is_none_or(|owner| *owner != sketch.as_str())
-                    }) {
+                    if super::scans::any(ctx, entities.iter(), |entity| Ok::<_, CodecError>({
+                        sketch_entity_owners.get(ctx, entity.as_str())?.map_or(Ok::<_, CodecError>(true), |owner| Ok::<_, CodecError>(!crate::ids::comparison::equal(ctx, owner, sketch.as_str(), "profile sketch owner")?))?
+                    }))? {
                         geometry_error(ctx, findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch")?;
                     }
                 }
@@ -3984,13 +3855,11 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                 | ProfileReference::SpatialSketchSelection { .. } => {}
             }
         }
-        for path in paths {
+        for path in paths { ctx.charge_work(1, "topology validation scan")?;
             if let PathRef::SketchCurves { sketch, curves } = path {
-                let invalid = curves.iter().any(|curve| {
-                    sketch_entity_owners
-                        .get(curve.as_str())
-                        .is_none_or(|owner| *owner != sketch.as_str())
-                });
+                let invalid = super::scans::any(ctx, curves.iter(), |curve| Ok::<_, CodecError>({
+                    sketch_entity_owners.get(ctx, curve.as_str())?.map_or(Ok::<_, CodecError>(true), |owner| Ok::<_, CodecError>(!crate::ids::comparison::equal(ctx, owner, sketch.as_str(), "profile sketch owner")?))?
+                }))?;
                 if invalid {
                     geometry_error(ctx, findings, feature.id.as_str(), "sketch path curves are empty, repeated, or owned by another sketch")?;
                 }
@@ -4001,11 +3870,9 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                     (sketch.as_str(), sketches, "sketch curve path")
                 }
                 PathRef::SpatialSketchCurves { sketch, curves } => {
-                    let invalid = curves.iter().any(|curve| {
-                        spatial_sketch_entity_owners
-                            .get(curve.as_str())
-                            .is_none_or(|owner| *owner != sketch.as_str())
-                    });
+                    let invalid = super::scans::any(ctx, curves.iter(), |curve| Ok::<_, CodecError>({
+                        spatial_sketch_entity_owners.get(ctx, curve.as_str())?.map_or(Ok::<_, CodecError>(true), |owner| Ok::<_, CodecError>(!crate::ids::comparison::equal(ctx, owner, sketch.as_str(), "profile sketch owner")?))?
+                    }))?;
                     if invalid {
                         geometry_error(ctx, findings, feature.id.as_str(), "spatial sketch path curves are empty, repeated, missing, or owned by another sketch")?;
                     }
@@ -4020,9 +3887,9 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                 }
                 _ => continue,
             };
-            if !known_sketches.contains(sketch) {
+            if !known_sketches.contains(ctx, sketch)? {
                 ref_error(ctx, findings, feature.id.as_str(), description, sketch)?;
-            } else if let Some((owner, ordinal)) = owners.get(sketch) {
+            } else if let Some((owner, ordinal)) = owners.get(ctx, sketch)? {
                 if *ordinal >= feature.ordinal {
                     super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "sketch owner `{owner}` does not precede its path consumer"
