@@ -1412,13 +1412,13 @@ fn curve_orientation(
     endpoints: [Point3; 2],
 ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
     let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[0])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter_range[0]))?,
     )?
     else {
         return Ok(None);
     };
     let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, parameter_range[1])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter_range[1]))?,
     )?
     else {
         return Ok(None);

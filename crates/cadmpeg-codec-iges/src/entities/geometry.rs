@@ -2728,11 +2728,11 @@ pub(crate) fn project_geometry(
                 }
             };
         let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
+            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 ctx,
                 &nurbs,
                 parameter_range[0].get(),
-            )?)?
+            ))?)?
         else {
             super::push_entity_loss(
                 ctx,
@@ -2743,11 +2743,11 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(end) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
+            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 ctx,
                 &nurbs,
                 parameter_range[1].get(),
-            )?)?
+            ))?)?
         else {
             super::push_entity_loss(
                 ctx,

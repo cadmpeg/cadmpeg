@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use cadmpeg_ir::eval::nurbs_curve_point_at;
+
 
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 const INVERSE_FIT_TOLERANCE: f64 = 1e-6;
@@ -76,7 +76,7 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
             .expect("resource allocation did not fail")
             .unwrap();
         let observed = Point3::new(0.5, 0.5, 0.5).distance(
-            cadmpeg_ir::eval::nurbs_surface_point(&s, 0.5, 0.5)
+            cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &s, 0.5, 0.5)
                 .unwrap()
                 .get(),
         );
@@ -88,7 +88,7 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     }
 }
 
-use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
+
 use cadmpeg_ir::geometry::analytic::{CircleCurve, SphereSurface};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::{EdgeCarrier, FaceLoops, LoopBoundary, LoopRing};
@@ -173,9 +173,9 @@ fn derive_sphere(out: &mut Brep) {
     .expect("spherical pcurve derivation");
 }
 fn error_at(out: &Brep, t: f64) -> f64 {
-    let uv = pcurve_uv(&out.pcurves[0].geometry, t).unwrap();
-    let hit = surface_point(&out.surfaces[0].geometry, uv.u, uv.v).unwrap();
-    let wanted = curve_point(&out.curves[0].geometry, t).unwrap();
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &out.pcurves[0].geometry, t).unwrap();
+    let hit = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &out.surfaces[0].geometry, uv.u, uv.v).unwrap();
+    let wanted = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &out.curves[0].geometry, t).unwrap();
     hit.distance(wanted.get())
 }
 #[test]
@@ -262,7 +262,7 @@ fn numerical_0922b_wide_curve_inverse() {
             InverseResolution::Ambiguous => panic!("ambiguous"),
         };
         println!("SW chart{d:?}: inverse{result:?}");
-        let hit = nurbs_curve_point_at(&curve, result.unwrap()).unwrap();
+        let hit = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, result.unwrap()).unwrap();
         assert!((hit.x - 0.3).abs() < INVERSE_FIT_TOLERANCE);
     }
 }

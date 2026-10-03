@@ -838,7 +838,7 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         panic!("expected an exact NURBS ruled cache");
     };
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
@@ -877,7 +877,7 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
             _ => None,
         })
         .expect("linear Bezier ruled surface");
-    let midpoint = cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
+    let midpoint = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.5, 0.5)
         .expect("linear Bezier ruled midpoint");
     assert!(
         midpoint.distance(Point3::new(1.5, 0.5, 0.0)) <= EPS_LINEAR_BEZIER_RULED,
@@ -915,7 +915,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             .iter()
             .find(|curve| curve.id.as_str() == format!("iges:model:curve#D{sequence}"))
             .expect("rail curve");
-        cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).expect("rail point")
+        cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve.geometry, parameter).expect("rail point")
     };
     for (u, v) in [(0.2, 0.25), (0.5, 0.5), (0.8, 0.75)] {
         let first = curve_point(1, u);
@@ -925,7 +925,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             (1.0 - v) * first.y + v * second.y,
             (1.0 - v) * first.z + v * second.z,
         );
-        let actual = cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).expect("surface point");
+        let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, u, v).expect("surface point");
         assert!(
             actual.distance(expected) <= EPS_RATIONAL_RULED,
             "{actual:?} vs {expected:?}"
@@ -977,8 +977,8 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
         assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
         for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
             let first_point =
-                cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
-            let second_point = cadmpeg_ir::eval::nurbs_curve_point_at(&second, 2.0 * u)
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &first, u).expect("first rail point");
+            let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &second, 2.0 * u)
                 .expect("second rail point");
             let expected = Point3::new(
                 (1.0 - v) * first_point.x + v * second_point.x,
@@ -986,7 +986,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
                 (1.0 - v) * first_point.z + v * second_point.z,
             );
             let actual =
-                cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
+                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v).expect("ruled surface point");
             assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
         }
     });
@@ -1026,16 +1026,16 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         );
         for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
             let first_point =
-                cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &first, u).expect("first rail point");
             let second_point =
-                cadmpeg_ir::eval::nurbs_curve_point_at(&second, u).expect("second rail point");
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &second, u).expect("second rail point");
             let expected = Point3::new(
                 (1.0 - v) * first_point.x + v * second_point.x,
                 (1.0 - v) * first_point.y + v * second_point.y,
                 (1.0 - v) * first_point.z + v * second_point.z,
             );
             let actual =
-                cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
+                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v).expect("ruled surface point");
             assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
         }
     });
@@ -1143,7 +1143,7 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert_eq!(surface.v_degree(), 2);
     assert_eq!(surface.pole_weights().unwrap().len(), 6);
     let point =
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, std::f64::consts::FRAC_PI_4).unwrap();
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.5, std::f64::consts::FRAC_PI_4).unwrap();
     let expected = 0.5_f64.sqrt();
     assert!((point.x - expected).abs() < 1.0e-12);
     assert!((point.y - expected).abs() < 1.0e-12);
@@ -1174,7 +1174,7 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
     else {
         panic!("expected an exact rational ellipse revolution cache");
     };
-    let point = cadmpeg_ir::eval::nurbs_surface_point(
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, 
         surface,
         std::f64::consts::FRAC_PI_4,
         std::f64::consts::FRAC_PI_4,
@@ -1364,7 +1364,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
-        let source_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
+        let source_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
         let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
         let quarter_turn = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -1506,7 +1506,7 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         panic!("expected an exact NURBS extrusion cache");
     };
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.5, 0.5)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
@@ -1658,7 +1658,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
-        let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
+        let directrix_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
         let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
         let surface_point =
@@ -1761,7 +1761,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_))
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
-        let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
+        let directrix_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("placed hyperbola directrix evaluates");
         let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
         let surface_point =
@@ -1849,12 +1849,12 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
         ));
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(directrix_geometry, 0.5)
+            cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, 0.5)
                 .map(cadmpeg_ir::features::FinitePoint3::get),
             Ok(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
-            cadmpeg_ir::eval::surface_point(&surface.geometry, 0.5, 0.5)
+            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface.geometry, 0.5, 0.5)
                 .map(cadmpeg_ir::features::FinitePoint3::get),
             Ok(Point3::new(10.5, 20.0, 31.0))
         );
@@ -1891,7 +1891,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(
-        cadmpeg_ir::eval::surface_point(&result.ir().model.surfaces[0].geometry, 1.0, 3.0)
+        cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &result.ir().model.surfaces[0].geometry, 1.0, 3.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );

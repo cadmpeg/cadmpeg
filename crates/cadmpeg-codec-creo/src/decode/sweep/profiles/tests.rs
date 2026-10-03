@@ -795,10 +795,10 @@ fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
     .expect("service allocation")
     .expect("quarter-circle geometry");
     assert_eq!(
-        cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("start"),
+        cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.0).expect("start"),
         Point2::new(1.0, 0.0)
     );
-    let end = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("end");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 1.0).expect("end");
     assert!(end.u.abs() < EPS_QUARTER_CIRCLE_SEAM);
     assert!((end.v - 1.0).abs() < EPS_QUARTER_CIRCLE_SEAM);
 }

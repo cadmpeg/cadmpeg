@@ -979,7 +979,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     // At t = 3 the weights -1 and 2 blend to -1 * 2/3 + 2 * 1/3 = 0, so the
     // homogeneous point has no projection.
     assert_eq!(
-        crate::eval::nurbs_curve_point_at(&curve, 3.0),
+        crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, &curve, 3.0),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
 

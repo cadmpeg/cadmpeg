@@ -76,7 +76,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
             )
             .unwrap()
             .unwrap();
-            let hit = pcurve_uv(&p, t).unwrap();
+            let hit = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap();
             println!("NX plane contact domain{d:e}: parameter{t:e}, hit{hit:?}");
             assert!((hit.u - 0.3).abs() < 1e-14);
         }
@@ -156,7 +156,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
                 false,
             ).expect("fixture constructor admission")
             .unwrap();
-            let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.).unwrap();
+            let target = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 0.).unwrap();
             let budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(100_000),
@@ -164,7 +164,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
                 .expect("evaluator allocation succeeds")
                 .unwrap();
-            let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, p).unwrap();
             println!(
                 "NX knots{:?}, exact start{target:?}: inverse{p}, residual{}",
                 curve.knots(),
@@ -190,7 +190,7 @@ fn numerical_0922b_small_domain_inverse() {
                 false,
             ).expect("fixture constructor admission")
             .unwrap();
-            let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.75 * d).unwrap();
+            let target = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 0.75 * d).unwrap();
             let budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(100_000),
@@ -198,7 +198,7 @@ fn numerical_0922b_small_domain_inverse() {
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
                 .expect("evaluator allocation succeeds")
                 .unwrap();
-            let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, p).unwrap();
             println!(
                 "NX d{d:e},target{target:?}:inverse{},residual{}",
                 p / d,
@@ -234,7 +234,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
         )
         .expect("evaluator allocation succeeds")
         .unwrap();
-        let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
+        let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, p).unwrap();
         println!("NX discontinuous quadratic target11: parameter{p}, actual{actual:?}");
         assert!(actual.distance(target) < 1e-14);
     });
@@ -288,7 +288,7 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
         let t = closest_pcurve_parameter_from_seed(&p, Point2::new(0.25, 0.), 0.9 * d)
             .expect("evaluator allocation succeeds")
             .unwrap();
-        assert!((pcurve_uv(&p, t).unwrap().u - 0.25).abs() < 64. * f64::EPSILON);
+        assert!((cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.25).abs() < 64. * f64::EPSILON);
     }
 }
 #[test]
@@ -315,7 +315,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             .expect("evaluator allocation succeeds")
             .unwrap();
             assert!(
-                (cadmpeg_ir::eval::nurbs_curve_point_at(&curve, t).unwrap().x - 0.3).abs()
+                (cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, t).unwrap().x - 0.3).abs()
                     < 64. * f64::EPSILON
             );
             let p = PcurveGeometry::Nurbs {
@@ -331,7 +331,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             let t = closest_pcurve_parameter_from_coarse_grid(&p, Point2::new(0.3, 0.))
                 .expect("evaluator allocation succeeds")
                 .unwrap();
-            assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
+            assert!((cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
         }
         assert_eq!(
             scalar_bezier_value(

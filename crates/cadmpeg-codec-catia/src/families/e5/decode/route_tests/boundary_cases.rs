@@ -946,7 +946,7 @@ fn e5_nonplanar_circle_scales_its_rational_uv_control_net() {
             && (last.v - 3.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
     );
     let expected = [Point2::new(2.4, 2.0), Point2::new(2.0, 3.0)].map(|uv| {
-        cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v)
+        cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface.geometry, uv.u, uv.v)
             .expect("torus point")
             .get()
     });

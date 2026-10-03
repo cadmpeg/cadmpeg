@@ -2,11 +2,13 @@
 //! Evaluator arms whose evaluation leaves the finite range report the value
 //! it reached; an arm with no value reports that.
 
-use crate::eval::{
-    model_curve_point_by_id, model_curve_point_by_id_with_budget, model_surface_point_by_id,
-    model_surface_point_by_id_with_budget, pcurve_tangent, pcurve_uv, surface_point,
-    surface_point_with_budget, EvaluationFailure,
-};
+use crate::eval::model_curve_point_by_id;
+use crate::eval::model_curve_point_by_id_with_budget;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::model_surface_point_by_id_with_budget;
+use crate::eval::pcurve_tangent;
+use crate::eval::surface_point_with_budget;
+use crate::eval::EvaluationFailure;
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::pcurve::{
     CirclePcurve, HyperbolaPcurve, LinePcurve, OffsetPcurve, ParabolaPcurve, PcurveGeometry,
@@ -64,7 +66,7 @@ fn a_circle_pcurve_whose_point_overflows_reports_the_point_and_tangent_it_reache
     // `MAX + MAX` has no finite value; the tangent `(0, MAX)` is finite, and
     // the evaluation that formed it left the finite range.
     assert!(is_non_finite_point2(
-        pcurve_uv(&circle, 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0),
         f64::is_nan,
         |v| v == 0.0
     ));
@@ -88,7 +90,7 @@ fn a_parabola_pcurve_whose_axial_quotient_overflows_reports_the_point_it_reached
     // `t^2 / (4 * 0.25)` at `t = 1e200` overflows, so no coordinate is
     // reached.
     assert!(is_non_finite_point2(
-        pcurve_uv(&parabola, 1.0e200),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 1.0e200),
         f64::is_nan,
         f64::is_nan
     ));
@@ -107,7 +109,7 @@ fn a_hyperbola_pcurve_whose_scaled_cosh_overflows_reports_the_point_it_reached()
         .expect("hyperbola pcurve fixture"),
     );
     assert!(is_non_finite_point2(
-        pcurve_uv(&hyperbola, 1.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 1.0),
         f64::is_nan,
         f64::is_nan
     ));
@@ -133,7 +135,7 @@ fn a_polar_harmonic_pcurve_whose_radial_or_axial_value_overflows_reports_the_poi
         .expect("polar harmonic pcurve fixture"),
     );
     assert!(is_non_finite_point2(
-        pcurve_uv(&radial, 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &radial, 0.0),
         f64::is_nan,
         |v| v == 0.0
     ));
@@ -150,7 +152,7 @@ fn a_polar_harmonic_pcurve_whose_radial_or_axial_value_overflows_reports_the_poi
         .expect("polar harmonic pcurve fixture"),
     );
     assert_eq!(
-        pcurve_uv(&axial, 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &axial, 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
             0.0,
             f64::INFINITY
@@ -177,7 +179,7 @@ fn a_polar_nurbs_pcurve_whose_axial_spline_overflows_reports_the_point_it_reache
     // At `t = 2` the axial spline reaches `2 MAX`; the radial spline stays at
     // `(1, 0)`.
     assert_eq!(
-        pcurve_uv(&pcurve, 2.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 2.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
             0.0,
             f64::INFINITY
@@ -192,7 +194,7 @@ fn a_spherical_great_circle_pcurve_whose_azimuth_or_phase_overflows_reports_the_
             .expect("spherical pcurve fixture"),
     );
     assert!(is_non_finite_point2(
-        pcurve_uv(&azimuth, f64::MAX),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &azimuth, f64::MAX),
         |u| u == f64::INFINITY,
         f64::is_nan
     ));
@@ -201,7 +203,7 @@ fn a_spherical_great_circle_pcurve_whose_azimuth_or_phase_overflows_reports_the_
             .expect("spherical pcurve fixture"),
     );
     assert!(is_non_finite_point2(
-        pcurve_uv(&phase, 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &phase, 0.0),
         |u| u == f64::MAX,
         f64::is_nan
     ));
@@ -220,7 +222,7 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
         .expect("NURBS pcurve fixture"),
     };
     assert_eq!(
-        pcurve_uv(&linear, 2.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &linear, 2.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
             f64::INFINITY,
             0.0
@@ -252,7 +254,7 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
             .expect("degree-20 NURBS pcurve fixture"),
     };
     assert!(is_non_finite_point2(
-        pcurve_uv(&high_degree, 2.0_f64.powi(52)),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &high_degree, 2.0_f64.powi(52)),
         f64::is_nan,
         f64::is_nan
     ));
@@ -270,14 +272,14 @@ fn a_placed_pcurve_reports_the_point_its_placement_reaches() {
         .expect("placed pcurve fixture"),
     );
     assert!(is_non_finite_point2(
-        pcurve_uv(&placed, f64::MAX),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &placed, f64::MAX),
         |u| u == f64::INFINITY,
         f64::is_nan
     ));
     // The placed tangent overflows while the point stays at the origin: the
     // evaluation that forms both left the finite range.
     assert_eq!(
-        pcurve_uv(&doubled_line(), 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &doubled_line(), 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(0.0, 0.0)))
     );
     assert_eq!(
@@ -303,7 +305,7 @@ fn an_offset_pcurve_whose_basis_direction_is_not_reached_reports_no_coordinate()
         offset(doubled_line()),
     ] {
         assert!(is_non_finite_point2(
-            pcurve_uv(&pcurve, 0.0),
+            crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.0),
             f64::is_nan,
             f64::is_nan
         ));
@@ -326,7 +328,7 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
         .expect("polar harmonic pcurve fixture"),
     );
     assert_eq!(
-        pcurve_uv(&polar, 0.0).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &polar, 0.0).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(0.0, 0.0))
     );
     assert_eq!(
@@ -343,7 +345,7 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
         SphericalGreatCirclePcurve::try_new(std::f64::consts::FRAC_PI_2, f64::MAX, 0.0, 2.0)
             .expect("spherical pcurve fixture"),
     );
-    assert!(pcurve_uv(&spherical, 0.0).is_ok());
+    assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &spherical, 0.0).is_ok());
     assert_eq!(
         pcurve_tangent(&spherical, 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
@@ -384,7 +386,7 @@ fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
     );
     for (pcurve, parameter) in [(projected, 5.0e-301), (unscaled, span * 0.5), (linear, 0.0)] {
-        assert!(pcurve_uv(&pcurve, parameter).is_ok(), "{pcurve:?}");
+        assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter).is_ok(), "{pcurve:?}");
         assert!(
             is_non_finite_point2(
                 pcurve_tangent(&pcurve, parameter),
@@ -431,7 +433,7 @@ fn a_nurbs_surface_whose_point_overflows_reports_the_point_it_reached() {
         0.0,
     )));
     let budget = WorkBudget::new(64);
-    assert_eq!(surface_point(&surface, 2.0, 0.5), reached);
+    assert_eq!(crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 2.0, 0.5), reached);
     assert_eq!(
         surface_point_with_budget(&surface, 2.0, 0.5, &budget),
         reached
@@ -464,7 +466,7 @@ fn a_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_point_ro
         Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
     assert_eq!(
-        surface_point(&surface, 5.0e-301, 0.5).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 5.0e-301, 0.5).map(crate::features::FinitePoint3::get),
         Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
 }
@@ -499,7 +501,7 @@ fn a_placed_surface_whose_partial_overflows_has_its_finite_point_on_both_point_r
     assert!(crate::eval::surface_partials(&surface, u, 1.0).is_err());
     let budget = WorkBudget::new(64);
     let with_budget = surface_point_with_budget(&surface, u, 1.0, &budget);
-    let point = surface_point(&surface, u, 1.0);
+    let point = crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, 1.0);
     assert!(point.is_ok(), "{point:?}");
     assert_eq!(point, with_budget);
 }
@@ -847,7 +849,7 @@ fn a_tolerant_intersection_has_no_point_where_its_offset_pcurve_point_overflows(
         .expect("offset pcurve fixture"),
     );
     assert!(matches!(
-        pcurve_uv(&offset, 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &offset, 0.0),
         Err(EvaluationFailure::NonFinite(_))
     ));
     let (ir, curve) = tolerant_intersection_model(offset);
@@ -995,7 +997,7 @@ fn an_analytic_surface_whose_point_overflows_has_no_partials() {
                 if point.x.is_nan() && point.y == 2.0 && point.z == 0.0
         )
     };
-    assert!(reached(surface_point(&plane, f64::MAX, 2.0).err()));
+    assert!(reached(crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &plane, f64::MAX, 2.0).err()));
     assert!(reached(
         crate::eval::surface_partials(&plane, f64::MAX, 2.0).err()
     ));

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::bilinear_surface;
-use crate::eval::{
-    nurbs_surface_parameter_segment_chord_bound, nurbs_surface_point,
-    rational_patch_parameter_segment, RationalBezierSurfacePatch,
-};
+use crate::eval::nurbs_surface_parameter_segment_chord_bound;
+use crate::eval::rational_patch_parameter_segment;
+use crate::eval::RationalBezierSurfacePatch;
 use crate::math::{Point2, Point3};
 use crate::topology::IncreasingParameterInterval;
 use crate::units::FinitePoint2;
@@ -57,7 +56,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     assert!((reverse_bound - bound).abs() < 1.0e-12);
     for index in 0..=100 {
         let parameter = f64::from(index) / 100.0;
-        let point = nurbs_surface_point(&surface, parameter, parameter).expect("surface point");
+        let point = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, parameter, parameter).expect("surface point");
         let target = Point3::new(parameter, parameter, parameter);
         let distance = (point.x - target.x)
             .hypot(point.y - target.y)

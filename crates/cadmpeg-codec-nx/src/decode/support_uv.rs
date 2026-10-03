@@ -1068,11 +1068,11 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                         break;
                     }
                     let Some(uv) =
-                        finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+                        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
                             ctx,
                             &pcurve.geometry,
                             *parameter,
-                        )?)?
+                        ))?)?
                     else {
                         fully_validated = false;
                         continue;

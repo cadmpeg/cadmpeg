@@ -90,8 +90,8 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     .expect("reversible NURBS pcurve");
     for parameter in [range[0], 0.5, 1.0, 1.5, range[1]] {
         let expected =
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, range[0] + range[1] - parameter).unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).unwrap();
         assert!((actual.u - expected.u).abs() < 1.0e-12);
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
@@ -138,8 +138,8 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
         .expect("reversed lanes pair")
         .expect("symmetric analytic pcurve is exactly reversible");
         for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
-            let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, -parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &carrier, -parameter).unwrap();
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).unwrap();
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -184,8 +184,8 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
         ));
         for parameter in [0.25, 0.5, 1.0, 1.5, 1.75] {
             let expected =
-                cadmpeg_ir::eval::pcurve_uv(&carrier, range[0] + range[1] - parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+                cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &carrier, range[0] + range[1] - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).unwrap();
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -196,8 +196,8 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
         .expect("reversed lanes pair")
         .expect("general conic coefficients remain exactly reversible");
         for parameter in [0.25, 0.75, 1.25, 1.75] {
-            let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reflected_twice, parameter).unwrap();
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &carrier, parameter).unwrap();
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reflected_twice, parameter).unwrap();
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -228,8 +228,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
     ));
     for parameter in [0.25, 0.5, 1.0, 1.75, 2.5, 2.75] {
         let expected =
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, range[0] + range[1] - parameter).unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).unwrap();
         assert!((actual.u - expected.u).abs() < 1.0e-12);
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
@@ -250,8 +250,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
     assert_eq!(distance.get(), -1.25);
     for parameter in [0.25, 1.0, 2.0, 2.75] {
         let expected =
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(basis, parameter).unwrap();
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, range[0] + range[1] - parameter).unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, basis, parameter).unwrap();
         assert!((actual.u - expected.u).abs() < 1.0e-12);
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
@@ -285,7 +285,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         let basis = offset_pcurve.basis();
         assert_eq!(distance.get(), -2.5);
         for parameter in [2.0, 3.0, 5.0, 6.0] {
-            let expected_basis = cadmpeg_ir::eval::pcurve_uv(
+            let expected_basis = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, 
                 match &pcurve {
                     PcurveGeometry::Offset(offset_pcurve) => {
                         let basis = offset_pcurve.basis();
@@ -296,10 +296,10 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
                 8.0 - parameter,
             )
             .unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(basis, parameter).unwrap();
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, basis, parameter).unwrap();
             assert_eq!(actual, expected_basis);
-            let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 8.0 - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).unwrap();
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -319,8 +319,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
             )),
             source_object: None,
         });
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();
-        let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 2.0).unwrap();
+        let second = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 6.0).unwrap();
         let oriented = orient_tolerant_intersection_pcurve(
             geometry_ctx,
             &ir,
@@ -337,8 +337,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         .expect("reversed lanes pair")
         .expect("offset endpoints select the reversed terminal branch");
         for parameter in [2.0, 3.0, 5.0, 6.0] {
-            let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&oriented, parameter).unwrap();
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 8.0 - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &oriented, parameter).unwrap();
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -364,11 +364,11 @@ fn numerical_ranges_nurbs_reversal_avoids_reflection_sum_overflow() {
     .unwrap()
     .unwrap();
     assert_eq!(
-        cadmpeg_ir::eval::pcurve_uv(&reversed, range[0]).map(cadmpeg_ir::units::FinitePoint2::get),
+        cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, range[0]).map(cadmpeg_ir::units::FinitePoint2::get),
         Ok(Point2::new(1., 1.))
     );
     assert_eq!(
-        cadmpeg_ir::eval::pcurve_uv(&reversed, range[1]).map(cadmpeg_ir::units::FinitePoint2::get),
+        cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, range[1]).map(cadmpeg_ir::units::FinitePoint2::get),
         Ok(Point2::new(0., 0.))
     );
     assert_eq!(
@@ -398,8 +398,8 @@ fn numerical_ranges_parabola_reversal_reuses_scaled_evaluation() {
     .unwrap();
     for t in [0., 0.5, 1.] {
         // The reversed quadratic retains the original parameter domain.
-        let point = cadmpeg_ir::eval::pcurve_uv(&reversed, (1. + t) * 1e200).unwrap();
-        let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, (2. - t) * 1e200).unwrap();
+        let point = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, (1. + t) * 1e200).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, (2. - t) * 1e200).unwrap();
         assert!((point.u / expected.u - 1.).abs() < 64. * f64::EPSILON);
         assert!((point.v / expected.v - 1.).abs() < 64. * f64::EPSILON);
     }

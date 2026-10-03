@@ -6,7 +6,7 @@ use crate::families::e5::decode::{
     parameter_range_agreement_tolerance, E5OccurrenceIntersectionSide,
     EPS_E5_DECODE_EXACT_GEOMETRY,
 };
-use cadmpeg_ir::eval::pcurve_uv;
+
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
 };
@@ -348,7 +348,7 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
     .expect("service resource budget")
     .expect("linear quintic segment");
     for parameter in [0.0, 0.5, 1.0, 2.0] {
-        let point = pcurve_uv(&curve, parameter).expect("jet evaluation");
+        let point = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter).expect("jet evaluation");
         assert!((point.u - parameter).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!(point.v.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
     }

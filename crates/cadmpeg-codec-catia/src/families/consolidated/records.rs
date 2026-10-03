@@ -1846,7 +1846,7 @@ fn resolve_side_support(
     for sphere in carriers.spheres {
         let geometry = b2_sphere_geometry(sphere);
         if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-            match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, &geometry, u, v)? {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v))? {
                 Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
             }
@@ -1870,7 +1870,7 @@ fn resolve_side_support(
     for plane in carriers.planes {
         if let Some(geometry) = b2_plane_geometry(plane) {
             if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-                match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, &geometry, u, v)? {
+                match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v))? {
                     Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 }
@@ -1981,12 +1981,12 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    match cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                         ctx,
                         &b2_sphere_geometry(carrier),
                         u,
                         v,
-                    )? {
+                    ))? {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
@@ -2016,7 +2016,7 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, &geometry, u, v)?
+                    match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v))?
                     {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
@@ -2066,12 +2066,12 @@ fn b2_torus_point(
     torus: &B2Torus,
     [u, v]: [f64; 2],
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    match cadmpeg_ir::eval::decode::surface_point_for_decode(
+    match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
         ctx,
         &b2_torus_geometry(torus),
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
-    )? {
+    ))? {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }

@@ -4918,23 +4918,23 @@ fn lift_pcurve_endpoints(
 ) -> Result<Option<[FinitePoint3; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if let B5Surface::Nurbs(surface) = surface {
         let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
                 ctx,
                 surface,
                 endpoints[0][0],
                 endpoints[0][1],
-            )?,
+            ))?,
         )?
         else {
             return Ok(None);
         };
         let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
                 ctx,
                 surface,
                 endpoints[1][0],
                 endpoints[1][1],
-            )?,
+            ))?,
         )?
         else {
             return Ok(None);

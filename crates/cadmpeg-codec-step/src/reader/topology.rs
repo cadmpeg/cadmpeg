@@ -12,11 +12,13 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedR
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
-use cadmpeg_ir::eval::{
-    model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
-    model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
-    nurbs_pcurve_parameter_domain, pcurve_tangent, pcurve_uv,
-};
+use cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance;
+use cadmpeg_ir::eval::model_curve_point_by_id;
+use cadmpeg_ir::eval::model_surface_partials_by_id;
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
+use cadmpeg_ir::eval::nurbs_pcurve_parameter_domain;
+use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -5002,7 +5004,7 @@ fn pcurve_selection_uv(
     geometry: &PcurveGeometry,
     parameter: f64,
 ) -> Result<Option<Point2>, ResourceLimit> {
-    match pcurve_uv(geometry, parameter) {
+    match cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, geometry, parameter) {
         Ok(uv) => Ok(Some(uv.get())),
         Err(failure) => failure.non_finite(),
     }

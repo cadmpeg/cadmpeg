@@ -6,9 +6,9 @@ use cadmpeg_test_support::edit;
 
 const EPS_CURVE_INVERSE_WITNESS: f64 = 1.0e-12;
 
-use crate::eval::curve_point;
+
 use crate::eval::curve_second_derivative;
-use crate::eval::curve_tangent;
+
 use crate::eval::model_curve_differential_by_id;
 use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_partials_by_id;
@@ -17,7 +17,7 @@ use crate::eval::model_surface_point_by_id;
 use crate::eval::model_surface_point_by_id_with_budget;
 use crate::eval::model_surface_second_partials_by_id;
 use crate::eval::nurbs_curve_parameter_near_point;
-use crate::eval::nurbs_curve_point_at;
+
 use crate::eval::nurbs_curve_speed_bound;
 use crate::eval::nurbs_surface_isocurve;
 use crate::eval::nurbs_surface_isoline;
@@ -27,7 +27,7 @@ use crate::eval::nurbs_surface_parameter_within_tolerance;
 use crate::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use crate::eval::nurbs_surface_partials;
 use crate::eval::nurbs_surface_partials_with_budget;
-use crate::eval::nurbs_surface_point;
+
 use crate::eval::nurbs_surface_point_with_budget;
 use crate::eval::nurbs_surface_second_partials;
 use crate::eval::rolling_ball_jet_point;
@@ -165,9 +165,9 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
         })
         .unwrap();
     };
-    let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
-    assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Ok(expected));
-    assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Ok(expected));
+    let expected = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75).expect("in-domain surface point");
+    assert_eq!(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 1.25, 0.75), Ok(expected));
+    assert_eq!(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, -0.75, 0.75), Ok(expected));
 
     {
         let replacement = false;
@@ -189,7 +189,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
         })
         .unwrap();
     };
-    assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Ok(expected));
+    assert_ne!(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 1.25, 0.75), Ok(expected));
 }
 
 #[test]
@@ -431,7 +431,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
     assert_eq!(
-        nurbs_surface_point(&surface, 0.25, 0.75)
+        crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75)
             .ok()
             .map(crate::features::FinitePoint3::get),
         Some(point)
@@ -493,7 +493,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     .unwrap();
     let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
     let endpoints = parameters.map(|point| {
-        nurbs_surface_point(&surface, point.u, point.v)
+        crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, point.u, point.v)
             .expect("surface endpoint")
             .get()
     });
@@ -507,7 +507,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             parameters[0].u + parameter * (parameters[1].u - parameters[0].u),
             parameters[0].v + parameter * (parameters[1].v - parameters[0].v),
         );
-        let point = nurbs_surface_point(&surface, uv.u, uv.v).expect("surface point");
+        let point = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, uv.u, uv.v).expect("surface point");
         let target = Point3::new(
             endpoints[0].x + parameter * (endpoints[1].x - endpoints[0].x),
             endpoints[0].y + parameter * (endpoints[1].y - endpoints[0].y),
@@ -578,7 +578,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         } else {
             0.7
         };
-        let point = curve_point(&CurveGeometry::Solved(geometry.clone()), parameter)
+        let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(geometry.clone()), parameter)
             .expect("analytic curve evaluates");
         let id = CurveId::mint(format!("test:inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
@@ -747,7 +747,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
             .expect("placed curve"),
     );
     let parameter = 0.7 + std::f64::consts::TAU;
-    let point = curve_point(&CurveGeometry::Solved(geometry.clone()), parameter)
+    let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(geometry.clone()), parameter)
         .expect("transformed curve evaluates");
     let id = CurveId::mint("test:model:entity#test:transformed-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
@@ -855,8 +855,8 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
                 IsolineDirection::ConstantU => (at, sample),
                 IsolineDirection::ConstantV => (sample, at),
             };
-            let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
-            let actual = nurbs_curve_point_at(&curve, sample).expect("curve point");
+            let expected = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, v).expect("surface point");
+            let actual = crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, &curve, sample).expect("curve point");
             for (left, right) in [
                 (actual.x, expected.x),
                 (actual.y, expected.y),
@@ -1758,7 +1758,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .unwrap(),
     );
     let tangent =
-        curve_tangent(&CurveGeometry::Solved(circle.clone()), parameter).expect("analytic tangent");
+        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(circle.clone()), parameter).expect("analytic tangent");
     assert_eq!(
         tangent,
         Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
@@ -1774,7 +1774,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         ))
     );
     assert_eq!(
-        curve_tangent(&CurveGeometry::Solved(circle.clone()), f64::NAN).ok(),
+        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(circle.clone()), f64::NAN).ok(),
         None
     );
 
@@ -1793,9 +1793,9 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .unwrap(),
     );
     for parameter in [0.0, 0.5, 1.0] {
-        let point = curve_point(&CurveGeometry::Solved(arc.clone()), parameter)
+        let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
             .expect("rational arc point");
-        let tangent = curve_tangent(&CurveGeometry::Solved(arc.clone()), parameter)
+        let tangent = crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
             .expect("rational arc tangent");
         let second = curve_second_derivative(&CurveGeometry::Solved(arc.clone()), parameter)
             .expect("rational arc acceleration");
@@ -1827,13 +1827,13 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .unwrap(),
     );
     assert_eq!(
-        curve_tangent(&CurveGeometry::Solved(corner.clone()), 0.5)
+        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(corner.clone()), 0.5)
             .ok()
             .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
-        curve_tangent(&CurveGeometry::Solved(corner.clone()), 1.0).ok(),
+        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(corner.clone()), 1.0).ok(),
         None
     );
 }
@@ -1894,13 +1894,13 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         for varying in [0.0, 0.2, 0.7, 1.0] {
             let expected = match axis {
                 SurfaceParameterAxis::U => {
-                    nurbs_surface_point(&surface, fixed, varying).expect("surface point")
+                    crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, fixed, varying).expect("surface point")
                 }
                 SurfaceParameterAxis::V => {
-                    nurbs_surface_point(&surface, varying, fixed).expect("surface point")
+                    crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, varying, fixed).expect("surface point")
                 }
             };
-            let actual = curve_point(&CurveGeometry::Solved(geometry.clone()), varying)
+            let actual = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(geometry.clone()), varying)
                 .expect("isocurve point");
             assert!((actual.x - expected.x).abs() < 1.0e-12);
             assert!((actual.y - expected.y).abs() < 1.0e-12);

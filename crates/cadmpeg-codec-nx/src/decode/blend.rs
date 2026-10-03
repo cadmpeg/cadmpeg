@@ -13,11 +13,14 @@ use super::support_uv::parameterization_equivalent_surfaces_with_index;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
-use cadmpeg_ir::eval::{
-    curve_point_with_budget, curve_second_derivative_with_budget, curve_tangent_with_budget,
-    model_surface_partials_by_id_with_budget, model_surface_point_by_id_with_budget,
-    pcurve_tangent, pcurve_uv, surface_point_with_budget, EvaluationFailure,
-};
+use cadmpeg_ir::eval::curve_point_with_budget;
+use cadmpeg_ir::eval::curve_second_derivative_with_budget;
+use cadmpeg_ir::eval::curve_tangent_with_budget;
+use cadmpeg_ir::eval::model_surface_partials_by_id_with_budget;
+use cadmpeg_ir::eval::model_surface_point_by_id_with_budget;
+use cadmpeg_ir::eval::pcurve_tangent;
+use cadmpeg_ir::eval::surface_point_with_budget;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans, positive_controls, HomogeneousBezierSpan,
@@ -1975,7 +1978,7 @@ impl BlendContactDerivativeContext<'_> {
         ) else {
             return Ok(None);
         };
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, self.parameter))?
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, pcurve, self.parameter))?
         else {
             return Ok(None);
         };
@@ -2410,7 +2413,7 @@ pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_bud
     } = contact_curve_sample;
 
     let Some(support_uv) =
-        cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(support_pcurve, curve_parameter))?
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, support_pcurve, curve_parameter))?
     else {
         return Ok(None);
     };
@@ -2425,7 +2428,7 @@ pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_bud
     let Some(parameter) = parameter else {
         return Ok(None);
     };
-    let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+    let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, contact_pcurve, parameter))?
     else {
         return Ok(None);
     };
@@ -2495,7 +2498,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         return Ok(None);
     }
     let Some(source_uv) =
-        cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(source_pcurve, curve_parameter))?
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, source_pcurve, curve_parameter))?
     else {
         return Ok(None);
     };
@@ -2531,7 +2534,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         return Ok(None);
     };
     let certify = |parameter: f64| -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, contact_pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -2668,7 +2671,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         }
     };
     let distance = |parameter: f64| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, contact_pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -2726,7 +2729,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         return Ok(None);
     };
     for _ in 0..LOCAL_CONTACT_PCURVE_SEARCH_STEPS {
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, contact_pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -2843,7 +2846,7 @@ fn closest_pcurve_parameter_from_coarse_grid(
             return Ok(None);
         };
         let parameter = parameter.get();
-        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter))?
+        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -2875,7 +2878,7 @@ fn closest_pcurve_parameter_from_seed(
         seed.clamp(domain[0], domain[1])
     };
     for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
-        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter))?
+        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -3761,7 +3764,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
         if let Some(pcurve) =
             spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)
         {
-            let uv = match pcurve_uv(pcurve, parameter) {
+            let uv = match cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, pcurve, parameter) {
                 Ok(uv) => uv,
                 Err(EvaluationFailure::ResourceLimit(limit)) => return Some(Err(limit)),
                 Err(_) => return None,
@@ -3878,7 +3881,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
             };
-            let side_uv = match pcurve_uv(&pcurve.geometry, parameter) {
+            let side_uv = match cadmpeg_ir::eval::decode::pcurve_uv(geometry_budget.charges, &pcurve.geometry, parameter) {
                 Ok(side_uv) => side_uv,
                 Err(EvaluationFailure::ResourceLimit(limit)) => return Some(Err(limit)),
                 Err(_) => continue,

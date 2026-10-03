@@ -343,7 +343,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             };
             let parameter = start.midpoint(end);
             if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve, parameter)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, curve, parameter))?,
             )? {
                 ctx.push_vec(
                     &mut witnesses,
@@ -5126,11 +5126,11 @@ fn standard_limit_curve_bindings(
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
             ));
-            let midpoint = match cadmpeg_ir::eval::decode::curve_point_for_decode(
+            let midpoint = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                 ctx,
                 &geometry,
                 0.5 * (start_parameter + end_parameter),
-            )? {
+            ))? {
                 Ok(point) => point,
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                     return Err(limit.into());
@@ -7683,11 +7683,11 @@ fn lifted_standard_support_parameters<const N: usize>(
     let mut points = [None; N];
     for (index, parameter) in parameters.into_iter().enumerate() {
         let Some(uv) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(pcurve, parameter))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter))?
         else {
             continue;
         };
-        points[index] = match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
+        points[index] = match cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v) {
             Ok(point) => Some(point.get()),
             Err(failure) => failure.non_finite()?,
         };
@@ -9340,7 +9340,7 @@ fn owner_matches_a5_carrier(
     for u in [tail.lower()[0], tail.upper()[0]] {
         for v in [tail.lower()[1], tail.upper()[1]] {
             let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::nurbs_surface_point(surface, u, v),
+                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, u, v),
             )?
             else {
                 return Ok(false);
@@ -9457,11 +9457,11 @@ fn standard_face_boundary_witnesses(
                 continue;
             };
             if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_for_decode(
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                     ctx,
                     &curve.geometry,
                     0.5 * (start + end),
-                )?,
+                ))?,
             )? {
                 ctx.push_vec(&mut witnesses, point.get(), "catia_a5_face_witness_points")?;
             }

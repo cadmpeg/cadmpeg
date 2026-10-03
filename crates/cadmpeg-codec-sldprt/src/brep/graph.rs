@@ -4857,7 +4857,7 @@ fn derive_spherical_pcurves(
             -std::f64::consts::FRAC_PI_2,
         ] {
             let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, parameter)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, parameter))?,
             )?
             else {
                 fits = false;
@@ -4870,11 +4870,11 @@ fn derive_spherical_pcurves(
                 break;
             };
             let Some(curve_point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_for_decode(
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                     ctx,
                     &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
                     parameter,
-                )?,
+                ))?,
             )?
             else {
                 fits = false;
@@ -8282,10 +8282,10 @@ mod tests {
                 .unwrap(),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0)
+            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 3.0)
                 .expect("cylinder start")
                 .get(),
-            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0)
+            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 2.0)
                 .expect("cylinder end")
                 .get(),
         ];
@@ -8372,10 +8372,10 @@ mod tests {
                 .expect("valid cylinder"),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0)
+            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 3.0)
                 .expect("start")
                 .get(),
-            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0)
+            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 2.0)
                 .expect("end")
                 .get(),
         ];
@@ -8442,7 +8442,7 @@ mod tests {
             ));
         let model_points = [(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)]
             .map(|(u, v)| {
-                cadmpeg_ir::eval::surface_point(&surface, u, v)
+                cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
                     .expect("cylinder point")
                     .get()
             })
@@ -8510,7 +8510,7 @@ mod tests {
         let expected = [(3.0, 3.0), (3.2, 3.2), (3.4, 3.4)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::surface_point(&surface, u, v)
+                cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
                     .expect("torus point")
                     .get()
             })
@@ -8565,7 +8565,7 @@ mod tests {
         let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::nurbs_surface_point(&nurbs, u, v)
+                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &nurbs, u, v)
                     .expect("surface point")
                     .get()
             })

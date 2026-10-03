@@ -434,13 +434,13 @@ fn select_composite_edge(
                 continue;
             };
             let Some(evaluated_start) = finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[0])?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]))?,
             )?
             else {
                 continue;
             };
             let Some(evaluated_end) = finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[1])?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]))?,
             )?
             else {
                 continue;
@@ -1671,9 +1671,9 @@ fn concatenate_nurbs<T>(
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
-        finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
             ctx, &nurbs, t,
-        )?)
+        ))?)
         .map_err(CodecError::from)?
         .ok_or(CompositeCurveError::EndpointEvaluation { t })
     };
@@ -2045,13 +2045,13 @@ fn anchor_analytic_nurbs_endpoint_poles(
         return Ok(None);
     };
     let Some(evaluated_start) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[0])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, interval[0]))?,
     )?
     else {
         return Ok(None);
     };
     let Some(evaluated_end) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[1])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, interval[1]))?,
     )?
     else {
         return Ok(None);
@@ -2701,7 +2701,7 @@ fn project_with_type_130_policy(
         };
         let cursor = segments.end();
         let Some(start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, 0.0)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, 0.0))?,
         )?
         else {
             let edge = project_degraded_composite(
@@ -2726,7 +2726,7 @@ fn project_with_type_130_policy(
             continue;
         };
         let Some(end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, cursor)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, cursor))?,
         )?
         else {
             let edge = project_degraded_composite(

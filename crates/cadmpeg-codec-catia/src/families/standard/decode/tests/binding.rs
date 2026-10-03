@@ -76,9 +76,9 @@ fn standard_topology_identity_refuses_retained_limit() {
     .expect("service profile admits loop identity");
     assert_eq!(admitted.as_str(), "catia:standard:loop#0:0");
 }
-use cadmpeg_ir::eval::curve_point;
-use cadmpeg_ir::eval::pcurve_uv;
-use cadmpeg_ir::eval::surface_point;
+
+
+
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
@@ -1128,8 +1128,8 @@ fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     };
     assert!(nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]));
     assert_eq!(range, [-std::f64::consts::PI, 0.0]);
-    let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
-    let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &arc, range[0]).expect("start evaluation");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &arc, range[1]).expect("end evaluation");
     assert!((start.u + 2.0).abs() < 1.0e-12);
     assert!(start.v.abs() < 1.0e-12);
     assert!((end.u - 2.0).abs() < 1.0e-12);
@@ -1757,8 +1757,8 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
     )
     .expect("contained plane circle pcurve");
     let mapped = range.map(|parameter| {
-        let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
-        surface_point(&surface, uv.u, uv.v).expect("plane circle surface endpoint")
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, parameter).expect("plane circle pcurve endpoint");
+        cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, uv.u, uv.v).expect("plane circle surface endpoint")
     });
     assert!(mapped[0].distance(start) <= 1.0e-9);
     assert!(mapped[1].distance(end) <= 1.0e-9);
@@ -1811,13 +1811,13 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
     assert_eq!(nurbs.control_points().len(), 9);
     assert_eq!(nurbs.weights().map(|weights| weights.len()), Some(9));
     for parameter in [range[0], range[1]] {
-        let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
-        let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, parameter).expect("closed pcurve endpoint");
+        let point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, uv.u, uv.v).expect("closed surface endpoint");
         assert!(point.distance(start) <= 1.0e-9);
     }
-    let midpoint_uv = pcurve_uv(&geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
+    let midpoint_uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
     let midpoint =
-        surface_point(&surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
+        cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
     assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1.0e-9);
 }
 

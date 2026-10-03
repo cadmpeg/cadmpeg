@@ -277,7 +277,7 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         ]
     );
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(nurbs, 0.25, 0.75)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, nurbs, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
@@ -306,7 +306,7 @@ fn decode_projects_a_degree_zero_bspline_surface() {
     assert_eq!(surface.u_knots().as_slice(), [0.0, 1.0]);
     assert_eq!(surface.v_knots().as_slice(), [0.0, 1.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(1.0, 2.0, 3.0))
     );
@@ -333,12 +333,12 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
     assert_eq!((surface.u_count(), surface.v_count()), (2, 1));
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.5, 0.5)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, 0.5)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 1.5, 0.5)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(4.0, 5.0, 6.0))
     );

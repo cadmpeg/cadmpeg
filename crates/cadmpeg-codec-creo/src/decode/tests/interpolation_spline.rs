@@ -252,8 +252,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             nurbs.pole_rows().weights(),
             Some(vec![1.0, 0.75, 0.75, 1.0])
         );
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 2.0).expect("spline start");
+        let last = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 5.0).expect("spline end");
         assert!((first.u - start[0]).abs() < 1.0e-12);
         assert!((first.v - start[1]).abs() < 1.0e-12);
         assert!((last.u - end[0]).abs() < 1.0e-12);

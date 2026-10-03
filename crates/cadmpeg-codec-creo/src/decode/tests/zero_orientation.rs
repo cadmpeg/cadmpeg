@@ -1610,11 +1610,11 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
         assert_eq!(
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("pcurve start"),
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.0).expect("pcurve start"),
             cadmpeg_ir::math::Point2::new(expected_u, 0.0)
         );
         assert_eq!(
-            cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("pcurve end"),
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 1.0).expect("pcurve end"),
             cadmpeg_ir::math::Point2::new(expected_u, std::f64::consts::TAU)
         );
     }

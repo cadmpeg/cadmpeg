@@ -453,7 +453,7 @@ mod tests {
     use std::f64::consts::{FRAC_PI_2, SQRT_2};
 
     use cadmpeg_core::decode::index_from_u32;
-    use cadmpeg_ir::eval::nurbs_curve_point_at;
+    
 
     use super::{profile_nurbs, spun_nurbs, swept_nurbs, SweepCarrier, SweepKind};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -582,7 +582,7 @@ mod tests {
     }
 
     fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
-        nurbs_curve_point_at(curve, parameter)
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, curve, parameter)
             .expect("evaluable curve")
             .get()
     }

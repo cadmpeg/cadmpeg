@@ -1,18 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model surface point evaluation across stored and procedural carriers.
 
-use super::{
-    cacheless_constant_rolling_ball_first_order, cacheless_constant_rolling_ball_point,
-    cacheless_law_sweep_point, cacheless_variable_blend_point, model_axis_revolution_point,
-    model_linear_sweep_point, model_native_extrusion_point, model_native_revolution_point,
-    model_ruled_surface_jet, model_sum_surface_jet, model_surface_jet_by_id,
-    model_surface_point_with_budget, offset, placed_reach, placed_vectors, record_u_interval,
-    revision_surface_tail_has_current_cache, rolling_ball_jet_point, scale_vector,
-    subset_support_parameters_with_derivatives, surface_first_order, surface_point,
-    surface_point_with_budget, sweep_has_current_cache, unit_cross_direction,
-    variable_blend_has_current_cache, EvaluationFailure, ModelEvaluationDepthGuard,
-    ModelEvaluationIdentity, UNREACHED_POINT,
-};
+use super::cacheless_constant_rolling_ball_first_order;
+use super::cacheless_constant_rolling_ball_point;
+use super::cacheless_law_sweep_point;
+use super::cacheless_variable_blend_point;
+use super::model_axis_revolution_point;
+use super::model_linear_sweep_point;
+use super::model_native_extrusion_point;
+use super::model_native_revolution_point;
+use super::model_ruled_surface_jet;
+use super::model_sum_surface_jet;
+use super::model_surface_jet_by_id;
+use super::model_surface_point_with_budget;
+use super::offset;
+use super::placed_reach;
+use super::placed_vectors;
+use super::record_u_interval;
+use super::revision_surface_tail_has_current_cache;
+use super::rolling_ball_jet_point;
+use super::scale_vector;
+use super::subset_support_parameters_with_derivatives;
+use super::surface_first_order;
+use super::surface_point_with_budget;
+use super::sweep_has_current_cache;
+use super::unit_cross_direction;
+use super::variable_blend_has_current_cache;
+use super::EvaluationFailure;
+use super::ModelEvaluationDepthGuard;
+use super::ModelEvaluationIdentity;
+use super::UNREACHED_POINT;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
@@ -125,7 +142,7 @@ pub(super) fn model_surface_point_by_id_inner(
     /// A stored cache's point and unit normal. The point is evaluated alone;
     /// the normal is that of the cache's first partials.
     fn cache_evaluation(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfaceEvaluation> {
-        let point = match surface_point(geometry, u, v) {
+        let point = match crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v) {
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(point)) => Err(point),
             Err(EvaluationFailure::NoValue) => return None,
@@ -164,7 +181,7 @@ pub(super) fn model_surface_point_by_id_inner(
         if !normal {
             return point_evaluation(match budget {
                 Some(budget) => surface_point_with_budget(geometry, u, v, budget),
-                None => surface_point(geometry, u, v),
+                None => crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v),
             });
         }
         let order = match surface_first_order(geometry, u, v, budget) {

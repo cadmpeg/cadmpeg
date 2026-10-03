@@ -202,7 +202,7 @@ fn source_edge_for_vertices<'a>(
             continue;
         };
         let Some(start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[0])
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, curve_geometry, range[0]))
                 .map_err(SourceEdgeSelectionError::ResourceLimit)?,
         )
         .map_err(SourceEdgeSelectionError::ResourceLimit)?
@@ -215,7 +215,7 @@ fn source_edge_for_vertices<'a>(
             continue;
         }
         let Some(end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[1])
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, curve_geometry, range[1]))
                 .map_err(SourceEdgeSelectionError::ResourceLimit)?,
         )
         .map_err(SourceEdgeSelectionError::ResourceLimit)?
@@ -341,9 +341,9 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
                 ctx, &geometry, range[0],
-            )?)
+            ))?)
             .map_err(CodecError::from)?
             .map(|uv| {
                 surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
@@ -352,9 +352,9 @@ fn resolve_pcurve_uses<'a>(
             })
             .transpose()?
             .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
                 ctx, &geometry, range[1],
-            )?)
+            ))?)
             .map_err(CodecError::from)?
             .map(|uv| {
                 surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(

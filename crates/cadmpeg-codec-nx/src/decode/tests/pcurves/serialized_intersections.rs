@@ -297,7 +297,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap(),
         );
         let endpoints = range.map(|parameter| {
-            let uv = cadmpeg_ir::eval::pcurve_uv(&canonical, parameter).unwrap();
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &canonical, parameter).unwrap();
             Point3::new(uv.u, uv.v, 0.0)
         });
         for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
@@ -474,7 +474,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         )
         .expect("reversed lanes pair")
         .expect("carrier tangent selects one closed-branch orientation");
-        let uv = cadmpeg_ir::eval::pcurve_uv(&oriented, std::f64::consts::FRAC_PI_2).unwrap();
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &oriented, std::f64::consts::FRAC_PI_2).unwrap();
         assert!((uv.u - 0.0).abs() < 1.0e-12);
         assert!((uv.v - 2.0).abs() < 1.0e-12);
     });

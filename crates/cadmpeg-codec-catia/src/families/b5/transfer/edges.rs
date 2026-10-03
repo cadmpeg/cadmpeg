@@ -279,18 +279,18 @@ pub(super) fn b5_support_endpoints(
     let lifted = range.map(
         |parameter| -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
             let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter.get())?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter.get()))?,
             )?
             else {
                 return Ok(None);
             };
             // A non-finite support point is compared as a finite one is.
-            let point = match cadmpeg_ir::eval::decode::surface_point_for_decode(
+            let point = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
                 &surface.geometry,
                 uv.u,
                 uv.v,
-            )? {
+            ))? {
                 Ok(point) => point.get(),
                 Err(failure) => match failure.non_finite()? {
                     Some(point) => point,
@@ -321,7 +321,7 @@ pub(super) fn b5_supports_follow_curve(
     };
     let solved = range.map(|parameter| -> Result<_, cadmpeg_core::CodecError> {
         Ok(cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &curve.geometry, parameter)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &curve.geometry, parameter))?,
         )?)
     });
     let [start, end] = solved;

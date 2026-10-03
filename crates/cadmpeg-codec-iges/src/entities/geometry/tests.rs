@@ -1128,7 +1128,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(nurbs.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 0.5)
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, nurbs, 0.5)
             .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
@@ -1390,7 +1390,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
     assert_eq!(nurbs.weights(), None);
     assert!(!nurbs.periodic());
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 0.5)
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, nurbs, 0.5)
             .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
@@ -1427,7 +1427,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
     assert_eq!(nurbs.control_points().len(), 1);
     assert_eq!(nurbs.weights(), None);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 0.5)
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, nurbs, 0.5)
             .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))

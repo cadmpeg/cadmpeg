@@ -985,7 +985,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                 });
                 if let Some((pcurve, parameter)) = midpoint_input {
                     if let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                        cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?,
+                        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter))?,
                     )? {
                         support.model_midpoint =
                             zero_entity_surface_point(ctx, &carrier_geometry, [uv.u, uv.v])?;
@@ -2276,7 +2276,7 @@ fn zero_entity_surface_point(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             return cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx, surface, u, v)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v))?,
             );
         }
         _ => return Ok(None),
@@ -3391,7 +3391,7 @@ mod tests {
 
     #[test]
     fn negative_cone_latitude_radius_flips_the_circle_reference_direction() {
-        use cadmpeg_ir::eval::curve_point;
+        
         use cadmpeg_ir::math::Vector3;
 
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
@@ -3421,7 +3421,7 @@ mod tests {
         )
         .expect("cone latitude");
         for index in 0..2 {
-            let curve_point = curve_point(&curve, parameters[index].get()).expect("circle point");
+            let curve_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameters[index].get()).expect("circle point");
             let surface_point = crate::test_support::with_service_context(|ctx| {
                 zero_entity_surface_point(ctx, &surface, endpoints[index])
             })

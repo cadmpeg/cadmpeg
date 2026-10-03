@@ -408,7 +408,7 @@ fn flat_test_nurbs_surface() -> NurbsSurface {
 
 fn test_nurbs_corners(surface: &NurbsSurface) -> [Point3; 4] {
     [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| {
-        cadmpeg_ir::eval::nurbs_surface_point(surface, u, v)
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, u, v)
             .unwrap()
             .get()
     })
@@ -1294,7 +1294,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
     set_shell_faces(&mut model, vec![face.clone()]);
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| {
-            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+            cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
                 .unwrap()
                 .get()
         })
@@ -1390,7 +1390,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                     .map(|(u, v)| {
-                        cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
                             .unwrap()
                             .get()
                     })
@@ -1447,7 +1447,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                     .map(|(u, v)| {
-                        cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
                             .unwrap()
                             .get()
                     })

@@ -901,7 +901,7 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     mod numerical_limits;
-    use cadmpeg_ir::eval::{curve_point, pcurve_uv};
+    
     use cadmpeg_ir::geometry::{
         nurbs::{NurbsCurve, NurbsSurface},
         pcurve::PcurveGeometry,
@@ -1189,8 +1189,8 @@ mod tests {
         .expect("service profile admits range operation")
         .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
-            let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
-            let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).expect("reversed evaluation");
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, source_parameter).expect("source evaluation");
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -1231,8 +1231,8 @@ mod tests {
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
-                let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
-                let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
+                let actual = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).expect("reversed endpoint");
+                let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, source_parameter).expect("source endpoint");
                 assert!(actual.distance(expected.get()) < 1.0e-12);
             }
         }
@@ -1265,8 +1265,8 @@ mod tests {
         .expect("service profile admits range operation")
         .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
-            let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
-            let expected = curve_point(&geometry, range[0] + range[1] - parameter)
+            let actual = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).expect("reversed NURBS point");
+            let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, range[0] + range[1] - parameter)
                 .expect("source NURBS point");
             assert!(actual.distance(expected.get()) < 1.0e-12);
         }

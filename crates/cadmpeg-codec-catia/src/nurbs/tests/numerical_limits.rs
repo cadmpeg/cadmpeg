@@ -145,12 +145,12 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         .expect("reversed pcurve");
         for (parameter, expected_x) in [(lower, 1.0), (upper, 0.0)] {
             assert_eq!(
-                cadmpeg_ir::eval::curve_point(&reversed, parameter)
+                cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter)
                     .map(cadmpeg_ir::features::FinitePoint3::get),
                 Ok(Point3::new(expected_x, 0.0, 0.0))
             );
             assert_eq!(
-                cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter)
+                cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed_pcurve, parameter)
                     .map(cadmpeg_ir::units::FinitePoint2::get),
                 Ok(Point2::new(expected_x, 0.0))
             );
@@ -208,11 +208,11 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     .expect("wide pcurve reversal");
     for (parameter, expected) in [(range[0], 1.0), (range[1], 0.0)] {
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(&reversed, parameter).map(|point| point.get().x),
+            cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).map(|point| point.get().x),
             Ok(expected)
         );
         assert_eq!(
-            cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter).map(|point| point.get().u),
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed_pcurve, parameter).map(|point| point.get().u),
             Ok(expected)
         );
     }
@@ -282,8 +282,8 @@ fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
     .expect("service profile admits range operation")
     .expect("finite reflected origin");
     for (from, to) in [(range[0], range[1]), (range[1], range[0])] {
-        let original = cadmpeg_ir::eval::pcurve_uv(&source, from).expect("source point");
-        let reverse = cadmpeg_ir::eval::pcurve_uv(&reversed, to).expect("reversed point");
+        let original = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, from).expect("source point");
+        let reverse = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, to).expect("reversed point");
         assert!((reverse.u / original.u - 1.0).abs() < RELATIVE_ROUNDOFF);
         assert_eq!(reverse.v, 0.0);
     }

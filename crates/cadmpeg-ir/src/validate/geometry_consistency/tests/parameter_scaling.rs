@@ -41,6 +41,6 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
         .expect("resource allocation did not fail")
         .unwrap()
         .get();
-        assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() <= EPS_POINT);
+        assert!((crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.3).abs() <= EPS_POINT);
     }
 }

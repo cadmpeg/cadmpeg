@@ -195,11 +195,11 @@ pub(super) fn oriented_circle_plan(
         let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
         let start = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::curve_point_for_decode(
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                 ctx,
                 &geometry,
                 parameter_range[0],
-            ) {
+            )) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error.into())),
             },
@@ -209,11 +209,11 @@ pub(super) fn oriented_circle_plan(
             Err(limit) => return Some(Err(limit.into())),
         };
         let end = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::curve_point_for_decode(
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                 ctx,
                 &geometry,
                 parameter_range[1],
-            ) {
+            )) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error.into())),
             },
@@ -315,7 +315,7 @@ pub(super) fn oriented_nurbs_range(
         }
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
         let start = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, range[0]) {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, range[0])) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error.into())),
             },
@@ -325,7 +325,7 @@ pub(super) fn oriented_nurbs_range(
             Err(limit) => return Some(Err(limit.into())),
         };
         let end = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, range[1]) {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, range[1])) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error.into())),
             },
