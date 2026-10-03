@@ -4,6 +4,7 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::decode::DecodeContext;
@@ -51,6 +52,23 @@ impl std::fmt::Display for NonWhitespaceChar {
     }
 }
 
+/// Static text whose leading byte is a non-whitespace ASCII character.
+/// The proof is Copy so constant initializers need no destructor evaluation.
+#[derive(Debug, Clone, Copy)]
+pub struct StaticNonBlankText(&'static str);
+
+impl StaticNonBlankText {
+    /// Validate at most one byte and retain the static borrow.
+    pub const fn new(value: &'static str) -> Option<Self> {
+        let bytes = value.as_bytes();
+        if bytes.is_empty() { return None; }
+        match NonWhitespaceChar::from_ascii(bytes[0]) {
+            Some(_) => Some(Self(value)),
+            None => None,
+        }
+    }
+}
+
 /// A source string that holds at least one non-whitespace character.
 ///
 /// A selection id, an external document identity and a native name are read
@@ -58,7 +76,7 @@ impl std::fmt::Display for NonWhitespaceChar {
 /// here rather than by each reader.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
-pub struct NonBlankString(String);
+pub struct NonBlankString(Cow<'static, str>);
 
 #[cfg(feature = "schema")]
 impl JsonSchema for NonBlankString {
@@ -91,30 +109,42 @@ impl NonBlankString {
         value
             .chars()
             .any(|character| !character.is_whitespace())
-            .then_some(Self(value))
+            .then_some(Self(Cow::Owned(value)))
     }
 
     /// Validates transferred text after admitting its complete UTF-8 traversal.
     /// The caller admits the string's existing storage.
     pub fn for_decode(ctx: &DecodeContext<'_>, value: String, operation: &'static str) -> Result<Option<Self>, CodecError> {
         let nonblank = ctx.admit_iter(value.as_str(), operation)?.any(|character| !character.is_whitespace());
-        Ok(nonblank.then_some(Self(value)))
+        Ok(nonblank.then_some(Self(Cow::Owned(value))))
     }
 
-    /// Constructs a non-blank string from a leading character and a suffix.
-    ///
-    /// Total: the prefix is non-whitespace, so the result holds it whatever
-    /// the suffix renders to.
-    pub fn prefixed(prefix: NonWhitespaceChar, suffix: impl std::fmt::Display) -> Self {
-        Self(format!("{prefix}{suffix}"))
+    /// Borrow static text with an existing leading-byte proof.
+    pub const fn from_static(value: StaticNonBlankText) -> Self {
+        Self(Cow::Borrowed(value.0))
     }
 
-    /// Append text while retaining the admitted non-whitespace character.
-    #[must_use]
-    pub fn with_suffix(&self, suffix: &str) -> Self {
-        let mut value = self.0.clone();
-        value.push_str(suffix);
-        Self(value)
+    /// Format retained text and verify its leading non-whitespace character.
+    /// The prefix check reads at most one Unicode scalar after charged formatting.
+    pub fn formatted(
+        ctx: &DecodeContext<'_>,
+        leading: NonWhitespaceChar,
+        arguments: std::fmt::Arguments<'_>,
+    ) -> Result<Self, CodecError> {
+        let value = ctx.format_retained(arguments, "format nonblank text")?;
+        if value.chars().next() != Some(leading.0) {
+            return Err(CodecError::malformed("formatted nonblank text has a different prefix"));
+        }
+        Ok(Self(Cow::Owned(value)))
+    }
+
+    /// Format a non-whitespace prefix and a suffix through the caller budget.
+    pub fn prefixed(
+        ctx: &DecodeContext<'_>,
+        prefix: NonWhitespaceChar,
+        suffix: impl std::fmt::Display,
+    ) -> Result<Self, CodecError> {
+        Self::formatted(ctx, prefix, format_args!("{prefix}{suffix}"))
     }
 
     /// Returns the source string.
@@ -129,13 +159,15 @@ impl NonBlankString {
         operation: &'static str,
     ) -> Result<Self, crate::CodecError> {
         let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        Ok(Self(text))
+        Ok(Self(Cow::Owned(text)))
     }
 
     /// Consumes the value and returns the source string.
-    #[must_use]
-    pub fn into_string(self) -> String {
-        self.0
+    pub fn into_string(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError> {
+        match self.0 {
+            Cow::Owned(value) => Ok(value),
+            Cow::Borrowed(value) => ctx.copy_retained_text(value, operation),
+        }
     }
 }
 
@@ -147,10 +179,12 @@ impl NonBlankString {
 /// byte or with a `{` placeholder fails `cargo check` with E0080, not only a
 /// codegen build. (An inline `const { … }` block is evaluated at codegen, so
 /// `check` would pass a whitespace literal.) Formatted arguments follow that
-/// literal prefix and cannot make the result blank.
+/// literal prefix and cannot make the result blank. Static templates borrow
+/// their rendered literal. Templates with arguments take the caller context
+/// as their first argument and return `Result<NonBlankString, CodecError>`.
 ///
 /// ```compile_fail
-/// let _ = cadmpeg_core::nonblank_literal!(" {}", "name");
+/// let _ = cadmpeg_core::nonblank_literal!(ctx, " {}", "name");
 /// ```
 ///
 /// ```compile_fail
@@ -158,7 +192,24 @@ impl NonBlankString {
 /// ```
 #[macro_export]
 macro_rules! nonblank_literal {
-    ($template:literal $(, $argument:expr)* $(,)?) => {{
+    ($template:literal $(,)?) => {{
+        const NONBLANK_LITERAL_TEXT: &str = {
+            let bytes = $template.as_bytes();
+            assert!(!bytes.is_empty() && bytes[0] != b'{',
+                "a nonblank literal must start with literal ASCII text");
+            match format_args!($template).as_str() {
+                Some(text) => text,
+                None => panic!("a formatted nonblank literal requires a decode context"),
+            }
+        };
+        const NONBLANK_LITERAL_VALUE: $crate::text::StaticNonBlankText =
+            match $crate::text::StaticNonBlankText::new(NONBLANK_LITERAL_TEXT) {
+                Some(value) => value,
+                None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
+            };
+        $crate::text::NonBlankString::from_static(NONBLANK_LITERAL_VALUE)
+    }};
+    ($ctx:expr, $template:literal $(, $argument:expr)* $(,)?) => {{
         const NONBLANK_LITERAL_LEADING: $crate::text::NonWhitespaceChar = {
             let bytes = $template.as_bytes();
             assert!(
@@ -170,14 +221,14 @@ macro_rules! nonblank_literal {
                 None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
             }
         };
-        let rendered = format!($template $(, $argument)*);
-        $crate::text::NonBlankString::prefixed(NONBLANK_LITERAL_LEADING, &rendered[1..])
+        $crate::text::NonBlankString::formatted($ctx, NONBLANK_LITERAL_LEADING,
+            format_args!($template $(, $argument)*))
     }};
 }
 
 /// Lookup by the plain string the key spells.
 ///
-/// `Ord` and `Hash` are derived over the same `String`, so a map keyed by this
+/// `Ord` and `Hash` are derived over the same text, so a map keyed by this
 /// type answers `get`, `contains_key` and indexing with a `&str` and orders its
 /// keys exactly as a `String` key would.
 impl std::borrow::Borrow<str> for NonBlankString {
@@ -285,9 +336,7 @@ pub fn named_entries_reporting<V>(
                 if ctx.contains_key_btree_map(&kept, &key, "named entry key comparisons")? {
                     let record = ctx
                         .format_retained(format_args!("{record}"), "named entry refused record")?;
-                    let key = NonBlankString(
-                        ctx.copy_retained_text(key.as_str(), "named entry refused key")?,
-                    );
+                    let key = key.try_clone_for_decode(ctx, "named entry refused key")?;
                     ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
                 } else {
@@ -357,18 +406,12 @@ pub fn named_entries<V>(
 #[macro_export]
 macro_rules! nonblank_const {
     ($constant:expr) => {{
-        const NONBLANK_CONST_LEADING: $crate::text::NonWhitespaceChar = {
-            let bytes = $constant.as_bytes();
-            assert!(
-                !bytes.is_empty(),
-                "a nonblank constant must hold at least one character",
-            );
-            match $crate::text::NonWhitespaceChar::from_ascii(bytes[0]) {
-                Some(character) => character,
-                None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
-            }
-        };
-        $crate::text::NonBlankString::prefixed(NONBLANK_CONST_LEADING, &$constant[1..])
+        const NONBLANK_CONST_VALUE: $crate::text::StaticNonBlankText =
+            match $crate::text::StaticNonBlankText::new($constant) {
+                Some(value) => value,
+                None => panic!("a nonblank constant starts with a non-whitespace ASCII character"),
+            };
+        $crate::text::NonBlankString::from_static(NONBLANK_CONST_VALUE)
     }};
 }
 
@@ -462,6 +505,8 @@ mod tests {
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         const HASH: NonWhitespaceChar = match NonWhitespaceChar::from_ascii(b'#') {
             Some(character) => character,
             None => panic!("the literal is an ASCII non-whitespace character"),
@@ -472,12 +517,81 @@ mod tests {
             (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
             (NonWhitespaceChar::hex_digit(0xf0), "", "0"),
         ] {
-            let value = NonBlankString::prefixed(prefix, suffix);
+            let value = NonBlankString::prefixed(&ctx, prefix, suffix).unwrap();
             assert_eq!(value.as_str(), expected);
             assert_eq!(serde_json::to_value(&value).unwrap(), expected);
         }
-        assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
+        assert_eq!(crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(), "#42");
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
+    }
+
+    #[test]
+    fn static_nonblank_text_preserves_wire_equality_and_ownership() {
+        let borrowed = crate::nonblank_literal!("pinned");
+        let owned = NonBlankString::new("pinned".to_owned()).unwrap();
+        assert!(matches!(borrowed.0, std::borrow::Cow::Borrowed("pinned")));
+        assert_eq!(borrowed, owned);
+        assert_eq!(borrowed.cmp(&owned), std::cmp::Ordering::Equal);
+        let mut map = std::collections::HashMap::new();
+        map.insert(borrowed.clone(), 7);
+        assert_eq!(map.get(&owned), Some(&7));
+        assert_eq!(map.get("pinned"), Some(&7));
+        assert_eq!(serde_json::to_string(&borrowed).unwrap(), serde_json::to_string(&owned).unwrap());
+        assert_eq!(crate::nonblank_literal!("key {{value}}").as_str(), "key {value}");
+        for value in ["", " ", "\t", "é"] {
+            assert!(super::StaticNonBlankText::new(value).is_none());
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(owned.into_string(&ctx, "move owned nonblank").unwrap(), "pinned");
+        let CodecError::ResourceLimit(refusal) = borrowed.into_string(&ctx, "copy static nonblank").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.additional, 6);
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    }
+
+    #[test]
+    fn formatted_nonblank_text_pins_work_and_retained_bytes() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let value = crate::nonblank_literal!(&ctx, "#{}", 42).unwrap();
+        assert_eq!(value.as_str(), "#42");
+        let CodecError::ResourceLimit(work) = ctx.charge_work(u64::MAX, "probe work").unwrap_err() else { panic!("work refusal") };
+        // The length-counting pass and the formatting pass each visit three output bytes.
+        assert_eq!(work.used, 6);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(), "#42");
+        let CodecError::ResourceLimit(storage) = ctx.charge_retained(u64::MAX, "probe storage").unwrap_err() else { panic!("storage refusal") };
+        // One three-byte output buffer; formatting creates no intermediate string.
+        assert_eq!(storage.used, 3);
+    }
+
+    #[test]
+    fn formatted_nonblank_text_refuses_before_suffix_and_preserves_refusal() {
+        struct Suffix<'a>(&'a std::cell::Cell<bool>);
+        impl std::fmt::Display for Suffix<'_> {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.set(true);
+                formatter.write_str("suffix")
+            }
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let called = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(first) = crate::nonblank_literal!(&ctx, "prefix{}", Suffix(&called)).unwrap_err() else { panic!("resource refusal") };
+        assert!(!called.get());
+        assert_eq!(first.operation, "format nonblank text");
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let CodecError::ResourceLimit(second) = crate::nonblank_literal!(&ctx, "other{}", 1).unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(second, first);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let leading = NonWhitespaceChar::from_ascii(b'#').unwrap();
+        assert!(matches!(NonBlankString::formatted(&ctx, leading, format_args!(" ")), Err(CodecError::Malformed(_))));
     }
 
     #[test]
@@ -496,11 +610,13 @@ mod tests {
 
     #[test]
     fn every_admitted_prefix_produces_text_accepted_by_the_public_reader() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for byte in u8::MIN..=u8::MAX {
             let Some(prefix) = NonWhitespaceChar::from_ascii(byte) else {
                 continue;
             };
-            let value = NonBlankString::prefixed(prefix, "\t\n\u{85}\u{3000}");
+            let value = NonBlankString::prefixed(&ctx, prefix, "\t\n\u{85}\u{3000}").unwrap();
             assert!(NonBlankString::new(value.as_str()).is_some(), "byte {byte}");
             let wire = serde_json::to_string(&value).unwrap();
             assert_eq!(

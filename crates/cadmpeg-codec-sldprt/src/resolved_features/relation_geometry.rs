@@ -446,7 +446,7 @@ pub(crate) fn project_spatial_relation_bindings(
                         .transpose()?;
                     ctx.reserve_vec(&mut operands, 1, "collect SLDPRT spatial relation operands")?;
                     operands.push(SketchNativeOperand {
-                        native_kind: operand_kind_name(operand.kind),
+                        native_kind: operand_kind_name(ctx, operand.kind)?,
                         field: None,
                         object_index: Some(u32::from(operand.entity_index)),
                         native_ref,
@@ -3376,7 +3376,7 @@ pub(crate) fn project_relation_bindings(
                         .transpose()?;
                     ctx.reserve_vec(&mut operands, 1, "collect SLDPRT planar relation operands")?;
                     operands.push(SketchNativeOperand {
-                        native_kind: operand_kind_name(operand.kind),
+                        native_kind: operand_kind_name(ctx, operand.kind)?,
                         field: None,
                         object_index: Some(u32::from(operand.entity_index)),
                         native_ref,

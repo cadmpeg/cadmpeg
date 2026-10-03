@@ -1603,13 +1603,12 @@ impl AssemblyJoint {
 
 #[cfg(test)]
 mod nonblank_literal_tests {
-    /// A whitespace-leading template fails the build, so the probe below is
-    /// the run-time reach the macro does not have: the `const { … }` block
-    /// evaluates the constructor at compile time at every use.
+    /// The template prefix is checked in a constant item; formatting uses the
+    /// caller context at run time.
     #[test]
     fn a_formatted_literal_keeps_its_non_blank_prefix() {
         assert_eq!(
-            cadmpeg_core::nonblank_literal!("sldprt:marker-relation:{}", 34).as_str(),
+            cadmpeg_core::nonblank_literal!(&cadmpeg_test_support::service_decode_context(), "sldprt:marker-relation:{}", 34).unwrap().as_str(),
             "sldprt:marker-relation:34"
         );
         assert_eq!(cadmpeg_core::nonblank_literal!("d6").as_str(), "d6");

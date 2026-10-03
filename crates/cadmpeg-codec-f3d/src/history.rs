@@ -1728,7 +1728,7 @@ pub(crate) fn bind_feature_body_selections(
                         } else if direct_tool_rows.len() == native_tools.len() {
                             *tools = if direct_tool_rows.len() == 1 {
                                 let Some(row) = direct_tool_rows.pop() else { return; };
-                                let (body, native) = row.into_parts();
+                                let (body, native) = admitted!(row.into_parts(ctx));
                                 let mut selected = admitted!(ctx.collection_vec(1, "validate F3D Combine resolved body"));
                                 selected.push(body);
                                 let bodies = match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(selected, ctx) {

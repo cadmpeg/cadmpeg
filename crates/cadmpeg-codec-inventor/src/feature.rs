@@ -2130,25 +2130,12 @@ fn boolean_properties(
     for slot in slots {
         if let Some(value) = boolean(source, *slot, index) {
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    "property_".len()
-                        + usize::try_from(slot.max(&1).ilog10()).map_err(|_| {
-                            CodecError::Malformed(
-                                "Inventor numeric value exceeds target range".into(),
-                            )
-                        })?
-                        + 1
-                        + "_boolean".len(),
-                ),
-                "retain Inventor feature property name",
-            )?;
-            ctx.charge_retained(
                 if value { 4 } else { 5 },
                 "retain Inventor feature property value",
             )?;
             ctx.insert_btree_map(
                 &mut properties,
-                cadmpeg_core::nonblank_literal!("property_{slot}_boolean"),
+                cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?,
                 value.to_string(),
                 "project Inventor feature boolean property",
             )?;

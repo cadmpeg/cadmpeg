@@ -541,7 +541,7 @@ impl From<DesignBodyBinding> for DesignBodyBindingWire {
             pair_count: value.pair_count(),
             entity_suffix_offset: value.entity_suffix_offset(),
             id: value.id.into_string(),
-            stream: value.stream.0.into_string(),
+            stream: value.stream.0.as_str().to_owned(),
             pair_ordinal: value.pair_ordinal,
             asm_body_key: value.asm_body_key,
             asm_body_key_offset: value.asm_body_key_offset,
@@ -629,7 +629,7 @@ impl From<BodyVisibility> for BodyVisibilityWire {
         Self {
             id: value.id.into_string(),
             body: value.body,
-            stream: value.stream.0.into_string(),
+            stream: value.stream.0.as_str().to_owned(),
             byte_offset: value.byte_offset,
             asm_body_key_offset: value.asm_body_key_offset,
             asm_body_key: value.asm_body_key,

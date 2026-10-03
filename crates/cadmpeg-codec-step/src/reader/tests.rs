@@ -1166,7 +1166,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
 #[test]
 fn step_source_ids_keep_the_hash_prefixed_spelling() {
     for id in [0, 1, 42, u64::MAX] {
-        assert_eq!(super::step_source_id(id).as_str(), format!("#{id}"));
+        assert_eq!(super::step_source_id(&cadmpeg_test_support::service_decode_context(), id).unwrap().as_str(), format!("#{id}"));
     }
 }
 
@@ -1691,7 +1691,7 @@ fn point_ir(with_source: bool) -> cadmpeg_ir::CadIr {
         cadmpeg_ir::ids::PointId::from(identity),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
             .expect("finite point"),
-        with_source.then(|| super::step_source_association(1, None)),
+        with_source.then(|| super::step_source_association(&cadmpeg_test_support::service_decode_context(), 1, None).unwrap()),
     );
     ir.model.points.push(point);
     ir

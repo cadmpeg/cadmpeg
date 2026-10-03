@@ -1924,25 +1924,8 @@ fn attach_initial_segment_bodies(
                 continue;
             }
             matched = true;
-            let mut digits = 1usize;
-            let mut value = binding_ordinal;
-            while value >= 10 {
-                value /= 10;
-                digits += 1;
-            }
-            let key_bytes = "segment_body_binding."
-                .len()
-                .checked_add(digits)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX retained-history binding property",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(binding_ordinal),
-                    )
-                })?;
             let bytes = std::mem::size_of::<(String, String)>()
-                .checked_add(key_bytes)
-                .and_then(|bytes| bytes.checked_add(binding.id.len()))
+                .checked_add(binding.id.len())
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit(
                         "NX retained-history binding property",
@@ -1956,7 +1939,7 @@ fn attach_initial_segment_bodies(
             )?;
             ctx.insert_btree_map(
                 &mut source_properties,
-                cadmpeg_core::nonblank_literal!("segment_body_binding.{binding_ordinal}"),
+                cadmpeg_core::nonblank_literal!(ctx, "segment_body_binding.{binding_ordinal}")?,
                 binding.id.clone(),
                 "NX retained-history binding properties",
             )?;
