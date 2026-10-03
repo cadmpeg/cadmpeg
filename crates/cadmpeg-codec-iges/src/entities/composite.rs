@@ -2866,7 +2866,7 @@ fn project_with_type_130_policy(
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
         let _attached = ir.model.add_procedural_curve(
-            Some(ctx),
+            ctx,
             &curve_id,
             ProceduralCurve::new(
                 crate::ids::procedural_curve_admitted(&stem, ctx)?,

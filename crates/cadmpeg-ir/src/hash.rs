@@ -54,7 +54,7 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
         refusal: None,
         operation,
     };
-    let serialized = write_canonical_json(Some(ctx), &mut writer, value);
+    let serialized = write_canonical_json(ctx, &mut writer, value);
     if let Some(error) = writer.refusal.take() {
         return Err(CanonicalJsonError::Resource(error).into());
     }

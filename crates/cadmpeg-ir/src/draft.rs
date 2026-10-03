@@ -438,7 +438,7 @@ impl<A> ModelDraft<A> {
         crate::document::arena_registry!(validate_arenas);
         if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
             if let Err(error) =
-                crate::document::feature_parents::validate(Some(ctx), &[base, &self.model])?
+                crate::document::feature_parents::validate(ctx, &[base, &self.model])?
             {
                 return Ok(Err(DraftError::FeatureParents {
                     owner: error

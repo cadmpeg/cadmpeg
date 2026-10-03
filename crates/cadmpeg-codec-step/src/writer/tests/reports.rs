@@ -1780,7 +1780,7 @@ fn degenerate_torus_report(
     let owner = ir.model.surfaces[0].id.clone();
     ir.model
         .add_procedural_surface(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1849,7 +1849,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
     // candidate STEP carrier.
     ir.model
         .add_procedural_surface(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1902,7 +1902,7 @@ fn procedural_construction_reduction_is_reported() {
         },
     );
     ir.model
-        .add_procedural_curve(None, &owner, procedural)
+        .add_procedural_curve(&cadmpeg_ir::document::admission::StandardAdmission, &owner, procedural)
         .unwrap()
         .unwrap();
 

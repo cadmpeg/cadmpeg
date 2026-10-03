@@ -952,7 +952,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     // The u range runs down from 1e308 while its sense runs up, so the
     // support parameter at the far end of the span is 2e308.
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &subset_id,
             procedural_surface! {
                 id: subset_construction,

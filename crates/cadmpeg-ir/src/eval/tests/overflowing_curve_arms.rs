@@ -224,7 +224,7 @@ fn procedural_curve_model(
     });
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &owner,
             ProceduralCurve::new(construction, definition(&ids)),
         )

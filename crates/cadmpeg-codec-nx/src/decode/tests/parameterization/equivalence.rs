@@ -78,7 +78,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        None,
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &carrier,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#intersection").expect("identity grammar"),

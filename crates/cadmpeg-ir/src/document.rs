@@ -47,6 +47,9 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
+pub mod admission;
+use admission::ModelAdmission;
+
 pub(crate) mod census;
 pub(crate) mod feature_parents;
 
@@ -503,7 +506,7 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                feature_parents::validate(None, &[self]).map_err(serde::ser::Error::custom)?.map_err(serde::ser::Error::custom)?;
+                feature_parents::validate_reconstructed(&[self]).map_err(serde::ser::Error::custom)?;
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -531,18 +534,18 @@ macro_rules! declare_model {
                     }
                     model.features.push(feature);
                 }
-                feature_parents::validate(None, &[&model]).map_err(serde::de::Error::custom)?.map_err(serde::de::Error::custom)?;
+                feature_parents::validate_reconstructed(&[&model]).map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_surface(None, &owner, procedural)
+                        .add_procedural_surface(&crate::document::admission::StandardAdmission, &owner, procedural)
                         .map_err(serde::de::Error::custom)?
                         .map_err(serde::de::Error::custom)?;
                 }
                 for wire in procedural_curves {
                     let (owner, procedural) = wire.into_parts();
                     model
-                        .add_procedural_curve(None, &owner, procedural)
+                        .add_procedural_curve(&crate::document::admission::StandardAdmission, &owner, procedural)
                         .map_err(serde::de::Error::custom)?
                         .map_err(serde::de::Error::custom)?;
                 }
@@ -672,7 +675,7 @@ macro_rules! declare_model_view {
         impl Model {
             /// Borrow every arena after admitting its order and temporary storage.
             pub(crate) fn sorted<'a>(&'a self, ctx: &'a DecodeContext<'_>) -> Result<SortedModel<'a>, CodecError> {
-                if let Err(error) = feature_parents::validate(Some(ctx), &[self])? {
+                if let Err(error) = feature_parents::validate(ctx, &[self])? {
                     return Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "digest feature parent diagnostic")?));
                 }
                 let mut storage = ctx.reserve_scoped(0, "sorted digest model")?;
@@ -792,7 +795,7 @@ impl Model {
         ctx: &DecodeContext<'_>,
         kind: &'a str,
     ) -> Result<GeometrySnapshot<'a>, CodecError> {
-        if let Err(error) = feature_parents::validate(Some(ctx), &[self])? {
+        if let Err(error) = feature_parents::validate(ctx, &[self])? {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("{error}"),
                 "geometry snapshot parent diagnostic",
@@ -1148,7 +1151,7 @@ impl Model {
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), RegenerationParentError<'a>>, CodecError> {
         const OPERATION: &str = "install decoded feature regeneration parent";
-        let admission = ModelAdmission(Some(ctx));
+        let admission = ctx;
         for candidate in &self.features {
             ctx.charge_work(1, OPERATION)?;
             if let crate::features::FeatureDefinition::Operation(
@@ -1246,50 +1249,6 @@ impl ProceduralCarrierError {
     }
 }
 
-/// Storage and work policy for model construction and serde reconstruction.
-struct ModelAdmission<'ctx, 'arena>(Option<&'ctx DecodeContext<'arena>>);
-
-impl ModelAdmission<'_, '_> {
-    fn work(&self, count: usize, operation: &'static str) -> Result<(), CodecError> {
-        match self.0 {
-            Some(ctx) => ctx.charge_work(u64_from_index(count), operation),
-            None => Ok(()),
-        }
-    }
-
-    fn equal(&self, left: &str, right: &str, operation: &'static str) -> Result<bool, CodecError> {
-        self.work(1, operation)?;
-        self.work(left.len().min(right.len()), operation)?;
-        Ok(left == right)
-    }
-
-    fn text(
-        &self,
-        args: fmt::Arguments<'_>,
-        operation: &'static str,
-    ) -> Result<String, CodecError> {
-        match self.0 {
-            Some(ctx) => ctx.format_retained(args, operation),
-            None => Ok(args.to_string()),
-        }
-    }
-
-    fn reserve<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        match self.0 {
-            Some(ctx) => ctx.reserve_vec(values, count, operation),
-            None => {
-                values.reserve(count);
-                Ok(())
-            }
-        }
-    }
-}
-
 impl Model {
     /// Returns the unique surface that carries `construction`.
     #[must_use]
@@ -1316,15 +1275,13 @@ impl Model {
         owners.next().is_none().then_some(owner)
     }
 
-    /// Attach a procedural surface under the supplied decode context.
-    /// `None` selects standard allocation for context-free reconstruction.
-    pub fn add_procedural_surface(
+    /// Attach a procedural surface through typed construction admission.
+    pub fn add_procedural_surface<A: ModelAdmission>(
         &mut self,
-        ctx: Option<&DecodeContext<'_>>,
+        admission: &A,
         owner: &SurfaceId,
         procedural: ProceduralSurface,
-    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        let admission = ModelAdmission(ctx);
+    ) -> Result<Result<(), ProceduralCarrierError>, A::Error> {
         for existing in &self.procedural_surfaces {
             admission.work(1, "scan procedural surface constructions")?;
             if admission.equal(
@@ -1413,12 +1370,7 @@ impl Model {
                 )?)));
             }
             SurfaceGeometry::Solved(_) => {
-                let construction = match ctx {
-                    Some(ctx) => procedural
-                        .id
-                        .try_clone_for_decode(ctx, "procedural surface owner identity")?,
-                    None => procedural.id.clone(),
-                };
+                let construction = admission.surface_id(&procedural.id, "procedural surface owner identity")?;
                 admission.reserve(
                     &mut self.procedural_surfaces,
                     1,
@@ -1444,15 +1396,13 @@ impl Model {
         Ok(Ok(()))
     }
 
-    /// Attach a procedural curve under the supplied decode context.
-    /// `None` selects standard allocation for context-free reconstruction.
-    pub fn add_procedural_curve(
+    /// Attach a procedural curve through typed construction admission.
+    pub fn add_procedural_curve<A: ModelAdmission>(
         &mut self,
-        ctx: Option<&DecodeContext<'_>>,
+        admission: &A,
         owner: &CurveId,
         procedural: ProceduralCurve,
-    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        let admission = ModelAdmission(ctx);
+    ) -> Result<Result<(), ProceduralCarrierError>, A::Error> {
         for existing in &self.procedural_curves {
             admission.work(1, "scan procedural curve constructions")?;
             if admission.equal(
@@ -1541,12 +1491,7 @@ impl Model {
                 )?)));
             }
             CurveGeometry::Solved(_) => {
-                let construction = match ctx {
-                    Some(ctx) => procedural
-                        .id
-                        .try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?,
-                    None => procedural.id.clone(),
-                };
+                let construction = admission.curve_id(&procedural.id, "ir_procedural_curve_construction_id")?;
                 admission.reserve(
                     &mut self.procedural_curves,
                     1,

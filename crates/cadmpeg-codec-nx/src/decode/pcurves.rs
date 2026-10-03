@@ -4857,7 +4857,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
 
         let _attached = ir
             .model
-            .add_procedural_curve(Some(ctx), &curve_id, procedural)?;
+            .add_procedural_curve(ctx, &curve_id, procedural)?;
     }
     Ok(())
 }
@@ -5362,7 +5362,7 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve,
                 ProceduralCurve::new(
                     procedural_id,

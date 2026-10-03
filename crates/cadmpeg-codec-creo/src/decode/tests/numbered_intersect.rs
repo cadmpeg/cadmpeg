@@ -1511,7 +1511,7 @@ fn geometry_signal_excludes_opaque_carriers() {
     assert!(!has_transferred_geometry(&ir));
 
     let _attached = ir.model.add_procedural_surface(
-        None,
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())

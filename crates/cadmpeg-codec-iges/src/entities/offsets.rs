@@ -1331,7 +1331,7 @@ pub(super) fn project(
         ctx.charge_entities(1, "iges_geometry_offsets")?;
         let _attached = ir
             .model
-            .add_procedural_curve(Some(ctx), &curve_id, procedural)?;
+            .add_procedural_curve(ctx, &curve_id, procedural)?;
         ctx.reserve_vec(&mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
         ctx.insert_btree_set(

@@ -1377,7 +1377,7 @@ mod tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_surface(None,
+            .add_procedural_surface(&crate::document::admission::StandardAdmission,
                 &cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
@@ -1407,7 +1407,7 @@ mod tests {
 
         assert!(ir
             .model
-            .add_procedural_surface(None,
+            .add_procedural_surface(&crate::document::admission::StandardAdmission,
                 &cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),

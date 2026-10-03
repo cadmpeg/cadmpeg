@@ -52,7 +52,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
     });
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#intersection")
@@ -79,7 +79,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
         .expect("procedural curve fixture");
     ir.model
         .add_procedural_surface(
-            None,
+            &crate::document::admission::StandardAdmission,
             &support,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:procedural#cyclic-support")

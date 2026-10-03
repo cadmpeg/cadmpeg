@@ -509,7 +509,7 @@ pub(super) fn emit_edges(
             admission.charge()?;
             let _attached =
                 ir.model
-                    .add_procedural_curve(Some(admission.context()), &owner, procedural)?;
+                    .add_procedural_curve(admission.context(), &owner, procedural)?;
         }
         annotate(
             admission.context(),

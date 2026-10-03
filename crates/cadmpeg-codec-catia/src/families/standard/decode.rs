@@ -837,7 +837,7 @@ mod consolidated_revolution_binding_tests {
         }
         ir.model
             .add_procedural_curve(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
@@ -1494,7 +1494,7 @@ fn emit_standard_extrusion_definition(
             );
             let _attached = ir
                 .model
-                .add_procedural_curve(Some(ctx), &owner, procedure)?;
+                .add_procedural_curve(ctx, &owner, procedure)?;
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
             curve, ..
@@ -1595,7 +1595,7 @@ fn emit_standard_extrusion_definition(
 
             let owner =
                 directrix_id.try_clone_for_decode(ctx, "catia_extrusion_offset_owner_id")?;
-            let _attached = ir.model.add_procedural_curve(Some(ctx), &owner, ProceduralCurve::new(
+            let _attached = ir.model.add_procedural_curve(ctx, &owner, ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
                         cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
