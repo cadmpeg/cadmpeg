@@ -3033,7 +3033,7 @@ fn homogeneous_pcurve_spans<'ctx>(
         || count <= degree
         || knots.len() != expected_knots
         || knots.iter().any(|knot| !knot.is_finite())
-        || !cadmpeg_ir::geometry::nurbs::knots_nondecreasing(knots)
+        || !cadmpeg_ir::geometry::nurbs::knots_nondecreasing(knots, |count| ctx.charge_work(count, "IR NURBS knot order"))?
         || control_points.iter().any(|control| !control.is_finite())
         || !point.is_finite()
     {

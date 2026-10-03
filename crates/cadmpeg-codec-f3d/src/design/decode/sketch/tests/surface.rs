@@ -135,3 +135,20 @@ fn sketch_surface_collections_refuse_collection_limit() {
         );
     }
 }
+
+#[test]
+fn sketch_surface_decoder_keeps_constructor_refusals_in_the_outer_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let payload = canonical_surface_payload();
+    for allowance in [0, 2, 8, 12, 15] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(original)) = parse_sketch_surface(&ctx, &payload, 0) else { panic!("constructor refusal must not disappear"); };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original.used, allowance);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    }
+}
