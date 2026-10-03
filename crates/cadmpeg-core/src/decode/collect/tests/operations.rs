@@ -461,3 +461,30 @@ fn scan_collection_steps_refuse_before_callback_or_absence() {
         matches!(ctx.collect_options([None::<u8>], "optional"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
     );
 }
+
+#[test]
+fn collector_refusal_precedes_the_first_source_step() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let visited = std::cell::Cell::new(0);
+    let source = [1].into_iter().inspect(|_| visited.set(visited.get() + 1));
+    let CodecError::ResourceLimit(first) = ctx.collect_vec(source, "collect").expect_err("refusal") else { panic!("refusal") };
+    assert_eq!(visited.get(), 0);
+    let source = [1].into_iter().inspect(|_| visited.set(visited.get() + 1));
+    let CodecError::ResourceLimit(repeated) = ctx.collect_hash_set(source, "collect set").expect_err("refusal") else { panic!("refusal") };
+    assert_eq!(repeated, first);
+    assert_eq!(visited.get(), 0);
+}
+
+#[test]
+fn collector_counts_source_steps_and_the_end_probe() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    assert_eq!(ctx.collect_vec([1, 2], "collect").expect("admission"), [1, 2]);
+    assert!(ctx.collect_vec::<u8>([], "empty").expect("admission").is_empty());
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("refusal") };
+    // Two successful source steps and one end probe for each collection.
+    assert_eq!(limit.used, 4);
+}

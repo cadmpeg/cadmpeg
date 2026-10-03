@@ -19,6 +19,7 @@ mod external;
 mod fixed;
 mod flow;
 mod instantiation;
+mod iteration;
 mod key_work;
 mod scope;
 mod scalar;
@@ -398,6 +399,7 @@ impl<'tcx> Visitor<'tcx> for Analysis<'_, 'tcx> {
             return;
         }
         self.callback_boundary(expression);
+        self.iterator_boundary(expression);
         self.indirect(expression);
         self.allocation(expression);
         self.visit_work_expression(expression);

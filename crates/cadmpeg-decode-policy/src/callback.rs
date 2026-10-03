@@ -31,7 +31,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if !callbacks.contains(&value) { continue; }
             let checked = match value.kind() {
                 ty::Closure(id, _) => self.checked_body(*id),
-                ty::FnDef(id, _) => self.checked_body(*id) || external::summary(self.tcx, *id, None)
+                ty::FnDef(id, _) => matches!(self.tcx.def_kind(*id), rustc_hir::def::DefKind::Ctor(_, _)) || self.checked_body(*id) || external::summary(self.tcx, *id, None)
                     .is_some_and(|summary| summary.work == external::Work::Fixed
                         || matches!(self.tcx.item_name(definition).as_str(), "stable_sort_by" | "stable_sort_by_key" | "sort_unstable_by" | "sort_unstable_by_key")
                             && summary.work == external::Work::Comparison),

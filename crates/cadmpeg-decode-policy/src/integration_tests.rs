@@ -121,7 +121,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if name == "external" {
@@ -791,4 +791,9 @@ fn core_callback_obligations_stay_at_the_concrete_caller() {
 #[test]
 fn closed_scalar_parsers_keep_their_work_obligation() {
     check_fixture("work_scalar");
+}
+
+#[test]
+fn generic_core_collectors_check_source_steps_at_the_caller() {
+    check_fixture("work_iterators");
 }
