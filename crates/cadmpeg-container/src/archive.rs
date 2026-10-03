@@ -123,16 +123,29 @@ struct ZipIndex<'bytes, 'ctx> {
     _workspace: ScopedReservation<'ctx>,
 }
 
+struct ZipParserAdmission<'bytes, 'ctx> {
+    bytes: &'bytes [u8],
+    workspace: ScopedReservation<'ctx>,
+}
+
+fn zip_parser_admission<'bytes, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &'bytes [u8],
+) -> Result<ZipParserAdmission<'bytes, 'ctx>, CodecError> {
+    let bound = preflight_central_directory(ctx, bytes)?;
+    let workspace = ctx.reserve_scoped(bound.workspace, "ZIP indexing workspace")?;
+    ctx.charge_work(bound.work, "ZIP dependency indexing")?;
+    Ok(ZipParserAdmission { bytes, workspace })
+}
+
 impl<'bytes, 'ctx> ZipIndex<'bytes, 'ctx> {
     fn new(ctx: &'ctx DecodeContext<'_>, bytes: &'bytes [u8]) -> Result<Self, CodecError> {
-        let admission = preflight_central_directory(ctx, bytes)?;
-        let workspace = ctx.reserve_scoped(admission.workspace, "ZIP indexing workspace")?;
-        ctx.charge_work(admission.work, "ZIP dependency indexing")?;
-        let archive = zip::ZipArchive::new(Cursor::new(bytes))
+        let admission = zip_parser_admission(ctx, bytes)?;
+        let archive = zip::ZipArchive::new(Cursor::new(admission.bytes))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
         Ok(Self {
             archive,
-            _workspace: workspace,
+            _workspace: admission.workspace,
         })
     }
 }
