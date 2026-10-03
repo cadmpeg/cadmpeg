@@ -75,7 +75,7 @@ fn check_fixture(name: &str) {
         std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde") {
+    if matches!(name, "thirdparty" | "serde" | "zip") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -93,7 +93,7 @@ fn check_fixture(name: &str) {
             }
         }
         let mut dependencies = Vec::new();
-        for name in ["roxmltree", "serde_json", "serde"] {
+        for name in ["roxmltree", "serde_json", "serde", "zip"] {
             let prefix = format!("lib{name}-");
             let library = directories
                 .iter()
@@ -208,6 +208,7 @@ fn check_fixture(name: &str) {
                     | "imported"
                     | "dominance"
                     | "thirdparty"
+                    | "zip"
                     | "symbolic"
                     | "derived"
                     | "serde"
@@ -796,4 +797,9 @@ fn closed_scalar_parsers_keep_their_work_obligation() {
 #[test]
 fn generic_core_collectors_check_source_steps_at_the_caller() {
     check_fixture("work_iterators");
+}
+
+#[test]
+fn zip_raw_metadata_access_has_fixed_cost() {
+    check_fixture("zip");
 }

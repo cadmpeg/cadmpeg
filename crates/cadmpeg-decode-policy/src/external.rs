@@ -40,6 +40,19 @@ pub(crate) struct Summary {
     pub(crate) empty_operand: Option<usize>,
 }
 
+fn borrowed_byte_cursor(tcx: TyCtxt<'_>, archive: Ty<'_>) -> bool {
+    let ty::Adt(_, archive_args) = archive.peel_refs().kind() else { return false; };
+    let Some(reader) = archive_args.types().next() else { return false; };
+    let ty::Adt(cursor, cursor_args) = reader.peel_refs().kind() else { return false; };
+    if !types::standard(tcx, cursor.did()) || tcx.item_name(cursor.did()).as_str() != "Cursor" { return false; }
+    let Some(bytes) = cursor_args.types().next() else { return false; };
+    let ty::Ref(_, bytes, _) = bytes.kind() else { return false; };
+    match bytes.kind() {
+        ty::Slice(element) | ty::Array(element, _) => matches!(element.kind(), ty::Uint(ty::UintTy::U8)),
+        _ => false,
+    }
+}
+
 pub(crate) fn summary(
     tcx: TyCtxt<'_>,
     definition: DefId,
@@ -208,7 +221,10 @@ pub(crate) fn summary(
             ("zip", "new") if path.contains("ZipArchive") => {
                 (Allocation::Input(0), Work::Argument(0))
             }
-            ("zip", "by_index" | "by_index_raw") => (Allocation::Input(0), Work::Receiver),
+            ("zip", "by_index") => (Allocation::Input(0), Work::Receiver),
+            // zip 8.6 borrows indexed metadata and reads only the fixed local header.
+            ("zip", "by_index_raw") if value.is_some_and(|value| borrowed_byte_cursor(tcx, value)) => (Allocation::None, Work::Fixed),
+            ("zip", "name_for_index") => (Allocation::None, Work::Fixed),
             ("zip", "start_file") => (Allocation::Input(1), Work::Argument(1)),
             ("zip", "finish") => (Allocation::Input(0), Work::Receiver),
             (
