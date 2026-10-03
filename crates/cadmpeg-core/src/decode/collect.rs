@@ -1304,6 +1304,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         self.reserve_vec(target, source.len(), operation)?;
+        self.charge_work(u64_from_index(source.len()), operation)?;
         target.extend_from_slice(source);
         Ok(())
     }
