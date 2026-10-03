@@ -217,11 +217,6 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         self.storage.with_storage(|| ctx.insert_btree_set(&mut self.occupied, destination, operation))?;
         self.context.charge_work_limit(0, operation)?;
         let key = Key::owned(self.context, key, operation);
-        let exists = self.targets.contains_key(&key);
-        self.context.charge_work_limit(0, operation)?;
-        if exists {
-            return Err(CodecError::malformed("identity rewrite cache contains the source"));
-        }
         ctx.charge_work(1, operation)?;
         self.storage.with_storage(|| ctx.admit_btree_entry(&self.targets, &key, operation))?;
         self.context.charge_work_limit(0, operation)?;
