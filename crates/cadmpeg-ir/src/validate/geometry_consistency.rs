@@ -871,7 +871,7 @@ fn mapped_pcurve_parameter_near_point(
         let Some(uv) = uv_at(parameter)? else {
             return Ok(None);
         };
-        let tangent_uv = match pcurve_tangent(pcurve_geometry, parameter.get()) {
+        let tangent_uv = match pcurve_tangent(ctx, pcurve_geometry, parameter.get()) {
             Ok(tangent) => tangent,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),

@@ -71,7 +71,7 @@ fn a_circle_pcurve_whose_point_overflows_reports_the_point_and_tangent_it_reache
         |v| v == 0.0
     ));
     assert_eq!(
-        pcurve_tangent(&circle, 0.0),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(0.0, f64::MAX)))
     );
 }
@@ -114,7 +114,7 @@ fn a_hyperbola_pcurve_whose_scaled_cosh_overflows_reports_the_point_it_reached()
         f64::is_nan
     ));
     assert!(is_non_finite_point2(
-        pcurve_tangent(&hyperbola, 1.0),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 1.0),
         f64::is_nan,
         f64::is_nan
     ));
@@ -230,7 +230,7 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
     );
     // The derivatives read the finite point, so none is reached.
     assert!(is_non_finite_point2(
-        pcurve_tangent(&linear, 2.0),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &linear, 2.0),
         f64::is_nan,
         f64::is_nan
     ));
@@ -283,7 +283,7 @@ fn a_placed_pcurve_reports_the_point_its_placement_reaches() {
         Err(EvaluationFailure::NonFinite(Point2::new(0.0, 0.0)))
     );
     assert_eq!(
-        pcurve_tangent(&doubled_line(), 0.0),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &doubled_line(), 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
             f64::INFINITY,
             0.0
@@ -332,7 +332,7 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
         Ok(Point2::new(0.0, 0.0))
     );
     assert_eq!(
-        pcurve_tangent(&polar, 0.0),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &polar, 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
             f64::INFINITY,
             0.0
@@ -347,7 +347,7 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
     );
     assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &spherical, 0.0).is_ok());
     assert_eq!(
-        pcurve_tangent(&spherical, 0.0),
+        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &spherical, 0.0),
         Err(EvaluationFailure::NonFinite(Point2::new(
             f64::MAX,
             f64::NEG_INFINITY
@@ -389,12 +389,12 @@ fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_
         assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter).is_ok(), "{pcurve:?}");
         assert!(
             is_non_finite_point2(
-                pcurve_tangent(&pcurve, parameter),
+                pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter),
                 |u| u == f64::INFINITY,
                 |v| v == 0.0
             ),
             "{:?}",
-            pcurve_tangent(&pcurve, parameter)
+            pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter)
         );
     }
 }

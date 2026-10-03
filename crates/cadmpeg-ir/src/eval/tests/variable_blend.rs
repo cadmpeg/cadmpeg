@@ -1103,7 +1103,7 @@ fn a_circular_variable_blend_whose_contact_pcurve_has_no_tangent_keeps_its_point
         Ok(Point2::new(3.0, 0.5))
     );
     assert_eq!(
-        crate::eval::pcurve_tangent(&pcurve, 0.5),
+        crate::eval::pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
     ir.model.procedural_surfaces[0].edit_definition(|definition| {

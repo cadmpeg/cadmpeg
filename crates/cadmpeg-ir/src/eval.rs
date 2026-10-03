@@ -7430,7 +7430,7 @@ fn variable_blend_contact_track(
     };
     let support = model_surface_first_order_by_id(index, surface, uv.u, uv.v, None)
         .map_err(|failure| failure.map(|_| ()))?;
-    let uv_tangent = pcurve_tangent(pcurve, parameter).map_err(|failure| failure.map(|_| ()));
+    let uv_tangent = pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, pcurve, parameter).map_err(|failure| failure.map(|_| ()));
     let normal_derivative = uv_tangent.and_then(|uv_tangent| {
         let support = model_surface_second_partials_by_id(index, surface, uv.u, uv.v)
             .map_err(|failure| failure.map(|_| ()))?;
@@ -7668,7 +7668,7 @@ fn variable_blend_radius_derivative(
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let [derivative, _] = pcurve_tangent(function, parameter)
+            let [derivative, _] = pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, function, parameter)
                 .map_err(|failure| failure.map(|_| ()))?
                 .coordinates();
             Ok(derivative)
@@ -8785,19 +8785,22 @@ fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
 /// [`EvaluationFailure::NonFinite`] with the derivative it reached, finite
 /// or not. A parameter that is not finite and a structure that states no
 /// derivative report [`EvaluationFailure::NoValue`].
-pub fn pcurve_tangent(
+pub fn pcurve_tangent<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &PcurveGeometry,
     t: f64,
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
-    default_scratch_evaluation(|scratch| {
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
         let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
         let evaluated =
-            pcurve_uv_differential(scratch, geometry, t).ok_or(EvaluationFailure::NoValue)?;
+            pcurve_uv_differential(&scratch, geometry, t).ok_or(EvaluationFailure::NoValue)?;
         if let Some(limit) = evaluated.resource {
             return Err(EvaluationFailure::ResourceLimit(limit));
         }
         evaluated.tangent
-    })
+    })();
+    scratch.settle(result)
 }
 
 /// The angle of a polar chart point and its first two derivatives, without
@@ -8958,13 +8961,9 @@ fn reached_value(
 /// Evaluate a pcurve carrier's point and its first two derivatives at `t`.
 /// `None` states that the carrier has no value at `t`.
 ///
-/// The recursion needs no depth budget. It descends only through
-/// [`PlacedPcurve`](crate::geometry::pcurve::PlacedPcurve),
-/// [`TrimmedPcurve`](crate::geometry::pcurve::TrimmedPcurve) and
-/// [`OffsetPcurve`](crate::geometry::pcurve::OffsetPcurve), each holding one
-/// inline `Box<PcurveGeometry>` behind a `try_new` that refuses a chain past
-/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING). No arm
-/// follows an arena id, so the value handed in bounds the descent.
+/// Each carrier frame enters the scratch admission's recursion policy.
+/// Nested placed, trimmed and offset carriers retain the same policy and
+/// preserve the original session refusal.
 fn pcurve_uv_differential(
     scratch: &decode::Scratch<'_, '_>,
     geometry: &PcurveGeometry,

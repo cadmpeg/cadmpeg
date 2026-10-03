@@ -922,7 +922,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                             return Ok(None);
                         };
                         let Some(uv_tangent) =
-                            finite_or_refusal(pcurve_tangent(candidate, range[0]))?
+                            finite_or_refusal(pcurve_tangent(ctx, candidate, range[0]))?
                         else {
                             return Ok(None);
                         };
@@ -1098,7 +1098,7 @@ fn reverse_pcurve_over_range(
             let (Ok(first), Ok(last), Ok(tangent)) = (
                 cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, end))?,
                 cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, start))?,
-                pcurve_tangent(pcurve, end),
+                cadmpeg_ir::eval::decode::outer_refusal(pcurve_tangent(ctx, pcurve, end))?,
             ) else {
                 return Ok(None);
             };

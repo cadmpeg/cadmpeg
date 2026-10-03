@@ -1523,7 +1523,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         crate::geometry::pcurve::LinePcurve::try_new(Point2::new(5.0, 0.0), Point2::new(0.0, 1.0))
             .unwrap(),
     )));
-    assert!(crate::eval::pcurve_tangent(&pcurve, 0.5).is_err());
+    assert!(crate::eval::pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.5).is_err());
     let seed = crate::scalar::FiniteReal::new(0.5).expect("finite seed");
     assert_eq!(
         mapped_pcurve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &context, &pcurve, Point3::new(3.0, 0.5, 0.0), seed, 0.0)

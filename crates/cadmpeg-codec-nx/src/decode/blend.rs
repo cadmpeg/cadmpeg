@@ -1983,7 +1983,7 @@ impl BlendContactDerivativeContext<'_> {
             return Ok(None);
         };
         let Some(uv_derivative) =
-            cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(pcurve, self.parameter))?
+            cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(geometry_budget.charges, pcurve, self.parameter))?
         else {
             return Ok(None);
         };
@@ -2734,7 +2734,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             return Ok(None);
         };
         let Some(uv_tangent) =
-            cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(contact_pcurve, parameter))?
+            cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(geometry_budget.charges, contact_pcurve, parameter))?
         else {
             return Ok(None);
         };
@@ -2888,7 +2888,7 @@ fn closest_pcurve_parameter_from_seed(
         else {
             return Ok(None);
         };
-        let Some(tangent) = cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(pcurve, parameter))?
+        let Some(tangent) = cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(ctx, pcurve, parameter))?
         else {
             return Ok(None);
         };
