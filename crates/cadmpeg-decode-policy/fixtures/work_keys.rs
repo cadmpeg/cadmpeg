@@ -122,3 +122,22 @@ pub fn loop_replaced_child(ctx: &DecodeContext, values: &mut [String], other: &S
     let _paid = &values[0] == other;
     Ok(())
 }
+
+pub fn dropped_suffix(ctx: &DecodeContext, values: &mut Vec<String>, other: &mut Vec<String>, length: usize, wrong_length: usize) -> Result<(), ()> {
+    if let Some(removed) = values.get(length..) {
+        ctx.charge_key(removed, 1, "suffix")?;
+        values.truncate(length);
+    }
+    if let Some(removed) = values.get(length..) {
+        ctx.charge_key(removed, 1, "wrong target")?;
+        other.truncate(length); // finding: uncharged_decode_work
+    }
+    if let Some(removed) = values.get(length..) {
+        ctx.charge_key(removed, 1, "wrong length")?;
+        values.truncate(wrong_length); // finding: uncharged_decode_work
+    }
+    ctx.charge_key(&values[length..], 1, "indexed suffix")?;
+    values.truncate(length);
+    values.truncate(length); // finding: uncharged_decode_work
+    Ok(())
+}

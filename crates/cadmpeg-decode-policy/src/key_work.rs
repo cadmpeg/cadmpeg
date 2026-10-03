@@ -1,15 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Single-use receipts for complete key bytes and tree lookup bounds.
 use crate::{flow::{Credit, ExtentTerm}, types, Analysis};
-use rustc_hir::{Expr, ExprKind};
+use rustc_hir::{Expr, ExprKind, Node, PatKind};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::{Span, def_id::DefId};
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn key_index_operand(&self, expression: &'tcx Expr<'tcx>) -> String {
+        if let Some(initializer) = self.initializer(expression) {
+            if self.expr_ty(expression) == self.expr_ty(initializer) {
+                return self.key_index_operand(initializer);
+            }
+        }
+        if let ExprKind::Struct(_, fields, _) = expression.kind {
+            if let rustc_middle::ty::Adt(owner, _) = self.expr_ty(expression).kind() {
+                let name = self.tcx.item_name(owner.did());
+                if types::standard(self.tcx, owner.did())
+                    && matches!(name.as_str(), "Range" | "RangeFrom" | "RangeTo" | "RangeFull" | "RangeToInclusive") {
+                    let fields: Vec<_> = fields.iter().map(|field| {
+                        format!("{}:{}", field.ident.name, self.key_index_operand(field.expr))
+                    }).collect();
+                    return format!("{name}({})", fields.join(","));
+                }
+            }
+        }
+        self.constant_count(expression, &mut Vec::new()).map(|value| value.to_string())
+            .or_else(|| self.key(expression, &mut Vec::new()))
+            .unwrap_or_else(|| format!("expression:{:?}", expression.hir_id))
+    }
+
+    fn option_payload_binding(&self, expression: &'tcx Expr<'tcx>, initializer: &'tcx Expr<'tcx>) -> bool {
+        let rustc_middle::ty::Adt(owner, arguments) = self.expr_ty(initializer).kind() else { return false; };
+        if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Option"
+            || arguments.types().next() != Some(self.expr_ty(expression)) { return false; }
+        let ExprKind::Path(ref path) = expression.kind else { return false; };
+        let rustc_hir::def::Res::Local(binding) = self.typeck.qpath_res(path, expression.hir_id) else { return false; };
+        for (_, node) in self.tcx.hir_parent_iter(binding) {
+            if let Node::Pat(pattern) = node {
+                if let PatKind::TupleStruct(ref path, [payload], _) = pattern.kind {
+                    return matches!(payload.kind, PatKind::Binding(_, id, _, None) if id == binding)
+                        && matches!(self.typeck.qpath_res(path, pattern.hir_id), rustc_hir::def::Res::Def(_, definition)
+                            if types::standard(self.tcx, definition) && self.tcx.item_name(definition).as_str() == "Some");
+                }
+                continue;
+            }
+            return false;
+        }
+        false
+    }
+
     // Complete-value receipts distinguish subwindows; length admission may dominate them.
     fn key_work_operand(&self, expression: &'tcx Expr<'tcx>) -> Option<String> {
         if let Some(initializer) = self.initializer(expression) {
-            if self.expr_ty(expression) == self.expr_ty(initializer) {
+            if self.expr_ty(expression) == self.expr_ty(initializer)
+                || self.option_payload_binding(expression, initializer) {
                 if let Some(key) = self.key_work_operand(initializer) { return Some(key); }
             }
         }
@@ -20,9 +64,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ExprKind::AddrOf(_, _, value) | ExprKind::DropTemps(value) | ExprKind::Unary(_, value) => self.key_work_operand(value),
             ExprKind::Index(base, index, _) => {
-                let index = self.constant_count(index, &mut Vec::new()).map(|value| value.to_string())
-                    .or_else(|| self.key(index, &mut Vec::new()))
-                    .unwrap_or_else(|| format!("expression:{:?}", index.hir_id));
+                let index = self.key_index_operand(index);
                 self.key_work_operand(base).map(|base| format!("{base}[{index}]"))
             }
             ExprKind::Field(base, field) => self.key_work_operand(base).map(|base| format!("{base}.{}", field.name)),
@@ -32,9 +74,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         match self.tcx.item_name(definition).as_str() {
                             "get" | "get_mut" => {
                                 let index = args.get(1)?;
-                                let index = self.constant_count(index, &mut Vec::new()).map(|value| value.to_string())
-                                    .or_else(|| self.key(index, &mut Vec::new()))
-                                    .unwrap_or_else(|| format!("expression:{:?}", index.hir_id));
+                                let index = self.key_index_operand(index);
                                 return self.key_work_operand(args.first()?).map(|base| format!("{base}[{index}]"));
                             }
                             "as_bytes" | "as_slice" => return self.key_work_operand(args.first()?),
@@ -110,6 +150,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         true
     }
     pub(crate) fn key_work_paid(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+        if name == "truncate" {
+            let Some(receiver) = operands.first() else { return false; };
+            let rustc_middle::ty::Adt(owner, _) = self.expr_ty(receiver).peel_refs().kind() else { return false; };
+            if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Vec" { return false; }
+            let Some(target) = self.key_work_operand(receiver) else { return false; };
+            let Some(start) = operands.get(1).map(|value| self.key_index_operand(value)) else { return false; };
+            return self.consume_key_factor(&format!("keybytes:{target}[RangeFrom(start:{start})]"));
+        }
         if matches!(name, "sort_unstable_by" | "sort_unstable_by_key" | "sort_by" | "sort_by_key" | "sort" | "sort_unstable") {
             return operands.first().and_then(|value| self.key_work_operand(value))
                 .is_some_and(|key| self.consume_key_factor(&format!("sortbytes:{key}")));
