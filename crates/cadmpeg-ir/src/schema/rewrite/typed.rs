@@ -46,7 +46,7 @@ pub struct IdentityMap<'ctx, F> {
     map: F,
     context: &'ctx DecodeContext<'ctx>,
     text_index: Option<ReplacementIndex<'ctx>>,
-    targets: BTreeMap<Key<'ctx>, String>,
+    targets: BTreeMap<Key<'ctx>, crate::ids::Identity>,
     occupied: BTreeMap<Key<'ctx>, ()>,
     operation: &'static str,
     refused: Option<String>,
@@ -112,6 +112,10 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 
     /// Replace an identity once and refuse invalid or colliding targets.
     pub fn identity(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+        self.identity_value(ctx, source).map(crate::ids::Identity::into_string)
+    }
+
+    fn identity_value(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<crate::ids::Identity, CodecError> {
         let result = self.replace_identity(ctx, source);
         if let Err(CodecError::ResourceLimit(limit)) = &result {
             if self.resource_refusal.is_none() {
@@ -121,7 +125,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         result
     }
 
-    fn replace_identity(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+    fn replace_identity(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<crate::ids::Identity, CodecError> {
         if let Some(limit) = self.resource_refusal {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -130,16 +134,16 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         let cached = self.targets.get(&Key::borrowed(self.context, source, operation));
         self.context.charge_work_limit(0, operation)?;
         if let Some(target) = cached {
-            return ctx.copy_retained_text(target, operation);
+            return target.try_clone_for_decode(ctx, operation);
         }
         let target = (self.map)(source)?;
-        ctx.charge_work(u64_from_index(target.len()), operation)?;
-        if !crate::ids::is_valid_identity(&target) {
-            return self.refuse(ctx, format_args!("identity {source} rewrites to invalid identity {target:?}"));
-        }
+        let target = match crate::ids::Identity::admit_text(target, |work| ctx.charge_work(work, operation))? {
+            Ok(target) => target,
+            Err(target) => return self.refuse(ctx, format_args!("identity {source} rewrites to invalid identity {target:?}")),
+        };
         let key = self.storage.with_storage(|| ctx.copy_retained_text(source, operation))?;
-        let cached = self.storage.with_storage(|| ctx.copy_retained_text(&target, operation))?;
-        let occupied = self.storage.with_storage(|| ctx.copy_retained_text(&target, operation))?;
+        let cached = self.storage.with_storage(|| target.try_clone_for_decode(ctx, operation))?;
+        let occupied = self.storage.with_storage(|| ctx.copy_retained_text(target.as_str(), operation))?;
         let destination = self.occupied.entry(Key::owned(self.context, occupied, operation));
         self.context.charge_work_limit(0, operation)?;
         match destination {
@@ -154,7 +158,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         match source_entry {
             Entry::Occupied(_) => return Err(CodecError::malformed("identity rewrite cache contains the source")),
             Entry::Vacant(entry) => {
-                self.storage.with_storage(|| ctx.admit_retained_btree_record::<Key<'_>, String>(0, operation))?;
+                self.storage.with_storage(|| ctx.admit_retained_btree_record::<Key<'_>, crate::ids::Identity>(0, operation))?;
                 entry.insert(cached);
             }
         }
@@ -176,9 +180,7 @@ impl RewriteIdentities for crate::ids::Identity {
         visitor(self.as_str())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
-        let target = map.identity(ctx, self.as_str())?;
-        ctx.charge_work(u64_from_index(target.len()), "rewrite identity grammar")?;
-        Self::new(target).map_err(CodecError::malformed)
+        map.identity_value(ctx, self.as_str())
     }
 }
 

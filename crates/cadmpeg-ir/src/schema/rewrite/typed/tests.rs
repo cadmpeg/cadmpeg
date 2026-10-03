@@ -157,3 +157,36 @@ fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
     drop(map);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
+    use cadmpeg_core::decode::u64_from_index;
+    for source in ["a:b:c#one", "a:b:c#é:部"] {
+        let bytes = u64_from_index(source.len());
+        let first_work = 4 * bytes + u64_from_index(source.chars().count()) + 3;
+        let repeat_work = 2 * bytes + 2;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = first_work + repeat_work;
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 2 * bytes;
+        policy.limits.max_collection_items = 2;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let mut map = IdentityMap::new(&ctx, "single grammar cache", |source: &str| {
+            calls.set(calls.get() + 1);
+            ctx.copy_retained_text(source, "typed callback copy")
+        }).unwrap();
+        for _ in 0..2 {
+            let identity = crate::ids::Identity::new(source).unwrap();
+            assert_eq!(identity.rewrite_identities(&ctx, &mut map).unwrap().as_str(), source);
+        }
+        assert_eq!(calls.get(), 1);
+        assert!(map.targets.values().all(|target| target.as_str() == source));
+        map.finish(&ctx).unwrap();
+        drop(map);
+        drop(ctx.reserve_scoped_limit(4096, "grammar cache released").unwrap());
+        ctx.finish_session().unwrap();
+    }
+}

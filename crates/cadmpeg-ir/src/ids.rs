@@ -31,17 +31,37 @@ use std::fmt::{self, Display};
 /// The key is non-empty, contains no `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
-    let Some((namespace, key)) = id.split_once('#') else {
-        return false;
-    };
-    if key.is_empty() || key.contains('#') || id.chars().any(char::is_whitespace) {
-        return false;
+    match check_identity(id, |_| Ok::<(), std::convert::Infallible>(())) {
+        Ok(valid) => valid,
+        Err(error) => match error {},
     }
-    let mut components = namespace.split(':');
-    components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_none()
+}
+
+/// One grammar scan with an explicit admission callback before each scalar.
+fn check_identity<E>(
+    id: &str, mut visit: impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
+    visit(0)?;
+    let mut characters = id.chars();
+    let mut separators = 0_u8;
+    let mut key = false;
+    let mut nonempty = false;
+    while !characters.as_str().is_empty() {
+        visit(1)?;
+        let Some(character) = characters.next() else { break; };
+        if character.is_whitespace() { return Ok(false); }
+        match character {
+            '#' if key || !nonempty || separators != 2 => return Ok(false),
+            '#' => { key = true; nonempty = false; }
+            ':' if !key => {
+                if !nonempty || separators == 2 { return Ok(false); }
+                separators += 1;
+                nonempty = false;
+            }
+            _ => nonempty = true,
+        }
+    }
+    Ok(key && nonempty)
 }
 
 /// An entity identity with validated namespace and key grammar.
@@ -87,12 +107,18 @@ impl Identity {
 
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
-        let value = value.into();
-        if is_valid_identity(&value) {
-            Ok(Self(value))
-        } else {
-            Err(IdentityError::InvalidId { value })
+        match Self::admit_text(value.into(), |_| Ok::<(), std::convert::Infallible>(())) {
+            Ok(result) => result.map_err(|value| IdentityError::InvalidId { value }),
+            Err(error) => match error {},
         }
+    }
+
+    /// Admit owned text with the same grammar used by standard reconstruction.
+    /// Invalid grammar returns the owned input; admission failure stays outside it.
+    pub(crate) fn admit_text<E>(
+        value: String, visit: impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Result<Self, String>, E> {
+        Ok(if check_identity(&value, visit)? { Ok(Self(value)) } else { Err(value) })
     }
 
     /// Borrow the identity string.
