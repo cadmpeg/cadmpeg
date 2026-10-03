@@ -159,6 +159,23 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         }
     }
 
+    /// Create exact temporary backing with its reservation held by the caller.
+    pub(super) fn temporary_vec<T>(&self, count: usize, operation: &'static str)
+        -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
+        self.work(0, operation)?;
+        let mut values = Vec::new();
+        let storage = match self.admission {
+            EvaluationAdmission::Decode(context) => Some(self.admit(
+                context.reserve_temporary_vec(&mut values, count, operation),
+            )?),
+            EvaluationAdmission::Standard => {
+                self.admit(crate::geometry::nurbs::scratch::reserve_exact(&mut values, count, operation))?;
+                None
+            }
+        };
+        Some((values, storage))
+    }
+
     /// Copy retained output through the selected allocation and work policy.
     pub(super) fn retained_copy<T: Copy>(&self, source: &[T], operation: &'static str) -> Option<Vec<T>> {
         self.work(0, operation)?;

@@ -2910,10 +2910,9 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
             SurfaceParameterAxis::V => u_count,
         };
         let rational = surface.weight(0, 0).is_some();
-        let mut control_points = Vec::new();
-        if scratch.reserve(&mut control_points, varying_count, "IR surface isoline controls").is_none() { return Ok(None); }
+        let Some((mut control_points, _control_storage)) = scratch.temporary_vec(varying_count, "IR surface isoline controls") else { return Ok(None); };
         let mut sums = Vec::new();
-        if scratch.reserve(&mut sums, varying_count, "IR surface isoline sums").is_none() { return Ok(None); }
+        if rational && scratch.reserve(&mut sums, varying_count, "IR surface isoline sums").is_none() { return Ok(None); }
         for varying in 0..varying_count {
             if scratch.work(1, "IR surface isoline pole visit").is_none() { return Ok(None); }
             let Some(sum) = Homogeneous::sum(&scratch, fixed_basis.iter().copied().enumerate().map(
@@ -2940,8 +2939,10 @@ pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
             };
             if scratch.work(std::mem::size_of::<Point3>(), "IR surface isoline point copy").is_none() { return Ok(None); }
             control_points.push(FinitePoint3::from_coordinates(x, y, z).get());
-            if scratch.work(std::mem::size_of::<Homogeneous>(), "IR surface isoline sum copy").is_none() { return Ok(None); }
-            sums.push(sum);
+            if rational {
+                if scratch.work(std::mem::size_of::<Homogeneous>(), "IR surface isoline sum copy").is_none() { return Ok(None); }
+                sums.push(sum);
+            }
         }
         let (degree, knots, periodic) = match fixed_axis {
             SurfaceParameterAxis::U => (
