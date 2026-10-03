@@ -75,7 +75,7 @@ fn check_fixture(name: &str) {
         std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission" | "parser_json" | "parser_zip") {
+    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission" | "parser_json" | "parser_zip" | "parser_zstd") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -99,7 +99,7 @@ fn check_fixture(name: &str) {
             &std::fs::read(fingerprint_directory.join("test-lib-cadmpeg_decode_policy.json"))
                 .expect("test dependency fingerprint"),
         ).expect("test dependency fingerprint JSON");
-        for name in ["roxmltree", "serde_json", "serde", "zip", "memchr"] {
+        for name in ["roxmltree", "serde_json", "serde", "zip", "memchr", "zstd_safe"] {
             let expected = fingerprint["deps"].as_array().expect("dependency fingerprints")
                 .iter().find(|dependency| dependency[1].as_str() == Some(name))
                 .and_then(|dependency| dependency[3].as_u64()).expect("linked dependency fingerprint");
@@ -129,7 +129,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json" | "parser_zstd") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if matches!(name, "container_callbacks" | "parser_zip") {
@@ -222,6 +222,7 @@ fn check_fixture(name: &str) {
                     | "parser_admission"
                     | "parser_json"
                     | "parser_zip"
+                    | "parser_zstd"
                     | "byte_search"
                     | "zip"
                     | "boxing"
@@ -876,4 +877,9 @@ fn text_growth_receipts_bind_the_target_and_append_count_once() {
 #[test]
 fn btree_node_receipts_bind_the_collection_key_and_value_types() {
     check_fixture("btree_storage");
+}
+
+#[test]
+fn zstd_step_receipts_bind_all_buffers_and_the_live_workspace() {
+    check_fixture("parser_zstd");
 }

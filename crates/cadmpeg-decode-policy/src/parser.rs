@@ -9,6 +9,7 @@ use rustc_span::Span;
 pub(crate) enum ParserKind<'tcx> {
     Xml,
     Zip,
+    ZstdStep,
     JsonTree,
     JsonValidation(ty::Ty<'tcx>),
     JsonConversion(ty::Ty<'tcx>),
@@ -29,6 +30,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match self.tcx.item_name(owner.did()).as_str() {
             "XmlParserAdmission" => Some("XmlParserAdmission"),
             "ZipParserAdmission" => Some("ZipParserAdmission"),
+            "ZstdStepAdmission" => Some("ZstdStepAdmission"),
             "JsonParserAdmission" => Some("JsonParserAdmission"),
             "TypedJsonAdmission" => Some("TypedJsonAdmission"),
             _ => None,
@@ -53,6 +55,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let kind = match (self.tcx.item_name(definition).as_str(), self.parser_type_name(value)) {
             ("xml_parser_admission", Some("XmlParserAdmission")) => ParserKind::Xml,
             ("zip_parser_admission", Some("ZipParserAdmission")) => ParserKind::Zip,
+            ("zstd_step_admission", Some("ZstdStepAdmission")) => ParserKind::ZstdStep,
             ("json_parser_admission", Some("JsonParserAdmission")) => ParserKind::JsonTree,
             (name @ ("json_validation_admission" | "json_conversion_admission"), Some("TypedJsonAdmission")) => {
                 let ty::Adt(_, args) = value.kind() else { return; };
@@ -75,8 +78,45 @@ impl<'tcx> Analysis<'_, 'tcx> {
         self.flow.parser_receipts.push(ParserReceipt { guard, scope, kind });
     }
 
+    fn zstd_step_paid(&mut self, expression: &'tcx Expr<'tcx>, operands: &[&'tcx Expr<'tcx>]) -> bool {
+        let Some((definition, _)) = self.call(expression) else { return false; };
+        if self.tcx.crate_name(definition.krate).as_str() != "zstd_safe"
+            || self.tcx.item_name(definition).as_str() != "decompress_stream"
+            || operands.len() != 3 { return false; }
+        let mut guard = None;
+        for (operand, field_name) in operands.iter().zip(["decoder", "output", "input"]) {
+            let mut operand = *operand;
+            while let ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) = operand.kind {
+                operand = inner;
+            }
+            let ExprKind::Field(admission, field) = operand.kind else { return false; };
+            if field.name.as_str() != field_name
+                || self.parser_type_name(self.expr_ty(admission)) != Some("ZstdStepAdmission") { return false; }
+            let Some(key) = self.key(admission, &mut Vec::new()) else { return false; };
+            if guard.as_ref().is_some_and(|guard| guard != &key) { return false; }
+            guard = Some(key);
+            if field_name == "output" {
+                let ty::Adt(owner, args) = self.expr_ty(operand).peel_refs().kind() else { return false; };
+                if self.tcx.crate_name(owner.did().krate).as_str() != "zstd_safe"
+                    || self.tcx.item_name(owner.did()).as_str() != "OutBuffer"
+                    || !args.types().next().is_some_and(|value| matches!(value.kind(), ty::Slice(element)
+                        if matches!(element.kind(), ty::Uint(ty::UintTy::U8)))) { return false; }
+            }
+        }
+        let Some(guard) = guard else { return false; };
+        let Some(index) = self.flow.parser_receipts.iter().position(|receipt| {
+            receipt.kind == ParserKind::ZstdStep && receipt.guard == guard
+                && receipt.scope.contains(expression.span)
+                && !self.flow.mutated.iter().any(|key| crate::flow::factor_depends_on(&guard, key))
+        }) else { return false; };
+        self.flow.parser_receipts.remove(index);
+        self.findings.admitted_operations.insert(expression.hir_id);
+        true
+    }
+
     pub(crate) fn parser_call_paid(&mut self, expression: &'tcx Expr<'tcx>) -> bool {
         let Some((definition, operands)) = self.call(expression) else { return false; };
+        if self.zstd_step_paid(expression, &operands) { return true; }
         let Some(mut input) = operands.first().copied() else { return false; };
         let zip = self.tcx.crate_name(definition.krate).as_str() == "zip"
             && self.tcx.item_name(definition).as_str() == "new";
@@ -105,6 +145,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if receipt.guard != guard || !receipt.scope.contains(expression.span)
                 || self.flow.mutated.iter().any(|key| crate::flow::factor_depends_on(&guard, key)) { return false; }
             match receipt.kind {
+                ParserKind::ZstdStep => false,
                 ParserKind::Xml => owner.as_str() == "roxmltree" && name.as_str() == "parse_with_options",
                 ParserKind::Zip => zip && matches!(self.expr_ty(expression).kind(), ty::Adt(result, args)
                     if types::standard(self.tcx, result.did()) && self.tcx.item_name(result.did()).as_str() == "Result"
