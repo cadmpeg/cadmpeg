@@ -132,6 +132,25 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.constant(expression, &mut Vec::new()) {
             return;
         }
+        if let external::Work::Arguments(indices) = summary.work {
+            let mut complete = true;
+            for index in indices {
+                let Some(operand) = operands.get(*index) else {
+                    self.work_report(expression.span, Shape::Unknown, None, name);
+                    complete = false;
+                    continue;
+                };
+                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand) {
+                    Shape::Fixed
+                } else { types::work(self.tcx, self.expr_ty(operand), &mut Vec::new()) };
+                let mut paid = self.take_credit(&[*operand]);
+                if paid == Some(true) && self.deep_work(self.expr_ty(operand)) { paid = None; }
+                complete &= shape == Shape::Fixed || shape == Shape::Dynamic && paid == Some(true);
+                self.work_report(expression.span, shape, paid, name);
+            }
+            if complete { self.record_key_work_proof(expression); }
+            return;
+        }
         if name == "clone" {
             match self.clone_shape(self.expr_ty(expression)) {
                 Shape::Fixed => return,

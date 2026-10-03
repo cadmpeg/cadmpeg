@@ -654,8 +654,8 @@ pub(crate) fn check_imported<'tcx>(
                 _ => 0,
             };
             let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
-            let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete| {
-                if concrete && (fixed_extent || admitted_conversion)
+            let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete, fixed| {
+                if concrete && (fixed || admitted_conversion)
                     || summary.work == external::Work::Fixed
                     || summary.work == external::Work::Iterator
                         && vector_output
@@ -731,16 +731,30 @@ pub(crate) fn check_imported<'tcx>(
                     }
                 }
             };
-            let symbolic_work = raw_extent.map_or(types::Shape::Unknown, |extent| {
-                work_shape(extent, symbolic_allocation, false)
-            });
+            let arguments_work = |indices: &[usize], concrete| {
+                indices.iter().fold(types::Shape::Fixed, |shape, index| {
+                    let Some(operand) = args.get(*index) else { return shape.join(types::Shape::Unknown); };
+                    let raw = operand.node.ty(body, tcx);
+                    let extent = if concrete { instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, raw)) } else { raw };
+                    let fixed = crate::fixed::mir_operand(tcx, body, &operand.node, &fixed_operands, &mut HashSet::new());
+                    shape.join(work_shape(extent, if concrete { allocation } else { symbolic_allocation }, concrete, fixed))
+                })
+            };
+            let symbolic_work = if let external::Work::Arguments(indices) = summary.work {
+                arguments_work(indices, false)
+            } else { raw_extent.map_or(types::Shape::Unknown, |extent| {
+                work_shape(extent, symbolic_allocation, false, fixed_extent)
+            }) };
             let work = if key_work_proofs.contains(&crate::key_work::proof_key(tcx, instance.def_id(), block.terminator().source_info.span)) {
                 types::Shape::Fixed
+            } else if let external::Work::Arguments(indices) = summary.work {
+                arguments_work(indices, true)
             } else { raw_extent.map_or(types::Shape::Unknown, |extent| {
                 work_shape(
                     instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)),
                     allocation,
                     true,
+                    fixed_extent,
                 )
             }) };
             for (shape, symbolic, rule) in [

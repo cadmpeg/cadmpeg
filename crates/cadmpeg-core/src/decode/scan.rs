@@ -53,6 +53,55 @@ impl<'text> AdmittedIter<std::str::Chars<'text>> {
 }
 
 impl DecodeContext<'_> {
+    /// Finds a non-empty byte pattern after admitting both input extents.
+    /// An empty pattern has no matches.
+    pub fn find_bytes(&self, haystack: &[u8], needle: &[u8], operation: &'static str) -> Result<Option<usize>, CodecError> {
+        if needle.is_empty() { self.charge_work(0, operation)?; return Ok(None); }
+        let work = self.cost_sum(u64_from_index(haystack.len()), u64_from_index(needle.len()), operation)?;
+        self.charge_work(work, operation)?;
+        Ok(memchr::memmem::find(haystack, needle))
+    }
+
+    /// Finds the last non-empty byte pattern after admitting both input extents.
+    pub fn rfind_bytes(&self, haystack: &[u8], needle: &[u8], operation: &'static str) -> Result<Option<usize>, CodecError> {
+        if needle.is_empty() { self.charge_work(0, operation)?; return Ok(None); }
+        let work = self.cost_sum(u64_from_index(haystack.len()), u64_from_index(needle.len()), operation)?;
+        self.charge_work(work, operation)?;
+        Ok(memchr::memmem::rfind(haystack, needle))
+    }
+
+    /// Finds an absolute offset within a bounded byte range.
+    /// An invalid range or empty pattern has no matches.
+    pub fn find_bytes_in(&self, haystack: &[u8], needle: &[u8], start: usize, end: usize, operation: &'static str) -> Result<Option<usize>, CodecError> {
+        self.charge_work(0, operation)?;
+        let Some(window) = haystack.get(start..end) else { return Ok(None); };
+        Ok(self.find_bytes(window, needle, operation)?.map(|offset| start + offset))
+    }
+
+    /// Finds an absolute offset at or after the supplied starting position.
+    pub fn find_bytes_from(&self, haystack: &[u8], needle: &[u8], start: usize, operation: &'static str) -> Result<Option<usize>, CodecError> {
+        self.find_bytes_in(haystack, needle, start, haystack.len(), operation)
+    }
+
+    /// Tests byte-pattern membership through the admitted forward search.
+    pub fn contains_bytes(&self, haystack: &[u8], needle: &[u8], operation: &'static str) -> Result<bool, CodecError> {
+        Ok(self.find_bytes(haystack, needle, operation)?.is_some())
+    }
+
+    /// Admits needle construction and all non-overlapping byte-pattern searches.
+    /// The borrowed searcher uses constant storage and cannot replay its admission.
+    pub fn find_bytes_iter<'bytes>(&self, haystack: &'bytes [u8], needle: &'bytes [u8], operation: &'static str) -> Result<AdmittedIter<impl Iterator<Item = usize> + std::fmt::Debug + 'bytes>, CodecError> {
+        let search = if needle.is_empty() {
+            self.charge_work(0, operation)?;
+            None
+        } else {
+            let work = self.cost_sum(u64_from_index(haystack.len()), u64_from_index(needle.len()), operation)?;
+            self.charge_work(work, operation)?;
+            Some(memchr::memmem::find_iter(haystack, needle))
+        };
+        Ok(AdmittedIter { source: search.into_iter().flatten() })
+    }
+
     /// Validates borrowed UTF-8 after admitting every input byte.
     /// The inner result preserves the standard validation error.
     pub fn validate_utf8<'bytes>(
@@ -332,6 +381,72 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+
+    #[test]
+    fn charged_byte_searches_preserve_binary_offsets_and_nonoverlapping_matches() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let bytes = b"\xffabab\0";
+        assert_eq!(ctx.find_bytes(bytes, b"ab", "find").expect("admission"), Some(1));
+        assert_eq!(ctx.rfind_bytes(bytes, b"ab", "reverse").expect("admission"), Some(3));
+        assert_eq!(ctx.find_bytes_from(bytes, b"ab", 2, "from").expect("admission"), Some(3));
+        assert_eq!(ctx.find_bytes_in(bytes, b"ab", 2, 5, "range").expect("admission"), Some(3));
+        assert_eq!(ctx.find_bytes_in(bytes, b"ab", 2, 4, "range").expect("admission"), None);
+        assert!(ctx.contains_bytes(bytes, b"\0", "contains").expect("admission"));
+        assert_eq!(ctx.find_bytes_iter(bytes, b"ab", "matches").expect("admission").collect::<Vec<_>>(), [1, 3]);
+        assert_eq!(ctx.find_bytes_iter(b"aaaaa", b"aa", "matches").expect("admission").collect::<Vec<_>>(), [0, 2]);
+        assert_eq!(ctx.find_bytes_from(bytes, b"ab", usize::MAX, "invalid").expect("no range"), None);
+        assert_eq!(ctx.find_bytes_in(bytes, b"ab", 3, 2, "invalid").expect("no range"), None);
+        assert_eq!(ctx.find_bytes_in(bytes, b"ab", 0, usize::MAX, "invalid").expect("no range"), None);
+    }
+
+    #[test]
+    fn charged_byte_searches_admit_both_extents_without_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Three searches each admit six haystack bytes and two needle bytes.
+        policy.limits.max_work_units = 24;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(ctx.find_bytes(b"ababab", b"ab", "forward").expect("admission"), Some(0));
+        assert_eq!(ctx.rfind_bytes(b"ababab", b"ab", "reverse").expect("admission"), Some(4));
+        assert_eq!(ctx.find_bytes_iter(b"ababab", b"ab", "iterator").expect("admission").count(), 3);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").expect_err("exact work") else { panic!("refusal") };
+        assert_eq!(limit.used, 24);
+    }
+
+    #[test]
+    fn charged_byte_searches_refuse_before_search_and_keep_original_refusal() {
+        let arena = DecodeArena::new();
+        for iterator in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 7;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let error = if iterator {
+                ctx.find_bytes_iter(b"ababab", b"ab", "iterator").expect_err("refusal")
+            } else { ctx.find_bytes(b"ababab", b"ab", "forward").expect_err("refusal") };
+            let CodecError::ResourceLimit(first) = error else { panic!("refusal") };
+            assert_eq!(first.used, 0);
+            assert_eq!(first.additional, 8);
+            let CodecError::ResourceLimit(second) = ctx.find_bytes_in(b"a", b"a", usize::MAX, 0, "invalid").expect_err("fused") else { panic!("refusal") };
+            assert_eq!(first, second);
+        }
+    }
+
+    #[test]
+    fn empty_byte_patterns_have_no_matches_or_scan_work() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(ctx.find_bytes(b"abc", b"", "empty").expect("no scan"), None);
+        assert_eq!(ctx.rfind_bytes(b"abc", b"", "empty").expect("no scan"), None);
+        assert!(!ctx.contains_bytes(b"abc", b"", "empty").expect("no scan"));
+        assert_eq!(ctx.find_bytes_iter(b"abc", b"", "empty").expect("no scan").count(), 0);
+        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "refusal").expect_err("refusal") else { panic!("refusal") };
+        let CodecError::ResourceLimit(second) = ctx.find_bytes_iter(b"abc", b"", "empty").expect_err("fused") else { panic!("refusal") };
+        assert_eq!(first, second);
+    }
 
     #[test]
     fn admitted_utf16_adapter_consumes_only_remaining_text() {

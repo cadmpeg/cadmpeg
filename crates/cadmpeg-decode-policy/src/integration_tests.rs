@@ -75,7 +75,7 @@ fn check_fixture(name: &str) {
         std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde" | "zip") {
+    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -93,7 +93,7 @@ fn check_fixture(name: &str) {
             }
         }
         let mut dependencies = Vec::new();
-        for name in ["roxmltree", "serde_json", "serde", "zip"] {
+        for name in ["roxmltree", "serde_json", "serde", "zip", "memchr"] {
             let prefix = format!("lib{name}-");
             let library = directories
                 .iter()
@@ -211,6 +211,7 @@ fn check_fixture(name: &str) {
                     | "imported"
                     | "dominance"
                     | "thirdparty"
+                    | "byte_search"
                     | "zip"
                     | "boxing"
                     | "text_sources"
@@ -404,6 +405,11 @@ fn structural_extent_dominance() {
 #[test]
 fn third_party_operation_summaries() {
     check_fixture("thirdparty");
+}
+
+#[test]
+fn byte_search_requires_both_sources_and_charged_needle_construction() {
+    check_fixture("byte_search");
 }
 
 #[test]
