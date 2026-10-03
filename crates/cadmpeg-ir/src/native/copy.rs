@@ -40,7 +40,11 @@ pub(super) fn insert(
             ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_work(work, "insert copied native field")?;
-    ctx.admit_retained_btree_record::<String, Value>(0, "insert copied native field")?;
+    if !fields.contains_key(&key) {
+        ctx.admit_btree_node_storage::<String, Value>(fields.len(), "insert copied native field")?;
+        ctx.charge_collection_items(1, "insert copied native field")?;
+        ctx.charge_work(1, "insert copied native field")?;
+    }
     fields.insert(key, value);
     Ok(())
 }
