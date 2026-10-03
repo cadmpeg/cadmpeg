@@ -2,7 +2,7 @@
 //! One-table indexes that exclude every repeated key.
 
 use super::cost::DecodeCost;
-use super::{u64_from_index, DecodeContext, ScopedReservation};
+use super::{DecodeContext, ScopedReservation};
 use crate::CodecError;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -27,49 +27,19 @@ impl DecodeContext<'_> {
                 continue;
             }
             self.charge_collection_items(1, operation)?;
-            if table.len() == table.capacity() {
-                self.charge_work(u64_from_index(table.capacity()), operation)?;
-                for (stored, _) in self.admit_iter(&table, operation)? {
-                    self.charge_key(stored, 1, operation)?;
-                }
-                // A hash table reserves at most four buckets per requested
-                // entry, including load-factor rounding. Each bucket holds
-                // its pair and control bytes. The extra 32 bytes cover
-                // alignment and control-group padding. Keep the old and new
-                // tables admitted together while fallible growth rehashes.
-                let required = table
-                    .len()
-                    .checked_add(1)
-                    .and_then(|count| count.checked_mul(4))
-                    .and_then(|count| {
-                        count.checked_mul(
-                            std::mem::size_of::<(K, Option<V>)>()
-                                .max(1)
-                                .checked_add(32)?,
-                        )
-                    })
-                    .ok_or_else(|| {
-                        CodecError::from(self.budget.scoped_size_overflow_limit(operation))
-                    })?;
-                storage.grow(u64_from_index(required))?;
-                table.try_reserve(1).map_err(|_| {
-                    self.budget
-                        .scoped_allocation_failed(u64_from_index(required), operation)
-                })?;
-            }
+            storage.with_storage(|| self.reserve_hash_map_storage(&mut table, 1, operation))?;
             self.charge_key(&key, 1, operation)?;
             // discarded-value: the key was absent before the admitted insertion.
             let _ = table.insert(key, Some(value));
         }
-        self.charge_work(u64_from_index(table.capacity()), operation)?;
-        table.retain(|_, value| value.is_some());
+        self.retain_hash_map(&mut table, |_, value| Ok(value.is_some()), operation)?;
         Ok((table, storage))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
     #[test]
@@ -78,7 +48,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
         policy.limits.max_materialized_bytes =
-            super::u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
+            u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, storage) = ctx
             .unique_index(

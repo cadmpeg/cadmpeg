@@ -271,6 +271,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         let consumers = summary.work == external::Work::Iterator;
+        if summary.work == external::Work::Capacity {
+            let paid = operands.first().and_then(|receiver| self.key(receiver, &mut Vec::new()))
+                .is_some_and(|target| self.flow.work.iter_mut().filter(|credit| !credit.opaque).any(|credit|
+                    crate::storage::consume_terms(&mut credit.extents, &[crate::flow::ExtentTerm {
+                        factors: vec![format!("{target}.capacity")], coefficient: self.flow.iterations,
+                    }])));
+            self.work_report(expression.span, Shape::Dynamic, Some(paid), name);
+            return;
+        }
         if summary.work == external::Work::Fixed {
             return;
         }
