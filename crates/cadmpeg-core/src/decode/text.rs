@@ -7,6 +7,7 @@ use crate::CodecError;
 mod sealed {
     pub trait Scalar {}
     pub trait Source {}
+    pub trait Radix {}
 }
 
 /// Text values whose borrowed view requires no scan, copy or allocation.
@@ -54,7 +55,31 @@ text_scalars!(std::num::NonZeroU8, std::num::NonZeroU16, std::num::NonZeroU32,
     std::num::NonZeroI8, std::num::NonZeroI16, std::num::NonZeroI32,
     std::num::NonZeroI64, std::num::NonZeroI128, std::num::NonZeroIsize);
 
+/// Standard integer radix parsers with no child storage or custom callbacks.
+pub trait RadixScalar: sealed::Radix + Sized {
+    /// Parses one integer with a radix from 2 through 36.
+    fn parse_radix(text: &str, radix: u32) -> Result<Self, std::num::ParseIntError>;
+}
+macro_rules! radix_scalars {
+    ($($scalar:ty),+) => {$(
+        impl sealed::Radix for $scalar {}
+        impl RadixScalar for $scalar {
+            fn parse_radix(text: &str, radix: u32) -> Result<Self, std::num::ParseIntError> {
+                <$scalar>::from_str_radix(text, radix)
+            }
+        }
+    )+};
+}
+radix_scalars!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+
 impl DecodeContext<'_> {
+    /// Admits integer input bytes and preserves the standard numeric error.
+    pub fn parse_radix<T: RadixScalar>(&self, text: &str, radix: u32, operation: &'static str) -> Result<Result<T, std::num::ParseIntError>, CodecError> {
+        self.charge_work(u64_from_index(text.len()), operation)?;
+        if !(2..=36).contains(&radix) { return Err(CodecError::malformed("integer radix is outside 2 through 36")); }
+        Ok(T::parse_radix(text, radix))
+    }
+
     /// Charge the complete text scan and retain its result with the exact input.
     pub fn validate_nonblank_text<S: TextSource>(&self, source: S, operation: &'static str) -> Result<crate::text::NonBlankText<S>, super::ResourceLimit> {
         let nonblank = self.admit_iter(source.as_text(), operation)?.any(|character| !character.is_whitespace());
@@ -73,6 +98,21 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::CodecError;
+
+    #[test]
+    fn radix_parsing_preserves_values_errors_and_admission() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(ctx.parse_radix::<i32>("-fF", 16, "radix").unwrap(), Ok(-255));
+        assert_eq!(ctx.parse_radix::<u8>("100", 16, "radix").unwrap(), u8::from_str_radix("100", 16));
+        assert!(matches!(ctx.parse_radix::<u8>("1", 1, "invalid radix"), Err(CodecError::Malformed(_))));
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let CodecError::ResourceLimit(first) = ctx.parse_radix::<u8>("invalid", 16, "refusal").unwrap_err() else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(repeated) = ctx.parse_radix::<u8>("1", 16, "later").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+    }
 
     #[test]
     fn charged_parse_keeps_standard_errors_and_charges_input_bytes() {
