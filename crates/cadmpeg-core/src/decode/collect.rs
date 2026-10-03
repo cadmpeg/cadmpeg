@@ -1075,6 +1075,16 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        self.reserve_hash_set_storage(values, count, operation)
+    }
+
+    fn reserve_hash_set_storage<T: Eq + Hash + DecodeCost>(
+        &self,
+        values: &mut HashSet<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
         let required = values.len().checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required > values.capacity() {
@@ -1085,7 +1095,6 @@ impl DecodeContext<'_> {
         }
         let bytes =
             self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
-        self.charge_collection_items(u64_from_index(count), operation)?;
         values.try_reserve(count).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
@@ -1352,21 +1361,14 @@ impl DecodeContext<'_> {
             let mut input = values.into_iter();
             loop {
                 let Some(value) = self.next_charged(&mut input, operation)? else { break };
-                self.charge_work(
-                    u64_from_index(value.len())
-                        .checked_mul(2)
-                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
-                        .checked_add(1)
-                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                    operation,
-                )?;
-                self.charge_work(u64_from_index(output.len()), operation)?;
-                if !output.contains(value) {
+                if !self.contains_hash_set(&output, value, operation)? {
                     if remaining == 0 {
-                        self.reserve_set(&mut output, 1, operation)?;
+                        self.charge_collection_items(1, operation)?;
                     } else {
                         remaining -= 1;
                     }
+                    self.reserve_hash_set_storage(&mut output, 1, operation)?;
+                    self.charge_key(value, 1, operation)?;
                     output.insert(value);
                 }
             }
@@ -1390,21 +1392,17 @@ impl DecodeContext<'_> {
             let mut input = values.into_iter();
             loop {
                 let Some((key, value)) = self.next_charged(&mut input, operation)? else { break };
-                self.charge_work(
-                    u64_from_index(key.len())
-                        .checked_mul(2)
-                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
-                        .checked_add(1)
-                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                    operation,
-                )?;
-                if !output.contains_key(key) {
-                    if remaining == 0 {
-                        self.reserve_map(&mut output, 1, operation)?;
-                    } else {
-                        remaining -= 1;
-                    }
+                if let Some(stored) = self.get_mut_hash_map(&mut output, key, operation)? {
+                    *stored = value;
+                    continue;
                 }
+                if remaining == 0 {
+                    self.charge_collection_items(1, operation)?;
+                } else {
+                    remaining -= 1;
+                }
+                self.reserve_hash_map_storage(&mut output, 1, operation)?;
+                self.charge_key(key, 1, operation)?;
                 output.insert(key, value);
             }
             Ok::<(), CodecError>(())

@@ -365,6 +365,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 | "try_reserve_retained_text"
                 | "reserve_set"
                 | "reserve_map"
+                | "reserve_hash_map_storage"
+                | "reserve_hash_set_storage"
                 | "reserve_scoped_vec"
                 | "reserve_scoped_vec_limit"
                 | "reserve_temporary_vec"

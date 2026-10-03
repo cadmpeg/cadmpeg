@@ -219,3 +219,17 @@ pub fn scoped_slack(ctx: &DecodeContext, count: usize) -> Result<Vec<u8>, ()> {
     values.push(5); // finding: unproven_decode_charge
     Ok(values)
 }
+
+impl DecodeContext {
+    fn reserve_hash_set_storage<T>(&self, _values: &mut std::collections::HashSet<T>, _count: usize) -> Result<(), ()> { Ok(()) }
+    fn reserve_hash_map_storage<K, V>(&self, _values: &mut std::collections::HashMap<K, V>, _count: usize) -> Result<(), ()> { Ok(()) }
+}
+
+pub fn hash_storage_only(ctx: &DecodeContext, set: &mut std::collections::HashSet<u8>, map: &mut std::collections::HashMap<u8, u8>, other: &mut std::collections::HashSet<u8>) -> Result<(), ()> {
+    ctx.reserve_hash_set_storage(set, 1)?;
+    set.insert(1);
+    ctx.reserve_hash_map_storage(map, 1)?;
+    map.insert(1, 2);
+    other.insert(1); // finding: unproven_decode_charge
+    Ok(())
+}

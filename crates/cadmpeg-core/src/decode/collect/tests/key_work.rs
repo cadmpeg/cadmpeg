@@ -70,3 +70,24 @@ fn rehash_charges_stored_visits_and_key_bytes() {
     // Three measuring visits, three rehash visits and six stored key bytes.
     assert_eq!(limit.used, 12);
 }
+
+#[test]
+fn scoped_borrowed_keys_charge_lookup_and_preserve_prepaid_slots() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let (set, set_storage) = ctx.collect_scoped_string_set(2, ["long", "long", "other"], "set").expect("set");
+    assert_eq!(set.len(), 2);
+    let (map, map_storage) = ctx.collect_scoped_string_map(2, [("long", 1), ("long", 2), ("other", 3)], "map").expect("map");
+    assert_eq!(map["long"], 2);
+    assert_eq!(map.len(), 2);
+    let CodecError::ResourceLimit(limit) = ctx.charge_collection_items(u64::MAX, "probe").expect_err("probe") else { panic!("resource refusal") };
+    // Two prepaid set slots and two prepaid map slots; duplicate keys add no slots.
+    assert_eq!(limit.used, 4);
+    drop((set_storage, map_storage));
+
+    let refusal_ctx = operation_context(&arena, ResourceDimension::WorkUnits, 1);
+    let CodecError::ResourceLimit(first) = refusal_ctx.collect_scoped_string_set(1, ["long"], "refuse set").expect_err("key work") else { panic!("resource refusal") };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    let CodecError::ResourceLimit(repeated) = refusal_ctx.collect_scoped_string_map(1, [("long", 1)], "refuse map").expect_err("fused refusal") else { panic!("resource refusal") };
+    assert_eq!(first, repeated);
+}
