@@ -309,12 +309,12 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     })
     .is_empty());
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.token == "-1"
+        tag.token.as_str() == "-1"
             && tag.design_references == [511]
             && matches!(tag.target, AttributeTarget::Edge(_))
     }));
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.token == "42"
+        tag.token.as_str() == "42"
             && tag.design_references.is_empty()
             && matches!(tag.target, AttributeTarget::Face(_))
     }));

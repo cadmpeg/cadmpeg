@@ -1704,7 +1704,7 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
 
     assert!(matches!(*entities[4].geometry.definition(),
         SketchGeometryDefinition::Native { ref native_kind }
-            if native_kind == "sldprt:marker-geometry:2"
+            if native_kind.as_str() == "sldprt:marker-geometry:2"
     ));
 }
 
@@ -1794,7 +1794,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     resolve_connected_arc_test(&mut ambiguous_entities, 1.0e-9);
     assert!(matches!(*ambiguous_entities[7].geometry.definition(),
         SketchGeometryDefinition::Native { ref native_kind }
-            if native_kind == "sldprt:marker-geometry:2"
+            if native_kind.as_str() == "sldprt:marker-geometry:2"
     ));
 
     resolve_connected_arc_test(&mut entities, 1.0e-9);

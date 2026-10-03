@@ -72,7 +72,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     let radius = (*radius).into();
 
                     parameters.retain(|name, _| {
-                        name != "Radius"
+                        name.as_str() != "Radius"
                             && !indexed_name(name.as_str(), "Radius")
                             && !indexed_name(name.as_str(), "Position")
                     });
@@ -103,7 +103,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 RadiusSpec::Variable { points } => {
                     parameters.retain(|name, _| {
-                        name != "Radius"
+                        name.as_str() != "Radius"
                             && !indexed_name(name.as_str(), "Radius")
                             && !indexed_name(name.as_str(), "Position")
                     });

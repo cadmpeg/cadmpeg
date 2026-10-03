@@ -222,14 +222,14 @@ fn section_solver_skamp_identity_and_native_state_preserve_source_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:skamp:1"
+        } if native_kind.as_str() == "creo:skamp:1"
     ));
     assert!(matches!(
         constraints[4].0.definition.kind(),
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:skamp:0"
+        } if native_kind.as_str() == "creo:skamp:0"
     ));
     let mut center_coincidence = definition.clone();
     let center_items = vec![

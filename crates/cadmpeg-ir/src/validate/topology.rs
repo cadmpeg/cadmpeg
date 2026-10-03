@@ -3359,7 +3359,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 !state
                                     .vertices()
                                     .iter()
-                                    .any(|id| id == vertex.local_id.as_str())
+                                    .any(|id| id.as_str() == vertex.local_id.as_str())
                             })
                     {
                         feature_geometry_error(
@@ -3433,7 +3433,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             || result_topologies_by_feature
                                 .get(edge.feature.as_str())
                                 .is_some_and(|state| {
-                                    !state.edges().iter().any(|id| id == edge.local_id.as_str())
+                                    !state.edges().iter().any(|id| id.as_str() == edge.local_id.as_str())
                                 })
                     }) {
                         feature_geometry_error(
@@ -3488,7 +3488,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             || result_topologies_by_feature
                                 .get(face.feature.as_str())
                                 .is_some_and(|state| {
-                                    !state.faces().iter().any(|id| id == face.local_id.as_str())
+                                    !state.faces().iter().any(|id| id.as_str() == face.local_id.as_str())
                                 })
                     }) {
                         feature_geometry_error(
@@ -3569,7 +3569,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             || result_topologies_by_feature
                                 .get(body.feature.as_str())
                                 .is_some_and(|state| {
-                                    !state.bodies().iter().any(|id| id == body.local_id.as_str())
+                                    !state.bodies().iter().any(|id| id.as_str() == body.local_id.as_str())
                                 })
                     }) {
                         feature_geometry_error(

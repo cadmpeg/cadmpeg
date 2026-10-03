@@ -1099,7 +1099,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     else {
         panic!("Hole support face remains unresolved");
     };
-    assert_eq!(native, scope_id);
+    assert_eq!(native.as_str(), scope_id);
     assert_eq!(
         state,
         &crate::ids::feature_input_topology_id(&feature_id, 1)

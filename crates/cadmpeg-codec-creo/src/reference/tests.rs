@@ -572,7 +572,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:arc_z#45")
         .expect("canonically identified arc_z");
     assert_eq!(
-        circle.source_object.as_ref().unwrap().object_id,
+        circle.source_object.as_ref().unwrap().object_id.as_str(),
         "MdlRefInfo:arc_z:45"
     );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_circles"][0];
@@ -621,7 +621,7 @@ fn decode_retains_line3d_original_length() {
         .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:line3d#35")
         .expect("canonically identified line3d");
     assert_eq!(
-        curve.source_object.as_ref().unwrap().object_id,
+        curve.source_object.as_ref().unwrap().object_id.as_str(),
         "MdlRefInfo:line3d:35"
     );
 }
@@ -695,7 +695,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:conic#43")
         .expect("canonically identified conic");
     assert_eq!(
-        ellipse.source_object.as_ref().unwrap().object_id,
+        ellipse.source_object.as_ref().unwrap().object_id.as_str(),
         "MdlRefInfo:conic:43"
     );
     assert!(result.report().losses.iter().any(|loss| {

@@ -696,7 +696,7 @@ pub(super) fn resolve_slot_marker_arcs(
         matches!((
             entities[**index].geometry).definition(),
             SketchGeometryDefinition::Native { ref native_kind }
-                if native_kind == "sldprt:marker-geometry:2"
+                if native_kind.as_str() == "sldprt:marker-geometry:2"
         )
     });
     let mut resolved_arcs = cycle_entities.iter().filter(|index| {
@@ -834,7 +834,7 @@ fn closed_cycle_marker_arc_geometry(
     if !matches!((
         target.geometry).definition(),
         SketchGeometryDefinition::Native { ref native_kind }
-            if native_kind == "sldprt:marker-geometry:2"
+            if native_kind.as_str() == "sldprt:marker-geometry:2"
     ) || target.construction
         || target.endpoint_refs.len() != 2
     {
@@ -1011,7 +1011,7 @@ pub(super) fn resolve_connected_marker_arcs(
         if !matches!((
             entity.geometry).definition(),
             SketchGeometryDefinition::Native { ref native_kind }
-                if native_kind == "sldprt:marker-geometry:2"
+                if native_kind.as_str() == "sldprt:marker-geometry:2"
         ) {
             continue;
         }
@@ -1115,7 +1115,7 @@ pub(super) fn resolve_connected_marker_arcs(
         if entity.endpoint_refs.len() == 2
             && matches!((entity.geometry).definition(),
                 SketchGeometryDefinition::Native { ref native_kind }
-                    if native_kind == "sldprt:marker-geometry:2")
+                    if native_kind.as_str() == "sldprt:marker-geometry:2")
         {
             ctx.reserve_vec(&mut arcs, 1, "collect SLDPRT connected native arcs")?;
             arcs.push(index);

@@ -269,7 +269,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:skamp:1"
+        } if native_kind.as_str() == "creo:skamp:1"
     ));
     let mut duplicate_entity = definition.clone();
     let mut duplicate_line = duplicate_entity
@@ -318,7 +318,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:skamp:1"
+        } if native_kind.as_str() == "creo:skamp:1"
     ));
     let opaque_segment = crate::feature::definitions::FeatureOpaqueSegment {
         kind: 25,

@@ -6313,12 +6313,12 @@ fn attach_sketch_graph(
         for (source_offset, entity) in &entities {
             let tag = match entity.geometry.definition() {
                 SketchGeometryDefinition::Native { native_kind }
-                    if native_kind == "nx-coordinate-pair" =>
+                    if native_kind.as_str() == "nx-coordinate-pair" =>
                 {
                     "SKETCH_NATIVE_COORDINATE_PAIR"
                 }
                 SketchGeometryDefinition::Native { native_kind }
-                    if native_kind == "nx-fixed-point" =>
+                    if native_kind.as_str() == "nx-fixed-point" =>
                 {
                     "SKETCH_NATIVE_FIXED_POINT"
                 }
@@ -6496,7 +6496,7 @@ fn attach_sketch_graph(
                 annotations.exactness_for_decode(ctx, entity.id().as_str(), Exactness::Derived)?;
             }
             SketchGeometryDefinition::Native { native_kind } => {
-                let tag = if native_kind == "nx-fixed-point" {
+                let tag = if native_kind.as_str() == "nx-fixed-point" {
                     "SKETCH_NATIVE_FIXED_POINT"
                 } else {
                     "SKETCH_NATIVE"

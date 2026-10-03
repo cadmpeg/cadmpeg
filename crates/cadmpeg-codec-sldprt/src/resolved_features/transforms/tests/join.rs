@@ -209,7 +209,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert!(matches!(
         typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &nested_horizontal, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { ref native_kind, .. })
-            if native_kind == "sldprt:marker-relation:25"
+            if native_kind.as_str() == "sldprt:marker-relation:25"
     ));
     let mut nested_native = nested_reference.clone();
     nested_native.reclassify(SketchInputKind::from_native_code(28));

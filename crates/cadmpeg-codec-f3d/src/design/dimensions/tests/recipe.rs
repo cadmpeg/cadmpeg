@@ -591,7 +591,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: Some(actual_parameter),
                 operands,
                 ..
-            } if native_kind == "Linear Dimension-4"
+            } if native_kind.as_str() == "Linear Dimension-4"
             && entities.is_empty()
             && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == companion.id()
@@ -600,8 +600,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 field: Some(cadmpeg_ir::sketches::NativeOperandField { name: field, role: None }),
                 object_index: Some(22),
                 native_ref: Some(operand_ref),
-            }] if native_kind == "dimension_companion"
-                && field == "companion_payload"
+            }] if native_kind.as_str() == "dimension_companion"
+                && field.as_str() == "companion_payload"
                 && operand_ref == companion.id())
     )));
 

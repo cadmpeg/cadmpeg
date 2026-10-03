@@ -1030,11 +1030,11 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     };
     assert!(matches!(
         first_law.as_ref(),
-        LawExpression::Text { value } if value == "0.008726867790758789*X"
+        LawExpression::Text { value } if value.as_str() == "0.008726867790758789*X"
     ));
     assert!(matches!(
         second_law.as_ref(),
-        LawExpression::Text { value } if value == "VEC(1,1,1)"
+        LawExpression::Text { value } if value.as_str() == "VEC(1,1,1)"
     ));
 
     let (mut source_less, _, _) = decoded.into_parts();
@@ -1071,11 +1071,11 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     };
     assert!(matches!(
         first_law.as_ref(),
-        LawExpression::Text { value } if value == "0.008726867790758789*X"
+        LawExpression::Text { value } if value.as_str() == "0.008726867790758789*X"
     ));
     assert!(matches!(
         second_law.as_ref(),
-        LawExpression::Text { value } if value == "VEC(1,1,1)"
+        LawExpression::Text { value } if value.as_str() == "VEC(1,1,1)"
     ));
 }
 
@@ -1114,11 +1114,11 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     };
     assert!(matches!(
         first_law.as_ref(),
-        LawExpression::Text { value } if value == "0.008726867790758789*X"
+        LawExpression::Text { value } if value.as_str() == "0.008726867790758789*X"
     ));
     assert!(matches!(
         second_law.as_ref(),
-        LawExpression::Text { value } if value == "VEC(1,1,1)"
+        LawExpression::Text { value } if value.as_str() == "VEC(1,1,1)"
     ));
     assert!(
         matches!(formula, cadmpeg_ir::geometry::LawFormula::Named { name, .. }
@@ -1160,8 +1160,8 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
             first_law: ref first,
             second_law: ref second,
             ..
-        } if matches!(first.as_ref(), LawExpression::Text { value } if value == "0.008726867790758789*X")
-            && matches!(second.as_ref(), LawExpression::Text { value } if value == "VEC(1,1,1)")
+        } if matches!(first.as_ref(), LawExpression::Text { value } if value.as_str() == "0.008726867790758789*X")
+            && matches!(second.as_ref(), LawExpression::Text { value } if value.as_str() == "VEC(1,1,1)")
     ));
 }
 
@@ -1207,11 +1207,11 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     };
     assert!(matches!(
         first_law.as_ref(),
-        LawExpression::Text { value } if value == "0.008726867790758789*X"
+        LawExpression::Text { value } if value.as_str() == "0.008726867790758789*X"
     ));
     assert!(matches!(
         second_law.as_ref(),
-        LawExpression::Text { value } if value == "VEC(1,1,1)"
+        LawExpression::Text { value } if value.as_str() == "VEC(1,1,1)"
     ));
 
     let (mut source_less, _, _) = decoded.into_parts();

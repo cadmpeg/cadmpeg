@@ -913,7 +913,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         ))
         .expect("service profile admits the result topology")
         .expect("complete result topology")
-        .faces(),
+        .faces().iter().map(|value| value.as_str()).collect::<Vec<_>>(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
@@ -926,7 +926,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         ))
         .expect("service profile admits the result topology")
         .expect("complete result topology")
-        .edges(),
+        .edges().iter().map(|value| value.as_str()).collect::<Vec<_>>(),
         vec!["curve#77"]
     );
 
