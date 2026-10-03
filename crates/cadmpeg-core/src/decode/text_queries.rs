@@ -1,9 +1,81 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged borrowed text queries and ASCII case conversion.
-use super::{u64_from_index, DecodeContext};
+use super::{u64_from_index, DecodeContext, ScopedReservation};
+
+/// One live admission for a standard Unicode case conversion of these bytes.
+struct UnicodeCaseAdmission<'ctx, 'text> {
+    text: &'text str,
+    _workspace: ScopedReservation<'ctx>,
+}
 use crate::CodecError;
 
 impl DecodeContext<'_> {
+    /// Admits contextual scans, geometric text growth and temporary relocation storage.
+    fn unicode_case_admission<'ctx, 'text>(&'ctx self, text: &'text str, operation: &'static str) -> Result<UnicodeCaseAdmission<'ctx, 'text>, CodecError> {
+        let n = u64_from_index(text.len());
+        // Each scalar maps to at most three four-byte scalars. Geometric growth
+        // has capacity below twice that output, with an eight-byte minimum.
+        let retained = self.cost_sum(self.cost_product(n, 24, operation)?, 8, operation)?;
+        // During growth, old and new allocations can coexist.
+        let temporary = self.cost_sum(self.cost_product(n, 36, operation)?, 16, operation)?;
+        // Each contextual sigma can scan both surrounding input halves.
+        let scans = self.cost_product(n, self.cost_sum(n, 1, operation)?, operation)?;
+        let conversion = self.cost_sum(self.cost_product(n, 48, operation)?, 16, operation)?;
+        self.charge_work(self.cost_sum(scans, conversion, operation)?, operation)?;
+        self.charge_retained(retained, operation)?;
+        let workspace = self.reserve_scoped(temporary, operation)?;
+        Ok(UnicodeCaseAdmission { text, _workspace: workspace })
+    }
+
+    /// Converts Unicode case after admitting input scans and bounded result storage.
+    /// Standard lowercase preserves context-dependent Greek final sigma.
+    pub fn to_lowercase(&self, text: &str, operation: &'static str) -> Result<String, CodecError> {
+        let admission = self.unicode_case_admission(text, operation)?;
+        Ok(admission.text.to_lowercase())
+    }
+
+    /// Converts Unicode case after admitting input scans and bounded result storage.
+    pub fn to_uppercase(&self, text: &str, operation: &'static str) -> Result<String, CodecError> {
+        let admission = self.unicode_case_admission(text, operation)?;
+        Ok(admission.text.to_uppercase())
+    }
+
+    /// Replaces non-overlapping substrings through admitted searches and appends.
+    pub fn replace_text(&self, text: &str, pattern: &str, replacement: &str, operation: &'static str) -> Result<String, CodecError> {
+        let mut output = String::new();
+        if pattern.is_empty() {
+            self.append_retained(&mut output, replacement, operation)?;
+            for character in self.admit_iter(text, operation)? {
+                let mut buffer = [0; 4];
+                self.append_retained(&mut output, character.encode_utf8(&mut buffer), operation)?;
+                self.append_retained(&mut output, replacement, operation)?;
+            }
+            return Ok(output);
+        }
+        let mut rest = text;
+        loop {
+            self.charge_work(1, operation)?;
+            let Some(index) = self.find_text(rest, pattern, operation)? else { break };
+            self.append_retained(&mut output, &rest[..index], operation)?;
+            self.append_retained(&mut output, replacement, operation)?;
+            rest = &rest[index + pattern.len()..];
+        }
+        self.append_retained(&mut output, rest, operation)?;
+        Ok(output)
+    }
+
+    /// Builds an admitted replacement before changing the original UTF-8 text.
+    /// Invalid byte ranges return a domain error and leave the input unchanged.
+    pub fn replace_text_range(&self, text: &mut String, range: std::ops::Range<usize>, replacement: &str, operation: &'static str) -> Result<(), CodecError> {
+        if text.get(range.clone()).is_none() { return Err(CodecError::malformed("text replacement range is not on UTF-8 boundaries")); }
+        let mut output = String::new();
+        self.append_retained(&mut output, &text[..range.start], operation)?;
+        self.append_retained(&mut output, replacement, operation)?;
+        self.append_retained(&mut output, &text[range.end..], operation)?;
+        *text = output;
+        Ok(())
+    }
+
     /// Finds a UTF-8 substring after admitting every candidate comparison.
     pub fn find_text(&self, text: &str, pattern: &str, operation: &'static str) -> Result<Option<usize>, CodecError> {
         let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
@@ -137,6 +209,56 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::CodecError;
+    #[test]
+    fn unicode_case_preserves_context_and_multiscalar_expansions() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        for text in ["", "ABC", "İßﬃ", "ΟΣ", "ΟΣΑ", "Ο\u{301}Σ\u{301}", "Σ", "农历新年"] {
+            assert_eq!(ctx.to_lowercase(text, "lowercase").unwrap(), text.to_lowercase());
+            assert_eq!(ctx.to_uppercase(text, "uppercase").unwrap(), text.to_uppercase());
+        }
+    }
+
+    #[test]
+    fn unicode_case_refusal_precedes_conversion_and_preserves_original_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One byte: n*(n+1) scan bound plus 48*n+16 conversion and relocation bytes.
+        policy.limits.max_work_units = 66;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(ctx.to_lowercase("A", "case").unwrap(), "a");
+        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(first.used, 66);
+        let CodecError::ResourceLimit(repeated) = ctx.to_uppercase("a", "later").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+        policy.limits.max_work_units = 65;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(ctx.to_lowercase("A", "case"), Err(CodecError::ResourceLimit(_))));
+        policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 31;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(ctx.to_uppercase("a", "storage"), Err(CodecError::ResourceLimit(_))));
+    }
+
+    #[test]
+    fn charged_text_replacement_preserves_empty_patterns_and_utf8_ranges() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        for (text, pattern, replacement) in [("éλé", "é", "Σ"), ("éλ", "", "-"), ("", "", "x"), ("aaaa", "aa", "b"), ("abc", "x", "")] {
+            assert_eq!(ctx.replace_text(text, pattern, replacement, "replace").unwrap(), text.replace(pattern, replacement));
+        }
+        let mut text = String::from("éλé");
+        ctx.replace_text_range(&mut text, 2..4, "abc", "range").unwrap();
+        assert_eq!(text, "éabcé");
+        assert!(ctx.replace_text_range(&mut text, 1..2, "x", "invalid").is_err());
+        assert_eq!(text, "éabcé");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(ctx.replace_text_range(&mut text, 2..5, "x", "refusal"), Err(CodecError::ResourceLimit(_))));
+        assert_eq!(text, "éabcé");
+    }
+
     #[test]
     fn borrowed_text_queries_preserve_unicode_boundaries_and_empty_patterns() {
         let arena = DecodeArena::new();
