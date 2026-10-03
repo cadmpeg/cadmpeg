@@ -55,6 +55,12 @@ impl DecodeContext<'_> {
         self.charge_key(key, 1, operation)?;
         Ok(values.contains(key))
     }
+    /// Admits key work before borrowing a hash set's stored value.
+    pub fn get_hash_set<'values, K, Q, S>(&self, values: &'values HashSet<K, S>, key: &Q, operation: &'static str) -> Result<Option<&'values K>, CodecError>
+    where K: Borrow<Q> + Eq + Hash, Q: DecodeCost + Eq + Hash + ?Sized, S: BuildHasher {
+        self.charge_key(key, 1, operation)?;
+        Ok(values.get(key))
+    }
     /// Admits key work before HashSet::remove.
     pub fn remove_hash_set<'values, K, Q, S>(&self, values: &'values mut HashSet<K, S>, key: &Q, operation: &'static str) -> Result<bool, CodecError>
     where K: Borrow<Q> + Eq + Hash, Q: DecodeCost + Eq + Hash + ?Sized, S: BuildHasher {
@@ -90,6 +96,20 @@ impl DecodeContext<'_> {
     where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
         self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
         Ok(values.contains(key))
+    }
+    /// Admits key work before borrowing a tree set's stored value.
+    pub fn get_btree_set<'values, K, Q>(&self, values: &'values BTreeSet<K>, key: &Q, operation: &'static str) -> Result<Option<&'values K>, CodecError>
+    where K: Borrow<Q> + Ord, Q: DecodeCost + Ord + ?Sized {
+        self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
+        Ok(values.get(key))
+    }
+    /// Hashes the complete value after admitting its bytes and child traversal.
+    pub fn hash_value<T: DecodeCost + Hash + ?Sized>(&self, value: &T, operation: &'static str) -> Result<u64, CodecError> {
+        use std::hash::Hasher;
+        self.charge_key(value, 1, operation)?;
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hash);
+        Ok(hash.finish())
     }
     /// Admits key work before BTreeSet::remove.
     pub fn remove_btree_set<'values, K, Q>(&self, values: &'values mut BTreeSet<K>, key: &Q, operation: &'static str) -> Result<bool, CodecError>
