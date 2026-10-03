@@ -245,7 +245,9 @@ pub(crate) fn reverse_pcurve_geometry(
             note_refusal(
                 ctx,
                 match KnotVector::new(ctx, reversed_knots)? {
-                    Ok(knots) => PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?,
+                    Ok(knots) => {
+                        PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
+                    }
                     Err(error) => Err(error),
                 },
                 refusal,
@@ -389,12 +391,7 @@ pub(crate) fn reverse_nurbs_curve(
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };
-    Ok(NurbsCurve::new(ctx, 
-        curve.degree(),
-        knots,
-        poles,
-        curve.periodic(),
-    )?)
+    NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())
 }
 
 /// State one trim endpoint inside the carrier domain, or refuse it.
@@ -901,7 +898,7 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     mod numerical_limits;
-    
+
     use cadmpeg_ir::geometry::{
         nurbs::{NurbsCurve, NurbsSurface},
         pcurve::PcurveGeometry,
@@ -1024,13 +1021,15 @@ mod tests {
     #[test]
     fn nurbs_refusal_note_refuses_retained_and_collection_limits() {
         let short_weight_lane = || {
-            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 Some(vec![1.0]),
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
         };
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
             super::note_refusal(
@@ -1072,13 +1071,15 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap(),
         ));
 
@@ -1189,8 +1190,18 @@ mod tests {
         .expect("service profile admits range operation")
         .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
-            let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).expect("reversed evaluation");
-            let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, source_parameter).expect("source evaluation");
+            let actual = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed,
+                parameter,
+            )
+            .expect("reversed evaluation");
+            let expected = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &geometry,
+                source_parameter,
+            )
+            .expect("source evaluation");
             assert!((actual.u - expected.u).abs() < 1.0e-12);
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
@@ -1231,8 +1242,18 @@ mod tests {
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
-                let actual = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).expect("reversed endpoint");
-                let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, source_parameter).expect("source endpoint");
+                let actual = cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &reversed,
+                    parameter,
+                )
+                .expect("reversed endpoint");
+                let expected = cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &geometry,
+                    source_parameter,
+                )
+                .expect("source endpoint");
                 assert!(actual.distance(expected.get()) < 1.0e-12);
             }
         }
@@ -1243,13 +1264,15 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn reversed_nurbs_preserves_active_subrange() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap(),
         ));
         let range = [0.2, 0.8];
@@ -1265,9 +1288,18 @@ mod tests {
         .expect("service profile admits range operation")
         .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
-            let actual = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, parameter).expect("reversed NURBS point");
-            let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, range[0] + range[1] - parameter)
-                .expect("source NURBS point");
+            let actual = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &reversed,
+                parameter,
+            )
+            .expect("reversed NURBS point");
+            let expected = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &geometry,
+                range[0] + range[1] - parameter,
+            )
+            .expect("source NURBS point");
             assert!(actual.distance(expected.get()) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
@@ -1329,7 +1361,8 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
-        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![0.0, 0.0, tiny, tiny],
@@ -1345,9 +1378,11 @@ mod tests {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
-        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             tiny * 0.5,
@@ -1366,7 +1401,8 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
-            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1382,10 +1418,12 @@ mod tests {
                     weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
                 ),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap()
         };
-        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface(
                 vec![
                     Point3::new(f64::MAX, 0.0, 0.0),
@@ -1750,13 +1788,15 @@ mod tests {
         );
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-f64::MAX, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
         assert!(
@@ -1776,13 +1816,15 @@ mod tests {
     fn two_refused_records_state_two_notes_each_naming_its_record() {
         let mut refusal = LaneRefusals::new();
         let short_weight_lane = || {
-            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 Some(vec![1.0]),
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
         };
         let first = crate::test_support::with_service_context(|ctx| {
             super::note_refusal(

@@ -200,7 +200,13 @@ fn ordered_selected_region_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap();
+    let region = cadmpeg_ir::features::SketchProfileRegion::loops(
+        0,
+        Vec::new(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("fixture loop-region admission")
+    .unwrap();
     assert!(matches!(
         super::super::ordered_unique_profile_selections([
             Some(super::super::ResolvedProfileSelection::Regions(vec![region])),
@@ -218,12 +224,26 @@ fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained
         ProfileRef::Planar(
             PlanarProfileRef::sketch_regions(
                 sketch.clone(),
-                vec![SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap()],
+                vec![SketchProfileRegion::loops(
+                    0,
+                    vec![1],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("fixture loop-region admission")
+                .unwrap()],
             )
             .unwrap(),
         )
     } else {
-        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0], &cadmpeg_test_support::service_decode_context(),).expect("profile membership admission").unwrap())
+        ProfileRef::Planar(
+            PlanarProfileRef::sketch_profiles(
+                sketch.clone(),
+                vec![0],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("profile membership admission")
+            .unwrap(),
+        )
     };
     for limit in 0..16 {
         let arena = DecodeArena::new();
@@ -363,7 +383,13 @@ fn assert_boundary_region_refusal(operation: &'static str) {
 
     let member = historical_point_member();
     let sketch = empty_sketch();
-    let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap();
+    let region = cadmpeg_ir::features::SketchProfileRegion::loops(
+        0,
+        vec![1],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("fixture loop-region admission")
+    .unwrap();
     let selections = [
         Some(ResolvedProfileSelection::Regions(vec![region])),
         Some(ResolvedProfileSelection::Loops(vec![0])),
@@ -796,7 +822,13 @@ fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let selections = if region {
-            let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap();
+            let region = cadmpeg_ir::features::SketchProfileRegion::loops(
+                0,
+                vec![1],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("fixture loop-region admission")
+            .unwrap();
             vec![
                 Some(ResolvedProfileSelection::Regions(vec![region])),
                 Some(ResolvedProfileSelection::Loops(vec![0])),

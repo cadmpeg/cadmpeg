@@ -889,7 +889,9 @@ pub(super) fn emit_topology(
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
                         })?;
-                    let carrier_id = fields.curve_xmt.and_then(|target| pcurves.get(&u32::from(target)))?;
+                    let carrier_id = fields
+                        .curve_xmt
+                        .and_then(|target| pcurves.get(&u32::from(target)))?;
                     let use_range = fields
                         .curve_xmt
                         .and_then(|target| trim_ranges.get(&u32::from(target)))
@@ -897,9 +899,17 @@ pub(super) fn emit_topology(
                         .and_then(ordered_parameter_range);
                     Some((edge, support, carrier_id, use_range))
                 })();
-                let Some((edge, support, carrier_id, use_range)) = candidate else { return Ok(None); };
-                let Some(carrier) = index.pcurves(carrier_id.as_str(), ctx)? else { return Ok(None); };
-                let parameter_range = use_range.or(carrier.parameter_range().map(cadmpeg_ir::units::FiniteVector::get)).or_else(|| pcurve_parameter_range(&carrier.geometry));
+                let Some((edge, support, carrier_id, use_range)) = candidate else {
+                    return Ok(None);
+                };
+                let Some(carrier) = index.pcurves(carrier_id.as_str(), ctx)? else {
+                    return Ok(None);
+                };
+                let parameter_range = use_range
+                    .or(carrier
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get))
+                    .or_else(|| pcurve_parameter_range(&carrier.geometry));
                 let Some(endpoints) = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
                     edge,
@@ -914,7 +924,10 @@ pub(super) fn emit_topology(
                 else {
                     return Ok(None);
                 };
-                let Some(curve) = index.edges(edge.as_str(), ctx)?.and_then(|edge| edge.curve()) else {
+                let Some(curve) = index
+                    .edges(edge.as_str(), ctx)?
+                    .and_then(|edge| edge.curve())
+                else {
                     return Ok(None);
                 };
                 let Some(parameter_range) = parameter_range else {
@@ -1694,7 +1707,12 @@ impl CurvePointCache {
         if let Some(point) = self.entries.get(curve).and_then(|values| values.get(&bits)) {
             return Ok(*point);
         }
-        let point = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::curve_point(admission, geometry, parameter)))?;
+        let point = finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::curve_point(admission, geometry, parameter)
+                }),
+        )?;
         if self.len < MAX_CURVE_POINT_CACHE_ENTRIES {
             if !self.entries.contains_key(curve) {
                 ctx.insert_btree_map(
@@ -2413,13 +2431,15 @@ mod tests {
             let curve =
                 CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("valid test curve"),
             ));
             let geometry_budget = GeometryWorkBudget::from_context(

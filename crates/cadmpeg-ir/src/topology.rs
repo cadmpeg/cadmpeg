@@ -738,18 +738,30 @@ impl TryFrom<LoopRingWire> for LoopRing {
     type Error = LoopRingAdmissionError;
 
     fn try_from(wire: LoopRingWire) -> Result<Self, Self::Error> {
-        if wire.coedges.is_empty() { return Err(LoopRingError("loop ring must contain a coedge").into()); }
+        if wire.coedges.is_empty() {
+            return Err(LoopRingError("loop ring must contain a coedge").into());
+        }
         let mut members = std::collections::HashSet::new();
-        members.try_reserve(wire.coedges.len()).map_err(|_| LoopRingError("loop ring member allocation failed"))?;
+        members
+            .try_reserve(wire.coedges.len())
+            .map_err(|_| LoopRingError("loop ring member allocation failed"))?;
         for coedge in &wire.coedges {
-            if !members.insert(coedge) { return Err(LoopRingError("loop ring coedges must be distinct").into()); }
+            if !members.insert(coedge) {
+                return Err(LoopRingError("loop ring coedges must be distinct").into());
+            }
         }
         for vertex_use in &wire.vertex_uses {
             if !members.contains(&vertex_use.after) {
-                return Err(LoopRingError("loop ring vertex-use after must name a coedge in the ring").into());
+                return Err(LoopRingError(
+                    "loop ring vertex-use after must name a coedge in the ring",
+                )
+                .into());
             }
         }
-        Ok(Self { coedges: wire.coedges, vertex_uses: wire.vertex_uses })
+        Ok(Self {
+            coedges: wire.coedges,
+            vertex_uses: wire.vertex_uses,
+        })
     }
 }
 
@@ -812,22 +824,28 @@ impl LoopRing {
         // Drop the temporary vector before its reservation on every return path.
         let (storage, mut members) = {
             let mut values = Vec::new();
-            let reservation = ctx.reserve_temporary_vec(&mut values, coedges.len(), "loop ring members")?;
+            let reservation =
+                ctx.reserve_temporary_vec(&mut values, coedges.len(), "loop ring members")?;
             (reservation, values)
         };
         for coedge in &coedges {
             ctx.charge_work_limit(1, "loop ring members")?;
-            let position = match Self::coedge_position(ctx, &members, coedge, "loop ring members")? {
-                Ok(_) => return Ok(Err(LoopRingError("loop ring coedges must be distinct"))),
-                Err(position) => position,
+            let Err(position) = Self::coedge_position(ctx, &members, coedge, "loop ring members")?
+            else {
+                return Ok(Err(LoopRingError("loop ring coedges must be distinct")));
             };
-            ctx.charge_work_limit(u64_from_index(members.len() - position), "loop ring members")?;
+            ctx.charge_work_limit(
+                u64_from_index(members.len() - position),
+                "loop ring members",
+            )?;
             ctx.charge_work_limit(1, "loop ring members")?;
             members.insert(position, coedge);
         }
         for vertex_use in &vertex_uses {
             ctx.charge_work_limit(1, "loop ring anchors")?;
-            if Self::coedge_position(ctx, &members, &vertex_use.after, "loop ring anchors")?.is_err() {
+            if Self::coedge_position(ctx, &members, &vertex_use.after, "loop ring anchors")?
+                .is_err()
+            {
                 return Ok(Err(LoopRingError(
                     "loop ring vertex-use after must name a coedge in the ring",
                 )));
@@ -888,7 +906,9 @@ impl Loop {
         if !matches!(&self.boundary, LoopBoundary::Ring(_)) {
             return Err(LoopRingError("cannot replace the ring of a vertex-only loop").into());
         }
-        self.boundary = LoopBoundary::Ring(LoopRing::new(ctx, coedges, vertex_uses)?.map_err(LoopRingAdmissionError::from)?);
+        self.boundary = LoopBoundary::Ring(
+            LoopRing::new(ctx, coedges, vertex_uses)?.map_err(LoopRingAdmissionError::from)?,
+        );
         Ok(())
     }
 
@@ -1140,7 +1160,10 @@ impl crate::geometry::nurbs::KnotVector {
         ctx: &'ctx DecodeContext<'_>,
         first: usize,
         last: usize,
-    ) -> Result<Option<crate::geometry::nurbs::scoped::ScopedRows<'ctx, IncreasingParameterInterval>>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Result<
+        Option<crate::geometry::nurbs::scoped::ScopedRows<'ctx, IncreasingParameterInterval>>,
+        cadmpeg_core::decode::ResourceLimit,
+    > {
         let Some(knots) = self.get(first..=last) else {
             return Ok(None);
         };
@@ -1154,7 +1177,9 @@ impl crate::geometry::nurbs::KnotVector {
                 spans.push(IncreasingParameterInterval([pair[0], pair[1]]));
             }
         }
-        Ok(Some(crate::geometry::nurbs::scoped::ScopedRows::new(spans, storage)))
+        Ok(Some(crate::geometry::nurbs::scoped::ScopedRows::new(
+            spans, storage,
+        )))
     }
 }
 
@@ -1576,20 +1601,30 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let knots = crate::geometry::nurbs::KnotVector::new(
-            &cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0])
-            .expect("knot admission").expect("nondecreasing");
+            &cadmpeg_test_support::service_decode_context(),
+            vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0],
+        )
+        .expect("knot admission")
+        .expect("nondecreasing");
         // Five adjacent-pair visits and three increasing-interval copies.
         for cap in 0..8 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit = knots.active_spans(&ctx, 0, 5).expect_err("all span work needs admission");
+            let limit = knots
+                .active_spans(&ctx, 0, 5)
+                .expect_err("all span work needs admission");
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(limit.limit, cap);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
@@ -1598,9 +1633,13 @@ mod tests {
             }
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit = knots.active_spans(&ctx, 0, 5).expect_err("span storage admission");
+            let limit = knots
+                .active_spans(&ctx, 0, 5)
+                .expect_err("span storage admission");
             assert_eq!(limit.dimension, dimension);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 8;
@@ -1610,13 +1649,25 @@ mod tests {
         policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let output = knots.active_spans(&ctx, 0, 5).expect("exact work").expect("valid range");
-        assert_eq!(output.iter().copied().map(super::IncreasingParameterInterval::endpoints)
-            .collect::<Vec<_>>(), [[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]]);
+        let output = knots
+            .active_spans(&ctx, 0, 5)
+            .expect("exact work")
+            .expect("valid range");
+        assert_eq!(
+            output
+                .iter()
+                .copied()
+                .map(super::IncreasingParameterInterval::endpoints)
+                .collect::<Vec<_>>(),
+            [[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]]
+        );
         drop(output);
-        let reuse = ctx.reserve_scoped_limit(64, "test active spans released").expect("all bytes reusable");
+        let reuse = ctx
+            .reserve_scoped_limit(64, "test active spans released")
+            .expect("all bytes reusable");
         drop(reuse);
-        ctx.finish_session().expect("scoped output with exact slots");
+        ctx.finish_session()
+            .expect("scoped output with exact slots");
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
         policy.limits.max_retained_bytes = 0;
@@ -1624,17 +1675,28 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(knots.active_spans(&ctx, 0, 6).expect("invalid range is constant-time").is_none());
-        let empty = knots.active_spans(&ctx, 2, 3).expect("one repeated interval").expect("valid range");
+        assert!(knots
+            .active_spans(&ctx, 0, 6)
+            .expect("invalid range is constant-time")
+            .is_none());
+        let empty = knots
+            .active_spans(&ctx, 2, 3)
+            .expect("one repeated interval")
+            .expect("valid range");
         assert!(empty.is_empty());
         drop(empty);
-        ctx.finish_session().expect("empty output allocates no storage");
+        ctx.finish_session()
+            .expect("empty output allocates no storage");
     }
 
     #[test]
     fn knot_spans_read_finite_intervals_between_knots() {
-        let knots = crate::geometry::nurbs::KnotVector::new(&cadmpeg_test_support::service_decode_context(), vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0]).expect("fixture knot admission")
-            .expect("non-decreasing knots");
+        let knots = crate::geometry::nurbs::KnotVector::new(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0],
+        )
+        .expect("fixture knot admission")
+        .expect("non-decreasing knots");
         assert_eq!(
             knots.span(1, 4).map(super::ParameterInterval::endpoints),
             Some([0.0, 2.5])
@@ -1642,14 +1704,27 @@ mod tests {
         assert!(knots.span(4, 1).is_none());
         assert!(knots.span(1, 6).is_none());
         assert_eq!(
-            knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 5).unwrap().map(|spans| spans
-                .iter().copied()
-                .map(super::IncreasingParameterInterval::endpoints)
-                .collect::<Vec<_>>()),
+            knots
+                .active_spans(&cadmpeg_test_support::service_decode_context(), 0, 5)
+                .unwrap()
+                .map(|spans| spans
+                    .iter()
+                    .copied()
+                    .map(super::IncreasingParameterInterval::endpoints)
+                    .collect::<Vec<_>>()),
             Some(vec![[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]])
         );
-        assert_eq!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 2, 3).unwrap().map(|spans| spans.to_vec()), Some(Vec::new()));
-        assert!(knots.active_spans(&cadmpeg_test_support::service_decode_context(), 0, 6).unwrap().is_none());
+        assert_eq!(
+            knots
+                .active_spans(&cadmpeg_test_support::service_decode_context(), 2, 3)
+                .unwrap()
+                .map(|spans| spans.to_vec()),
+            Some(Vec::new())
+        );
+        assert!(knots
+            .active_spans(&cadmpeg_test_support::service_decode_context(), 0, 6)
+            .unwrap()
+            .is_none());
         assert_eq!(
             knots.finite_knot(4).map(crate::scalar::FiniteReal::get),
             Some(2.5)
@@ -2018,9 +2093,8 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error =
-            super::LoopRing::new(&ctx, vec![first.clone(), second.clone()], Vec::new())
-                .unwrap_err();
+        let error = super::LoopRing::new(&ctx, vec![first.clone(), second.clone()], Vec::new())
+            .unwrap_err();
         assert!(matches!(error, resource
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && resource.operation == "loop ring members"));
@@ -2028,10 +2102,9 @@ mod tests {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let ring =
-            super::LoopRing::new(&ctx, vec![first.clone(), second.clone()], Vec::new())
-                .unwrap()
-                .unwrap();
+        let ring = super::LoopRing::new(&ctx, vec![first.clone(), second.clone()], Vec::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(ring.coedges(), &[first, second]);
     }
 
@@ -2070,8 +2143,16 @@ mod tests {
             (ResourceDimension::CollectionItems, 0, "loop ring members"),
             (ResourceDimension::CollectionItems, 1, "loop ring members"),
             (ResourceDimension::WorkUnits, 0, "loop ring members"),
-            (ResourceDimension::WorkUnits, member_work, "loop ring members"),
-            (ResourceDimension::WorkUnits, member_work * 2, "loop ring anchors"),
+            (
+                ResourceDimension::WorkUnits,
+                member_work,
+                "loop ring members",
+            ),
+            (
+                ResourceDimension::WorkUnits,
+                member_work * 2,
+                "loop ring anchors",
+            ),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -2082,13 +2163,21 @@ mod tests {
                 _ => panic!("test dimension"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let limit = LoopRing::new(&ctx, vec![first.clone(), second.clone()], vec![AnchoredVertexUse {
-                vertex: super::VertexId::mint("test:model:vertex#0").unwrap(),
-                after: first.clone(), pcurves: vec![],
-            }]).unwrap_err();
+            let limit = LoopRing::new(
+                &ctx,
+                vec![first.clone(), second.clone()],
+                vec![AnchoredVertexUse {
+                    vertex: super::VertexId::mint("test:model:vertex#0").unwrap(),
+                    after: first.clone(),
+                    pcurves: vec![],
+                }],
+            )
+            .unwrap_err();
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, operation);
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
     }
 
@@ -2096,21 +2185,34 @@ mod tests {
     fn loop_ring_replacement_keeps_original_refusal_and_is_atomic() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let first = super::CoedgeId::mint("test:model:coedge#0").unwrap();
-        let ring = LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![first.clone()], vec![]).unwrap().unwrap();
+        let ring = LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![first.clone()],
+            vec![],
+        )
+        .unwrap()
+        .unwrap();
         let mut loop_ = Loop {
             id: "test:model:loop#0".try_into().unwrap(),
-            face: "test:model:face#0".try_into().unwrap(), boundary: LoopBoundary::Ring(ring),
+            face: "test:model:face#0".try_into().unwrap(),
+            boundary: LoopBoundary::Ring(ring),
         };
         let before = loop_.clone();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(super::LoopRingAdmissionError::Resource(limit)) = loop_.replace_ring(&ctx, vec![first], vec![]) else { panic!("original resource refusal"); };
+        let Err(super::LoopRingAdmissionError::Resource(limit)) =
+            loop_.replace_ring(&ctx, vec![first], vec![])
+        else {
+            panic!("original resource refusal");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "loop ring members");
         assert_eq!(loop_, before);
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 
     #[test]
@@ -2123,8 +2225,18 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let first = super::CoedgeId::mint("test:model:coedge#0").unwrap();
         let second = super::CoedgeId::mint("test:model:coedge#1").unwrap();
-        let vertex_uses = vec![AnchoredVertexUse { vertex: "test:model:vertex#0".try_into().unwrap(), after: second.clone(), pcurves: vec![] }];
-        let ring = LoopRing::new(&ctx, vec![first.clone(), second.clone()], vertex_uses.clone()).unwrap().unwrap();
+        let vertex_uses = vec![AnchoredVertexUse {
+            vertex: "test:model:vertex#0".try_into().unwrap(),
+            after: second.clone(),
+            pcurves: vec![],
+        }];
+        let ring = LoopRing::new(
+            &ctx,
+            vec![first.clone(), second.clone()],
+            vertex_uses.clone(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(ring.coedges(), &[first, second]);
         assert_eq!(ring.vertex_uses(), vertex_uses);
         drop(ctx.reserve_scoped(256, "ring index released").unwrap());
@@ -2138,17 +2250,45 @@ mod tests {
         let second = super::CoedgeId::mint("test:model:coedge#prefix").unwrap();
         let third = super::CoedgeId::mint("test:model:coedge#alpha").unwrap();
         let vertex_uses = vec![AnchoredVertexUse {
-            vertex: "test:model:vertex#0".try_into().unwrap(), after: second.clone(), pcurves: vec![],
+            vertex: "test:model:vertex#0".try_into().unwrap(),
+            after: second.clone(),
+            pcurves: vec![],
         }];
-        let ring = LoopRing::new(&ctx, vec![first.clone(), second.clone(), third.clone()], vertex_uses.clone()).unwrap().unwrap();
-        assert_eq!(ring.coedges(), &[first.clone(), second.clone(), third.clone()]);
+        let ring = LoopRing::new(
+            &ctx,
+            vec![first.clone(), second.clone(), third.clone()],
+            vertex_uses.clone(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            ring.coedges(),
+            &[first.clone(), second.clone(), third.clone()]
+        );
         assert_eq!(ring.vertex_uses(), vertex_uses);
-        assert_eq!(LoopRing::new(&ctx, vec![first, second.clone(), third, second], vec![]).unwrap().unwrap_err().to_string(), "loop ring coedges must be distinct");
+        assert_eq!(
+            LoopRing::new(&ctx, vec![first, second.clone(), third, second], vec![])
+                .unwrap()
+                .unwrap_err()
+                .to_string(),
+            "loop ring coedges must be distinct"
+        );
         let foreign = super::CoedgeId::mint("test:model:coedge#prefix-longer").unwrap();
-        let invalid = LoopRing::new(&ctx, ring.coedges().to_vec(), vec![AnchoredVertexUse {
-            vertex: "test:model:vertex#0".try_into().unwrap(), after: foreign, pcurves: vec![],
-        }]).unwrap().unwrap_err();
-        assert_eq!(invalid.to_string(), "loop ring vertex-use after must name a coedge in the ring");
+        let invalid = LoopRing::new(
+            &ctx,
+            ring.coedges().to_vec(),
+            vec![AnchoredVertexUse {
+                vertex: "test:model:vertex#0".try_into().unwrap(),
+                after: foreign,
+                pcurves: vec![],
+            }],
+        )
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(
+            invalid.to_string(),
+            "loop ring vertex-use after must name a coedge in the ring"
+        );
         ctx.finish_session().unwrap();
     }
 
@@ -2163,15 +2303,26 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let limit = LoopRing::coedge_position(&ctx, &members, &first, "loop ring comparison test").unwrap_err();
+            let limit =
+                LoopRing::coedge_position(&ctx, &members, &first, "loop ring comparison test")
+                    .unwrap_err();
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(limit.operation, "loop ring comparison test");
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert_eq!(LoopRing::coedge_position(&ctx, &members, &first, "loop ring comparison test").unwrap(), Ok(0));
+        assert_eq!(
+            LoopRing::coedge_position(&ctx, &members, &first, "loop ring comparison test").unwrap(),
+            Ok(0)
+        );
         let absent = super::CoedgeId::mint("test:model:coedge#2").unwrap();
-        assert_eq!(LoopRing::coedge_position(&ctx, &members, &absent, "loop ring comparison test").unwrap(), Err(2));
+        assert_eq!(
+            LoopRing::coedge_position(&ctx, &members, &absent, "loop ring comparison test")
+                .unwrap(),
+            Err(2)
+        );
         ctx.finish_session().unwrap();
     }
 
@@ -2234,20 +2385,34 @@ mod tests {
 
     #[test]
     fn loop_ring_rejects_empty_or_duplicate_coedges_and_foreign_anchors() {
-        assert!(LoopRing::new(&cadmpeg_test_support::service_decode_context(), Vec::new(), Vec::new()).expect("fixture ring admission").is_err());
+        assert!(LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
+            Vec::new(),
+            Vec::new()
+        )
+        .expect("fixture ring admission")
+        .is_err());
 
         let coedge: super::CoedgeId = "test:model:coedge#0".try_into().unwrap();
         let foreign: super::CoedgeId = "test:model:coedge#foreign".try_into().unwrap();
         let vertex: super::VertexId = "test:model:vertex#0".try_into().unwrap();
-        assert!(LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge.clone(), coedge.clone()], Vec::new()).expect("fixture ring admission").is_err());
-        assert!(LoopRing::new(&cadmpeg_test_support::service_decode_context(),
+        assert!(LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![coedge.clone(), coedge.clone()],
+            Vec::new()
+        )
+        .expect("fixture ring admission")
+        .is_err());
+        assert!(LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
             vec![coedge],
             vec![AnchoredVertexUse {
                 vertex,
                 after: foreign,
                 pcurves: Vec::new(),
             }],
-        ).expect("fixture ring admission")
+        )
+        .expect("fixture ring admission")
         .is_err());
     }
 
@@ -2257,13 +2422,28 @@ mod tests {
         let mut loop_ = Loop {
             id: "test:model:loop#0".try_into().unwrap(),
             face: "test:model:face#0".try_into().unwrap(),
-            boundary: LoopBoundary::Ring(LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge.clone()], Vec::new()).expect("fixture ring admission").unwrap()),
+            boundary: LoopBoundary::Ring(
+                LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    vec![coedge.clone()],
+                    Vec::new(),
+                )
+                .expect("fixture ring admission")
+                .unwrap(),
+            ),
         };
         let before = loop_.clone();
-        assert!(loop_.replace_ring(&cadmpeg_test_support::service_decode_context(), Vec::new(), Vec::new()).is_err());
+        assert!(loop_
+            .replace_ring(
+                &cadmpeg_test_support::service_decode_context(),
+                Vec::new(),
+                Vec::new()
+            )
+            .is_err());
         assert_eq!(loop_, before);
         assert!(loop_
-            .replace_ring(&cadmpeg_test_support::service_decode_context(),
+            .replace_ring(
+                &cadmpeg_test_support::service_decode_context(),
                 vec![coedge],
                 vec![AnchoredVertexUse {
                     vertex: "test:model:vertex#0".try_into().unwrap(),
@@ -2303,7 +2483,13 @@ mod tests {
             id: coedge.owner_loop.clone(),
             face: "test:model:face#0".try_into().expect("valid identity"),
             boundary: LoopBoundary::Ring(
-                super::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge.id.clone()], Vec::new()).expect("fixture ring admission").expect("valid loop ring"),
+                super::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    vec![coedge.id.clone()],
+                    Vec::new(),
+                )
+                .expect("fixture ring admission")
+                .expect("valid loop ring"),
             ),
         };
         assert_eq!(

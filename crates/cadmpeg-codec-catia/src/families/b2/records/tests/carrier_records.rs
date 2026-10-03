@@ -524,7 +524,8 @@ fn b2_nurbs_knots_refuse_collection_limit_before_materialization() {
 
 #[test]
 fn b2_nurbs_curves_refuse_collection_limit_before_retention() {
-    assert_b2_nurbs_collection_refusal(16, "catia_b2_nurbs_curves");
+    assert_b2_nurbs_collection_refusal(16, "IR NURBS paired poles");
+    assert_b2_nurbs_collection_refusal(20, "catia_b2_nurbs_curves");
 }
 
 fn assert_b2_nurbs_collection_refusal(limit: u64, operation: &'static str) {

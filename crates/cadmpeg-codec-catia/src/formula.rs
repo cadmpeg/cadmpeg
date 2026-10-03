@@ -4279,9 +4279,15 @@ mod parser_tests {
     #[test]
     fn formula_design_parameter_copy_refuses_nested_admission() {
         let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
-        parameter.dependencies.insert(&cadmpeg_test_support::service_decode_context(), 
-            ParameterId::mint("synthetic:test:id#dependency".to_string())
-                .expect("identity grammar"), "insert fixture member").expect("member insertion admission");
+        parameter
+            .dependencies
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                ParameterId::mint("synthetic:test:id#dependency".to_string())
+                    .expect("identity grammar"),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
         parameter.properties.insert(
             cadmpeg_core::nonblank_literal!("source"),
             "value".to_string(),

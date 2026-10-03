@@ -269,13 +269,15 @@ fn saved_spline_curve() -> Curve {
         id: CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
             .expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .expect("valid saved-spline curve"),
         )),
         source_object: None,

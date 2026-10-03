@@ -297,12 +297,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                                     .then_some((sketch, selected)))
                             })()?;
                             if let Some((sketch, selected)) = resolved {
-                                let profile = PlanarProfileRef::sketch_entities(
-                                    sketch,
-                                    vec![selected],
-                                    ctx,
-                                )?
-                                .map_err(CodecError::malformed)?;
+                                let profile =
+                                    PlanarProfileRef::sketch_entities(sketch, vec![selected], ctx)?
+                                        .map_err(CodecError::malformed)?;
                                 section.set_referenced_profile(profile);
                             }
                         }
@@ -657,21 +654,19 @@ pub(crate) fn bind_extrude_profile_selections(
                         )? {
                             let sketch_id = (sketch_id)
                                 .try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?;
-                            *profile = ProfileRef::Planar(
-                                match PlanarProfileRef::sketch_profiles(
-                                    sketch_id,
-                                    profiles,
-                                    resolution.ctx,
-                                )? {
-                                    Ok(profile) => profile,
-                                    Err(_) => PlanarProfileRef::Native(
-                                        (resolution.ctx).copy_retained_text(
-                                            &scope.id,
-                                            "f3d extrude profile fallback scope id",
-                                        )?,
-                                    ),
-                                },
-                            );
+                            *profile = ProfileRef::Planar(match PlanarProfileRef::sketch_profiles(
+                                sketch_id,
+                                profiles,
+                                resolution.ctx,
+                            )? {
+                                Ok(profile) => profile,
+                                Err(_) => {
+                                    PlanarProfileRef::Native((resolution.ctx).copy_retained_text(
+                                        &scope.id,
+                                        "f3d extrude profile fallback scope id",
+                                    )?)
+                                }
+                            });
                             break 'feature_edit;
                         }
                     }
@@ -1249,8 +1244,7 @@ fn copy_bound_profile(
                 let id = ctx.copy_retained_text(selection, "f3d bound spatial selection id")?;
                 ctx.push_vec(&mut ids, id, "f3d bound spatial selection")?;
             }
-            ProfileRef::spatial_sketch_selection(sketch, ids, ctx)?
-                .map_err(CodecError::malformed)
+            ProfileRef::spatial_sketch_selection(sketch, ids, ctx)?.map_err(CodecError::malformed)
         }
     }
 }
@@ -1297,8 +1291,7 @@ fn copy_bound_path(
                 let id = (curve).try_clone_for_decode(ctx, "f3d bound spatial curve id")?;
                 ctx.push_vec(&mut ids, id, "f3d bound spatial path curve")?;
             }
-            PathRef::spatial_sketch_curves(sketch, ids, ctx)?
-                .map_err(CodecError::malformed)
+            PathRef::spatial_sketch_curves(sketch, ids, ctx)?.map_err(CodecError::malformed)
         }
         _ => Err(CodecError::malformed(
             "bound path has unsupported resolved form",
@@ -1332,8 +1325,7 @@ fn copy_profile_region(
             for hole in loops.holes().iter().copied() {
                 ctx.push_vec(&mut holes, hole, "f3d merged region hole")?;
             }
-            SketchProfileRegion::loops(loops.outer(), holes, ctx)?
-                .map_err(CodecError::malformed)
+            SketchProfileRegion::loops(loops.outer(), holes, ctx)?.map_err(CodecError::malformed)
         }
         SketchProfileRegion::Trimmed {
             outer_boundary,
@@ -1485,19 +1477,16 @@ pub(super) fn resolved_extrude_profile_selection(
         resolved_profiles = Some(ResolvedProfileSelection::Loops(vec![0]));
     }
     let profile = match resolved_profiles {
-        Some(ResolvedProfileSelection::Loops(profiles)) => {
-            match PlanarProfileRef::sketch_profiles(
-                (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
-                profiles,
-                resolution.ctx,
-            )? {
-                Ok(profile) => profile,
-                Err(_) => PlanarProfileRef::Native(
-                    (resolution.ctx)
-                        .copy_retained_text(&group.id, "f3d extrude fallback group id")?,
-                ),
-            }
-        }
+        Some(ResolvedProfileSelection::Loops(profiles)) => match PlanarProfileRef::sketch_profiles(
+            (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
+            profiles,
+            resolution.ctx,
+        )? {
+            Ok(profile) => profile,
+            Err(_) => PlanarProfileRef::Native(
+                (resolution.ctx).copy_retained_text(&group.id, "f3d extrude fallback group id")?,
+            ),
+        },
         Some(ResolvedProfileSelection::Regions(regions)) => {
             match PlanarProfileRef::sketch_regions(
                 (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
@@ -2548,8 +2537,7 @@ fn region_with_boundary_selection_members(
             "f3d historical boundary region hole",
         )?;
     }
-    let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes, ctx)?.ok()
-    else {
+    let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes, ctx)?.ok() else {
         return Ok(None);
     };
     let mut selected = Vec::new();

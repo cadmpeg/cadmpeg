@@ -293,7 +293,12 @@ fn face_appearance_binding_id_preserves_identity_text() {
 fn annotation_provenance_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let stream = cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("f3d:native"), "fixture stream handle").unwrap();
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("f3d:native"),
+        "fixture stream handle",
+    )
+    .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
         .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
@@ -310,7 +315,12 @@ fn annotation_provenance_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stream = cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("f3d:native"), "fixture stream handle").unwrap();
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("f3d:native"),
+        "fixture stream handle",
+    )
+    .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let error = annotations
         .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))

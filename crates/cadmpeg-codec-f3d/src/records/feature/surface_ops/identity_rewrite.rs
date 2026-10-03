@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignPatchContinuity, DesignPipeSectionShape, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfacePatchBoundary, DesignSurfaceStitchOperation};
+use super::{
+    DesignPatchContinuity, DesignPipeSectionShape, DesignRuledSurfaceCorner,
+    DesignRuledSurfaceMethod, DesignRuledSurfaceOperation, DesignSurfaceExtendMethod,
+    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
+    DesignSurfacePatchBoundary, DesignSurfaceStitchOperation,
+};
 
 rewrite_native_scalar!(DesignPatchContinuity);
 rewrite_native_scalar!(DesignPipeSectionShape);

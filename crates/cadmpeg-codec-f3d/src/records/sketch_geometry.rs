@@ -1635,7 +1635,15 @@ impl SketchSurfaceGeometry {
                     .collect::<Result<Vec<_>, String>>()
             })
             .collect::<Result<Vec<_>, String>>()?;
-        Self::from_checked_parts(RecordAdmission::Admitted, u_degree, v_degree, u_knots, v_knots, control_points).map_err(|error| error.to_string())
+        Self::from_checked_parts(
+            RecordAdmission::Admitted,
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            control_points,
+        )
+        .map_err(|error| error.to_string())
     }
 
     pub(crate) fn from_checked_parts(
@@ -1654,10 +1662,7 @@ impl SketchSurfaceGeometry {
         let point_count = row_count
             .checked_mul(column_count)
             .ok_or("surface control grid exceeds address space")?;
-        if row_count == 0
-            || column_count == 0
-            || point_count > 100_000
-        {
+        if row_count == 0 || column_count == 0 || point_count > 100_000 {
             return Err("surface control grid must be nonempty and rectangular".into());
         }
         for row in &control_points {
@@ -1683,16 +1688,21 @@ impl SketchSurfaceGeometry {
         if u_knots.len() != expected_u_knots || v_knots.len() != expected_v_knots {
             return Err("surface knot counts disagree with degrees and grid".into());
         }
-        if !knots_nondecreasing(&u_knots, |count| admission.work(count, "f3d sketch surface knot order"))?
-            || !knots_nondecreasing(&v_knots, |count| admission.work(count, "f3d sketch surface knot order"))? {
+        if !knots_nondecreasing(&u_knots, |count| {
+            admission.work(count, "f3d sketch surface knot order")
+        })? || !knots_nondecreasing(&v_knots, |count| {
+            admission.work(count, "f3d sketch surface knot order")
+        })? {
             return Err("surface knots must be nondecreasing".into());
         }
-        let mut finite_u_knots = admission.retained_vec(u_knots.len(), "f3d sketch surface u knots")?;
+        let mut finite_u_knots =
+            admission.retained_vec(u_knots.len(), "f3d sketch surface u knots")?;
         for value in u_knots {
             admission.work(1, "f3d sketch surface knot finiteness")?;
             finite_u_knots.push(FiniteReal::new(value).ok_or("surface u knot is not finite")?);
         }
-        let mut finite_v_knots = admission.retained_vec(v_knots.len(), "f3d sketch surface v knots")?;
+        let mut finite_v_knots =
+            admission.retained_vec(v_knots.len(), "f3d sketch surface v knots")?;
         for value in v_knots {
             admission.work(1, "f3d sketch surface knot finiteness")?;
             finite_v_knots.push(FiniteReal::new(value).ok_or("surface v knot is not finite")?);
@@ -2130,7 +2140,14 @@ impl SketchNurbsGeometry {
         }
         let fit_tolerance = NonNegativeLength::new(fit_tolerance)
             .ok_or("sketch NURBS fit_tolerance must be finite and nonnegative")?;
-        Self::from_checked_parts(RecordAdmission::Admitted, degree, fit_tolerance, knots, poles).map_err(|error| error.to_string())
+        Self::from_checked_parts(
+            RecordAdmission::Admitted,
+            degree,
+            fit_tolerance,
+            knots,
+            poles,
+        )
+        .map_err(|error| error.to_string())
     }
 
     pub(crate) fn from_checked_parts(
@@ -2153,7 +2170,9 @@ impl SketchNurbsGeometry {
         if knots.len() != expected_knots {
             return Err("sketch NURBS knot count must equal control points + degree + 1".into());
         }
-        if !knots_nondecreasing(&knots, |count| admission.work(count, "f3d sketch NURBS knot order"))? {
+        if !knots_nondecreasing(&knots, |count| {
+            admission.work(count, "f3d sketch NURBS knot order")
+        })? {
             return Err("sketch NURBS knots must be nondecreasing".into());
         }
         for knot in &knots {
@@ -2459,7 +2478,10 @@ mod tests {
 
     #[test]
     fn sketch_geometry_constructors_preserve_resource_refusals_and_standard_values() {
-        use super::{RecordAdmission, SketchGeometryError, SketchNurbsGeometry, SketchNurbsPoles, SketchSurfaceGeometry};
+        use super::{
+            RecordAdmission, SketchGeometryError, SketchNurbsGeometry, SketchNurbsPoles,
+            SketchSurfaceGeometry,
+        };
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         use cadmpeg_ir::features::FinitePoint3;
@@ -2475,17 +2497,39 @@ mod tests {
             policy.limits.max_collection_items = 8;
             policy.limits.max_recursion_depth = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = SketchSurfaceGeometry::from_checked_parts(RecordAdmission::Charged(&ctx), 1, 1,
-                vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0], vec![vec![point; 2]; 2]);
+            let result = SketchSurfaceGeometry::from_checked_parts(
+                RecordAdmission::Charged(&ctx),
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![vec![point; 2]; 2],
+            );
             if allowance < 16 {
-                let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) = result else { panic!("each surface visit must be admitted"); };
+                let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) =
+                    result
+                else {
+                    panic!("each surface visit must be admitted");
+                };
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.used, allowance);
                 assert_eq!(original.additional, 1);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+                );
             } else {
                 let surface = result.unwrap();
-                assert_eq!(surface, SketchSurfaceGeometry::from_parts(1, 1, vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0], vec![vec![point.get(); 2]; 2]).unwrap());
+                assert_eq!(
+                    surface,
+                    SketchSurfaceGeometry::from_parts(
+                        1,
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![vec![point.get(); 2]; 2]
+                    )
+                    .unwrap()
+                );
                 ctx.finish_session().unwrap();
             }
         }
@@ -2498,11 +2542,22 @@ mod tests {
             policy.limits.max_retained_bytes = retained;
             policy.limits.max_collection_items = items;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = SketchSurfaceGeometry::from_checked_parts(RecordAdmission::Charged(&ctx), 1, 1,
-                vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0], vec![vec![point; 2]; 2]);
-            let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) = result else { panic!("finite knot storage must be admitted"); };
+            let result = SketchSurfaceGeometry::from_checked_parts(
+                RecordAdmission::Charged(&ctx),
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![vec![point; 2]; 2],
+            );
+            let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) = result
+            else {
+                panic!("finite knot storage must be admitted");
+            };
             assert_eq!(original.dimension, dimension);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
         }
         for allowance in 0..=7 {
             let arena = DecodeArena::new();
@@ -2513,14 +2568,29 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let knots = vec![0.0, 0.0, 1.0, 1.0];
             let poles = SketchNurbsPoles::Polynomial(vec![point; 2]);
-            let result = SketchNurbsGeometry::from_checked_parts(RecordAdmission::Charged(&ctx), 1, NonNegativeLength::new(0.0).unwrap(), knots.clone(), poles.clone());
+            let result = SketchNurbsGeometry::from_checked_parts(
+                RecordAdmission::Charged(&ctx),
+                1,
+                NonNegativeLength::new(0.0).unwrap(),
+                knots.clone(),
+                poles.clone(),
+            );
             if allowance < 7 {
-                let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) = result else { panic!("each curve visit must be admitted"); };
+                let Err(SketchGeometryError::Resource(CodecError::ResourceLimit(original))) =
+                    result
+                else {
+                    panic!("each curve visit must be admitted");
+                };
                 assert_eq!(original.used, allowance);
                 assert_eq!(original.additional, 1);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+                );
             } else {
-                assert_eq!(result.unwrap(), SketchNurbsGeometry::from_parts(1, 0.0, 8, knots, poles).unwrap());
+                assert_eq!(
+                    result.unwrap(),
+                    SketchNurbsGeometry::from_parts(1, 0.0, 8, knots, poles).unwrap()
+                );
                 ctx.finish_session().unwrap();
             }
         }

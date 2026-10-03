@@ -5,7 +5,9 @@ use super::{DatumReferences, DimensionKind, DimensionTolerance, PmiDimension, Pm
 use serde::{Serialize, Serializer};
 
 impl Serialize for DatumReferences {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> { self.0.serialize(serializer) }
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
 }
 
 impl Serialize for PmiDimension {
@@ -18,6 +20,11 @@ impl Serialize for PmiDimension {
             #[serde(skip_serializing_if = "Option::is_none")]
             tolerance: Option<&'a DimensionTolerance>,
         }
-        Wire { dimension: &self.kind, nominal: self.nominal, tolerance: self.tolerance.as_ref() }.serialize(serializer)
+        Wire {
+            dimension: &self.kind,
+            nominal: self.nominal,
+            tolerance: self.tolerance.as_ref(),
+        }
+        .serialize(serializer)
     }
 }

@@ -40,7 +40,11 @@ impl Homogeneous {
         terms: impl Iterator<Item = Option<([f64; 2], f64, FinitePoint3)>> + Clone,
     ) -> Result<Option<Self>, ResourceLimit> {
         let input_sized = terms.size_hint().1.is_none_or(|count| count > 2);
-        let terms = SumTerms { terms, scratch, input_sized };
+        let terms = SumTerms {
+            terms,
+            scratch,
+            input_sized,
+        };
         let mut values = [None; 4];
         for (axis, value) in values.iter_mut().enumerate() {
             let sum = product_sum(terms.clone().map(|term| {
@@ -86,19 +90,22 @@ impl Homogeneous {
     /// Keep source weights when they remain normal. Otherwise choose one
     /// binary scale for the complete output net, preserving relative weights.
     pub(super) fn weights(
-        scratch: &decode::Scratch<'_, '_>, values: &[Self],
+        scratch: &decode::Scratch<'_, '_>,
+        values: &[Self],
     ) -> Result<Option<Vec<f64>>, ResourceLimit> {
         let result = (|| {
             scratch.work(0, "IR homogeneous weight inspection")?;
             for value in values {
                 scratch.work(1, "IR homogeneous weight inspection")?;
-                if value.values[3].is_none() { return None; }
+                value.values[3]?;
             }
             let mut output = Vec::new();
             scratch.reserve(&mut output, values.len(), "IR homogeneous output weights")?;
             for value in values {
                 scratch.work(1, "IR homogeneous weight inspection")?;
-                let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else { break; };
+                let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else {
+                    break;
+                };
                 scratch.work(std::mem::size_of::<f64>(), "IR homogeneous weight copy")?;
                 output.push(weight.get());
             }
@@ -106,9 +113,14 @@ impl Homogeneous {
                 let mut normal = true;
                 for value in &output {
                     scratch.work(1, "IR homogeneous weight inspection")?;
-                    if !value.is_normal() { normal = false; break; }
+                    if !value.is_normal() {
+                        normal = false;
+                        break;
+                    }
                 }
-                if normal { return Some(output); }
+                if normal {
+                    return Some(output);
+                }
             }
             let mut bounds: Option<(i32, i32)> = None;
             for value in values {
@@ -127,7 +139,9 @@ impl Homogeneous {
             } else {
                 full_range
             };
-            if lower > upper { return None; }
+            if lower > upper {
+                return None;
+            }
             // Select the nearest exponent to zero that preserves the complete net.
             let exponent = if 0 < lower {
                 lower

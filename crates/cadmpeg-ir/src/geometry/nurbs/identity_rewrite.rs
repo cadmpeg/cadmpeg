@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{BsplineSurface, KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, WeightedPole3};
+use super::{
+    BsplineSurface, KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, WeightedPole3,
+};
 
 rewrite_record!(BsplineSurface, []; {u_degree, v_degree, u_knots, v_knots, control_points});
 rewrite_record!(KnotVector, []; (field0));

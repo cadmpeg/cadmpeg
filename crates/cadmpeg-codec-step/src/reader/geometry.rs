@@ -143,7 +143,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .ok_or_else(|| ctx.refuse_codec_limit("step_edge_parameter_inference", 0, 1))?;
     ctx.charge_work(work, "step_edge_parameter_inference")?;
 
-    let model_index = cadmpeg_ir::index::ModelIndex::new(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
     let inferred = candidates.into_iter().try_fold(
         Vec::new(),
         |mut inferred, (edge_index, curve, start, end)| {
@@ -158,7 +158,8 @@ pub(super) fn infer_edge_parameter_ranges(
             };
             let start_seed = curve_endpoint_seed(solved, false, 0.0);
             let Some(start_parameter) =
-                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(ctx,
+                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                    ctx,
                     &model_index,
                     curve,
                     start,
@@ -168,7 +169,8 @@ pub(super) fn infer_edge_parameter_ranges(
                 return Ok(inferred);
             };
             let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
-            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(ctx,
+            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                ctx,
                 &model_index,
                 curve,
                 end,
@@ -2795,7 +2797,8 @@ fn decode_tessellated_curve_sets(
             let Some(polyline) = PolylineCurve::from_checked_samples(
                 PolylineSamples::Unparameterized { points },
                 0.0,
-             ctx)?
+                ctx,
+            )?
             .ok() else {
                 continue;
             };
@@ -4812,8 +4815,14 @@ fn curve_parameter_at_point(
             else {
                 return Ok(None);
             };
-            nurbs_curve_parameter_near_point(ctx, curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
-                .map(|parameter| parameter.map(FiniteReal::get))
+            nurbs_curve_parameter_near_point(
+                ctx,
+                curve,
+                point,
+                tolerance,
+                (domain[0] + domain[1]) * 0.5,
+            )
+            .map(|parameter| parameter.map(FiniteReal::get))
         }
         SolvedCurveGeometry::Transformed(placed) => {
             let Some(inverse) = placed.transform().try_inverse_affine().ok() else {
@@ -5347,7 +5356,14 @@ fn nurbs_curve(
             "step_nurbs_curve_control_points",
         )?;
     }
-    let curve = NurbsCurve::from_lanes(ctx, definition.degree, definition.knots, control_points, definition.weights, definition.periodic)?;
+    let curve = NurbsCurve::from_lanes(
+        ctx,
+        definition.degree,
+        definition.knots,
+        control_points,
+        definition.weights,
+        definition.periodic,
+    )?;
     match curve {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
@@ -5386,8 +5402,14 @@ fn nurbs_pcurve(
             "step_nurbs_pcurve_control_points",
         )?;
     }
-    let pcurve =
-        PcurveNurbs::from_lanes(ctx, definition.degree, definition.knots, control_points, definition.weights, definition.periodic)?;
+    let pcurve = PcurveNurbs::from_lanes(
+        ctx,
+        definition.degree,
+        definition.knots,
+        control_points,
+        definition.weights,
+        definition.periodic,
+    )?;
     match pcurve {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
@@ -5742,11 +5764,9 @@ fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
             Some([0.0, std::f64::consts::TAU])
         }
-        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.pole_rows().count(),
-        ),
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => {
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
+        }
         PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
             pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
         }
@@ -6356,7 +6376,13 @@ fn nurbs_surface(
     } else {
         None
     };
-    let surface = NurbsSurface::from_lanes(ctx, NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic), NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights), false)?;
+    let surface = NurbsSurface::from_lanes(
+        ctx,
+        NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
+        NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+        false,
+    )?;
     match surface {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {

@@ -560,7 +560,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .expect("identity grammar"),
                 vec![cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge")
                     .expect("identity grammar")],
-                "native:partial-edges".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted")
+                "native:partial-edges".into(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection storage is admitted")
             .unwrap();
     });
     assert_eq!(
@@ -702,7 +705,14 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
     assert_eq!(gaps.ambiguous_history_dependencies, 1);
 
     let predecessor = ir.model.features[0].id.clone();
-    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), predecessor, "insert fixture member").expect("member insertion admission");
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            predecessor,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_history_dependencies, 0);
     assert_eq!(gaps.ambiguous_history_dependencies, 1);

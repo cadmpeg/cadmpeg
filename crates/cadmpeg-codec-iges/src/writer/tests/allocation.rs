@@ -8,13 +8,15 @@ use cadmpeg_ir::units::FiniteVector;
 
 #[test]
 fn nurbs_writer_weights_refuse_one_below_collection_need() {
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("polynomial curve");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -35,7 +37,8 @@ fn nurbs_writer_weights_refuse_one_below_collection_need() {
 #[test]
 fn nurbs_surface_writer_weights_refuse_one_below_collection_need() {
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         NurbsSurfaceLanes::new(
@@ -46,7 +49,8 @@ fn nurbs_surface_writer_weights_refuse_one_below_collection_need() {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("polynomial surface");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -74,12 +78,23 @@ fn polyline_nurbs_construction_preserves_caller_refusal_in_both_orientations() {
     let polyline = PolylineCurve::new(
         PolylineSamples::Parameterized {
             vertices: vec![
-                PolylineVertex { parameter: 0.0, point: start },
-                PolylineVertex { parameter: 1.0, point: end },
-            ].try_into().expect("nonempty samples"),
+                PolylineVertex {
+                    parameter: 0.0,
+                    point: start,
+                },
+                PolylineVertex {
+                    parameter: 1.0,
+                    point: end,
+                },
+            ]
+            .try_into()
+            .expect("nonempty samples"),
         },
         0.0,
-     &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("polyline");
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
+    .expect("polyline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline));
     let span = super::super::CurveSpan {
         range: FiniteVector::new([0.0, 1.0]).expect("range"),
@@ -87,7 +102,11 @@ fn polyline_nurbs_construction_preserves_caller_refusal_in_both_orientations() {
         end,
     };
     for sense in [Sense::Forward, Sense::Reversed] {
-        for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -97,9 +116,18 @@ fn polyline_nurbs_construction_preserves_caller_refusal_in_both_orientations() {
                 _ => unreachable!(),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = super::super::oriented_curve_entity(&ctx, &geometry, &span, sense, crate::IgesVersion::V5_3);
+            let result = super::super::oriented_curve_entity(
+                &ctx,
+                &geometry,
+                &span,
+                sense,
+                crate::IgesVersion::V5_3,
+            );
             if dimension == ResourceDimension::RetainedBytes {
-                assert!(result.is_ok(), "admitted polynomial poles move without retained storage");
+                assert!(
+                    result.is_ok(),
+                    "admitted polynomial poles move without retained storage"
+                );
                 assert!(ctx.finish_session().is_ok());
                 continue;
             }
@@ -113,7 +141,9 @@ fn polyline_nurbs_construction_preserves_caller_refusal_in_both_orientations() {
                 _ => unreachable!(),
             };
             assert_eq!(limit.operation, operation);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
     }
 }

@@ -590,7 +590,8 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         Surface {
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -609,7 +610,8 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                         None,
                     ),
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("valid test NURBS surface"),
             )),
             source_object: None,
@@ -944,13 +946,15 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         ir.model.pcurves.push(Pcurve {
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                nurbs: PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(start.x, start.y), pcurve_end],
                     None,
                     false,
-                ).expect("fixture pcurve construction admission")
+                )
+                .expect("fixture pcurve construction admission")
                 .expect("valid sheet pcurve"),
             },
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -973,13 +977,15 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             ir.model.pcurves.push(Pcurve {
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
-                    nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                    nurbs: PcurveNurbs::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
                         vec![midpoint, Point2::new(end_position.x, end_position.y)],
                         None,
                         false,
-                    ).expect("fixture pcurve construction admission")
+                    )
+                    .expect("fixture pcurve construction admission")
                     .expect("valid split sheet pcurve"),
                 },
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1011,8 +1017,13 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids.clone(), Vec::new()).expect("fixture ring admission")
-                .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                coedge_ids.clone(),
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     ir.model.faces.push(Face {
@@ -1053,7 +1064,11 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ];
     let vertex_uses = ir.model.loops[0].anchored_vertex_uses().to_vec();
     ir.model.loops[0]
-        .replace_ring(&cadmpeg_test_support::service_decode_context(), reversed_order.to_vec(), vertex_uses)
+        .replace_ring(
+            &cadmpeg_test_support::service_decode_context(),
+            reversed_order.to_vec(),
+            vertex_uses,
+        )
         .expect("reversed loop ring remains valid");
     for coedge_id in &reversed_order {
         let coedge = ir
@@ -1264,13 +1279,17 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
         nurbs
-            .try_map_control_points(|pole_index, point| {
-                let mut point = point.get();
-                if pole_index == 0 {
-                    point.u += 0.25;
-                }
-                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+            .try_map_control_points(
+                |pole_index, point| {
+                    let mut point = point.get();
+                    if pole_index == 0 {
+                        point.u += 0.25;
+                    }
+                    cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .unwrap();
     }
 
@@ -1357,17 +1376,24 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             };
             let mut reversed_points = nurbs.pole_rows().raw_points();
             reversed_points.reverse();
-            let reversed_poles =
-                PcurveNurbsPoles::from_lanes(&cadmpeg_test_support::service_decode_context(), reversed_points, nurbs.pole_rows().weights()).expect("fixture pcurve construction admission").unwrap();
+            let reversed_poles = PcurveNurbsPoles::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                reversed_points,
+                nurbs.pole_rows().weights(),
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap();
             {
                 let replacement = reversed_poles;
                 edit::replace(nurbs, |previous| {
-                    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                        &cadmpeg_test_support::service_decode_context(),
                         previous.degree(),
                         previous.knots().to_vec(),
                         replacement,
                         previous.periodic(),
-                    ).expect("fixture pcurve construction admission")
+                    )
+                    .expect("fixture pcurve construction admission")
                 })
             }
             .unwrap();
@@ -1544,13 +1570,15 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
     decoded.ir_mut().model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::from(start_uv), Point2::from(end_uv)],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .expect("valid source-less pcurve"),
         },
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(

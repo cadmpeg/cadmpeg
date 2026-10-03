@@ -4,13 +4,29 @@
 macro_rules! rewrite_native_scalar {
     ($type:ty) => {
         impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value<
+                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+            >(
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _value: &mut serde_json::Value,
+                _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+            ) -> Result<(), cadmpeg_core::CodecError> {
                 ctx.charge_work(1, "walk native identity scalar")
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+            fn visit_identity_references(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+            ) -> Result<(), cadmpeg_core::CodecError> {
                 ctx.charge_work(1, "walk typed reference scalar")
             }
-            fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError> {
+            fn rewrite_identities<
+                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+            >(
+                self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
                 ctx.charge_work(1, "rewrite native typed node")?;
                 Ok(self)
             }

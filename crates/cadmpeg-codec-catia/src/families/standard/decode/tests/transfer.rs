@@ -186,13 +186,15 @@ fn standard_initial_carrier_identity_refuses_retained_limit() {
 
 #[test]
 fn standard_revolution_procedure_copy_refuses_retained_limit() {
-    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid directrix");
     let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
         crate::families::b5::transfer::ResolvedRevolutionSurface {
@@ -815,8 +817,18 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
     };
     assert!(context.sides().iter().all(|side| side.surface.is_some()));
     let pcurve = context.sides()[0].pcurve.as_ref().expect("cylinder pcurve");
-    let start = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0).expect("pcurve start");
-    let end = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 1.0).expect("pcurve end");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        0.0,
+    )
+    .expect("pcurve start");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        1.0,
+    )
+    .expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [0.5, 1.0]);
 }
@@ -870,8 +882,18 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
     };
     assert!(context.sides().iter().all(|side| side.surface.is_some()));
     let pcurve = context.sides()[0].pcurve.as_ref().expect("cone pcurve");
-    let start = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0).expect("pcurve start");
-    let end = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 1.0).expect("pcurve end");
+    let start = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        0.0,
+    )
+    .expect("pcurve start");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve.geometry,
+        1.0,
+    )
+    .expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [1.0 / 3.0, 0.25f64.cos()]);
 }
@@ -908,8 +930,18 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .as_ref()
             .expect("resolved NURBS support");
         let pcurve = context.sides()[1].pcurve.as_ref().expect("NURBS pcurve");
-        let start = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0).expect("pcurve start");
-        let end = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 1.0).expect("pcurve end");
+        let start = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            0.0,
+        )
+        .expect("pcurve start");
+        let end = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            1.0,
+        )
+        .expect("pcurve end");
         assert_eq!([start.u, start.v], [0.0, 0.0]);
         assert_eq!([end.u, end.v], [1.0, 0.0]);
 

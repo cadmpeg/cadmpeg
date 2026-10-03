@@ -3475,16 +3475,16 @@ fn native_radius_function_pcurve_block(
     // Source-less geometry generation uses an independent writer policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
     let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &writer_arena, &writer_policy,
-    )?;
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let PcurveGeometry::Nurbs { nurbs } = function else {
         return Err(CodecError::NotImplemented(
             "variable-blend radius function must be a NURBS pcurve".into(),
         ));
     };
     let native = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(&writer_ctx, 
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+            &writer_ctx,
             nurbs.degree(),
             nurbs.knots().clone(),
             nurbs
@@ -4581,7 +4581,7 @@ fn native_increasing_interval_curve(
                     origin.z + parameter * direction.z,
                 )
             };
-            NurbsCurve::from_lanes(&ctx, 
+            NurbsCurve::from_lanes(&ctx,
                 1,
                 vec![
                     parameter_range[0],
@@ -4760,8 +4760,12 @@ mod native_interval_curve_tests {
             [0.0, std::f64::consts::PI],
         )
         .expect("generated circle interval");
-        let midpoint = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, std::f64::consts::FRAC_PI_2)
-            .expect("evaluate generated circle interval");
+        let midpoint = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            std::f64::consts::FRAC_PI_2,
+        )
+        .expect("evaluate generated circle interval");
         assert!((midpoint.x - 2.0).abs() < EPS_GENERATED_CURVE);
         assert!((midpoint.y - 8.0).abs() < EPS_GENERATED_CURVE);
         assert!((midpoint.z - 4.0).abs() < EPS_GENERATED_CURVE);
@@ -5993,9 +5997,8 @@ fn native_support_pcurve_for_range(
     // Source-less geometry generation uses an independent writer policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
     let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &writer_arena, &writer_policy,
-    )?;
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let native = native_pcurve_geometry(pcurve, range)?;
     let mut poles = native.pole_rows().to_raw();
     match geometry {
@@ -6041,7 +6044,8 @@ fn native_support_pcurve_for_range(
         }
         _ => return Ok(native.into_owned()),
     }
-    PcurveNurbs::new(&writer_ctx, 
+    PcurveNurbs::new(
+        &writer_ctx,
         native.degree(),
         native.knots().to_vec(),
         poles,
@@ -6128,13 +6132,15 @@ mod pcurve_chart_tests {
                 .unwrap(),
             ));
             let pcurve = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
                     None,
                     false,
-                ).expect("fixture pcurve construction admission")
+                )
+                .expect("fixture pcurve construction admission")
                 .expect("valid test pcurve"),
             };
             let nurbs = native_support_pcurve(&support, &pcurve).expect("native cone chart");
@@ -6891,9 +6897,8 @@ fn native_pcurve_geometry(
     // Source-less geometry generation uses an independent writer policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
     let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &writer_arena, &writer_policy,
-    )?;
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
@@ -6903,7 +6908,8 @@ fn native_pcurve_geometry(
                     "source-less F3D line pcurve requires an ordered finite range".into(),
                 ));
             }
-            PcurveNurbs::from_lanes(&writer_ctx, 
+            PcurveNurbs::from_lanes(
+                &writer_ctx,
                 1,
                 vec![range[0], range[0], range[1], range[1]],
                 vec![

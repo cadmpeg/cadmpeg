@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed product identities and links during staged source admission.
 
+use super::NativeRecord;
 use crate::document::CadIr;
 use crate::unknown::UnknownRecord;
-use super::NativeRecord;
 
 #[derive(Clone, Copy)]
 pub(crate) enum NativeEntity<'a> {
@@ -19,29 +19,46 @@ impl<'a> NativeEntity<'a> {
         }
     }
 
-    pub(crate) fn links<'ctx>(self, ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>) -> Result<impl Iterator<Item = Result<&'a str, cadmpeg_core::CodecError>> + 'ctx, cadmpeg_core::CodecError> where 'a: 'ctx {
+    pub(crate) fn links<'ctx>(
+        self,
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<
+        impl Iterator<Item = Result<&'a str, cadmpeg_core::CodecError>> + 'ctx,
+        cadmpeg_core::CodecError,
+    >
+    where
+        'a: 'ctx,
+    {
         let product = match self {
             Self::Product(record) => {
-                for _ in 0..=record.fields().len() { ctx.charge_work(6, "native link field lookup")?; }
-                record.fields().get("links").and_then(serde_json::Value::as_array)
-            },
+                for _ in 0..=record.fields().len() {
+                    ctx.charge_work(6, "native link field lookup")?;
+                }
+                record
+                    .fields()
+                    .get("links")
+                    .and_then(serde_json::Value::as_array)
+            }
             Self::Source(_) => None,
         };
         let source = match self {
             Self::Source(record) => record.links(),
             Self::Product(_) => &[],
         };
-        Ok(product.into_iter().flatten().filter_map(move |value| {
-            match ctx.charge_work(1, "native outgoing link scan") {
-                Err(error) => Some(Err(error)),
-                Ok(()) => value.as_str().map(Ok),
-            }
-        }).chain(source.iter().map(move |text| {
-            ctx.charge_work(1, "native outgoing link scan")?;
-            Ok(text.as_str())
-        })))
+        Ok(product
+            .into_iter()
+            .flatten()
+            .filter_map(
+                move |value| match ctx.charge_work(1, "native outgoing link scan") {
+                    Err(error) => Some(Err(error)),
+                    Ok(()) => value.as_str().map(Ok),
+                },
+            )
+            .chain(source.iter().map(move |text| {
+                ctx.charge_work(1, "native outgoing link scan")?;
+                Ok(text.as_str())
+            })))
     }
-
 }
 
 #[derive(Clone, Copy)]
@@ -56,7 +73,11 @@ impl<'a> NativeArena<'a> {
             Self::Product(records) => (records, &[], &[]),
             Self::Source(records, order) => (&[], records, order),
         };
-        products.iter().map(NativeEntity::Product).chain(order.iter().map(move |index| NativeEntity::Source(&sources[*index])))
+        products.iter().map(NativeEntity::Product).chain(
+            order
+                .iter()
+                .map(move |index| NativeEntity::Source(&sources[*index])),
+        )
     }
 
     pub(crate) fn len(self) -> usize {
@@ -74,7 +95,12 @@ pub(crate) struct NativeView<'a> {
 }
 
 impl<'a> NativeView<'a> {
-    pub(crate) fn new(ir: &'a CadIr, unknowns: Option<(&'a str, &'a [UnknownRecord], &'a [usize])>) -> Self { Self { ir, unknowns } }
+    pub(crate) fn new(
+        ir: &'a CadIr,
+        unknowns: Option<(&'a str, &'a [UnknownRecord], &'a [usize])>,
+    ) -> Self {
+        Self { ir, unknowns }
+    }
 
     /// Visit native arenas in map order, replacing one unknown arena by source facts.
     pub(crate) fn visit<E>(
@@ -110,7 +136,9 @@ impl<'a> NativeView<'a> {
                     work(replacement.len())?;
                     work(arena.len())?;
                     work("unknowns".len())?;
-                    if replacement == format && arena == "unknowns" { continue; }
+                    if replacement == format && arena == "unknowns" {
+                        continue;
+                    }
                 }
                 visit(format, arena, NativeArena::Product(records))?;
             }

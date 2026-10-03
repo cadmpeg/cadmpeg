@@ -90,7 +90,11 @@ pub(super) fn native_tolerant_coedge_extension(
             if *curve_reversed {
                 let writer_arena = cadmpeg_core::decode::DecodeArena::new();
                 let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &writer_arena,
+                    &writer_policy,
+                )?;
                 native_curve.reverse_parameterization(&writer_ctx)?;
             }
             native_ref(records, -1);

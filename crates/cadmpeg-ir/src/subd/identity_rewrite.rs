@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag};
+use super::{
+    SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge,
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdScheme,
+    SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex,
+    SubdVertexGripLayout, SubdVertexTag,
+};
 
 rewrite_record!(SubdCage, []; {vertices, edges, faces, symmetries});
 rewrite_record!(SubdEdge, []; {vertices, sharpness, tag, knot_interval, sector_coefficients});

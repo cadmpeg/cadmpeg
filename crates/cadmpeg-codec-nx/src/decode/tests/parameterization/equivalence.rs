@@ -77,7 +77,8 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
-    let _attached = ir.model.add_procedural_curve(None, 
+    let _attached = ir.model.add_procedural_curve(
+        None,
         &carrier,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#intersection").expect("identity grammar"),
@@ -267,12 +268,14 @@ fn equivalent_support_completion_refuses_model_index_collection_limit() {
             policy.limits.max_collection_items = 0;
         },
         |ctx| {
-            assert!(matches!(
-                complete_parameterization_equivalent_support_uv(ctx, &mut ir),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "model procedural surface carriers"
-            ));
+            let error = complete_parameterization_equivalent_support_uv(ctx, &mut ir)
+                .expect_err("the model identity universe exceeds zero collection slots");
+            let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
+                panic!("model index refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+            assert_eq!(first.operation, "model identity universe slots");
+            assert_eq!(ctx.resource_refusal(), Some(first));
         },
     );
 }

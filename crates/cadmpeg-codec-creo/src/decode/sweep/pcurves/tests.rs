@@ -108,8 +108,19 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
     .expect("resource admission")
     .expect("spindle boundary");
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter).expect("pcurve point");
-        let point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, uv.u, uv.v).expect("surface point");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            parameter,
+        )
+        .expect("pcurve point");
+        let point = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("surface point");
         assert!((point.x.hypot(point.y) - 3.0).abs() < 1.0e-12);
         assert!(point.z.abs() < 1.0e-12);
     }

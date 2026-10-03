@@ -1015,17 +1015,15 @@ fn design_nurbs_lanes_refuse_at_each_collection_limit() {
         "fcstd sketch NURBS control points",
         "fcstd sketch NURBS weights",
         "fcstd sketch NURBS nonzero weights",
-        "fcstd sketch NURBS knot conversion",
+        "IR finite knot values",
     ] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
             super::sketch_nurbs_lanes(ctx, "Part::GeomBSplineCurve", xml.root_element())
         });
     }
-    crate::test_support::assert_collection_refusal_at(
-        &[],
-        "fcstd sketch NURBS weighted pole pairs",
-        |ctx| super::sketch_nurbs(ctx, "Part::GeomBSplineCurve", xml.root_element()),
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "IR pcurve paired poles", |ctx| {
+        super::sketch_nurbs(ctx, "Part::GeomBSplineCurve", xml.root_element())
+    });
 }
 
 #[test]

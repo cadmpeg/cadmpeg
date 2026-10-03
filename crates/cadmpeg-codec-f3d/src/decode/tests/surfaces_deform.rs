@@ -55,7 +55,9 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
             .unwrap_or_else(|error| panic!("generated {label} surface decode: {error}"));
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let duplicate = source_less.model.procedural_surfaces[0].clone();
         source_less.model.procedural_surfaces.push(duplicate);
 
@@ -87,7 +89,9 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .expect("generated procedural surface decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let surface_id = source_less
         .model
         .procedural_surface_owner(&source_less.model.procedural_surfaces[0].id)
@@ -126,7 +130,9 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .expect("generated procedural curve decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let curve_id = source_less
         .model
         .procedural_curve_owner(&source_less.model.procedural_curves[0].id)
@@ -180,7 +186,9 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     assert_eq!(*selector, 0);
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -241,7 +249,9 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
         }
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -299,7 +309,9 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -366,7 +378,9 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     let range = [*first_parameter, *second_parameter];
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less
         .model
         .curves
@@ -444,7 +458,9 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         let range = [*first_parameter, *second_parameter];
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         source_less
             .model
             .curves
@@ -516,7 +532,9 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -585,7 +603,9 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     for (ordinal, curve_id) in [&profile, &spine].into_iter().enumerate() {
         source_less
             .model
@@ -666,7 +686,9 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .into_parts()
         .0;
     decoded.source = None;
-    decoded.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    decoded
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     decoded.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
             panic!("expected generated sweep")
@@ -752,7 +774,9 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
         source_less
             .model
@@ -850,7 +874,9 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
         source_less
             .model
@@ -949,7 +975,9 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
         source_less
             .model
@@ -1039,7 +1067,9 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1131,7 +1161,9 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1216,7 +1248,9 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1334,7 +1368,9 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             .is_some());
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         source_less.model.procedural_surfaces[0]
             .set_cache_fit_tolerance(None)
             .unwrap();
@@ -1372,7 +1408,9 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             .expect("optional-tolerance surface decode");
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         source_less.model.procedural_surfaces[0]
             .set_cache_fit_tolerance(None)
             .unwrap();
@@ -1403,7 +1441,9 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         .expect("loft decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     source_less.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();

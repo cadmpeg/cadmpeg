@@ -293,9 +293,17 @@ fn create_boundary_vertices(
     Ok((result_ids, derivations))
 }
 
-fn point_position(index: &ModelIndex<'_>, id: &VertexId, ctx: &DecodeContext<'_>, ) -> Result<Option<FinitePoint3>, CodecError> {
-let Some(vertex) = index.vertices(id.as_str(), ctx)? else { return Ok(None); };
-    Ok(index.points(vertex.point.as_str(), ctx)?.map(Point::position))
+fn point_position(
+    index: &ModelIndex<'_>,
+    id: &VertexId,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FinitePoint3>, CodecError> {
+    let Some(vertex) = index.vertices(id.as_str(), ctx)? else {
+        return Ok(None);
+    };
+    Ok(index
+        .points(vertex.point.as_str(), ctx)?
+        .map(Point::position))
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -870,9 +878,9 @@ fn linear_model_nurbs_points(
         "iges linear model boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter))?,
-        )?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
+        )?)?
         else {
             return Ok(None);
         };
@@ -911,9 +919,9 @@ fn linear_pcurve_points(
         "iges linear parameter boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            ctx, geometry, parameter,
-        ))?)?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, parameter),
+        )?)?
         else {
             return Ok(None);
         };
@@ -1372,7 +1380,12 @@ fn homogeneous_pcurve_spans(
             .copied()
             .filter(|knot| domain[0] < *knot && *knot < domain[1]),
     );
-    ctx.stable_sort_by(&mut internal, f64::total_cmp, |_| 0, "iges pcurve internal knots sort")?;
+    ctx.stable_sort_by(
+        &mut internal,
+        f64::total_cmp,
+        |_| 0,
+        "iges pcurve internal knots sort",
+    )?;
     internal.dedup();
     for knot in internal {
         while copied_knots
@@ -1650,7 +1663,8 @@ fn surface_parameter_bounds(
             visited_id,
             "iges support-bound visiting surface nodes",
         )?;
-        let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str(), ctx)? else {
+        let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str(), ctx)?
+        else {
             return Ok(None);
         };
         let bounds = match procedural.definition() {
@@ -1710,23 +1724,35 @@ fn pcurves_agree(
 ) -> Result<bool, CodecError> {
     let mut mapped = ctx.collection_vec(pcurves.len(), "iges trimmed mapped pcurves")?;
     for (geometry, range) in pcurves {
-        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            ctx, geometry, range[0],
-        ))?)?
+        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, range[0]),
+        )?)?
         else {
             return Ok(false);
         };
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, start_uv.u, start_uv.v))?
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            index,
+            surface_id,
+            start_uv.u,
+            start_uv.v,
+        ))?
         else {
             return Ok(false);
         };
-        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            ctx, geometry, range[1],
-        ))?)?
+        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, range[1]),
+        )?)?
         else {
             return Ok(false);
         };
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, end_uv.u, end_uv.v))?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            index,
+            surface_id,
+            end_uv.u,
+            end_uv.v,
+        ))?
         else {
             return Ok(false);
         };
@@ -1764,15 +1790,15 @@ fn edge_range_matches_curve(
         return Ok(false);
     }
     let geometry = &curve.geometry;
-    let Some(evaluated_start) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, geometry, range[0]))?,
-    )?
+    let Some(evaluated_start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+        cadmpeg_ir::eval::decode::curve_point(ctx, geometry, range[0]),
+    )?)?
     else {
         return Ok(false);
     };
-    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-        ctx, geometry, range[1],
-    ))?)?
+    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+        cadmpeg_ir::eval::decode::curve_point(ctx, geometry, range[1]),
+    )?)?
     else {
         return Ok(false);
     };
@@ -1809,10 +1835,14 @@ fn select_boundary_edge(
         .collection_vec(candidates.len(), "iges trimmed edge candidates")
         .map_err(BoundaryEdgeSelectionError::Resource)?;
     for &edge in candidates {
-        let Some(start) = point_position(carrier_index, &edge.start, ctx).map_err(BoundaryEdgeSelectionError::Resource)? else {
+        let Some(start) = point_position(carrier_index, &edge.start, ctx)
+            .map_err(BoundaryEdgeSelectionError::Resource)?
+        else {
             continue;
         };
-        let Some(end) = point_position(carrier_index, &edge.end, ctx).map_err(BoundaryEdgeSelectionError::Resource)? else {
+        let Some(end) = point_position(carrier_index, &edge.end, ctx)
+            .map_err(BoundaryEdgeSelectionError::Resource)?
+        else {
             continue;
         };
         candidates_with_endpoints += 1;
@@ -2941,9 +2971,8 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let Ok(ring) =
-                cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
-                    .map_err(cadmpeg_core::CodecError::from)?
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
+                .map_err(cadmpeg_core::CodecError::from)?
             else {
                 super::push_entity_loss(
                     ctx,
@@ -3142,10 +3171,7 @@ pub(super) fn project(
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate, derivations) in staged {
-        if commit_session
-            .commit_model(candidate)?
-            .is_err()
-        {
+        if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

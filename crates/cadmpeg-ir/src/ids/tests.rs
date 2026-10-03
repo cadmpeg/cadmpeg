@@ -547,17 +547,24 @@ fn identity_grammar_admits_only_the_scalars_inspected() {
             policy.limits.max_recursion_depth = 0;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = super::Identity::admit_text(text.to_owned(), |work| ctx.charge_work_limit(work, "identity grammar visit"));
+            let result = super::Identity::admit_text(text.to_owned(), |work| {
+                ctx.charge_work_limit(work, "identity grammar visit")
+            });
             if allowance < visits {
                 let original = result.unwrap_err();
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.operation, "identity grammar visit");
                 assert_eq!(original.additional, 1);
-                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
+                );
             } else {
                 let result = result.unwrap();
                 assert_eq!(result.is_ok(), valid, "{text:?}");
-                assert_eq!(result.map(super::Identity::into_string).unwrap_or_else(|text| text), text);
+                assert_eq!(
+                    result.map_or_else(|text| text, super::Identity::into_string),
+                    text
+                );
                 ctx.finish_session().unwrap();
             }
         }
@@ -566,6 +573,13 @@ fn identity_grammar_admits_only_the_scalars_inspected() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx.charge_work_limit(1, "original grammar refusal").unwrap_err();
-    assert_eq!(super::Identity::admit_text(String::new(), |work| ctx.charge_work_limit(work, "empty grammar")).unwrap_err(), original);
+    let original = ctx
+        .charge_work_limit(1, "original grammar refusal")
+        .unwrap_err();
+    assert_eq!(
+        super::Identity::admit_text(String::new(), |work| ctx
+            .charge_work_limit(work, "empty grammar"))
+        .unwrap_err(),
+        original
+    );
 }

@@ -46,12 +46,19 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: Some(crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap()),
+        bodies: Some(
+            crate::features::DistinctMembers::try_from(
+                vec![body.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+        ),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
@@ -84,13 +91,19 @@ fn configuration_body_membership_round_trips_and_validates() {
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![
-                    BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
-                ], &cadmpeg_test_support::service_decode_context())
+                outputs: crate::features::DistinctMembers::try_from(
+                    vec![
+                        BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
+                    ],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
                 .unwrap(),
             },
-            dependencies: crate::features::DistinctMembers::try_from(vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
-                .expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
+            dependencies: crate::features::DistinctMembers::try_from(
+                vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
+                    .expect("identity grammar")],
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -160,9 +173,17 @@ fn configuration_body_membership_round_trips_and_validates() {
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+                outputs: crate::features::DistinctMembers::try_from(
+                    vec![body.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
             },
-            dependencies: crate::features::DistinctMembers::try_from(vec![later_feature.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(
+                vec![later_feature.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -207,9 +228,17 @@ fn configuration_body_membership_round_trips_and_validates() {
         later_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![body.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+                outputs: crate::features::DistinctMembers::try_from(
+                    vec![body.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
             },
-            dependencies: crate::features::DistinctMembers::try_from(vec![first_feature.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(
+                vec![first_feature.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
@@ -254,8 +283,11 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = Some(
-        crate::features::DistinctMembers::try_from(vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")], &cadmpeg_test_support::service_decode_context())
-            .unwrap(),
+        crate::features::DistinctMembers::try_from(
+            vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
     );
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
@@ -279,7 +311,8 @@ fn configuration_body_membership_round_trips_and_validates() {
     });
     ir.model.configurations[0].active = true;
     ir.model.configurations[1].active = true;
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
@@ -412,7 +445,11 @@ fn configuration_evaluation_wire_is_flat_and_strict() {
 
     let body = BodyId::mint("synthetic:test:body#evaluation").expect("identity grammar");
     let active = ConfigurationEvaluation::Active {
-        outputs: crate::features::DistinctMembers::try_from(vec![body], &cadmpeg_test_support::service_decode_context()).unwrap(),
+        outputs: crate::features::DistinctMembers::try_from(
+            vec![body],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
     };
     let wire = serde_json::to_value(&active).unwrap();
     assert_eq!(

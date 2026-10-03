@@ -197,7 +197,15 @@ fn bind_direct(
     policy.limits.max_collection_items = max_items;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_direct_body_recipe_body_selection(&ctx, &mut selection, &scope, &inputs)?;
+    if let Err(error) =
+        super::super::bind_direct_body_recipe_body_selection(&ctx, &mut selection, &scope, &inputs)
+    {
+        if let cadmpeg_core::CodecError::ResourceLimit(first) = &error {
+            assert!(matches!(ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
+        }
+        return Err(error);
+    }
     Ok(selection)
 }
 
@@ -383,7 +391,7 @@ fn direct_body_recipe_rows_validation_refuses_collection_limit() {
     let error = bind_direct(7, true).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate F3D direct body recipe rows")
+        if limit.operation == "validate body selection members")
     );
 }
 
@@ -393,8 +401,12 @@ fn direct_body_recipe_keeps_resolved_selection() {
         bind_direct(7, false).unwrap(),
         BodySelection::Resolved { .. }
     ));
+    assert!(matches!(bind_direct(8, true),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "validate body selection members"));
+    // A resolved row indexes its body and its native identity separately.
     assert!(matches!(
-        bind_direct(8, true).unwrap(),
+        bind_direct(9, true).unwrap(),
         BodySelection::ResolvedSet { .. }
     ));
 }

@@ -147,11 +147,18 @@ fn decode_resolves_feature_topology_selections() {
                 operands
                     .try_edit(|target, tools| {
                         *target = BodySelection::Bodies(
-                            cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"),
+                            cadmpeg_ir::features::DistinctMembers::try_from(
+                                vec![body_id.clone()],
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("distinct bodies"),
                         );
                         *tools = BodySelection::Bodies(
-                            cadmpeg_ir::features::DistinctMembers::try_from(vec![tool_body_id.clone()], &cadmpeg_test_support::service_decode_context())
-                                .expect("distinct bodies"),
+                            cadmpeg_ir::features::DistinctMembers::try_from(
+                                vec![tool_body_id.clone()],
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("distinct bodies"),
                         );
                     })
                     .unwrap();
@@ -350,7 +357,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
     );
     let mut dependencies = regenerated.ir().model.features[2].dependencies.to_vec();
     dependencies.pop();
-    regenerated.ir_mut().model.features[2].dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap();
+    regenerated.ir_mut().model.features[2].dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            dependencies,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
     let error = crate::test_support::plan_inherited_write(
         regenerated.ir(),
         regenerated.source_fidelity(),

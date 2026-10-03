@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignAffineTransform, DesignEntityId, DesignSecondaryIdentity, Located, MaybeRecordedValue, RecordedValue, ReferenceRun, ReferenceRunData};
+use super::{
+    DesignAffineTransform, DesignEntityId, DesignSecondaryIdentity, Located, MaybeRecordedValue,
+    RecordedValue, ReferenceRun, ReferenceRunData,
+};
 
 rewrite_native_scalar!(DesignAffineTransform);
 rewrite_native_record!(DesignEntityId, []; {text, suffix});

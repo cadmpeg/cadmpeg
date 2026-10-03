@@ -321,11 +321,10 @@ impl SldprtNative {
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )?;
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        // A native field can contain 256 containers; reconstruction adds the record root.
+        policy.limits.max_recursion_depth = 257;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         Self::load_charged(&ctx, namespace)
     }
 

@@ -16,8 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    boundaries_within_resolution, homogeneous_spans, positive_controls,
-    HomogeneousBezierSpan,
+    boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::nurbs::scoped::ScopedRows;
 use cadmpeg_ir::geometry::{
@@ -458,9 +457,9 @@ fn bounded_evaluable_curve<'a>(
         return Ok(None);
     }
     for parameter in parameter_interval {
-        if finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-            ctx, geometry, parameter,
-        ))?)?
+        if finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, geometry, parameter),
+        )?)?
         .is_none()
         {
             return Ok(None);
@@ -533,7 +532,13 @@ fn homogeneous_bezier_spans<'ctx>(
                 .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
         );
     }
-    let Some(controls) = positive_controls(ctx, &points, weights.as_deref(), "iges_surface_closure_controls")? else {
+    let Some(controls) = positive_controls(
+        ctx,
+        &points,
+        weights.as_deref(),
+        "iges_surface_closure_controls",
+    )?
+    else {
         return Ok(None);
     };
     Ok(homogeneous_spans(ctx, degree, curve.knots(), &controls)?)
@@ -684,7 +689,12 @@ fn normalized_span_boundaries(
             boundaries.push(normalized);
         }
     }
-    ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
+    ctx.stable_sort_by(
+        &mut boundaries,
+        f64::total_cmp,
+        |_| 0,
+        "iges span boundary sort",
+    )?;
     boundaries.dedup();
     Ok((boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries))
 }
@@ -776,7 +786,12 @@ fn aligned_homogeneous_spans(
         "iges span combined boundaries",
     )?;
     boundaries.extend(second_boundaries);
-    ctx.stable_sort_by(&mut boundaries, f64::total_cmp, |_| 0, "iges span boundary sort")?;
+    ctx.stable_sort_by(
+        &mut boundaries,
+        f64::total_cmp,
+        |_| 0,
+        "iges span boundary sort",
+    )?;
     boundaries.dedup();
     let Some(first_spans) =
         partition_homogeneous_spans(first_spans, first_domain, &boundaries, ctx)?
@@ -870,7 +885,8 @@ fn same_basis_ruled_surface(
     u_knots.extend_from_slice(first.knots());
     let mut v_knots = ctx.collection_vec(4, "iges ruled same-basis v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
-    NurbsSurface::new(ctx, 
+    NurbsSurface::new(
+        ctx,
         NurbsSurfaceAxis::new(
             first.degree(),
             u_knots,
@@ -956,7 +972,8 @@ fn ruled_surface_carrier(
     )?
     .map_err(CodecError::malformed)?;
     Ok(Some(
-        NurbsSurface::new(ctx, 
+        NurbsSurface::new(
+            ctx,
             NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
             NurbsSurfaceAxis::new(1, v_knots, false),
             poles,
@@ -1115,8 +1132,12 @@ fn homogeneous_curve_boundary_matches(
         if first_span.domain != second_span.domain {
             return Ok(None);
         }
-        let Some(within_resolution) =
-            boundaries_within_resolution(ctx, &first_span.controls, &second_span.controls, resolution)?
+        let Some(within_resolution) = boundaries_within_resolution(
+            ctx,
+            &first_span.controls,
+            &second_span.controls,
+            resolution,
+        )?
         else {
             return Ok(None);
         };
@@ -1297,7 +1318,13 @@ fn indicator_normal(
     let partials = match procedural {
         Some(_) => {
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-            finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), &index, surface, parameters[0], parameters[1]))?
+            finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                &index,
+                surface,
+                parameters[0],
+                parameters[1],
+            ))?
         }
         None => {
             // A support with no procedural entry takes `model_surface_mapping`'s
@@ -1317,7 +1344,8 @@ fn indicator_normal(
             else {
                 return Ok(None);
             };
-            finite_or_refusal(cadmpeg_ir::eval::surface_partials(ctx, 
+            finite_or_refusal(cadmpeg_ir::eval::surface_partials(
+                ctx,
                 &carrier.geometry,
                 parameters[0],
                 parameters[1],
@@ -1928,11 +1956,9 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(directrix_geometry, carrier_interval);
-            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                ctx,
-                directrix_geometry,
-                carrier_interval[0],
-            ))?)?
+            let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(ctx, directrix_geometry, carrier_interval[0]),
+            )?)?
             else {
                 super::push_entity_loss(
                     ctx,
@@ -2084,9 +2110,10 @@ pub(super) fn project(
         let placed_directrix = if entry.transform == 0 {
             directrix
         } else {
-            match directrix
-                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()), ctx)?
-            {
+            match directrix.try_map_control_points(
+                |_, point| transform.apply_point(point.get()).ok_or(()),
+                ctx,
+            )? {
                 Ok(()) => directrix,
                 Err(()) => {
                     super::push_attributed_loss(
@@ -2100,12 +2127,13 @@ pub(super) fn project(
                 }
             }
         };
-        let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 ctx,
                 &placed_directrix,
                 cached_interval[0],
-            ))?)?
+            ),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,
@@ -2220,8 +2248,10 @@ pub(super) fn project(
             "iges tabulated weighted rows",
             "iges tabulated weighted row controls",
         )?;
-        let construction = match paired { Err(error) => Err(error), Ok(poles) => {
-            NurbsSurface::new(ctx, 
+        let construction = match paired {
+            Err(error) => Err(error),
+            Ok(poles) => NurbsSurface::new(
+                ctx,
                 NurbsSurfaceAxis::new(
                     placed_directrix.degree(),
                     u_knots,
@@ -2230,8 +2260,8 @@ pub(super) fn project(
                 NurbsSurfaceAxis::new(1, v_knots, false),
                 poles,
                 false,
-            )?
-        } };
+            )?,
+        };
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -2689,8 +2719,10 @@ pub(super) fn project(
             "iges revolution weighted rows",
             "iges revolution weighted row controls",
         )?;
-        let construction = match paired { Err(error) => Err(error), Ok(poles) => {
-            NurbsSurface::new(ctx, 
+        let construction = match paired {
+            Err(error) => Err(error),
+            Ok(poles) => NurbsSurface::new(
+                ctx,
                 NurbsSurfaceAxis::new(generatrix.degree(), u_knots, generatrix.periodic()),
                 NurbsSurfaceAxis::new(
                     2,
@@ -2702,8 +2734,8 @@ pub(super) fn project(
                 ),
                 poles,
                 false,
-            )?
-        } };
+            )?,
+        };
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -2739,8 +2771,10 @@ pub(super) fn project(
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
             let mut placed_generatrix = generatrix;
-            let Ok(()) = placed_generatrix
-                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()), ctx)?
+            let Ok(()) = placed_generatrix.try_map_control_points(
+                |_, point| transform.apply_point(point.get()).ok_or(()),
+                ctx,
+            )?
             else {
                 super::push_attributed_loss(
                     ctx,
@@ -2826,9 +2860,9 @@ pub(super) fn project(
                 ProceduralSurfaceDefinition::Revolution(admitted_payload),
                 Some(bounds),
             );
-            let _attached =
-                ir.model
-                    .add_procedural_surface(Some(ctx), &surface_id, procedural)?;
+            let _attached = ir
+                .model
+                .add_procedural_surface(Some(ctx), &surface_id, procedural)?;
         }
         ctx.insert_btree_set(
             &mut decoded,
@@ -3090,9 +3124,10 @@ pub(super) fn project(
         let mut raw_v_knots =
             ctx.collection_vec(finite_v_knots.len(), "iges NURBS surface admitted v knots")?;
         raw_v_knots.extend(finite_v_knots.into_iter().map(FiniteReal::get));
-        let (Ok(u_knots), Ok(v_knots)) =
-            (KnotVector::new(ctx, raw_u_knots)?, KnotVector::new(ctx, raw_v_knots)?)
-        else {
+        let (Ok(u_knots), Ok(v_knots)) = (
+            KnotVector::new(ctx, raw_u_knots)?,
+            KnotVector::new(ctx, raw_v_knots)?,
+        ) else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -3316,14 +3351,16 @@ pub(super) fn project(
             "iges NURBS surface weighted rows",
             "iges NURBS surface weighted row controls",
         )?;
-        let construction = match paired { Err(error) => Err(error), Ok(poles) => {
-            NurbsSurface::new(ctx, 
+        let construction = match paired {
+            Err(error) => Err(error),
+            Ok(poles) => NurbsSurface::new(
+                ctx,
                 NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
                 NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
                 poles,
                 false,
-            )?
-        } };
+            )?,
+        };
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {

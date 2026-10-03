@@ -16,7 +16,12 @@ fn attach_one_configuration(
         |ctx| {
             let mut ir = CadIr::empty();
             let mut annotations = AnnotationBuilder::new();
-            let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
+            let stream = StreamHandle::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::stream_name!("nx:container"),
+                "fixture stream handle",
+            )
+            .unwrap();
             super::super::attach_configurations(
                 ctx,
                 &mut ir,

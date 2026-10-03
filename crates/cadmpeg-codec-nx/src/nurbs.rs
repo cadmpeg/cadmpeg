@@ -204,7 +204,8 @@ fn decode_surfaces(
                 NurbsPoleGrid::Polynomial { rows }
             };
             let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
-            let surface = propagate_resource!(NurbsSurface::new(ctx, 
+            let surface = propagate_resource!(NurbsSurface::new(
+                ctx,
                 NurbsSurfaceAxis::new(
                     u32::from(descriptor.u_degree),
                     full_u,
@@ -352,7 +353,8 @@ fn decode_pcurves(
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
             };
-            let nurbs = propagate_resource!(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
+            let nurbs = propagate_resource!(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                ctx,
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,
@@ -497,7 +499,8 @@ fn decode_curves(
                 }
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points }
             };
-            let curve = propagate_resource!(NurbsCurve::new(ctx, 
+            let curve = propagate_resource!(NurbsCurve::new(
+                ctx,
                 u32::from(descriptor.basis.degree),
                 knots,
                 poles,

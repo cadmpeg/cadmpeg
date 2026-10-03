@@ -2550,14 +2550,13 @@ fn bind_direct_body_recipe_body_selection(
                 )?;
                 selected.push(body);
             }
-            let bodies =
-                match cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx) {
-                    Ok(value) => value,
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(()),
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                        return Err(limit.into())
-                    }
-                };
+            let bodies = match cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx) {
+                Ok(value) => value,
+                Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(()),
+                Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                    return Err(limit.into())
+                }
+            };
             let native =
                 ctx.copy_retained_text(&group.id, "copy F3D direct body recipe group identity")?;
             *selection = BodySelection::Resolved { bodies, native };

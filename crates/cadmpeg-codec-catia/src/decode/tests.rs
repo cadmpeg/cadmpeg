@@ -290,7 +290,8 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Option<()>, cadmpeg_core::CodecError> {
         let short_weight_lane = || {
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                ctx,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -352,7 +353,8 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         let output = (|| {
             match crate::nurbs::note_refusal(
                 ctx,
-                match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
+                match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    ctx,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -361,7 +363,10 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                     ],
                     Some(vec![1.0]),
                     false,
-                ) { Ok(result) => result, Err(error) => return Some(Err(error)) },
+                ) {
+                    Ok(result) => result,
+                    Err(error) => return Some(Err(error)),
+                },
                 refusal,
                 "e5 NURBS pcurve record at byte 96",
             ) {

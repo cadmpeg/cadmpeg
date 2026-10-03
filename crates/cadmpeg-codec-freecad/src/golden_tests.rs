@@ -171,8 +171,12 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
             namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
             namespace_digests.insert(
                 arena.clone(),
-                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), records, "native arena golden digest")
-                    .expect("the native records state canonical JSON")),
+                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
+                    &cadmpeg_test_support::service_decode_context(),
+                    records,
+                    "native arena golden digest"
+                )
+                .expect("the native records state canonical JSON")),
             );
         }
         counts.insert(format.clone(), namespace_counts.into());
@@ -564,8 +568,12 @@ mod native_elision {
             let records = &native.0["fcstd"].arenas()[arena];
             assert_eq!(
                 arena_digest(&block, arena),
-                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), records, "native arena golden digest")
-                    .expect("the native records state canonical JSON")),
+                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
+                    &cadmpeg_test_support::service_decode_context(),
+                    records,
+                    "native arena golden digest"
+                )
+                .expect("the native records state canonical JSON")),
                 "the digest of `{arena}` covers the bytes a CADIR document writes for it"
             );
         }

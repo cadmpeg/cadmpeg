@@ -11,7 +11,8 @@ use crate::geometry::{
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
-    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![domain[0], domain[0], domain[1], domain[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -22,7 +23,8 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
@@ -38,13 +40,15 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         Curve {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -52,13 +56,15 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -153,13 +159,20 @@ fn numerical_0922_wide_surface_chart_keeps_inverse_and_bound() {
     for d in [[0., 1.], [-1e308, 1e308]] {
         let s = bilinear(d, 1.);
         let endpoints = [Point2::new(d[0], 0.), Point2::new(d[1], 1.)];
-        let bound = crate::eval::nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(),
+        let bound = crate::eval::nurbs_surface_parameter_segment_chord_bound(
+            &cadmpeg_test_support::service_decode_context(),
             &s,
             endpoints,
             [Point3::new(0., 0., 0.), Point3::new(1., 1., 0.)],
-        ).expect("resource allocation did not fail");
-        let inverse =
-            crate::eval::nurbs_surface_parameter_near_point(crate::eval::admission::EvaluationAdmission::Standard, &s, Point3::new(0.5, 0.5, 0.), None).expect("resource allocation did not fail");
+        )
+        .expect("resource allocation did not fail");
+        let inverse = crate::eval::nurbs_surface_parameter_near_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &s,
+            Point3::new(0.5, 0.5, 0.),
+            None,
+        )
+        .expect("resource allocation did not fail");
         println!("IR plane domain {d:?}: chord bound={bound:?}, inverse={inverse:?}");
         assert!(bound.unwrap() < CHORD_BOUND_TOLERANCE);
         let expected_u = d[0].midpoint(d[1]);
@@ -174,12 +187,14 @@ fn numerical_0922_far_surface_query_keeps_inverse() {
     let s = bilinear([0., 1.], 1.);
     for z in [1., 1e200] {
         let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
-        let result = crate::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
+        let result = crate::eval::nurbs_surface_closest_parameter_with_budget(
+            &cadmpeg_test_support::service_decode_context(),
             &s,
             Point3::new(0.5, 0.5, z),
             None,
             &budget,
-        ).expect("resource allocation did not fail");
+        )
+        .expect("resource allocation did not fail");
         println!(
             "IR unit plane, query z={z:e}: {result:?}, budget {}",
             budget.consumed()
@@ -215,8 +230,14 @@ fn numerical_0922_reflection_rejects_unrelated_points() {
 fn numerical_0922_sweep_evaluation_ignores_profile_units() {
     for scale in [1., 1e18] {
         let (ir, id) = fixture(scale);
-        let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-        let r = crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &id, -0.25 * scale, 0.25);
+        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        let r = crate::eval::model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &id,
+            -0.25 * scale,
+            0.25,
+        );
         println!("IR same law sweep profile chart scale{scale:e}: {r:?}");
         assert!(r.unwrap().distance(Point3::new(-0.5, 0.5, 0.25)) < 1e-14);
     }
@@ -225,7 +246,8 @@ fn numerical_0922_sweep_evaluation_ignores_profile_units() {
 #[test]
 fn numerical_0922b_finite_chord_bound() {
     for s in [1., 1e200] {
-        let surf = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+        let surf = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
             NurbsSurfaceLanes::new(
@@ -236,13 +258,16 @@ fn numerical_0922b_finite_chord_bound() {
                 None,
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
-        let r = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(),
+        let r = nurbs_surface_parameter_segment_chord_bound(
+            &cadmpeg_test_support::service_decode_context(),
             &surf,
             [Point2::new(0., 0.), Point2::new(1., 1.)],
             [Point3::new(0., 0., 0.), Point3::new(s, s, s)],
-        ).expect("resource allocation did not fail");
+        )
+        .expect("resource allocation did not fail");
         println!("IR curved diagonal scale{s:e}:bound{r:?}");
         let bound = r.unwrap() / s;
         assert!((0.25..0.34).contains(&bound));
@@ -255,25 +280,29 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
         let knots = [a, a, b, b];
         let points = [Point2::new(0., 0.), Point2::new(1., 0.)];
         assert_eq!(
-            nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
+            nurbs_pcurve_contains_point(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 &knots,
                 &points,
                 None,
                 Point2::new(0.5, 0.),
                 CHORD_BOUND_TOLERANCE
-            ).expect("resource allocation did not fail"),
+            )
+            .expect("resource allocation did not fail"),
             Some(true)
         );
         assert_eq!(
-            nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
+            nurbs_pcurve_contains_point(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 &knots,
                 &points,
                 None,
                 Point2::new(0.5, 2.),
                 CHORD_BOUND_TOLERANCE
-            ).expect("resource allocation did not fail"),
+            )
+            .expect("resource allocation did not fail"),
             Some(false)
         );
     }

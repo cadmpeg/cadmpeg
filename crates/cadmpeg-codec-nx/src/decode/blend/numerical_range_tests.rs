@@ -51,16 +51,19 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
             ),
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         for d in [1., 1e9] {
             let p = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                nurbs: PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0., 0., d, d],
                     vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                     None,
                     false,
-                ).expect("fixture pcurve construction admission")
+                )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             };
             let t = closest_contact_pcurve_parameter_with_geometry_and_budget(
@@ -76,7 +79,12 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
             )
             .unwrap()
             .unwrap();
-            let hit = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap();
+            let hit = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &p,
+                t,
+            )
+            .unwrap();
             println!("NX plane contact domain{d:e}: parameter{t:e}, hit{hit:?}");
             assert!((hit.u - 0.3).abs() < 1e-14);
         }
@@ -144,7 +152,8 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
 fn numerical_0922b_unclamped_curve_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for knots in [vec![0., 0., 0., 1., 1., 1.], vec![-2., -1., 0., 1., 2., 3.]] {
-            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            let curve = NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 knots,
                 vec![
@@ -154,9 +163,15 @@ fn numerical_0922b_unclamped_curve_inverse() {
                 ],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap();
-            let target = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 0.).unwrap();
+            let target = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                0.,
+            )
+            .unwrap();
             let budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(100_000),
@@ -164,7 +179,12 @@ fn numerical_0922b_unclamped_curve_inverse() {
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
                 .expect("evaluator allocation succeeds")
                 .unwrap();
-            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, p).unwrap();
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                p,
+            )
+            .unwrap();
             println!(
                 "NX knots{:?}, exact start{target:?}: inverse{p}, residual{}",
                 curve.knots(),
@@ -178,7 +198,8 @@ fn numerical_0922b_unclamped_curve_inverse() {
 fn numerical_0922b_small_domain_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for d in [1., 1e-16] {
-            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            let curve = NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0., 0., 0., d, d, d],
                 vec![
@@ -188,9 +209,15 @@ fn numerical_0922b_small_domain_inverse() {
                 ],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap();
-            let target = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 0.75 * d).unwrap();
+            let target = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                0.75 * d,
+            )
+            .unwrap();
             let budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(100_000),
@@ -198,7 +225,12 @@ fn numerical_0922b_small_domain_inverse() {
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
                 .expect("evaluator allocation succeeds")
                 .unwrap();
-            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, p).unwrap();
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                p,
+            )
+            .unwrap();
             println!(
                 "NX d{d:e},target{target:?}:inverse{},residual{}",
                 p / d,
@@ -211,7 +243,8 @@ fn numerical_0922b_small_domain_inverse() {
 #[test]
 fn numerical_0922b_discontinuous_curve_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
-        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0., 0., 0., 0.5, 0.5, 0.5, 1., 1., 1.],
             vec![0., 1., 2., 10., 11., 12.]
@@ -220,7 +253,8 @@ fn numerical_0922b_discontinuous_curve_inverse() {
                 .collect(),
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
         let target = Point3::new(11., 0., 0.);
         let p = closest_nurbs_curve_parameter_with_budget(
@@ -234,7 +268,12 @@ fn numerical_0922b_discontinuous_curve_inverse() {
         )
         .expect("evaluator allocation succeeds")
         .unwrap();
-        let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, p).unwrap();
+        let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            p,
+        )
+        .unwrap();
         println!("NX discontinuous quadratic target11: parameter{p}, actual{actual:?}");
         assert!(actual.distance(target) < 1e-14);
     });
@@ -243,13 +282,15 @@ fn numerical_0922b_discontinuous_curve_inverse() {
 fn numerical_0922b_common_weight_inverse() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for w in [1., 1e200] {
-            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            let curve = NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(0., 0., 0.), Point3::new(1e200, 0., 0.)],
                 Some(vec![w, w]),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap();
             let budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
@@ -272,7 +313,8 @@ fn numerical_0922b_common_weight_inverse() {
 fn numerical_audit_pcurve_newton_converges_on_small_chart() {
     for d in [1., 1e-16] {
         let p = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0., 0., 0., d, d, d],
                 vec![
@@ -282,26 +324,44 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
                 ],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
-        let t = closest_pcurve_parameter_from_seed(&cadmpeg_test_support::service_decode_context(), &p, Point2::new(0.25, 0.), 0.9 * d)
-            .expect("evaluator allocation succeeds")
-            .unwrap();
-        assert!((cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.25).abs() < 64. * f64::EPSILON);
+        let t = closest_pcurve_parameter_from_seed(
+            &cadmpeg_test_support::service_decode_context(),
+            &p,
+            Point2::new(0.25, 0.),
+            0.9 * d,
+        )
+        .expect("evaluator allocation succeeds")
+        .unwrap();
+        assert!(
+            (cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &p,
+                t
+            )
+            .unwrap()
+            .u - 0.25)
+                .abs()
+                < 64. * f64::EPSILON
+        );
     }
 }
 #[test]
 fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         for [a, b] in [[0., 1.], [-1e308, 1e308]] {
-            let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            let curve = NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![a, a, b, b],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap();
             let t = closest_nurbs_curve_parameter_with_budget(
                 &curve,
@@ -315,23 +375,46 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             .expect("evaluator allocation succeeds")
             .unwrap();
             assert!(
-                (cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, t).unwrap().x - 0.3).abs()
+                (cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &curve,
+                    t
+                )
+                .unwrap()
+                .x - 0.3)
+                    .abs()
                     < 64. * f64::EPSILON
             );
             let p = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                nurbs: PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![a, a, b, b],
                     vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                     None,
                     false,
-                ).expect("fixture pcurve construction admission")
+                )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             };
-            let t = closest_pcurve_parameter_from_coarse_grid(&cadmpeg_test_support::service_decode_context(), &p, Point2::new(0.3, 0.))
-                .expect("evaluator allocation succeeds")
-                .unwrap();
-            assert!((cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
+            let t = closest_pcurve_parameter_from_coarse_grid(
+                &cadmpeg_test_support::service_decode_context(),
+                &p,
+                Point2::new(0.3, 0.),
+            )
+            .expect("evaluator allocation succeeds")
+            .unwrap();
+            assert!(
+                (cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &p,
+                    t
+                )
+                .unwrap()
+                .u - 0.3)
+                    .abs()
+                    < 64. * f64::EPSILON
+            );
         }
         assert_eq!(
             scalar_bezier_value(
@@ -385,7 +468,7 @@ fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) 
 fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let (ir, surface_id, geometry) = overflowing_plane_model();
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(1024),
@@ -444,7 +527,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             geometry: geometry.clone(),
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(1024),
@@ -472,9 +555,16 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
 fn closest_pcurve_helpers_preserve_session_depth_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let line = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1,
-            vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None, false)
-            .expect("constructor admission").expect("valid line"),
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("constructor admission")
+        .expect("valid line"),
     };
     for coarse in [false, true] {
         let arena = DecodeArena::new();
@@ -485,11 +575,22 @@ fn closest_pcurve_helpers_preserve_session_depth_refusal() {
             closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0))
         } else {
             closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2)
-        }.expect_err("first sample or local step charges work");
+        }
+        .expect_err("first sample or local step charges work");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-        assert_eq!(limit.operation, if coarse { "nx pcurve coarse sample" } else { "nx pcurve local step" });
-        assert_eq!(ctx.charge_work_limit(0, "observe pcurve refusal"), Err(limit));
+        assert_eq!(
+            limit.operation,
+            if coarse {
+                "nx pcurve coarse sample"
+            } else {
+                "nx pcurve local step"
+            }
+        );
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe pcurve refusal"),
+            Err(limit)
+        );
     }
     for coarse in [false, true] {
         let arena = DecodeArena::new();
@@ -504,8 +605,17 @@ fn closest_pcurve_helpers_preserve_session_depth_refusal() {
         let limit = result.expect_err("first evaluator frame refuses");
         assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-        assert_eq!(ctx.charge_work_limit(0, "observe pcurve refusal"), Err(limit));
-        assert_eq!(closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0)), Err(limit));
-        assert_eq!(closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2), Err(limit));
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe pcurve refusal"),
+            Err(limit)
+        );
+        assert_eq!(
+            closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0)),
+            Err(limit)
+        );
+        assert_eq!(
+            closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2),
+            Err(limit)
+        );
     }
 }

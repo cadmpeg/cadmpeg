@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for identity order.
 
-use std::collections::{btree_map::Entry, BTreeMap, HashSet};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use crate::index::identities::BorrowedIdentities;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use crate::document::CadIr;
 use crate::report::{
@@ -13,24 +14,38 @@ use crate::report::{
 
 fn push_identity<'a>(
     ctx: &DecodeContext<'_>,
-    seen: &mut (HashSet<&'a str>, ScopedReservation<'_>),
+    seen: &mut BorrowedIdentities<'_, 'a>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
-    let grammar_work = id.len().checked_mul(4).and_then(|value| value.checked_add(1))
-        .ok_or_else(|| ctx.refuse_codec_limit("validate identity grammar", u64::MAX - 1, u64::MAX))?;
+    let grammar_work = id
+        .len()
+        .checked_mul(4)
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("validate identity grammar", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(u64_from_index(grammar_work), "validate identity grammar")?;
     if !crate::ids::is_valid_identity(id) {
-        super::record_finding(ctx, findings, Check::Identity, Severity::Error, Some(id), format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"))?;
+        super::record_finding(
+            ctx,
+            findings,
+            Check::Identity,
+            Severity::Error,
+            Some(id),
+            format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
+        )?;
     }
-    let work = id.len().checked_add(1)
-        .and_then(|bytes| seen.0.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
-        .and_then(|value| value.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit("index validation identities", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(u64_from_index(work), "index validation identities")?;
-    let inserted = seen.1.with_storage(|| ctx.insert_hash_set(&mut seen.0, id, "validation identity slots"))?;
+    let inserted = seen.insert_unique(id, ())?;
     if !inserted {
-        super::record_finding(ctx, findings, Check::Identity, Severity::Error, Some(id), format_args!("entity id is not globally unique"))?;
+        super::record_finding(
+            ctx,
+            findings,
+            Check::Identity,
+            Severity::Error,
+            Some(id),
+            format_args!("entity id is not globally unique"),
+        )?;
     }
     Ok(())
 }
@@ -43,11 +58,21 @@ fn check_order<'a>(
 ) -> Result<(), CodecError> {
     let mut previous: Option<&str> = None;
     for id in ids {
-        ctx.charge_work(u64_from_index(id.len()).checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("compare validation arena order", u64::MAX - 1, u64::MAX))?,
-            "compare validation arena order")?;
+        ctx.charge_work(
+            u64_from_index(id.len()).checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("compare validation arena order", u64::MAX - 1, u64::MAX)
+            })?,
+            "compare validation arena order",
+        )?;
         if previous.is_some_and(|value| value >= id) {
-            super::record_finding(ctx, findings, Check::ArenaOrder, Severity::Error, Some(id), format_args!("arena `{arena}` is not strictly sorted by id"))?;
+            super::record_finding(
+                ctx,
+                findings,
+                Check::ArenaOrder,
+                Severity::Error,
+                Some(id),
+                format_args!("arena `{arena}` is not strictly sorted by id"),
+            )?;
             return Ok(());
         }
         previous = Some(id);
@@ -60,7 +85,7 @@ macro_rules! define_model_identity_checks {
         fn check_model_identity_and_order<'a>(
             ctx: &DecodeContext<'_>,
             ir: &'a CadIr,
-            seen: &mut (HashSet<&'a str>, ScopedReservation<'_>),
+            seen: &mut BorrowedIdentities<'_, 'a>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
@@ -81,25 +106,56 @@ macro_rules! define_model_identity_checks {
 crate::document::arena_registry!(define_model_identity_checks);
 
 /// Check model and native identities and preserve arena-ordered findings.
-pub(super) fn check_identity_and_order(ctx: &DecodeContext<'_>, view: crate::native::view::NativeView<'_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
-    let mut seen = (HashSet::new(), ctx.reserve_scoped(0, "validation identity storage")?);
+pub(super) fn check_identity_and_order(
+    ctx: &DecodeContext<'_>,
+    view: crate::native::view::NativeView<'_>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let mut seen = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     check_model_identity_and_order(ctx, view.ir, &mut seen, findings)?;
-    let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (BTreeMap::new(), ctx.reserve_scoped(0, "validation native order storage")?);
-    view.visit(|work| ctx.charge_work(u64_from_index(work), "validation native arena scan"), |format, arena, records| {
+    let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (
+        BTreeMap::new(),
+        ctx.reserve_scoped(0, "validation native order storage")?,
+    );
+    view.visit(
+        |work| ctx.charge_work(u64_from_index(work), "validation native arena scan"),
+        |format, arena, records| {
             for record in records.records() {
                 push_identity(ctx, &mut seen, findings, record.id())?;
             }
-            if records.len() == 0 { return Ok(()); }
+            if records.len() == 0 {
+                return Ok(());
+            }
             by_arena.1.with_storage(|| {
-                let label = ctx.format_retained(format_args!("native.{format}.{arena}"), "validation native arena name")?;
-                let work = label.len().checked_add(1)
-                    .and_then(|bytes| by_arena.0.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
-                    .ok_or_else(|| ctx.refuse_codec_limit("group validation native arenas", u64::MAX - 1, u64::MAX))?;
+                let label = ctx.format_retained(
+                    format_args!("native.{format}.{arena}"),
+                    "validation native arena name",
+                )?;
+                let work = label
+                    .len()
+                    .checked_add(1)
+                    .and_then(|bytes| {
+                        by_arena
+                            .0
+                            .len()
+                            .checked_add(1)
+                            .and_then(|count| bytes.checked_mul(count))
+                    })
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "group validation native arenas",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                 ctx.charge_work(u64_from_index(work), "group validation native arenas")?;
                 let ids = match by_arena.0.entry(label) {
                     Entry::Occupied(entry) => entry.into_mut(),
                     Entry::Vacant(entry) => {
-                        ctx.admit_retained_btree_record::<String, Vec<&str>>(0, "validation native arena slots")?;
+                        ctx.admit_retained_btree_record::<String, Vec<&str>>(
+                            0,
+                            "validation native arena slots",
+                        )?;
                         entry.insert(Vec::new())
                     }
                 };
@@ -109,8 +165,9 @@ pub(super) fn check_identity_and_order(ctx: &DecodeContext<'_>, view: crate::nat
                 }
                 Ok::<_, CodecError>(())
             })?;
-        Ok(())
-    })?;
+            Ok(())
+        },
+    )?;
     for (arena, ids) in &by_arena.0 {
         check_order(ctx, arena, ids.iter().copied(), findings)?;
     }

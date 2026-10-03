@@ -14,26 +14,33 @@ pub(super) fn parent_draft() -> ModelDraft {
     let mut draft = ModelDraft::new();
     for (key, ordinal) in [("0-parent", 0), ("1-child", 1)] {
         draft
-            .insert(Feature {
-                id: format!("test:parents:feature#{key}").try_into().unwrap(),
-                ordinal,
-                name: None,
-                suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
-                source_properties: std::collections::BTreeMap::default(),
-                source_tag: None,
-                source_text: None,
-                source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                ),
-                native_ref: None,
-            }, &cadmpeg_test_support::service_decode_context())
+            .insert(
+                Feature {
+                    id: format!("test:parents:feature#{key}").try_into().unwrap(),
+                    ordinal,
+                    name: None,
+                    suppressed: None,
+                    dependencies: crate::features::DistinctMembers::default(),
+                    source_properties: std::collections::BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: crate::features::FeatureContent::default(),
+                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                    ),
+                    native_ref: None,
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .unwrap();
     }
     draft
         .model_mut()
-        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &("test:parents:feature#1-child".try_into().unwrap()), &("test:parents:feature#0-parent".try_into().unwrap()))
+        .set_feature_regeneration_parent(
+            &cadmpeg_test_support::service_decode_context(),
+            &("test:parents:feature#1-child".try_into().unwrap()),
+            &("test:parents:feature#0-parent".try_into().unwrap()),
+        )
         .unwrap();
     draft
 }
@@ -111,7 +118,9 @@ fn parent_admission_checks_tree_ownership_across_the_destination_and_draft() {
             role: FeatureTreeNodeRole::History,
             children: TreeChildren::new(
                 vec!["test:parents:feature#1-child".try_into().unwrap()],
-                None, &cadmpeg_test_support::service_decode_context())
+                None,
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .unwrap(),
         }));
     base.model.features.push(parent);

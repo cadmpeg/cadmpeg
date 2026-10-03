@@ -1722,11 +1722,10 @@ pub(super) fn ellipse_to_nurbs(
     let corner = cadmpeg_ir::scalar::NonZeroReal::FRAC_1_SQRT_2;
     let full = cadmpeg_ir::scalar::NonZeroReal::ONE;
     let pole = |point, weight| cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight };
-    propagate_resource!(NurbsCurve::new(ctx, 
+    propagate_resource!(NurbsCurve::new(
+        ctx,
         2,
-        vec![
-            0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
-        ],
+        vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,],
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
             points: vec![
                 pole(at(1.0, 0.0), full),
@@ -1742,7 +1741,8 @@ pub(super) fn ellipse_to_nurbs(
         },
         false,
     ))
-    .ok().map(Ok)
+    .ok()
+    .map(Ok)
 }
 
 /// The highest stream save format version whose revision-gated loft profile
@@ -5366,8 +5366,16 @@ mod ellipse_tests {
     #[test]
     fn numerical_followup_ellipse_accepts_extreme_finite_radii() {
         for radius in [1.0, 1e200, 1e-200] {
-            let curve =
-                super::ellipse_to_nurbs(&cadmpeg_test_support::service_decode_context(), [0.; 3], [0., 0., 1.], [radius, 0., 0.], 0.5).transpose().expect("ellipse admission").unwrap();
+            let curve = super::ellipse_to_nurbs(
+                &cadmpeg_test_support::service_decode_context(),
+                [0.; 3],
+                [0., 0., 1.],
+                [radius, 0., 0.],
+                0.5,
+            )
+            .transpose()
+            .expect("ellipse admission")
+            .unwrap();
             let poles = curve.control_points();
             assert_eq!(poles[0].x, radius * super::LEN_TO_MM);
             assert_eq!(poles[2].y, 0.5 * radius * super::LEN_TO_MM);

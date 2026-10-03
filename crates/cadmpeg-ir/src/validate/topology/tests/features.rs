@@ -30,10 +30,26 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             id: state_id.clone(),
             input_of: feature_id.clone(),
-            bodies: crate::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
-            faces: crate::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
-            edges: crate::features::DistinctMembers::try_from(Vec::new(), &cadmpeg_test_support::service_decode_context()).unwrap(),
-            vertices: crate::features::DistinctMembers::try_from(vec![historical_vertex.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+            bodies: crate::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            faces: crate::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            edges: crate::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
+            vertices: crate::features::DistinctMembers::try_from(
+                vec![historical_vertex.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             native_ref: None,
         });
     ir.model.features.push(Feature {
@@ -57,8 +73,10 @@ fn historical_vertex_selection_requires_input_state_membership() {
                     vertex: VertexSelection::historical(
                         state_id.clone(),
                         historical_vertex,
-                        "vertex:local".into(), &cadmpeg_test_support::service_decode_context(),
-                    ).expect("selection reference admission")
+                        "vertex:local".into(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
                     .unwrap(),
                 })),
             }),
@@ -68,11 +86,18 @@ fn historical_vertex_selection_requires_input_state_membership() {
 
     let mut references = Vec::new();
     ir.model.features[0]
-        .visit_references(&cadmpeg_test_support::service_decode_context(), &mut |reference| { references.push(reference.to_owned()); Ok(()) })
+        .visit_references(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut |reference| {
+                references.push(reference.to_owned());
+                Ok(())
+            },
+        )
         .expect("feature states its typed references");
     assert_eq!(references, vec![state_id.as_str()]);
 
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -94,7 +119,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
         };
         *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
     });
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -178,7 +204,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert_eq!(
         report
@@ -207,7 +234,11 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::try_from(vec![feature_id.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![feature_id.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -247,8 +278,11 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }),
-            crate::features::DistinctMembers::try_from(vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")], &cadmpeg_test_support::service_decode_context())
-                .unwrap(),
+            crate::features::DistinctMembers::try_from(
+                vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
         ),
         native_ref: None,
     });
@@ -271,7 +305,8 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for fragment in [
         "does not precede",
@@ -336,7 +371,8 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             native_ref: None,
         });
     }
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report
         .findings
@@ -395,13 +431,19 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("does not precede its consumer")));
@@ -463,13 +505,21 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "Width / 2".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::try_from(vec![document], &cadmpeg_test_support::service_decode_context()).unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![document],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings.is_empty());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings
+        .is_empty());
 }
 
 #[test]
@@ -478,6 +528,8 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, FeatureOperation},
         scalar::Length,
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
@@ -517,7 +569,8 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
             .unwrap(),
         }),
     ));
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report
@@ -540,11 +593,14 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -556,12 +612,15 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
             _ => unreachable!(),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::super::check_feature_references(&ctx, &ir, &index, &mut Vec::new()).unwrap_err();
+        let error =
+            super::super::check_feature_references(&ctx, &ir, &index, &mut Vec::new()).unwrap_err();
         assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-        assert_eq!(ctx.finish_session().unwrap_err().to_string(), error.to_string());
+        assert_eq!(
+            ctx.finish_session().unwrap_err().to_string(),
+            error.to_string()
+        );
     }
 }
-
 
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {
@@ -614,9 +673,17 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToVertex {
                             vertex: VertexSelection::generated(
-                                GeneratedVertexRef::new(source.clone(), "vertex-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
-                                "test:vertex-selection".into(), &cadmpeg_test_support::service_decode_context(),
-                            ).expect("selection reference admission")
+                                GeneratedVertexRef::new(
+                                    source.clone(),
+                                    "vertex-0".into(),
+                                    &cadmpeg_test_support::service_decode_context(),
+                                )
+                                .expect("selection reference admission")
+                                .unwrap(),
+                                "test:vertex-selection".into(),
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("selection reference admission")
                             .unwrap(),
                         },
                         draft: None,
@@ -634,7 +701,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     });
 
     let message = "generated termination vertex is invalid";
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -662,8 +730,16 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         )]),
         native_ref: None,
     });
-    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -672,7 +748,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         extrude.as_str(),
         source.as_str()
     );
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == configuration_message));
@@ -681,8 +758,17 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .feature_states
         .get_mut(&extrude)
         .expect("configured extrude");
-    state.dependencies.insert(&cadmpeg_test_support::service_decode_context(), source, "insert fixture member").expect("member insertion admission");
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    state
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -744,13 +830,22 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         "pattern omits seed feature `{}` from its dependencies",
         seed.as_str()
     );
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
 
-    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), seed, "insert fixture member").expect("member insertion admission");
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            seed,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -858,9 +953,17 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::generated(
-                        vec![GeneratedCurveRef::new(source.clone(), "curve-0".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()],
-                        "synthetic:test:profile-selection".into(), &cadmpeg_test_support::service_decode_context(),
-                    ).expect("selection reference admission")
+                        vec![GeneratedCurveRef::new(
+                            source.clone(),
+                            "curve-0".into(),
+                            &cadmpeg_test_support::service_decode_context(),
+                        )
+                        .expect("selection reference admission")
+                        .unwrap()],
+                        "synthetic:test:profile-selection".into(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
                     .unwrap(),
                 ),
                 direction: ExtrudeDirection::ProfileNormal {},
@@ -882,9 +985,30 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             }),
         ),
     ];
-    ir.model.features[2].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
-    ir.model.features[3].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
-    ir.model.features[6].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
+    ir.model.features[2]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    ir.model.features[3]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    ir.model.features[6]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:configuration#offset-plane")
             .expect("identity grammar"),
@@ -921,7 +1045,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         native_ref: None,
     });
 
-    let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .into_iter()
         .map(|finding| finding.message)
@@ -947,22 +1072,46 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         block.as_str()
     )));
 
-    ir.model.features[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
-    ir.model.features[5].dependencies.insert(&cadmpeg_test_support::service_decode_context(), block.clone(), "insert fixture member").expect("member insertion admission");
+    ir.model.features[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            source.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
+    ir.model.features[5]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            block.clone(),
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     for feature in [&offset, &derived, &pattern, &profile] {
         ir.model.configurations[0]
             .feature_states
             .get_mut(feature)
             .expect("configuration feature state")
             .dependencies
-            .insert(&cadmpeg_test_support::service_decode_context(), source.clone(), "insert fixture member").expect("member insertion admission");
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                source.clone(),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
     }
     ir.model.configurations[0]
         .feature_states
         .get_mut(&instance)
         .expect("block-instance state")
         .dependencies
-        .insert(&cadmpeg_test_support::service_decode_context(), block, "insert fixture member").expect("member insertion admission");
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            block,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
@@ -997,10 +1146,24 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         native_ref: None,
     });
     ir.model.feature_result_topologies.push(
-        crate::features::FeatureResultMembers::new(vec![cadmpeg_core::nonblank_literal!("body#declared")], Vec::new(), Vec::new(), Vec::new(), &cadmpeg_test_support::service_decode_context(), "validate feature result members")
+        crate::features::FeatureResultMembers::new(
+            vec![cadmpeg_core::nonblank_literal!("body#declared")],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+            "validate feature result members",
+        )
         .expect("result membership admission")
-        .map(|members| FeatureResultTopology::new(FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
-                .expect("valid identity"), producer.clone(), members, None))
+        .map(|members| {
+            FeatureResultTopology::new(
+                FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
+                    .expect("valid identity"),
+                producer.clone(),
+                members,
+                None,
+            )
+        })
         .unwrap(),
     );
     ir.model.features.push(Feature {
@@ -1008,7 +1171,11 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::try_from(vec![producer.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+        dependencies: crate::features::DistinctMembers::try_from(
+            vec![producer.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
@@ -1021,8 +1188,10 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
                         feature: producer,
                         local_id: "body#declared".to_owned().try_into().unwrap(),
                     }],
-                    "synthetic:native-selection#0".into(), &cadmpeg_test_support::service_decode_context(),
-                ).expect("body selection admission")
+                    "synthetic:native-selection#0".into(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("body selection admission")
                 .unwrap(),
             }),
         ),
@@ -1038,13 +1207,18 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         else {
             panic!("test consumer must retain its generated body selection");
         };
-        *bodies = vec![
-            GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
-        ]
+        *bodies = vec![GeneratedBodyRef::new(
+            bodies[0].feature.clone(),
+            "body#undeclared".into(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("selection reference admission")
+        .unwrap()]
         .try_into()
         .unwrap();
     });
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == "generated body selection is invalid"));
@@ -1105,8 +1279,11 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         ),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     assert_eq!(
         serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
         "AQID"
@@ -1164,6 +1341,9 @@ fn decals_require_valid_assets_faces_and_opacity() {
         ),
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{DatumReference, DatumReferences, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue};
+use super::{
+    DatumReference, DatumReferences, DatumTargetForm, DimensionKind, DimensionTolerance,
+    GeometricToleranceKind, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension,
+    PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
+};
 
 rewrite_record!(DatumReference, []; {datum, precedence, common_group, modifiers});
 rewrite_record!(DatumReferences, []; (field0));

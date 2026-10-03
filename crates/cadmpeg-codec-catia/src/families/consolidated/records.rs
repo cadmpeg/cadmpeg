@@ -1697,7 +1697,8 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             )?;
             let mut winners = Vec::new();
             for surface in &surfaces {
-                if let Some(offset) = nurbs_carrier_offset_surface(ctx, 
+                if let Some(offset) = nurbs_carrier_offset_surface(
+                    ctx,
                     &surface.geometry,
                     &partner_points,
                     &anchor_points,
@@ -1846,7 +1847,9 @@ fn resolve_side_support(
     for sphere in carriers.spheres {
         let geometry = b2_sphere_geometry(sphere);
         if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v))? {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+                ctx, &geometry, u, v,
+            ))? {
                 Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
             }
@@ -1870,7 +1873,9 @@ fn resolve_side_support(
     for plane in carriers.planes {
         if let Some(geometry) = b2_plane_geometry(plane) {
             if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-                match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v))? {
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                )? {
                     Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 }
@@ -1981,12 +1986,14 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
-                        ctx,
-                        &b2_sphere_geometry(carrier),
-                        u,
-                        v,
-                    ))? {
+                    match cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::surface_point(
+                            ctx,
+                            &b2_sphere_geometry(carrier),
+                            u,
+                            v,
+                        ),
+                    )? {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
@@ -2016,8 +2023,9 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v))?
-                    {
+                    match cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                    )? {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
@@ -2339,7 +2347,8 @@ mod tests {
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2358,11 +2367,13 @@ mod tests {
                     None,
                 ),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .expect("valid unit-square surface"),
         ));
         let tiny = 1e-200;
-        let offset = nurbs_carrier_offset(&cadmpeg_test_support::service_decode_context(), 
+        let offset = nurbs_carrier_offset(
+            &cadmpeg_test_support::service_decode_context(),
             &surface,
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
@@ -2372,7 +2383,8 @@ mod tests {
         assert_eq!(offset.get(), tiny);
 
         assert_eq!(
-            nurbs_carrier_offset(&cadmpeg_test_support::service_decode_context(), 
+            nurbs_carrier_offset(
+                &cadmpeg_test_support::service_decode_context(),
                 &surface,
                 &[[0.25, 0.25], [0.75, 0.75]],
                 &[
@@ -2384,13 +2396,19 @@ mod tests {
             None
         );
         assert_eq!(
-            nurbs_carrier_offset(&cadmpeg_test_support::service_decode_context(), &surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],)
-                .expect("evaluator allocation succeeds"),
+            nurbs_carrier_offset(
+                &cadmpeg_test_support::service_decode_context(),
+                &surface,
+                &[[0.0, 0.0]],
+                &[Point3::new(tiny, 0.0, tiny)],
+            )
+            .expect("evaluator allocation succeeds"),
             None
         );
         for invalid in [f64::NAN, f64::INFINITY] {
             assert_eq!(
-                nurbs_carrier_offset(&cadmpeg_test_support::service_decode_context(), 
+                nurbs_carrier_offset(
+                    &cadmpeg_test_support::service_decode_context(),
                     &surface,
                     &[[0.25, 0.25], [0.75, 0.75]],
                     &[

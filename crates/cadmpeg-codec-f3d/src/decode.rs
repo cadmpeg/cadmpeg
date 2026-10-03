@@ -4456,7 +4456,14 @@ fn decode_result(
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize(ctx)?;
-    let hash = cadmpeg_ir::hash::document_local_sha256(ctx, &ir, Some(&source), "f3d", crate::ids::FILE_SOURCE_IMAGE_ID, "record F3D document digest")?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(
+        ctx,
+        &ir,
+        Some(&source),
+        "f3d",
+        crate::ids::FILE_SOURCE_IMAGE_ID,
+        "record F3D document digest",
+    )?;
     ctx.insert_btree_map(
         &mut source.attributes,
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
@@ -4491,7 +4498,14 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(&ctx, ir, ir.source.as_ref(), "f3d", crate::ids::FILE_SOURCE_IMAGE_ID, "record F3D document digest")?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(
+        &ctx,
+        ir,
+        ir.source.as_ref(),
+        "f3d",
+        crate::ids::FILE_SOURCE_IMAGE_ID,
+        "record F3D document digest",
+    )?;
     ctx.finish_session()?;
     Ok(digest)
 }

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{AnchoredVertexUse, Body, BodyKind, Coedge, CoedgeUseCurve, Color, Edge, EdgeCarrier, Face, FaceLoops, IncreasingParameterInterval, Loop, LoopBoundary, LoopRing, ParameterInterval, PcurveUse, Point, Region, Sense, Shell, ShellMembers, Vertex};
+use super::{
+    AnchoredVertexUse, Body, BodyKind, Coedge, CoedgeUseCurve, Color, Edge, EdgeCarrier, Face,
+    FaceLoops, IncreasingParameterInterval, Loop, LoopBoundary, LoopRing, ParameterInterval,
+    PcurveUse, Point, Region, Sense, Shell, ShellMembers, Vertex,
+};
 
 rewrite_record!(AnchoredVertexUse, []; {vertex, after, pcurves});
 rewrite_record!(Body, []; {id, kind, regions, transform, name, color, visible});

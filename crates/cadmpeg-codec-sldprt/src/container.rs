@@ -448,7 +448,11 @@ fn compound_stream(
     let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
-        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(ctx, directory_id, "compose annotation stream name")?,
+        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(
+            ctx,
+            directory_id,
+            "compose annotation stream name",
+        )?,
     };
     Ok(CompoundStream {
         path,
@@ -594,13 +598,17 @@ impl RawBlock {
         let section = match self.section {
             Some(name) => match cadmpeg_ir::StreamName::try_from(name) {
                 Ok(name) => BlockName::Named(name),
-                Err(_) => BlockName::Anonymous(
-                    cadmpeg_ir::stream_name!("block@").with_suffix(ctx, self.offset, "compose annotation stream name")?,
-                ),
+                Err(_) => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
+                    ctx,
+                    self.offset,
+                    "compose annotation stream name",
+                )?),
             },
-            None => {
-                BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(ctx, self.offset, "compose annotation stream name")?)
-            }
+            None => BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(
+                ctx,
+                self.offset,
+                "compose annotation stream name",
+            )?),
         };
         Ok(Block {
             offset: self.offset,

@@ -933,23 +933,37 @@ mod tests {
 impl<'a> AssemblyGraph<'a> {
     /// Validates parent links and every composed occurrence transform.
     pub fn new(occurrences: &'a [Occurrence]) -> Result<Self, AssemblyGraphError> {
-        crate::index::public_result(assembly_graph::build(occurrences, &crate::index::PublicStorage))
-            .map(|occurrences| Self { occurrences })
-            .map_err(|error| match error {
-                assembly_graph::GraphError::Duplicate(id) => AssemblyGraphError::DuplicateOccurrence(id.clone()),
-                assembly_graph::GraphError::Missing { occurrence, parent } => AssemblyGraphError::MissingParent {
-                    occurrence: occurrence.clone(), parent: parent.clone(),
-                },
-                assembly_graph::GraphError::Cycle(id) => AssemblyGraphError::ParentCycle(id.clone()),
-                assembly_graph::GraphError::Transform { occurrence, source } => AssemblyGraphError::Transform {
-                    occurrence: occurrence.clone(), source,
-                },
-            })
+        crate::index::public_result(assembly_graph::build(
+            occurrences,
+            &crate::index::PublicStorage,
+        ))
+        .map(|occurrences| Self { occurrences })
+        .map_err(|error| match error {
+            assembly_graph::GraphError::Duplicate(id) => {
+                AssemblyGraphError::DuplicateOccurrence(id.clone())
+            }
+            assembly_graph::GraphError::Missing { occurrence, parent } => {
+                AssemblyGraphError::MissingParent {
+                    occurrence: occurrence.clone(),
+                    parent: parent.clone(),
+                }
+            }
+            assembly_graph::GraphError::Cycle(id) => AssemblyGraphError::ParentCycle(id.clone()),
+            assembly_graph::GraphError::Transform { occurrence, source } => {
+                AssemblyGraphError::Transform {
+                    occurrence: occurrence.clone(),
+                    source,
+                }
+            }
+        })
     }
 
     /// Returns an occurrence by identity.
     pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
-        crate::index::public_result(self.occurrences.occurrence(id, &crate::index::PublicStorage))
+        crate::index::public_result(
+            self.occurrences
+                .occurrence(id, &crate::index::PublicStorage),
+        )
     }
 }
 

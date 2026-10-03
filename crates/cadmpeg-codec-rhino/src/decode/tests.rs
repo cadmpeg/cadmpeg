@@ -38,13 +38,15 @@ mod carrier_copy;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
-    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![start, start, end, end],
         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
         rational.then(|| vec![2.0, 1.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid test line")
 }
 
@@ -536,7 +538,12 @@ fn instance_plane_transform_keeps_component_division() {
         [0.0, 0.0, 4.0, 6.0],
     ])
     .expect("finite affine transform");
-    transform_surface(&cadmpeg_test_support::service_decode_context(), &mut surface, transform).expect("transformed plane");
+    transform_surface(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut surface,
+        transform,
+    )
+    .expect("transformed plane");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
         panic!("plane remains solved");
     };
@@ -1070,7 +1077,8 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
 
 #[test]
 fn unequal_degree_c2_polycurve_elevates_lower_degree() {
-    let quadratic = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let quadratic = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1080,7 +1088,8 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid quadratic");
     let compound = crate::curves::DecodedCurve::Compound {
         children: vec![
@@ -1108,14 +1117,30 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
-    let start = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots.clone(), points.to_vec(), None, false).expect("fixture constructor admission")
-        .expect("valid cap start");
+    let start = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots.clone(),
+        points.to_vec(),
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
-    let end =
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots.clone(), end_points, None, false).expect("fixture constructor admission").expect("valid cap end");
+    let end = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots.clone(),
+        end_points,
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))
@@ -1336,7 +1361,12 @@ fn successful_candidate_leaves_final_unknown_attachment_as_its_single_owner() {
         context
             .validate_candidate(|_, _| ())
             .expect("empty candidate admitted");
-        assert!(context.session.document().native_unknowns("rhino").unwrap().is_empty());
+        assert!(context
+            .session
+            .document()
+            .native_unknowns("rhino")
+            .unwrap()
+            .is_empty());
         let decoded = context.commit().expect("one final unknown attachment");
         assert_eq!(decoded.ir.native_unknowns("rhino").unwrap().len(), 1);
         assert_eq!(decoded.source_fidelity.retained_records().len(), 1);
@@ -1366,7 +1396,8 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             )
         };
         context.ir_mut().model.points.push(point("z"));
-        let checkpoint = ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
+        let checkpoint =
+            ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
         context
             .validate_candidate(|candidate, _| {
                 candidate.model.points.push(point("a"));
@@ -1374,7 +1405,8 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             .expect("distinct point admitted");
         assert_eq!(
             context
-                .session.document()
+                .session
+                .document()
                 .model
                 .points
                 .get(checkpoint.0.arena_len::<Point>()..)
@@ -1383,9 +1415,15 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 .as_str(),
             "rhino:test:point#a"
         );
-        checkpoint.0.discard_appended(&mut context.ir_mut().model, expand.ctx()).unwrap();
+        checkpoint
+            .0
+            .discard_appended(&mut context.ir_mut().model, expand.ctx())
+            .unwrap();
         assert_eq!(context.session.document().model.points.len(), 1);
-        assert_eq!(context.session.document().model.points[0].id.as_str(), "rhino:test:point#z");
+        assert_eq!(
+            context.session.document().model.points[0].id.as_str(),
+            "rhino:test:point#z"
+        );
     });
 }
 
@@ -1527,11 +1565,14 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     )
     .expect("resource allocation did not fail")
     .is_ok());
-    assert!(
-        cadmpeg_ir::admit(&cadmpeg_test_support::service_decode_context(), &accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
-            .expect("resource allocation did not fail")
-            .is_ok()
-    );
+    assert!(cadmpeg_ir::admit(
+        &cadmpeg_test_support::service_decode_context(),
+        &accepted,
+        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        Vec::new()
+    )
+    .expect("resource allocation did not fail")
+    .is_ok());
 
     assert!(!cadmpeg_ir::admit_with_annotations(
         &cadmpeg_test_support::service_decode_context(),
@@ -1542,11 +1583,14 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     )
     .expect("resource allocation did not fail")
     .is_ok());
-    assert!(
-        !cadmpeg_ir::admit(&cadmpeg_test_support::service_decode_context(), &rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
-            .expect("resource allocation did not fail")
-            .is_ok()
-    );
+    assert!(!cadmpeg_ir::admit(
+        &cadmpeg_test_support::service_decode_context(),
+        &rejected,
+        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        Vec::new()
+    )
+    .expect("resource allocation did not fail")
+    .is_ok());
 }
 
 #[test]
@@ -1649,8 +1693,13 @@ fn unknown_record_link_insertion_refuses_collection_limit() {
             "",
             Vec::new(),
         );
-        append_link_to_record(ctx, "rhino:object:unknown#0", record.links_mut(), "rhino:curve#1")
-            .expect_err("one link exceeds the collection limit")
+        append_link_to_record(
+            ctx,
+            "rhino:object:unknown#0",
+            record.links_mut(),
+            "rhino:curve#1",
+        )
+        .expect_err("one link exceeds the collection limit")
     });
     assert!(matches!(
         refusal,

@@ -582,7 +582,8 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     .expect("evaluation root");
 
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -592,7 +593,8 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
             ],
             Some(vec![1.0, 2.0, 1.0]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid boundary NURBS"),
     ));
     assert_eq!(
@@ -613,7 +615,8 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
         .expect("admitted periodic fixture");
     };
@@ -671,9 +674,25 @@ fn assert_pcurve_matches_curve(
     parameters: &[f64],
 ) {
     for parameter in parameters {
-        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, *parameter).expect("pcurve point");
-        let mapped = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v).expect("surface point");
-        let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, curve, *parameter).expect("curve point");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            pcurve,
+            *parameter,
+        )
+        .expect("pcurve point");
+        let mapped = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("surface point");
+        let expected = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            curve,
+            *parameter,
+        )
+        .expect("curve point");
         assert!((mapped.x - expected.x).abs() <= 1.0e-10);
         assert!((mapped.y - expected.y).abs() <= 1.0e-10);
         assert!((mapped.z - expected.z).abs() <= 1.0e-10);
@@ -823,13 +842,15 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
     );
 
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![2.0, 2.0, 5.0, 5.0],
             vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
             Some(vec![2.0, 1.0]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid planar NURBS"),
     ));
     assert!(matches!(
@@ -865,13 +886,15 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
 
 fn planar_nurbs_limit_error(max_collection_items: u64) -> cadmpeg_core::CodecError {
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![2.0, 2.0, 5.0, 5.0],
             vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
             Some(vec![2.0, 1.0]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid planar NURBS"),
     ));
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -924,13 +947,15 @@ fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
         .expect("valid diagonal plane"),
     ));
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, f64::MAX, 3.0); 2],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("finite source poles"),
     ));
     let arena = cadmpeg_core::decode::DecodeArena::new();

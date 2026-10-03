@@ -13,19 +13,25 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
     // times f64::MAX. The plane maps the infinite u to a point with no finite
     // coordinate.
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let ir = mapped_surface_curve_with_pcurve(pcurve, [2.0, 3.0]);
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -57,8 +63,12 @@ fn a_support_side_whose_placed_support_overflows_misses_its_contract_by_inf() {
         ),
     );
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -106,8 +116,12 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     }];
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
-    super::check_pcurve_surface_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::check_pcurve_surface_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())
@@ -152,8 +166,12 @@ fn a_surface_curve_whose_end_overflows_misses_its_support_contract_by_nan() {
         .solved_cache_mut()
         .expect("mapped curve has a solved cache") = parabola(Point3::new(2.0, 0.0, 0.0), f64::MAX);
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(
         messages(&findings),
         ["procedural support side 0 misses its endpoint distance contract by NaN"]
@@ -169,8 +187,12 @@ fn a_surface_offset_whose_solved_end_overflows_misses_its_offset_distance_by_nan
         .expect("mapped curve has a solved cache") =
         parabola(Point3::new(2.0, 0.0, 25.0), f64::MAX);
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(
         messages(&findings),
         ["surface-offset solved curve misses its base offset distance by NaN"]
@@ -188,8 +210,12 @@ fn a_surface_offset_whose_base_end_overflows_misses_its_contracts_by_nan() {
         f64::MAX / 8.0,
     ));
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(
         messages(&findings),
         [
@@ -248,7 +274,8 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
         .unwrap(),
     );
     ir.model
-        .add_procedural_curve(None, 
+        .add_procedural_curve(
+            None,
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
@@ -269,11 +296,16 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
                     cache: None,
                 },
             ),
-        ).unwrap()
+        )
+        .unwrap()
         .unwrap();
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(
         messages(&findings),
         ["charted tolerant intersection misses its endpoint witnesses by NaN"]
@@ -315,8 +347,12 @@ fn an_edge_curve_whose_end_overflows_misses_its_vertices_by_nan() {
     let ir = cube_with_an_overflowing_edge_curve();
     let edge = ir.model.edges[0].id.as_str().to_owned();
     let mut findings = Vec::new();
-    super::super::check_edge_endpoint_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::super::check_edge_endpoint_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(edge.as_str())
@@ -342,8 +378,12 @@ fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan()
     });
     let coedge = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
-    super::super::check_edge_endpoint_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    super::super::check_edge_endpoint_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge.as_str())
@@ -379,7 +419,8 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
         Surface {
             id: first.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                crate::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                crate::geometry::nurbs::NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     crate::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
@@ -397,7 +438,8 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                         None,
                     ),
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -525,8 +567,12 @@ fn a_support_side_on_a_blend_whose_support_partial_overflows_misses_its_contract
     let support = ir.model.surfaces[0].id.clone();
     make_steep_circular_blend(&mut ir, &support);
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -580,7 +626,8 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
         .unwrap(),
     );
     ir.model
-        .add_procedural_curve(None, 
+        .add_procedural_curve(
+            None,
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
@@ -601,11 +648,16 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
                     cache: None,
                 },
             ),
-        ).unwrap()
+        )
+        .unwrap()
         .unwrap();
     let mut findings = Vec::new();
-    check_procedural_support_consistency(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings)
-        .expect("resource allocation did not fail");
+    check_procedural_support_consistency(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut findings,
+    )
+    .expect("resource allocation did not fail");
     assert_eq!(
         messages(&findings),
         ["charted tolerant intersection misses its endpoint witnesses by NaN"]

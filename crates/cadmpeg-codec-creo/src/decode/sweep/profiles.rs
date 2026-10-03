@@ -63,12 +63,12 @@ fn sketch_geometry_endpoints(
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let (Some(first), Some(last)) = (
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, lower))?,
-                )?,
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, upper))?,
-                )?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, lower),
+                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, upper),
+                )?)?,
             ) else {
                 return Ok(None);
             };
@@ -326,12 +326,12 @@ pub(in super::super) fn circular_pcurve(
             Ok(knots) => knots,
             Err(error) => return Ok(Err(error)),
         };
-        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx, 
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(ctx,
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
             false,
-        )?)
+        )
     })()?;
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
@@ -1218,12 +1218,12 @@ fn nurbs_profile_signed_area_twice(
         {
             let parameter = middle + half_width * node;
             let (Some(point), Some(tangent)) = (
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, parameter))?,
-                )?,
-                cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_tangent(ctx, &carrier, parameter))?,
-                )?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, &carrier, parameter),
+                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_tangent(ctx, &carrier, parameter),
+                )?)?,
             ) else {
                 return Ok(None);
             };

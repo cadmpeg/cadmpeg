@@ -6,7 +6,6 @@ use cadmpeg_test_support::edit;
 
 const EPS_CURVE_INVERSE_WITNESS: f64 = 1.0e-12;
 
-
 use crate::eval::curve_second_derivative;
 
 use crate::eval::model_curve_differential_by_id;
@@ -92,8 +91,8 @@ mod overflowing_curve_arms;
 mod pcurves;
 mod procedural_curves;
 mod ruled_sum;
-mod surface_parameter_bounds;
 mod surface_derivative_context;
+mod surface_parameter_bounds;
 mod variable_blend;
 
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
@@ -115,15 +114,16 @@ fn contact_track(point: Point3, tangent: Vector3) -> crate::eval::ContactTrack {
 }
 
 /// A scalar law operand with value `value` and derivative `derivative`.
-fn law_operand(value: f64, derivative: f64) -> crate::eval::ScalarSweepDifferential {
-    crate::eval::ScalarSweepDifferential {
+fn law_operand(value: f64, derivative: f64) -> crate::eval::sweep_law::ScalarSweepDifferential {
+    crate::eval::sweep_law::ScalarSweepDifferential {
         value: crate::scalar::FiniteReal::new(value).unwrap(),
         derivative: Ok(crate::scalar::FiniteReal::new(derivative).unwrap()),
     }
 }
 
 fn bilinear_surface() -> NurbsSurface {
-    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -134,7 +134,8 @@ fn bilinear_surface() -> NurbsSurface {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -144,7 +145,8 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     {
         let replacement = true;
         edit::replace(&mut surface, |previous| {
-            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(),
+            NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -157,18 +159,42 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
-    let expected = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75).expect("in-domain surface point");
-    assert_eq!(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 1.25, 0.75), Ok(expected));
-    assert_eq!(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, -0.75, 0.75), Ok(expected));
+    let expected = crate::eval::decode::nurbs_surface_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        0.25,
+        0.75,
+    )
+    .expect("in-domain surface point");
+    assert_eq!(
+        crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            1.25,
+            0.75
+        ),
+        Ok(expected)
+    );
+    assert_eq!(
+        crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            -0.75,
+            0.75
+        ),
+        Ok(expected)
+    );
 
     {
         let replacement = false;
         edit::replace(&mut surface, |previous| {
-            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(),
+            NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -181,11 +207,20 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
-    assert_ne!(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 1.25, 0.75), Ok(expected));
+    assert_ne!(
+        crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            1.25,
+            0.75
+        ),
+        Ok(expected)
+    );
 }
 
 #[test]
@@ -235,7 +270,10 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                         },
                     },
                 },
-            ], &cadmpeg_test_support::service_decode_context()).expect("fixture rolling-ball admission")
+            ],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -292,7 +330,10 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                         second_derivative: zero,
                     },
                 },
-            ], &cadmpeg_test_support::service_decode_context()).expect("fixture rolling-ball admission")
+            ],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
 
@@ -308,19 +349,35 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
 fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     let surface = bilinear_surface();
     let budget = WorkBudget::new(3);
-    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::nurbs_surface_point(admission, &surface, 0.25, 0.75)).is_err());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard
+        .within_work_slice(&budget, |admission| {
+            crate::eval::decode::nurbs_surface_point(admission, &surface, 0.25, 0.75)
+        })
+        .is_err());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(12);
-    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::nurbs_surface_point(admission, &surface, 0.25, 0.75)).is_ok());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard
+        .within_work_slice(&budget, |admission| {
+            crate::eval::decode::nurbs_surface_point(admission, &surface, 0.25, 0.75)
+        })
+        .is_ok());
     assert_eq!(budget.consumed(), 12);
 
     let budget = WorkBudget::new(27);
-    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(admission, &surface, 0.25, 0.75)).is_err());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard
+        .within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(
+            admission, &surface, 0.25, 0.75
+        ))
+        .is_err());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(28);
-    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(admission, &surface, 0.25, 0.75)).is_ok());
+    assert!(crate::eval::admission::EvaluationAdmission::Standard
+        .within_work_slice(&budget, |admission| crate::eval::nurbs_surface_partials(
+            admission, &surface, 0.25, 0.75
+        ))
+        .is_ok());
     assert_eq!(budget.consumed(), 28);
 
     let transformed = SolvedSurfaceGeometry::Transformed(
@@ -336,13 +393,25 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
         .expect("placed surface"),
     );
     let budget = WorkBudget::new(12);
-    assert!(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &SurfaceGeometry::Solved(transformed.clone()), 0.25, 0.75))
-    .is_err_and(|failure| failure == crate::eval::EvaluationFailure::NoValue));
+    assert!(crate::eval::admission::EvaluationAdmission::Standard
+        .within_work_slice(&budget, |admission| crate::eval::decode::surface_point(
+            admission,
+            &SurfaceGeometry::Solved(transformed.clone()),
+            0.25,
+            0.75
+        ))
+        .is_err_and(|failure| failure == crate::eval::EvaluationFailure::NoValue));
     assert!(budget.exhausted());
     let budget = WorkBudget::new(13);
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &SurfaceGeometry::Solved(transformed.clone()), 0.25, 0.75))
-        .map(crate::features::FinitePoint3::get),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| crate::eval::decode::surface_point(
+                admission,
+                &SurfaceGeometry::Solved(transformed.clone()),
+                0.25,
+                0.75
+            ))
+            .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.75, 1.0))
     );
     assert_eq!(budget.consumed(), 13);
@@ -357,13 +426,15 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap(),
         )),
         source_object: None,
@@ -390,16 +461,26 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
             },
         ).unwrap()
         .unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let budget = WorkBudget::new(5);
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0)),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(
+            &budget,
+            |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0)
+        ),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(6);
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0))
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| model_surface_point_by_id(
+                admission,
+                &index,
+                &surface_id,
+                0.25,
+                2.0
+            ))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.0, 2.0))
     );
@@ -408,21 +489,29 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
 
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(vec![vec![Point3::new(1.0, 2.0, 3.0)]], None),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
     assert_eq!(
-        crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75)
-            .ok()
-            .map(crate::features::FinitePoint3::get),
+        crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            0.25,
+            0.75
+        )
+        .ok()
+        .map(crate::features::FinitePoint3::get),
         Some(point)
     );
-    let bound = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(),
+    let bound = nurbs_surface_parameter_segment_chord_bound(
+        &cadmpeg_test_support::service_decode_context(),
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
@@ -434,7 +523,8 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
         NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -445,11 +535,13 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
-        let bound = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(),
+        let bound = nurbs_surface_parameter_segment_chord_bound(
+            &cadmpeg_test_support::service_decode_context(),
             &surface,
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
@@ -462,7 +554,8 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -475,17 +568,28 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
     let endpoints = parameters.map(|point| {
-        crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, point.u, point.v)
-            .expect("surface endpoint")
-            .get()
+        crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            point.u,
+            point.v,
+        )
+        .expect("surface endpoint")
+        .get()
     });
-    let bound = nurbs_surface_parameter_segment_chord_bound(&cadmpeg_test_support::service_decode_context(), &surface, parameters, endpoints)
-        .expect("resource allocation did not fail")
-        .expect("multi-span rational Bézier residual bound");
+    let bound = nurbs_surface_parameter_segment_chord_bound(
+        &cadmpeg_test_support::service_decode_context(),
+        &surface,
+        parameters,
+        endpoints,
+    )
+    .expect("resource allocation did not fail")
+    .expect("multi-span rational Bézier residual bound");
 
     for index in 0..=100 {
         let parameter = f64::from(index) / 100.0;
@@ -493,7 +597,13 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             parameters[0].u + parameter * (parameters[1].u - parameters[0].u),
             parameters[0].v + parameter * (parameters[1].v - parameters[0].v),
         );
-        let point = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, uv.u, uv.v).expect("surface point");
+        let point = crate::eval::decode::nurbs_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            uv.u,
+            uv.v,
+        )
+        .expect("surface point");
         let target = Point3::new(
             endpoints[0].x + parameter * (endpoints[1].x - endpoints[0].x),
             endpoints[0].y + parameter * (endpoints[1].y - endpoints[0].y),
@@ -564,8 +674,12 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         } else {
             0.7
         };
-        let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(geometry.clone()), parameter)
-            .expect("analytic curve evaluates");
+        let point = crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(geometry.clone()),
+            parameter,
+        )
+        .expect("analytic curve evaluates");
         let id = CurveId::mint(format!("test:inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
@@ -573,8 +687,9 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             geometry: CurveGeometry::Solved(geometry.clone()),
             source_object: None,
         });
-        let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
             &id,
             point.get(),
             parameter,
@@ -602,7 +717,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(0.5, 0.0, 0.0),
@@ -626,7 +743,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(1.0, 0.5, 0.0),
@@ -650,7 +769,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .expect("nonempty polyline fixture"),
                     },
                     0.0,
-                 &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("polyline construction admission")
                 .unwrap(),
             ),
             Point3::new(2.0, 3.0, 4.0),
@@ -667,8 +788,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         });
-        let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
             &id,
             point,
             seed,
@@ -695,15 +817,24 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         )),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let point = Point3::new(0.5, 0.005, 0.0);
-    assert!(
-        super::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(), &index, &id, point, 0.5)
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
-    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(&cadmpeg_test_support::service_decode_context(),
-        &index, &id, point, 0.5, 0.01,
+    assert!(super::model_curve_parameter_near_point_in_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &index,
+        &id,
+        point,
+        0.5
+    )
+    .expect("resource allocation did not fail")
+    .is_none());
+    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
+        &cadmpeg_test_support::service_decode_context(),
+        &index,
+        &id,
+        point,
+        0.5,
+        0.01,
     )
     .expect("resource allocation did not fail")
     .expect("caller tolerance admits the bounded residual")
@@ -733,8 +864,12 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
             .expect("placed curve"),
     );
     let parameter = 0.7 + std::f64::consts::TAU;
-    let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(geometry.clone()), parameter)
-        .expect("transformed curve evaluates");
+    let point = crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &CurveGeometry::Solved(geometry.clone()),
+        parameter,
+    )
+    .expect("transformed curve evaluates");
     let id = CurveId::mint("test:model:entity#test:transformed-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
@@ -742,8 +877,9 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         geometry: CurveGeometry::Solved(geometry.clone()),
         source_object: None,
     });
-    let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
         &id,
         point.get(),
         parameter,
@@ -765,8 +901,9 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         )
         .expect("placed curve"),
     ));
-    assert!(crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
         &id,
         Point3::new(0.0, 0.0, 0.0),
         0.0
@@ -789,8 +926,9 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     });
     let seed = 123.5;
     assert_eq!(
-        crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
+        crate::eval::model_curve_parameter_near_point_in_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
             &id,
             point,
             seed
@@ -799,8 +937,9 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
-    assert!(crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
         &id,
         Point3::new(2.0, 3.0, 5.0),
         seed
@@ -813,7 +952,8 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
 fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
         NurbsSurfaceLanes::new(
@@ -826,23 +966,40 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
 
     for (direction, at, samples) in [
         (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
         (IsolineDirection::ConstantV, 1.25, [0.0, 0.6, 1.0]),
     ] {
-        let curve = nurbs_surface_isoline(crate::eval::admission::EvaluationAdmission::Standard, &surface, direction, at)
-            .expect("resource allocation did not fail")
-            .expect("isoline");
+        let curve = nurbs_surface_isoline(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            direction,
+            at,
+        )
+        .expect("resource allocation did not fail")
+        .expect("isoline");
         for sample in samples {
             let (u, v) = match direction {
                 IsolineDirection::ConstantU => (at, sample),
                 IsolineDirection::ConstantV => (sample, at),
             };
-            let expected = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, v).expect("surface point");
-            let actual = crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, &curve, sample).expect("curve point");
+            let expected = crate::eval::decode::nurbs_surface_point(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                u,
+                v,
+            )
+            .expect("surface point");
+            let actual = crate::eval::decode::nurbs_curve_point_at(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                sample,
+            )
+            .expect("curve point");
             for (left, right) in [
                 (actual.x, expected.x),
                 (actual.y, expected.y),
@@ -852,60 +1009,6 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             }
         }
     }
-}
-
-#[test]
-fn bilinear_surface_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(
-            vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
-                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
-            ],
-            None,
-        ),
-        false,
-    ).expect("fixture constructor admission")
-    .unwrap();
-    let partials = nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75).expect("partials");
-    assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
-    assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
-    assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
-}
-
-#[test]
-fn quadratic_surface_second_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
-        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(
-            (0..3)
-                .map(|i| {
-                    (0..3)
-                        .map(|j| {
-                            Point3::new(
-                                f64::from(i) / 2.0,
-                                f64::from(j) / 2.0,
-                                f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
-                            )
-                        })
-                        .collect()
-                })
-                .collect(),
-            None,
-        ),
-        false,
-    ).expect("fixture constructor admission")
-    .unwrap();
-    let partials = nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.25, 0.75).expect("second partials");
-    assert_eq!(partials.point, Point3::new(0.25, 0.75, 0.625));
-    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.5));
-    assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 1.5));
-    assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 2.0));
-    assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
-    assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 2.0));
 }
 
 #[test]
@@ -962,27 +1065,45 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             record_bounds: None,
         },
     ];
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &second_id, 1.0e16, -1.0e16)
-            .map(crate::features::FinitePoint3::get),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &second_id,
+            1.0e16,
+            -1.0e16
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     let budget = WorkBudget::new(2);
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &second_id, 1.0e16, -1.0e16)),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| model_surface_point_by_id(
+                admission, &index, &second_id, 1.0e16, -1.0e16
+            )),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(3);
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &second_id, 1.0e16, -1.0e16))
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| model_surface_point_by_id(
+                admission, &index, &second_id, 1.0e16, -1.0e16
+            ))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     assert_eq!(budget.consumed(), 3);
-    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &second_id, 1.0e16, -1.0e16)
-        .expect("transformed plane evaluates");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &second_id,
+        1.0e16,
+        -1.0e16,
+    )
+    .expect("transformed plane evaluates");
     assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
@@ -999,7 +1120,8 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         Surface {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+                NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                     NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
                     NurbsSurfaceLanes::new(
@@ -1015,7 +1137,8 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                         None,
                     ),
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -1035,10 +1158,16 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset_id, 0.25, 1.2)
-        .expect("linearly extended offset")
-        .get();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &offset_id,
+        0.25,
+        1.2,
+    )
+    .expect("linearly extended offset")
+    .get();
 
     let epsilon = 64.0 * f64::EPSILON;
     assert!((point.x - 0.25).abs() <= epsilon);
@@ -1056,7 +1185,8 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     {
         let replacement = true;
         edit::replace(&mut support, |previous| {
-            NurbsSurface::new(&cadmpeg_test_support::service_decode_context(),
+            NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1069,7 +1199,8 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
                 ),
                 previous.pole_grid().clone(),
                 replacement,
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -1096,10 +1227,15 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
         record_bounds: None,
     });
 
-    let point =
-        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex), &offset_id, 0.2, 0.3)
-            .expect("oriented offset point")
-            .get();
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &offset_id,
+        0.2,
+        0.3,
+    )
+    .expect("oriented offset point")
+    .get();
 
     let expected = Point3::new(0.2, 0.3, -2.0);
     let epsilon = 64.0 * f64::EPSILON;
@@ -1165,14 +1301,26 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             },
         ).unwrap()
         .expect("offset surface exists and has no procedural construction");
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset_id, 0.25, 0.5)
-            .map(crate::features::FinitePoint3::get),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &offset_id,
+            0.25,
+            0.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(-0.25, 0.5, -2.0))
     );
-    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset_id, 0.25, 0.5)
-        .expect("offset of a reversed subset evaluates");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &offset_id,
+        0.25,
+        0.5,
+    )
+    .expect("offset of a reversed subset evaluates");
     assert_eq!(partials.point, Point3::new(-0.25, 0.5, -2.0));
     assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
@@ -1219,14 +1367,26 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             },
         ).unwrap()
         .unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &bounded_id, 0.25, 0.75)
-            .map(crate::features::FinitePoint3::get),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &bounded_id,
+            0.25,
+            0.75
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.25, 2.75, 3.0))
     );
-    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &bounded_id, 0.25, 0.75)
-        .expect("curve-bounded support evaluates");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &bounded_id,
+        0.25,
+        0.75,
+    )
+    .expect("curve-bounded support evaluates");
     assert_eq!(partials.point, Point3::new(1.25, 2.75, 3.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
@@ -1281,18 +1441,36 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
             },
         ).unwrap()
         .unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 4.0)
-        .expect("linear sweep point")
-        .get();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.5,
+        4.0,
+    )
+    .expect("linear sweep point")
+    .get();
     assert_eq!(point, Point3::new(2.0, 2.0, 7.0));
-    let partials =
-        model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 4.0).expect("linear sweep partials");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.5,
+        4.0,
+    )
+    .expect("linear sweep partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
-    let second_partials = model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 4.0)
-        .expect("linear sweep second partials");
+    let second_partials = model_surface_second_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.5,
+        4.0,
+    )
+    .expect("linear sweep second partials");
     assert_eq!(second_partials.duu, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.dvv, Vector3::new(0.0, 0.0, 0.0));
@@ -1311,13 +1489,15 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap(),
         )),
         source_object: None,
@@ -1348,9 +1528,15 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, -0.5, 3.0)
-        .expect("cacheless reversed extrusion point");
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        -0.5,
+        3.0,
+    )
+    .expect("cacheless reversed extrusion point");
     assert_eq!(partials.point, Point3::new(0.5, 0.0, 3.0));
     assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
@@ -1361,20 +1547,38 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     let (ir, surface_id) = law_sweep::law_sweep_model(LawExpression::Text {
         value: cadmpeg_core::nonblank_literal!("2.0*X"),
     });
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let expected = Point3::new(0.5, -0.5, 0.25);
     assert_eq!(
-        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 0.25)
-            .map(crate::features::FinitePoint3::get),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            0.5,
+            0.25
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(expected)
     );
     assert_eq!(
-        model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &ir, &ir.model.surfaces[0].geometry, 0.5, 0.25)
-            .map(crate::features::FinitePoint3::get),
+        model_surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &ir,
+            &ir.model.surfaces[0].geometry,
+            0.5,
+            0.25
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(expected)
     );
-    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 0.25)
-        .expect("cacheless sweep partials");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.5,
+        0.25,
+    )
+    .expect("cacheless sweep partials");
     assert_eq!(partials.point, expected);
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, -2.0, 1.0));
@@ -1425,22 +1629,38 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
             },
         ).unwrap()
         .unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
-        .expect("axis revolution point")
-        .get();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        std::f64::consts::FRAC_PI_2,
+        1.5,
+    )
+    .expect("axis revolution point")
+    .get();
     assert!(point.x.abs() < 1.0e-12);
     assert!((point.y - 2.0).abs() < 1.0e-12);
     assert!((point.z - 1.5).abs() < 1.0e-12);
-    let partials =
-        model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
-            .expect("axis revolution partials");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        std::f64::consts::FRAC_PI_2,
+        1.5,
+    )
+    .expect("axis revolution partials");
     assert!((partials.du.x + 2.0).abs() < 1.0e-12);
     assert!(partials.du.y.abs() < 1.0e-12);
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
-    let second_partials =
-        model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
-            .expect("axis revolution second partials");
+    let second_partials = model_surface_second_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        std::f64::consts::FRAC_PI_2,
+        1.5,
+    )
+    .expect("axis revolution second partials");
     assert!((second_partials.duu.y + 2.0).abs() < 1.0e-12);
     assert!(second_partials.duv.norm() < 1.0e-12);
     assert!(second_partials.dvv.norm() < 1.0e-12);
@@ -1479,9 +1699,15 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
             },
         ).unwrap()
         .unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let partials = model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 1.5, 12.0)
-        .expect("mapped revolution partials");
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let partials = model_surface_second_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        1.5,
+        12.0,
+    )
+    .expect("mapped revolution partials");
     assert!(partials.point.x.abs() < 1.0e-12);
     assert!((partials.point.y - 2.0).abs() < 1.0e-12);
     assert!((partials.point.z - 1.5).abs() < 1.0e-12);
@@ -1535,10 +1761,16 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             record_bounds: None,
         },
     ).unwrap().unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.0, 0.0)
-        .expect("wide mapped revolution point")
-        .get();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        0.0,
+        0.0,
+    )
+    .expect("wide mapped revolution point")
+    .get();
     assert!(point.x.abs() < 1.0e-12);
     assert!((point.y - 2.0).abs() < 1.0e-12);
     assert_eq!(point.z, 0.0);
@@ -1626,14 +1858,175 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
             },
         ).unwrap()
         .unwrap();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
-    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
-        .expect("normalized line domain maps to distance carrier")
-        .get();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let point = model_surface_point_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        5.0,
+        0.0,
+    )
+    .expect("normalized line domain maps to distance carrier")
+    .get();
     assert_eq!(point, Point3::new(2.0, 0.0, 5.0));
-    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
-        .expect("normalized line domain partials");
+    let partials = model_surface_partials_by_id(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface_id,
+        5.0,
+        0.0,
+    )
+    .expect("normalized line domain partials");
     assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
+}
+
+#[test]
+fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let point = Point3::new(0.5, 0.0, 0.0);
+    assert_eq!(
+        nurbs_curve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
+            &curve,
+            point,
+            EPS_CURVE_INVERSE_WITNESS,
+            0.1
+        )
+        .expect("resource allocation did not fail")
+        .map(crate::scalar::FiniteReal::get),
+        Some(0.25)
+    );
+    assert_eq!(
+        nurbs_curve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
+            &curve,
+            point,
+            EPS_CURVE_INVERSE_WITNESS,
+            0.9
+        )
+        .expect("resource allocation did not fail")
+        .map(crate::scalar::FiniteReal::get),
+        Some(0.75)
+    );
+    assert_eq!(
+        nurbs_curve_parameter_near_point(
+            &cadmpeg_test_support::service_decode_context(),
+            &curve,
+            Point3::new(0.5, 1.0, 0.0),
+            EPS_CURVE_INVERSE_WITNESS,
+            0.5,
+        )
+        .expect("resource allocation did not fail"),
+        None
+    );
+    assert!(
+        nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
+            .expect("speed bound admission")
+            .is_some_and(|bound| bound.get() >= 2.0)
+    );
+}
+
+mod bounded_nurbs;
+
+mod periodic_and_analytic;
+
+mod numerical_audit;
+
+mod numerical_followup;
+
+mod construction_parameters;
+
+mod analytic_ranges;
+
+mod surface_inversion;
+
+mod offset_frames;
+
+mod isocurves;
+
+mod admission_derivatives;
+
+#[test]
+fn bilinear_surface_partials_follow_stored_parameterization() {
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let partials = nurbs_surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        0.25,
+        0.75,
+    )
+    .expect("partials");
+    assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
+    assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
+}
+
+#[test]
+fn quadratic_surface_second_partials_follow_stored_parameterization() {
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            (0..3)
+                .map(|i| {
+                    (0..3)
+                        .map(|j| {
+                            Point3::new(
+                                f64::from(i) / 2.0,
+                                f64::from(j) / 2.0,
+                                f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
+                            )
+                        })
+                        .collect()
+                })
+                .collect(),
+            None,
+        ),
+        false,
+    )
+    .expect("fixture constructor admission")
+    .unwrap();
+    let partials = nurbs_surface_second_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        0.25,
+        0.75,
+    )
+    .expect("second partials");
+    assert_eq!(partials.point, Point3::new(0.25, 0.75, 0.625));
+    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.5));
+    assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 1.5));
+    assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 2.0));
+    assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
+    assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 2.0));
 }
 
 #[test]
@@ -1697,35 +2090,64 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         .expect("placed surface"),
     );
 
-    let cylinder_second =
-        surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
-            .expect("cylinder second partials evaluate");
-    let cylinder = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
-        .expect("cylinder partials evaluate");
+    let cylinder_second = surface_second_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &SurfaceGeometry::Solved(cylinder.clone()),
+        0.0,
+        4.0,
+    )
+    .expect("cylinder second partials evaluate");
+    let cylinder = surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &SurfaceGeometry::Solved(cylinder.clone()),
+        0.0,
+        4.0,
+    )
+    .expect("cylinder partials evaluate");
     assert_eq!(cylinder.point, Point3::new(2.0, 0.0, 4.0));
     assert_eq!(cylinder.du, Vector3::new(0.0, 2.0, 0.0));
     assert_eq!(cylinder.dv, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(cylinder_second.duu, Vector3::new(-2.0, 0.0, 0.0));
     assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
-    let cone = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(cone.clone()), 0.0, 3.0)
-        .expect("cone partials evaluate");
-    assert!((cone.point.x - 5.0).abs() < 1.0e-12);
-    assert!((cone.du.y - 5.0).abs() < 1.0e-12);
-    assert!((cone.dv.x - 1.0).abs() < 1.0e-12);
+    let cone = surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &SurfaceGeometry::Solved(cone.clone()),
+        0.0,
+        3.0,
+    )
+    .expect("cone partials evaluate");
+    assert!((cone.point.x - 5.0).abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!((cone.du.y - 5.0).abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!((cone.dv.x - 1.0).abs() < EPS_DERIVATIVE_COORDINATE);
     assert_eq!(cone.dv.z, 1.0);
-    let sphere = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(sphere.clone()), 0.0, 0.0)
-        .expect("sphere partials evaluate");
+    let sphere = surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &SurfaceGeometry::Solved(sphere.clone()),
+        0.0,
+        0.0,
+    )
+    .expect("sphere partials evaluate");
     assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
     assert_eq!(sphere.du, Vector3::new(0.0, 3.0, 0.0));
     assert_eq!(sphere.dv, Vector3::new(0.0, 0.0, 3.0));
-    let torus = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(torus.clone()), 0.0, 0.0)
-        .expect("torus partials evaluate");
+    let torus = surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &SurfaceGeometry::Solved(torus.clone()),
+        0.0,
+        0.0,
+    )
+    .expect("torus partials evaluate");
     assert_eq!(torus.point, Point3::new(7.0, 0.0, 0.0));
     assert_eq!(torus.du, Vector3::new(0.0, 7.0, 0.0));
     assert_eq!(torus.dv, Vector3::new(0.0, 0.0, 2.0));
-    let transformed = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(transformed.clone()), 2.0, 3.0)
-        .expect("transformed partials evaluate");
+    let transformed = surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &SurfaceGeometry::Solved(transformed.clone()),
+        2.0,
+        3.0,
+    )
+    .expect("transformed partials evaluate");
     assert_eq!(transformed.point, Point3::new(11.0, 20.0, 13.0));
     assert_eq!(transformed.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(transformed.dv, Vector3::new(0.0, 3.0, 0.0));
@@ -1743,16 +2165,24 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         )
         .unwrap(),
     );
-    let tangent =
-        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(circle.clone()), parameter).expect("analytic tangent");
+    let tangent = crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &CurveGeometry::Solved(circle.clone()),
+        parameter,
+    )
+    .expect("analytic tangent");
     assert_eq!(
         tangent,
         Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
     );
     assert_eq!(
-        curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(circle.clone()), parameter)
-            .ok()
-            .map(crate::features::FiniteVector3::get),
+        curve_second_derivative(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(circle.clone()),
+            parameter
+        )
+        .ok()
+        .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(
             -3.0 * parameter.cos(),
             -3.0 * parameter.sin(),
@@ -1760,12 +2190,18 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         ))
     );
     assert_eq!(
-        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(circle.clone()), f64::NAN).ok(),
+        crate::eval::decode::curve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(circle.clone()),
+            f64::NAN
+        )
+        .ok(),
         None
     );
 
     let arc = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1775,20 +2211,34 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
             ],
             Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap(),
     );
     for parameter in [0.0, 0.5, 1.0] {
-        let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
-            .expect("rational arc point");
-        let tangent = crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
-            .expect("rational arc tangent");
-        let second = curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
-            .expect("rational arc acceleration");
+        let point = crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(arc.clone()),
+            parameter,
+        )
+        .expect("rational arc point");
+        let tangent = crate::eval::decode::curve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(arc.clone()),
+            parameter,
+        )
+        .expect("rational arc tangent");
+        let second = curve_second_derivative(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(arc.clone()),
+            parameter,
+        )
+        .expect("rational arc acceleration");
         let radial_dot = point.x * tangent.x + point.y * tangent.y;
-        assert!(radial_dot.abs() < 1.0e-12);
+        assert!(radial_dot.abs() < EPS_DERIVATIVE_COORDINATE);
         assert!(
-            (point.x * second.x + point.y * second.y + tangent.dot(tangent.get())).abs() < 1.0e-11
+            (point.x * second.x + point.y * second.y + tangent.dot(tangent.get())).abs()
+                < EPS_RATIONAL_ARC_IDENTITY
         );
         assert!(tangent.norm() > 0.0);
     }
@@ -1809,24 +2259,36 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
                 .expect("nonempty polyline fixture"),
             },
             0.0,
-         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polyline construction admission")
         .unwrap(),
     );
     assert_eq!(
-        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(corner.clone()), 0.5)
-            .ok()
-            .map(crate::features::FiniteVector3::get),
+        crate::eval::decode::curve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(corner.clone()),
+            0.5
+        )
+        .ok()
+        .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
-        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(corner.clone()), 1.0).ok(),
+        crate::eval::decode::curve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &CurveGeometry::Solved(corner.clone()),
+            1.0
+        )
+        .ok(),
         None
     );
 }
 
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1838,24 +2300,38 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
-    let partials = nurbs_surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 0.25).expect("partials");
-    assert!((partials.point.x - 4.0 / 3.0).abs() < 1.0e-12);
-    assert!((partials.point.y - 0.75).abs() < 1.0e-12);
-    assert!((partials.du.x - 16.0 / 9.0).abs() < 1.0e-12);
-    assert!(partials.du.y.abs() < 1.0e-12);
-    assert!((partials.dv.y - 3.0).abs() < 1.0e-12);
-    let second = nurbs_surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 0.25).expect("second partials");
-    assert!((second.duu.x + 64.0 / 27.0).abs() < 1.0e-12);
-    assert!(second.duu.y.abs() < 1.0e-12);
+    let partials = nurbs_surface_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        0.5,
+        0.25,
+    )
+    .expect("partials");
+    assert!((partials.point.x - 4.0 / 3.0).abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!((partials.point.y - 0.75).abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!((partials.du.x - 16.0 / 9.0).abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!(partials.du.y.abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!((partials.dv.y - 3.0).abs() < EPS_DERIVATIVE_COORDINATE);
+    let second = nurbs_surface_second_partials(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        0.5,
+        0.25,
+    )
+    .expect("second partials");
+    assert!((second.duu.x + 64.0 / 27.0).abs() < EPS_DERIVATIVE_COORDINATE);
+    assert!(second.duu.y.abs() < EPS_DERIVATIVE_COORDINATE);
     assert_eq!(second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second.dvv, Vector3::new(0.0, 0.0, 0.0));
 }
 
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1867,85 +2343,51 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
                 .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     for (axis, fixed) in [
         (SurfaceParameterAxis::U, 0.25),
         (SurfaceParameterAxis::V, 0.75),
     ] {
-        let isocurve = nurbs_surface_isocurve(crate::eval::admission::EvaluationAdmission::Standard, &surface, axis, fixed)
-            .expect("resource allocation did not fail")
-            .expect("exact isocurve");
+        let isocurve = nurbs_surface_isocurve(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            axis,
+            fixed,
+        )
+        .expect("resource allocation did not fail")
+        .expect("exact isocurve");
         let geometry = SolvedCurveGeometry::Nurbs(isocurve);
         for varying in [0.0, 0.2, 0.7, 1.0] {
             let expected = match axis {
-                SurfaceParameterAxis::U => {
-                    crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, fixed, varying).expect("surface point")
-                }
-                SurfaceParameterAxis::V => {
-                    crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, varying, fixed).expect("surface point")
-                }
+                SurfaceParameterAxis::U => crate::eval::decode::nurbs_surface_point(
+                    crate::eval::admission::EvaluationAdmission::Standard,
+                    &surface,
+                    fixed,
+                    varying,
+                )
+                .expect("surface point"),
+                SurfaceParameterAxis::V => crate::eval::decode::nurbs_surface_point(
+                    crate::eval::admission::EvaluationAdmission::Standard,
+                    &surface,
+                    varying,
+                    fixed,
+                )
+                .expect("surface point"),
             };
-            let actual = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(geometry.clone()), varying)
-                .expect("isocurve point");
-            assert!((actual.x - expected.x).abs() < 1.0e-12);
-            assert!((actual.y - expected.y).abs() < 1.0e-12);
-            assert!((actual.z - expected.z).abs() < 1.0e-12);
+            let actual = crate::eval::decode::curve_point(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &CurveGeometry::Solved(geometry.clone()),
+                varying,
+            )
+            .expect("isocurve point");
+            assert!((actual.x - expected.x).abs() < EPS_DERIVATIVE_COORDINATE);
+            assert!((actual.y - expected.y).abs() < EPS_DERIVATIVE_COORDINATE);
+            assert!((actual.z - expected.z).abs() < EPS_DERIVATIVE_COORDINATE);
         }
     }
 }
 
-#[test]
-fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-        ],
-        None,
-        false,
-    ).expect("fixture constructor admission")
-    .unwrap();
-    let point = Point3::new(0.5, 0.0, 0.0);
-    assert_eq!(
-        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, point, EPS_CURVE_INVERSE_WITNESS, 0.1)
-            .expect("resource allocation did not fail")
-            .map(crate::scalar::FiniteReal::get),
-        Some(0.25)
-    );
-    assert_eq!(
-        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, point, EPS_CURVE_INVERSE_WITNESS, 0.9)
-            .expect("resource allocation did not fail")
-            .map(crate::scalar::FiniteReal::get),
-        Some(0.75)
-    );
-    assert_eq!(
-        nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &curve, Point3::new(0.5, 1.0, 0.0), EPS_CURVE_INVERSE_WITNESS, 0.5,)
-            .expect("resource allocation did not fail"),
-        None
-    );
-    assert!(nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve).expect("speed bound admission").is_some_and(|bound| bound.get() >= 2.0));
-}
-
-mod bounded_nurbs;
-
-mod periodic_and_analytic;
-
-mod numerical_audit;
-
-mod numerical_followup;
-
-mod construction_parameters;
-
-mod analytic_ranges;
-
-mod surface_inversion;
-
-mod offset_frames;
-
-mod isocurves;
-
-mod admission_derivatives;
+const EPS_DERIVATIVE_COORDINATE: f64 = 1.0e-12;
+const EPS_RATIONAL_ARC_IDENTITY: f64 = 1.0e-11;

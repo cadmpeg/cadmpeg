@@ -3635,7 +3635,8 @@ fn parse_binary_surface(
                 }
             }
             TextSurface::Nurbs(
-                NurbsSurface::from_finite_lanes(cursor.ctx, 
+                NurbsSurface::from_finite_lanes(
+                    cursor.ctx,
                     NurbsSurfaceAxis::new(
                         u32::try_from(u_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier u degree exceeds u32".into())
@@ -3822,7 +3823,8 @@ fn parse_binary_curve(
                 }
             }
             TextCurve::Nurbs(
-                NurbsCurve::from_finite_lanes(cursor.ctx, 
+                NurbsCurve::from_finite_lanes(
+                    cursor.ctx,
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
@@ -3864,8 +3866,15 @@ fn parse_binary_curve(
                 padding,
             )?;
             TextCurve::Nurbs(
-                NurbsCurve::from_finite_lanes(cursor.ctx, degree, knots, control_points, weights, periodic)?
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                NurbsCurve::from_finite_lanes(
+                    cursor.ctx,
+                    degree,
+                    knots,
+                    control_points,
+                    weights,
+                    periodic,
+                )?
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
         8 => TextCurve::Trimmed {
@@ -5465,7 +5474,8 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
             weights.push(cursor.finite_real("Bezier surface weight")?);
         }
     }
-    NurbsSurface::from_finite_lanes(cursor.ctx, 
+    NurbsSurface::from_finite_lanes(
+        cursor.ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(u_degree)
                 .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
@@ -5672,7 +5682,8 @@ fn normalize_periodic_surface(
     };
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
-    NurbsSurface::from_finite_lanes(ctx, 
+    NurbsSurface::from_finite_lanes(
+        ctx,
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
@@ -5839,7 +5850,8 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
         periodic,
     )?;
     append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
-    NurbsCurve::from_finite_lanes(cursor.ctx, 
+    NurbsCurve::from_finite_lanes(
+        cursor.ctx,
         u32::try_from(degree)
             .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         knots,
@@ -5867,7 +5879,8 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
             weights.push(cursor.finite_real("Bezier weight")?);
         }
     }
-    NurbsCurve::from_finite_lanes(cursor.ctx, 
+    NurbsCurve::from_finite_lanes(
+        cursor.ctx,
         u32::try_from(degree)
             .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         clamped_bezier_knots(cursor.ctx, degree)?,

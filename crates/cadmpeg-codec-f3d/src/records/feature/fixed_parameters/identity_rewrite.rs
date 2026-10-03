@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletParameters, DesignFixedFilletScalar};
+use super::{
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
+    DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletParameters,
+    DesignFixedFilletScalar,
+};
 
 rewrite_native_record!(DesignFixedChamferDistance, []; {value, record_index, value_offset});
 rewrite_native_enum!(DesignFixedChamferParameters, []; {

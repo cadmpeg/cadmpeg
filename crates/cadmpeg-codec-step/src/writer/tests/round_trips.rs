@@ -109,7 +109,8 @@ fn curve_geometry_for_sheet_pcurve(
             )))
         }
         PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs
@@ -120,7 +121,8 @@ fn curve_geometry_for_sheet_pcurve(
                     .collect(),
                 nurbs.pole_rows().weights(),
                 nurbs.periodic(),
-            ).expect("fixture constructor admission")?,
+            )
+            .expect("fixture constructor admission")?,
         ))),
         PcurveGeometry::Transformed(placed) => {
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) =
@@ -171,7 +173,10 @@ fn curve_geometry_for_sheet_pcurve(
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let Some((origin, direction)) = basis.line_parameters(&cadmpeg_test_support::service_decode_context()).expect("fixture line parameter walk is admitted") else {
+            let Some((origin, direction)) = basis
+                .line_parameters(&cadmpeg_test_support::service_decode_context())
+                .expect("fixture line parameter walk is admitted")
+            else {
                 return Ok(None);
             };
             let length = direction.u.hypot(direction.v);
@@ -249,7 +254,12 @@ fn align_sheet_edge_to_pcurve(
         _ => [0.0, 1.0],
     };
     let positions = parameter_range.map(|parameter| {
-        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, geometry, parameter).expect("test pcurve endpoint");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            geometry,
+            parameter,
+        )
+        .expect("test pcurve endpoint");
         Point3::new(uv.u, uv.v, 0.0)
     });
     for (point_id, position) in point_ids.into_iter().zip(positions) {
@@ -304,12 +314,22 @@ fn negative_cone_writes_reversed_axis_positive_angle_and_exact_points() {
         .expect("written STEP cone"),
     );
     for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
-        let source_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, u, v)
-            .expect("source point")
-            .get();
-        let written_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &written, -u, -v)
-            .expect("written point")
-            .get();
+        let source_point = cadmpeg_ir::eval::decode::surface_point_solved(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source,
+            u,
+            v,
+        )
+        .expect("source point")
+        .get();
+        let written_point = cadmpeg_ir::eval::decode::surface_point_solved(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &written,
+            -u,
+            -v,
+        )
+        .expect("written point")
+        .get();
         let distance = (source_point.x - written_point.x)
             .hypot(source_point.y - written_point.y)
             .hypot(source_point.z - written_point.z);
@@ -367,12 +387,22 @@ fn negative_cone_round_trip_preserves_point_set_and_face_sense() {
         .expect("written cone face");
     assert_eq!(written_face.sense, source_face_sense);
     for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
-        let source_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, u, v)
-            .expect("source point")
-            .get();
-        let written_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &written, -u, -v)
-            .expect("written point")
-            .get();
+        let source_point = cadmpeg_ir::eval::decode::surface_point_solved(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source,
+            u,
+            v,
+        )
+        .expect("source point")
+        .get();
+        let written_point = cadmpeg_ir::eval::decode::surface_point_solved(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &written,
+            -u,
+            -v,
+        )
+        .expect("written point")
+        .get();
         let distance = (source_point.x - written_point.x)
             .hypot(source_point.y - written_point.y)
             .hypot(source_point.z - written_point.z);
@@ -462,7 +492,8 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         .into_parts()
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -471,7 +502,8 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
             ],
             Some(vec![1.0, 2.0]),
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let geometry = ir.model.pcurves[0].geometry.clone();
@@ -1408,7 +1440,8 @@ fn analytic_surface_placements_preserve_orientation() {
 
 #[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
-    let n = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let n = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1418,7 +1451,8 @@ fn nurbs_curve_non_rational_uses_with_knots() {
         ],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let s = emit_curve_only(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n)));
     assert!(s.contains("B_SPLINE_CURVE_WITH_KNOTS"));
@@ -1429,7 +1463,8 @@ fn nurbs_curve_non_rational_uses_with_knots() {
 
 #[test]
 fn nurbs_curve_rational_uses_complex_form() {
-    let n = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let n = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1439,7 +1474,8 @@ fn nurbs_curve_rational_uses_complex_form() {
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let s = emit_curve_only(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n)));
     assert!(s.contains("RATIONAL_B_SPLINE_CURVE"));
@@ -1448,7 +1484,8 @@ fn nurbs_curve_rational_uses_complex_form() {
 
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
-    let n = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let n = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1459,7 +1496,8 @@ pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let s = emit_surface_only(&SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(n)));
     assert!(s.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
@@ -1522,7 +1560,11 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     coedges.swap(0, 1);
     let vertex_uses = loop_.anchored_vertex_uses().to_vec();
     loop_
-        .replace_ring(&cadmpeg_test_support::service_decode_context(), coedges, vertex_uses)
+        .replace_ring(
+            &cadmpeg_test_support::service_decode_context(),
+            coedges,
+            vertex_uses,
+        )
         .expect("reordered loop ring remains valid");
 
     let mut bytes = Vec::new();

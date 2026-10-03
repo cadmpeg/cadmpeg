@@ -13,7 +13,9 @@ pub(super) fn curve_point(
     parameter: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, curve, parameter))?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+            ctx, curve, parameter,
+        ))?,
     )?)
 }
 
@@ -23,10 +25,11 @@ pub(super) fn nurbs_curve_point(
     parameter: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, curve, parameter))?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            ctx, curve, parameter,
+        ))?,
     )?)
 }
-
 
 pub(crate) fn nurbs_surface_point(
     ctx: &DecodeContext<'_>,
@@ -35,7 +38,9 @@ pub(crate) fn nurbs_surface_point(
     v: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v))?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
+            ctx, surface, u, v,
+        ))?,
     )?)
 }
 
@@ -45,8 +50,8 @@ pub(crate) fn nurbs_surface_parameter_near_point(
     point: cadmpeg_ir::math::Point3,
     seed: Option<cadmpeg_ir::math::Point2>,
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
-    Ok(cadmpeg_ir::eval::nurbs_surface_parameter_near_point(ctx, 
-        surface, point, seed,
+    Ok(cadmpeg_ir::eval::nurbs_surface_parameter_near_point(
+        ctx, surface, point, seed,
     )?)
 }
 
@@ -71,7 +76,9 @@ pub(crate) fn surface_point(
     v: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, u, v))?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx, surface, u, v,
+        ))?,
     )?)
 }
 
@@ -120,8 +127,8 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
     const OPERATION: &str = "invert SLDPRT NURBS surface globally";
     let budget = surface_solver_budget(ctx, surface, OPERATION)?;
-    let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(ctx,
-        surface, point, seed, tolerance, &budget,
+    let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
+        ctx, surface, point, seed, tolerance, &budget,
     );
     // A zero charge observes the session's original sticky refusal.
     ctx.charge_work(0, OPERATION)?;
@@ -177,7 +184,7 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
             SURFACE_SOLVER_LOCAL_WORK + 1,
         ));
     }
-    Ok(result?)
+    result
 }
 
 #[cfg(test)]
@@ -193,10 +200,25 @@ mod tests {
             &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new((0..3).map(|u| (0..3).map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0)).collect()).collect(), None),
+            NurbsSurfaceLanes::new(
+                (0..3)
+                    .map(|u| {
+                        (0..3)
+                            .map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0))
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
             false,
-        ).expect("fixture admission").expect("quadratic plane");
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        )
+        .expect("fixture admission")
+        .expect("quadratic plane");
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -206,13 +228,18 @@ mod tests {
                 _ => unreachable!("three scratch dimensions"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let CodecError::ResourceLimit(original) = super::nurbs_surface_partials(&ctx, &surface, 0.5, 0.5).unwrap_err()
-            else { panic!("the partial helper must preserve its scratch refusal") };
+            let CodecError::ResourceLimit(original) =
+                super::nurbs_surface_partials(&ctx, &surface, 0.5, 0.5).unwrap_err()
+            else {
+                panic!("the partial helper must preserve its scratch refusal")
+            };
             assert_eq!(original.dimension, dimension);
             assert_eq!((original.limit, original.used), (0, 0));
             assert!(original.additional > 0);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(matches!(super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(CodecError::ResourceLimit(limit)) if limit == original));
+            assert!(
+                matches!(super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(CodecError::ResourceLimit(limit)) if limit == original)
+            );
         }
     }
 }

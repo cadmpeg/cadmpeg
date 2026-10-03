@@ -138,7 +138,13 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         sketch,
         definition: crate::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Polygon {
-                polygon: crate::sketches::SketchPolygon::try_new(members.clone(), &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission").unwrap(),
+                polygon: crate::sketches::SketchPolygon::try_new(
+                    members.clone(),
+                    &cadmpeg_test_support::service_decode_context(),
+                    "sketch polygon uniqueness",
+                )
+                .expect("fixture collection admission")
+                .unwrap(),
             },
         )
         .unwrap(),
@@ -153,7 +159,8 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .is_ok());
@@ -375,7 +382,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
@@ -481,7 +489,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             metadata: None,
             native_ref: None,
         }));
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(!report.findings.iter().any(|finding| {
         finding
@@ -521,8 +530,20 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     let profile = PlanarProfileRef::sketch_regions(
         SketchId::mint("synthetic:test:sketch#region").unwrap(),
         vec![
-            SketchProfileRegion::loops(2, vec![3, 5], &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
-            SketchProfileRegion::loops(8, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture loop-region admission").unwrap(),
+            SketchProfileRegion::loops(
+                2,
+                vec![3, 5],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("fixture loop-region admission")
+            .unwrap(),
+            SketchProfileRegion::loops(
+                8,
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("fixture loop-region admission")
+            .unwrap(),
             SketchProfileRegion::trimmed(
                 vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
@@ -1201,13 +1222,25 @@ fn polygon_membership_is_checked_at_admission() {
         members[..2].to_vec(),
         vec![members[0].clone(), members[1].clone(), members[0].clone()],
     ] {
-        assert!(SketchPolygon::try_new(entities.clone(), &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission").is_err());
+        assert!(SketchPolygon::try_new(
+            entities.clone(),
+            &cadmpeg_test_support::service_decode_context(),
+            "sketch polygon uniqueness"
+        )
+        .expect("fixture collection admission")
+        .is_err());
         let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": entities}});
         assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire).is_err());
     }
     let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": members}});
     let definition = SketchConstraintDefinitionInput::Polygon {
-        polygon: SketchPolygon::try_new(members, &cadmpeg_test_support::service_decode_context(), "sketch polygon uniqueness").expect("fixture collection admission").unwrap(),
+        polygon: SketchPolygon::try_new(
+            members,
+            &cadmpeg_test_support::service_decode_context(),
+            "sketch polygon uniqueness",
+        )
+        .expect("fixture collection admission")
+        .unwrap(),
     };
     assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(

@@ -453,13 +453,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: loop_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     face: face_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new(
-                            ctx,
-                            ring_coedges,
-                            Vec::new(),
-                        )
-                        .map_err(cadmpeg_core::CodecError::from)?
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                        cadmpeg_ir::topology::LoopRing::new(ctx, ring_coedges, Vec::new())
+                            .map_err(cadmpeg_core::CodecError::from)?
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
                 let mut pcurve_uses = Vec::new();

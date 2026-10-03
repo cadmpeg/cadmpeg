@@ -128,7 +128,12 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
             ),
             (std::f64::consts::FRAC_PI_2, Point3::new(1.0, 4.0, 3.0)),
         ] {
-            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter).expect("ellipse NURBS evaluates");
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                parameter,
+            )
+            .expect("ellipse NURBS evaluates");
             assert!(
                 actual.distance(expected) <= 1.0e-12,
                 "{actual:?} != {expected:?}"
@@ -155,7 +160,12 @@ fn a_parabola_arc_has_exact_quadratic_points() {
             (1.0, Point3::new(3.0, 6.0, 3.0)),
             (3.0, Point3::new(19.0, 14.0, 3.0)),
         ] {
-            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter).expect("parabola NURBS evaluates");
+            let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                parameter,
+            )
+            .expect("parabola NURBS evaluates");
             assert!(
                 actual.distance(expected) <= 1.0e-12,
                 "{actual:?} != {expected:?}"

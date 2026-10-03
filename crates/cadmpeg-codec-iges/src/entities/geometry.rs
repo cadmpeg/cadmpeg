@@ -2714,25 +2714,27 @@ pub(crate) fn project_geometry(
         // IGES PROP4 is informational; neutral evaluation uses the
         // serialized active carrier without periodic parameter wrapping.
         let nurbs = match NurbsCurve::from_checked_lanes(
-            ctx, degree, knots, control_points, weights, false,
+            ctx,
+            degree,
+            knots,
+            control_points,
+            weights,
+            false,
         )? {
-                Ok(nurbs) => nurbs,
-                Err(error) => {
-                    super::push_entity_loss(
-                        ctx,
-                        &mut losses,
-                        entry,
-                        format_args!("spline cardinalities are inconsistent: {error}"),
-                    )?;
-                    continue;
-                }
-            };
-        let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                ctx,
-                &nurbs,
-                parameter_range[0].get(),
-            ))?)?
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                super::push_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("spline cardinalities are inconsistent: {error}"),
+                )?;
+                continue;
+            }
+        };
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, parameter_range[0].get()),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,
@@ -2742,12 +2744,9 @@ pub(crate) fn project_geometry(
             )?;
             continue;
         };
-        let Some(end) =
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                ctx,
-                &nurbs,
-                parameter_range[1].get(),
-            ))?)?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, parameter_range[1].get()),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,

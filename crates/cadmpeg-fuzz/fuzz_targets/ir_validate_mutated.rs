@@ -50,8 +50,12 @@ fuzz_target!(|data: &[u8]| {
         2 => {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-            ) else { return; };
+                &[],
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            ) else {
+                return;
+            };
             if let Some(loop_) = ir
                 .model
                 .loops
@@ -68,7 +72,9 @@ fuzz_target!(|data: &[u8]| {
                     }
                 }
             }
-            if ctx.finish_session().is_err() { return; }
+            if ctx.finish_session().is_err() {
+                return;
+            }
         }
         3 => {
             // Create inconsistent edge references
@@ -123,15 +129,36 @@ fuzz_target!(|data: &[u8]| {
             // Add an annotation for an entity that does not exist.
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let policy = cadmpeg_core::decode::DecodePolicy::service();
-            let Ok((annotation_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy) else { return; };
+            let Ok((annotation_ctx, _)) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            else {
+                return;
+            };
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-            let Ok(stream) = StreamHandle::new(&annotation_ctx, cadmpeg_ir::stream_name!("fuzz:nonexistent"), "fuzz stream handle") else { return; };
-            if annotations.note(&annotation_ctx, "nonexistent", &stream, u64::MAX, None).is_err() { return; }
-            let Ok(appended) = source_fidelity
-                .annotations
-                .append(&annotation_ctx, annotations.build(), "fuzz annotation append") else { return; };
+            let Ok(stream) = StreamHandle::new(
+                &annotation_ctx,
+                cadmpeg_ir::stream_name!("fuzz:nonexistent"),
+                "fuzz stream handle",
+            ) else {
+                return;
+            };
+            if annotations
+                .note(&annotation_ctx, "nonexistent", &stream, u64::MAX, None)
+                .is_err()
+            {
+                return;
+            }
+            let Ok(appended) = source_fidelity.annotations.append(
+                &annotation_ctx,
+                annotations.build(),
+                "fuzz annotation append",
+            ) else {
+                return;
+            };
             appended.expect("annotation arena append");
-            if annotation_ctx.finish_session().is_err() { return; }
+            if annotation_ctx.finish_session().is_err() {
+                return;
+            }
         }
         12 => {
             if let Some(edge) = ir.model.edges.first().cloned() {

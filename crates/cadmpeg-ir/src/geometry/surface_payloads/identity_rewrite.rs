@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{AxisRevolutionSurfaceConstruction, BlendSurfacePayload, CompoundLoftSurfacePayload, CompoundSurfacePayload, DeformableSurfacePayload, ExactSurfacePayload, ExtrusionSurfaceConstruction, G2BlendSurfacePayload, LawSurfacePayload, LinearSweepSurfaceConstruction, LoftSurfacePayload, NetSurfacePayload, OffsetSurfaceConstruction, OrderedOptionalRange, ParallelOffsetSurfaceConstruction, RevolutionSurfaceConstruction, ScaledCompoundLoftSurfacePayload, SkinSurfacePayload, SubSurfaceConstruction, SubsetSurfaceConstruction, SumSurfaceConstruction, SweepSurfacePayload, TaperSurfaceConstruction, VariableBlendSurfacePayload, VertexBlendSurfacePayload};
+use super::{
+    AxisRevolutionSurfaceConstruction, BlendSurfacePayload, CompoundLoftSurfacePayload,
+    CompoundSurfacePayload, DeformableSurfacePayload, ExactSurfacePayload,
+    ExtrusionSurfaceConstruction, G2BlendSurfacePayload, LawSurfacePayload,
+    LinearSweepSurfaceConstruction, LoftSurfacePayload, NetSurfacePayload,
+    OffsetSurfaceConstruction, OrderedOptionalRange, ParallelOffsetSurfaceConstruction,
+    RevolutionSurfaceConstruction, ScaledCompoundLoftSurfacePayload, SkinSurfacePayload,
+    SubSurfaceConstruction, SubsetSurfaceConstruction, SumSurfaceConstruction, SweepSurfacePayload,
+    TaperSurfaceConstruction, VariableBlendSurfacePayload, VertexBlendSurfacePayload,
+};
 
 rewrite_record!(AxisRevolutionSurfaceConstruction, []; {directrix, axis_origin, axis_direction});
 rewrite_record!(BlendSurfacePayload, []; {supports, spine, radius, cross_section, cache, native_ranges});

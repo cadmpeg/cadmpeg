@@ -1,21 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information reference validation.
 
-use crate::index::identities::BorrowedIdentities;
 use super::record_finding;
 use crate::document::CadIr;
+use crate::index::identities::BorrowedIdentities;
 use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::report::check::{Check, Finding};
 
-pub(super) fn check_pmi(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn check_pmi(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let definitions = BorrowedIdentities::build(ctx, |add| {
-        for annotation in &ir.model.pmi { add(annotation.id.as_str(), &annotation.definition)?; }
+        for annotation in &ir.model.pmi {
+            add(annotation.id.as_str(), &annotation.definition)?;
+        }
         Ok(())
     })?;
     macro_rules! typed_identities {
         ($arena:ident) => {
             BorrowedIdentities::build(ctx, |add| {
-                for item in &ir.model.$arena { add(item.id.as_str(), ())?; }
+                for item in &ir.model.$arena {
+                    add(item.id.as_str(), ())?;
+                }
                 Ok(())
             })?
         };
@@ -40,11 +48,20 @@ pub(super) fn check_pmi(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadI
                 PmiTarget::Point { point } => points.contains(ctx, point.as_str())?,
                 PmiTarget::Curve { curve } => curves.contains(ctx, curve.as_str())?,
                 PmiTarget::Product { product } => products.contains(ctx, product.as_str())?,
-                PmiTarget::Occurrence { occurrence } => occurrences.contains(ctx, occurrence.as_str())?,
+                PmiTarget::Occurrence { occurrence } => {
+                    occurrences.contains(ctx, occurrence.as_str())?
+                }
                 PmiTarget::ShapeAspect { .. } => true,
             };
             if !resolved {
-                record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("{}", "unresolved PMI target"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::Pmi,
+                    crate::report::Severity::Error,
+                    Some(annotation.id.as_str()),
+                    format_args!("{}", "unresolved PMI target"),
+                )?;
             }
         }
         match &annotation.definition {
@@ -55,14 +72,31 @@ pub(super) fn check_pmi(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadI
                         definitions.get(ctx, reference.datum.as_str())?.copied(),
                         Some(PmiDefinition::Datum { .. })
                     ) {
-                        record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("{}", "unresolved datum reference"))?;
+                        record_finding(
+                            ctx,
+                            findings,
+                            Check::Pmi,
+                            crate::report::Severity::Error,
+                            Some(annotation.id.as_str()),
+                            format_args!("{}", "unresolved datum reference"),
+                        )?;
                     }
                 }
             }
             PmiDefinition::GeometricTolerance { datum_system, .. } => {
                 if let Some(id) = datum_system {
-                    if !matches!(definitions.get(ctx, id.as_str())?.copied(), Some(PmiDefinition::DatumSystem { .. })) {
-                        record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("unresolved datum system"))?;
+                    if !matches!(
+                        definitions.get(ctx, id.as_str())?.copied(),
+                        Some(PmiDefinition::DatumSystem { .. })
+                    ) {
+                        record_finding(
+                            ctx,
+                            findings,
+                            Check::Pmi,
+                            crate::report::Severity::Error,
+                            Some(annotation.id.as_str()),
+                            format_args!("unresolved datum system"),
+                        )?;
                     }
                 }
             }
@@ -71,7 +105,14 @@ pub(super) fn check_pmi(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadI
                 for id in semantics {
                     ctx.charge_work(1, "PMI semantic reference scan")?;
                     if !definitions.contains(ctx, id.as_str())? {
-                        record_finding(ctx, findings, Check::Pmi, crate::report::Severity::Error, Some(annotation.id.as_str()), format_args!("unresolved semantic annotation"))?;
+                        record_finding(
+                            ctx,
+                            findings,
+                            Check::Pmi,
+                            crate::report::Severity::Error,
+                            Some(annotation.id.as_str()),
+                            format_args!("unresolved semantic annotation"),
+                        )?;
                         break;
                     }
                 }
@@ -94,9 +135,15 @@ mod tests {
     fn pmi_indexes_preserve_caller_refusal_and_release_borrowed_storage() {
         let mut ir = CadIr::empty();
         ir.model.points.push(crate::topology::Point::new(
-            "test:model:point#source".try_into().unwrap(), crate::features::FinitePoint3::ZERO, None));
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits] {
+            "test:model:point#source".try_into().unwrap(),
+            crate::features::FinitePoint3::ZERO,
+            None,
+        ));
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -107,10 +154,14 @@ mod tests {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut findings = Vec::new();
-            let Err(CodecError::ResourceLimit(limit)) = check_pmi(&ctx, &ir, &mut findings) else { panic!("PMI index must refuse"); };
+            let Err(CodecError::ResourceLimit(limit)) = check_pmi(&ctx, &ir, &mut findings) else {
+                panic!("PMI index must refuse");
+            };
             assert_eq!(limit.dimension, dimension);
             assert!(findings.is_empty());
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

@@ -1357,7 +1357,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         let admissible = match &counts {
             Ok(Some(_)) => match neutral_model_is_admissible(ctx, &mut candidate_ir, &unknowns) {
                 Ok(admissible) => admissible,
-                Err(limit) => return Some(Err(limit.into())),
+                Err(limit) => return Some(Err(limit)),
             },
             _ => false,
         };
@@ -1618,13 +1618,15 @@ mod tests {
 
     #[test]
     fn zero_entity_wire_nurbs_copy_refuses_collection_limit() {
-        let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let nurbs = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
@@ -1648,13 +1650,15 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![first, corner],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -1932,8 +1936,12 @@ mod tests {
                     .expect("identity grammar")
             )
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -2054,8 +2062,12 @@ mod tests {
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, chord])
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -2094,10 +2106,12 @@ mod tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(None, 
+            .add_procedural_curve(
+                None,
                 &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
-            ).unwrap()
+            )
+            .unwrap()
             .unwrap();
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
@@ -2209,8 +2223,12 @@ mod tests {
                 .definition(),
             &definition
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]

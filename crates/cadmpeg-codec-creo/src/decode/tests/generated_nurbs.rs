@@ -61,7 +61,8 @@ use std::collections::{BTreeMap, BTreeSet};
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let translated_surface = |last_z| {
-            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -81,7 +82,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                     None,
                 ),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .expect("valid translated surface")
         };
         let span = nurbs_translation_span(ctx, &translated_surface(2.0))
@@ -192,7 +194,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             ))
         );
 
-        let ambiguous = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let ambiguous = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 translated_surface(2.0).v_degree(),
@@ -204,7 +207,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 None,
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid ambiguous translation surface");
         assert!(nurbs_translation_span(ctx, &ambiguous)
             .expect("admitted extent")

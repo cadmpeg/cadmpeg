@@ -76,7 +76,8 @@ fn encoder_writes_source_less_curved_sketches() {
         })
         .unwrap(),
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
-            curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -86,7 +87,8 @@ fn encoder_writes_source_less_curved_sketches() {
                 ],
                 Some(vec![1.0, 0.75, 1.0]),
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         })
         .unwrap(),
@@ -1094,12 +1096,17 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()], &cadmpeg_test_support::service_decode_context())
-                        .expect("distinct bodies"),
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                        vec![ir.model.bodies[0].id.clone()],
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
-                BodySelection::Native("body-b,body-c".into()), &cadmpeg_test_support::service_decode_context(),
-            ).expect("operand admission")
+                BodySelection::Native("body-b,body-c".into()),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("operand admission")
             .unwrap(),
 
             op: cadmpeg_ir::features::BooleanKind::Join,
@@ -1214,7 +1221,11 @@ fn encoder_writes_source_less_native_features() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![seed_id.clone()], &cadmpeg_test_support::service_decode_context()).unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![seed_id.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,

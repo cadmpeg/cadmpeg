@@ -506,11 +506,8 @@ pub(super) fn emit_model_features(
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
             name,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependencies,
-                ctx,
-            )
-            .map_err(cadmpeg_core::CodecError::from)?,
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+                .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 format_args!("creo:model:feature#{}", operation.feature_id),

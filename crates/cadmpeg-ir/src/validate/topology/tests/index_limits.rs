@@ -5,18 +5,25 @@ use cadmpeg_core::CodecError;
 
 fn parameter_fixture() -> crate::CadIr {
     let mut ir = crate::CadIr::empty();
-    ir.model.parameters.push(serde_json::from_value(serde_json::json!({
-        "id": "test:model:parameter#value", "name": "Length", "expression": "10"
-    })).unwrap());
+    ir.model.parameters.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:parameter#value", "name": "Length", "expression": "10"
+        }))
+        .unwrap(),
+    );
     ir
 }
 
 #[test]
 fn topology_reference_indexes_preserve_scoped_slot_and_work_refusals() {
     let ir = parameter_fixture();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     for feature_only in [false, true] {
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
@@ -32,10 +39,14 @@ fn topology_reference_indexes_preserve_scoped_slot_and_work_refusals() {
             } else {
                 super::super::check_references(&ctx, &ir, &index, &mut findings)
             };
-            let Err(CodecError::ResourceLimit(original)) = result else { panic!("reference index must refuse"); };
+            let Err(CodecError::ResourceLimit(original)) = result else {
+                panic!("reference index must refuse");
+            };
             assert_eq!(original.dimension, dimension);
             assert!(findings.is_empty());
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
         }
     }
 }
@@ -43,7 +54,7 @@ fn topology_reference_indexes_preserve_scoped_slot_and_work_refusals() {
 #[test]
 fn topology_reference_indexes_borrow_text_and_release_temporary_storage() {
     let ir = parameter_fixture();
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 65536;
@@ -52,6 +63,9 @@ fn topology_reference_indexes_borrow_text_and_release_temporary_storage() {
     let mut findings = Vec::new();
     super::super::check_references(&ctx, &ir, &index, &mut findings).unwrap();
     assert!(findings.is_empty());
-    drop(ctx.reserve_scoped(65536, "topology reference scratch released").unwrap());
+    drop(
+        ctx.reserve_scoped(65536, "topology reference scratch released")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }

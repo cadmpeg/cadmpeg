@@ -1,7 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin, BinderPlacement, BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, CoilExtent, CoilSection, CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection, CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter, DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc, FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers, FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat, HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper, NoGeneratedSection, ParameterPmi, PmiDimensionSubtype, PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, SweepPathExtent, SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode};
+use super::{
+    BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin, BinderPlacement,
+    BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, CoilExtent, CoilSection,
+    CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection,
+    CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
+    DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
+    FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
+    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame, FlexForm, FlexMode,
+    FuzzyTolerance, GeometryImportFormat, HelicalSweepLaw, HelicalSweepTravel,
+    HelixConstructionStyle, HelixShape, InnerWireTaper, NoGeneratedSection, ParameterPmi,
+    PmiDimensionSubtype, PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
+    RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
+    SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode,
+    SolidSweepOperation, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode,
+    SweepPathExtent, SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
+};
 
 rewrite_scalar!(BinderCopyOnChange);
 rewrite_scalar!(BinderLifecycle);

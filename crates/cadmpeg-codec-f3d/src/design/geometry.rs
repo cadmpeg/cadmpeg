@@ -1435,7 +1435,9 @@ fn sketch_geometry_speed_bound(
         SketchGeometryDefinition::Ellipse { radii, .. } => {
             Some(radii.major().get().max(radii.minor().get()))
         }
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(ctx, curve)?,
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            nurbs_speed_bound(ctx, curve)?
+        }
         _ if range[0] == range[1] => None,
         _ => None,
     })
@@ -1474,7 +1476,12 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let lanes = PcurveEvaluatorLanes::new(ctx, curve.pole_rows(), "f3d nurbs evaluator poles", "f3d nurbs evaluator weights")?;
+            let lanes = PcurveEvaluatorLanes::new(
+                ctx,
+                curve.pole_rows(),
+                "f3d nurbs evaluator poles",
+                "f3d nurbs evaluator weights",
+            )?;
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 ctx,
                 curve.degree(),
@@ -1645,12 +1652,10 @@ pub(super) fn region_containing_points(
         let hole = geometric!(u32::try_from(hole).ok());
         ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
     }
-    Ok(SketchProfileRegion::loops(
-        geometric!(u32::try_from(outer).ok()),
-        converted_holes,
-        ctx,
-    )?
-    .ok())
+    Ok(
+        SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes, ctx)?
+            .ok(),
+    )
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -2148,7 +2153,12 @@ fn certified_nurbs_tubes(
     let speed = geometric!(nurbs_speed_bound(ctx, curve)?);
     let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
-    let lanes = PcurveEvaluatorLanes::new(ctx, curve.pole_rows(), "f3d nurbs tube points", "f3d nurbs tube weights")?;
+    let lanes = PcurveEvaluatorLanes::new(
+        ctx,
+        curve.pole_rows(),
+        "f3d nurbs tube points",
+        "f3d nurbs tube weights",
+    )?;
     let count = lanes.points().len();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
@@ -2224,7 +2234,10 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         .flatten()
 }
 
-fn nurbs_speed_bound(ctx: &DecodeContext<'_>, curve: &PcurveNurbs) -> Result<Option<f64>, CodecError> {
+fn nurbs_speed_bound(
+    ctx: &DecodeContext<'_>,
+    curve: &PcurveNurbs,
+) -> Result<Option<f64>, CodecError> {
     Ok(cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
         ctx,
         curve.degree(),
@@ -2986,7 +2999,12 @@ pub(super) fn point_on_sketch_entity(
         if curve.periodic() {
             return Ok(false);
         }
-        let lanes = PcurveEvaluatorLanes::new(ctx, curve.pole_rows(), "f3d nurbs evaluator poles", "f3d nurbs evaluator weights")?;
+        let lanes = PcurveEvaluatorLanes::new(
+            ctx,
+            curve.pole_rows(),
+            "f3d nurbs evaluator poles",
+            "f3d nurbs evaluator weights",
+        )?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             ctx,
             curve.degree(),
@@ -3755,7 +3773,12 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let lanes = PcurveEvaluatorLanes::new(ctx, curve.pole_rows(), "f3d nurbs evaluator poles", "f3d nurbs evaluator weights")?;
+            let lanes = PcurveEvaluatorLanes::new(
+                ctx,
+                curve.pole_rows(),
+                "f3d nurbs evaluator poles",
+                "f3d nurbs evaluator weights",
+            )?;
             let start_parameter = curve.knots()[index_from_u32(curve.degree())];
             let end_parameter = curve.knots()[lanes.points().len()];
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(

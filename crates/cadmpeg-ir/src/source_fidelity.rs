@@ -354,9 +354,19 @@ impl SourceFidelity {
         mut other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
         for id in other.retained_records.keys() {
-            let work = id.as_str().len().checked_add(1)
-                .and_then(|bytes| self.retained_records.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
-                .ok_or_else(|| ctx.refuse_codec_limit("check appended source records", u64::MAX - 1, u64::MAX))?;
+            let work = id
+                .as_str()
+                .len()
+                .checked_add(1)
+                .and_then(|bytes| {
+                    self.retained_records
+                        .len()
+                        .checked_add(1)
+                        .and_then(|count| bytes.checked_mul(count))
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("check appended source records", u64::MAX - 1, u64::MAX)
+                })?;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(work),
                 "check appended source records",
@@ -368,8 +378,13 @@ impl SourceFidelity {
                 )?));
             }
         }
-        crate::annotations::admit_btree_append(ctx, &self.retained_records, &other.retained_records,
-            |id| id.as_str().len(), "append source records")?;
+        crate::annotations::admit_btree_append(
+            ctx,
+            &self.retained_records,
+            &other.retained_records,
+            |id| id.as_str().len(),
+            "append source records",
+        )?;
         self.annotations
             .append(ctx, other.annotations, "append source provenance")?
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -446,14 +461,28 @@ impl SourceFidelity {
             Some(namespace) => namespace.arena_as_for_decode(ctx, "unknowns")?,
             None => Vec::new(),
         };
-        let (existing_ids, _identity_storage) = ctx.with_scoped_storage("native unknown existing identities", || {
-            let mut existing_ids = BTreeSet::new();
-            for record in ir.native.0.values().filter_map(|namespace| namespace.arenas().get("unknowns")).flatten() {
-                ctx.charge_work(u64_from_index(record.id().len()), "native unknown identity scan")?;
-                ctx.insert_btree_set(&mut existing_ids, record.id(), "native unknown existing identities")?;
-            }
-            Ok::<_, CodecError>(existing_ids)
-        })?;
+        let (existing_ids, _identity_storage) =
+            ctx.with_scoped_storage("native unknown existing identities", || {
+                let mut existing_ids = BTreeSet::new();
+                for record in ir
+                    .native
+                    .0
+                    .values()
+                    .filter_map(|namespace| namespace.arenas().get("unknowns"))
+                    .flatten()
+                {
+                    ctx.charge_work(
+                        u64_from_index(record.id().len()),
+                        "native unknown identity scan",
+                    )?;
+                    ctx.insert_btree_set(
+                        &mut existing_ids,
+                        record.id(),
+                        "native unknown existing identities",
+                    )?;
+                }
+                Ok::<_, CodecError>(existing_ids)
+            })?;
         let mut retained = BTreeMap::new();
         for record in records {
             if self.retained_records.contains_key(record.id())
@@ -856,8 +885,21 @@ mod tests {
         assert_eq!(CadIr::from_json(&ir_json).expect("parse CADIR"), ir);
 
         let mut builder = crate::AnnotationBuilder::new();
-        let stream = crate::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!(" \t"), "fixture stream handle").unwrap();
-        builder.note(&cadmpeg_test_support::service_decode_context(), "synthetic:point#0", &stream, 17, Some("point")).unwrap();
+        let stream = crate::annotations::StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            crate::stream_name!(" \t"),
+            "fixture stream handle",
+        )
+        .unwrap();
+        builder
+            .note(
+                &cadmpeg_test_support::service_decode_context(),
+                "synthetic:point#0",
+                &stream,
+                17,
+                Some("point"),
+            )
+            .unwrap();
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
             report(),

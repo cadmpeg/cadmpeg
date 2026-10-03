@@ -59,7 +59,11 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             vec![SpatialSketchEntityUse {
                 entity: circle.clone(),
                 reversed: false,
-            }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+            }],
+            &cadmpeg_test_support::service_decode_context(),
+            "spatial profile uniqueness",
+        )
+        .expect("fixture collection admission")
         .unwrap()],
         native_ref: None,
     });
@@ -157,7 +161,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             surface.clone(),
             sketch.clone(),
             SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
-                surface: crate::geometry::nurbs::BsplineSurface::new(&cadmpeg_test_support::service_decode_context(),
+                surface: crate::geometry::nurbs::BsplineSurface::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -166,7 +171,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
                     ],
-                ).expect("fixture B-spline admission")
+                )
+                .expect("fixture B-spline admission")
                 .unwrap(),
             })
             .unwrap(),
@@ -473,7 +479,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             .unwrap(),
             native_ref: None,
         });
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -550,8 +557,10 @@ fn spatial_sketch_paths_round_trip_through_json() {
 
     let path = PathRef::spatial_sketch_curves(
         SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        vec![SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap()], &cadmpeg_test_support::service_decode_context(),
-    ).expect("profile membership admission")
+        vec![SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap()],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("profile membership admission")
     .unwrap();
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
@@ -653,21 +662,25 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
 
-    let negative = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let negative = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![-1.0, -1.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
-    let degree_zero = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let degree_zero = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         0,
         vec![0.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     for (curve, field) in [(negative, "weights"), (degree_zero, "degree")] {
         assert!(SpatialSketchNurbsCurve::try_from(curve.clone())
@@ -688,25 +701,31 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve,
     };
 
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let wire = serde_json::json!({"kind": "nurbs", "curve": &curve});
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
     assert!(curve
-        .try_map_control_points(|index, point| {
-            let mut mapped = point.get();
-            if index == 0 {
-                mapped.x = f64::NAN;
-            }
-            crate::features::FinitePoint3::new(mapped).ok_or(())
-        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+        .try_map_control_points(
+            |index, point| {
+                let mut mapped = point.get();
+                if index == 0 {
+                    mapped.x = f64::NAN;
+                }
+                crate::features::FinitePoint3::new(mapped).ok_or(())
+            },
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("pole edit admission")
         .is_err());
     assert_eq!(curve, before);
     let geometry =
@@ -723,19 +742,24 @@ fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
     use crate::geometry::nurbs::{NurbsCurve, NurbsError};
     use crate::sketches::SpatialSketchNurbsCurve;
 
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
-    let refusal = curve.try_map_control_points(|_, _| {
-        Err(NurbsError::EditRefused("caller refused this pole".into()))
-    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission");
+    let refusal = curve
+        .try_map_control_points(
+            |_, _| Err(NurbsError::EditRefused("caller refused this pole".into())),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission");
     assert_eq!(
         refusal,
         Err(NurbsError::EditRefused("caller refused this pole".into()))
@@ -891,8 +915,16 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         entity: SpatialSketchEntityId::mint("synthetic:test:spatial-entity#profile").unwrap(),
         reversed: true,
     }];
-    let mut profile =
-        SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.clone(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission").unwrap();
+    let mut profile = SpatialSketchProfile::try_new(
+        origin,
+        normal,
+        u_axis,
+        boundary.clone(),
+        &cadmpeg_test_support::service_decode_context(),
+        "spatial profile uniqueness",
+    )
+    .expect("fixture collection admission")
+    .unwrap();
     assert_eq!(profile.origin(), origin);
     assert_eq!(
         [profile.normal(), profile.u_axis()],
@@ -912,25 +944,51 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         serde_json::from_value::<SpatialSketchProfile>(wire.clone()).unwrap(),
         profile
     );
-    assert!(SpatialSketchProfile::try_new(origin, normal, u_axis, vec![], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission").is_err());
     assert!(SpatialSketchProfile::try_new(
         origin,
         normal,
         u_axis,
-        vec![boundary[0].clone(), boundary[0].clone()], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+        vec![],
+        &cadmpeg_test_support::service_decode_context(),
+        "spatial profile uniqueness"
+    )
+    .expect("fixture collection admission")
+    .is_err());
+    assert!(SpatialSketchProfile::try_new(
+        origin,
+        normal,
+        u_axis,
+        vec![boundary[0].clone(), boundary[0].clone()],
+        &cadmpeg_test_support::service_decode_context(),
+        "spatial profile uniqueness"
+    )
+    .expect("fixture collection admission")
     .is_err());
     for axis in [
         Vector3::new(0.0, 0.0, 0.0),
         normal,
         Vector3::new(f64::NAN, 0.0, 0.0),
     ] {
-        assert!(SpatialSketchProfile::try_new(origin, normal, axis, boundary.clone(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission").is_err());
+        assert!(SpatialSketchProfile::try_new(
+            origin,
+            normal,
+            axis,
+            boundary.clone(),
+            &cadmpeg_test_support::service_decode_context(),
+            "spatial profile uniqueness"
+        )
+        .expect("fixture collection admission")
+        .is_err());
     }
     assert!(SpatialSketchProfile::try_new(
         origin,
         normal,
         Vector3::new(1.0 + EPS_SPATIAL_FRAME_BOUNDARY * 0.5, 0.0, 0.0),
-        boundary, &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+        boundary,
+        &cadmpeg_test_support::service_decode_context(),
+        "spatial profile uniqueness"
+    )
+    .expect("fixture collection admission")
     .is_ok());
     for (field, invalid) in [
         ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),

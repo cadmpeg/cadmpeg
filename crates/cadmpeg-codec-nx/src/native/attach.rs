@@ -1845,16 +1845,11 @@ fn attach_active_configuration_feature_states(
             state_id,
             ConfigurationFeatureState {
                 evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                    outputs: cadmpeg_ir::features::DistinctMembers::try_from(
-                        outputs, ctx,
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?,
+                    outputs: cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                        .map_err(cadmpeg_core::CodecError::from)?,
                 },
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    dependencies,
-                    ctx,
-                )
-                .map_err(cadmpeg_core::CodecError::from)?,
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+                    .map_err(cadmpeg_core::CodecError::from)?,
                 definition,
             },
             "NX configuration feature states",
@@ -2065,11 +2060,8 @@ fn attach_initial_segment_bodies(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        selection_bodies,
-                        ctx,
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?,
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(selection_bodies, ctx)
+                        .map_err(cadmpeg_core::CodecError::from)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
@@ -5480,7 +5472,11 @@ fn attach_feature_operations(
             );
             let fallback_definition = match history_definition {
                 Some(definition) => Some(definition),
-                None => body_writing_unresolved_feature_definition(ctx, &label.value, &source_properties)?,
+                None => body_writing_unresolved_feature_definition(
+                    ctx,
+                    &label.value,
+                    &source_properties,
+                )?,
             };
             let mut definition = if let Some(definition) = fallback_definition {
                 definition
@@ -5507,7 +5503,8 @@ fn attach_feature_operations(
                             .push(placement.try_clone_for_decode(ctx, "NX decoded IR value copy")?);
                     }
                 }
-                non_boolean_feature_definition_with_parameters(ctx, 
+                non_boolean_feature_definition_with_parameters(
+                    ctx,
                     &label.value,
                     &operation_payload_strings,
                     block_dimension_values,
@@ -5671,11 +5668,8 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependencies,
-                ctx,
-            )
-            .map_err(cadmpeg_core::CodecError::from)?,
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+                .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries_for_decode(
                 ctx,
                 &label.id,
@@ -5924,10 +5918,19 @@ fn append_feature_result_topology(
     native_ref: String,
 ) -> Result<(), CodecError> {
     let members = cadmpeg_ir::features::FeatureResultMembers::new(
-        bodies, members.faces, members.edges, members.vertices, ctx,
+        bodies,
+        members.faces,
+        members.edges,
+        members.vertices,
+        ctx,
         "NX result topology member validation",
-    )?.map_err(|error| CodecError::Malformed(error.to_string()))?;
-    ctx.reserve_retained_vec_limit(&mut ir.model.feature_result_topologies, 1, "allocate NX result topology records")?;
+    )?
+    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    ctx.reserve_retained_vec_limit(
+        &mut ir.model.feature_result_topologies,
+        1,
+        "allocate NX result topology records",
+    )?;
     let result = FeatureResultTopology::new(
         result_id,
         output_of.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
@@ -6388,13 +6391,7 @@ fn attach_sketch_graph(
                 }
                 _ => "SKETCH_NATIVE",
             };
-            annotations.note(
-                ctx,
-                entity.id().as_str(),
-                stream,
-                *source_offset,
-                Some(tag),
-            )?;
+            annotations.note(ctx, entity.id().as_str(), stream, *source_offset, Some(tag))?;
             annotations.exactness(ctx, entity.id().as_str(), Exactness::ByteExact)?;
         }
         annotations.note(
@@ -6581,18 +6578,8 @@ fn attach_sketch_graph(
                 } else {
                     "SKETCH_NATIVE"
                 };
-                annotations.note(
-                    ctx,
-                    entity.id().as_str(),
-                    stream,
-                    *source_offset,
-                    Some(tag),
-                )?;
-                annotations.exactness(
-                    ctx,
-                    entity.id().as_str(),
-                    Exactness::ByteExact,
-                )?;
+                annotations.note(ctx, entity.id().as_str(), stream, *source_offset, Some(tag))?;
+                annotations.exactness(ctx, entity.id().as_str(), Exactness::ByteExact)?;
             }
             _ => return Ok(None),
         }
@@ -7279,7 +7266,11 @@ fn attach_parasolid_topology_string_attributes(
             )?;
             let source_stream = StreamHandle::new(
                 ctx,
-                cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, reference.stream_ordinal, "compose annotation stream name")?,
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                    ctx,
+                    reference.stream_ordinal,
+                    "compose annotation stream name",
+                )?,
                 "allocate annotation stream handle",
             )?;
             annotations.note(
@@ -8261,16 +8252,14 @@ fn attach_parasolid_topology_numeric_attributes(
             )?;
             let source_stream = StreamHandle::new(
                 ctx,
-                cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, reference.stream_ordinal, "compose annotation stream name")?,
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                    ctx,
+                    reference.stream_ordinal,
+                    "compose annotation stream name",
+                )?,
                 "allocate annotation stream handle",
             )?;
-            annotations.note(
-                ctx,
-                id.as_str(),
-                &source_stream,
-                source_offset,
-                Some(tag),
-            )?;
+            annotations.note(ctx, id.as_str(), &source_stream, source_offset, Some(tag))?;
             annotations
                 .derived(ctx, id.as_str(), "target")
                 .map_err(cadmpeg_core::CodecError::from)?;
@@ -8442,16 +8431,14 @@ fn attach_parasolid_topology_structured_attributes(
             )?;
             let source_stream = StreamHandle::new(
                 ctx,
-                cadmpeg_ir::stream_name!("nx:s").with_suffix(ctx, reference.stream_ordinal, "compose annotation stream name")?,
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                    ctx,
+                    reference.stream_ordinal,
+                    "compose annotation stream name",
+                )?,
                 "allocate annotation stream handle",
             )?;
-            annotations.note(
-                ctx,
-                id.as_str(),
-                &source_stream,
-                source_offset,
-                Some(tag),
-            )?;
+            annotations.note(ctx, id.as_str(), &source_stream, source_offset, Some(tag))?;
             annotations
                 .derived(ctx, id.as_str(), "target")
                 .map_err(cadmpeg_core::CodecError::from)?;
@@ -8832,7 +8819,7 @@ pub(super) fn boolean_feature_definition(
         }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: cadmpeg_ir::features::CombineOperands::new(target, tools, ctx,)?
+        operands: cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         op: match operation.kind {
@@ -9076,7 +9063,7 @@ fn offset_store_trim_body_feature_definition(
             "NX feature projection text",
         )?,
     )?;
-    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools, ctx,)? else {
+    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools, ctx)? else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -9225,7 +9212,8 @@ fn trim_body_feature_definition(
                     native_target,
                 )?
                 .into_selection(ctx)?,
-                BodySelection::Unresolved, ctx,
+                BodySelection::Unresolved,
+                ctx,
             )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -9253,7 +9241,8 @@ fn trim_body_feature_definition(
         return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Native(native_target),
-                BodySelection::Native(native_tools), ctx,
+                BodySelection::Native(native_tools),
+                ctx,
             )?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -9278,7 +9267,7 @@ fn trim_body_feature_definition(
         )?,
     )?;
     Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools, ctx,)?
+        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools, ctx)?
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
         keep: BodyTrimSide::Unresolved,

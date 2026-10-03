@@ -64,14 +64,28 @@ pub(crate) struct FeatureRegenerationParents(
 );
 
 impl FeatureRegenerationParents {
-    pub(crate) fn equivalent(&self, other: &Self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+    pub(crate) fn equivalent(
+        &self,
+        other: &Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         let operation = "compare model checkpoint parents";
         ctx.charge_work(1, operation)?;
-        if self.0.len() != other.0.len() { return Ok(false); }
-        for ((left_child, left_parent), (right_child, right_parent)) in self.0.iter().zip(&other.0) {
-            let bytes = left_child.as_str().len().checked_add(left_parent.as_str().len()).and_then(|bytes| bytes.checked_add(2)).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        if self.0.len() != other.0.len() {
+            return Ok(false);
+        }
+        for ((left_child, left_parent), (right_child, right_parent)) in self.0.iter().zip(&other.0)
+        {
+            let bytes = left_child
+                .as_str()
+                .len()
+                .checked_add(left_parent.as_str().len())
+                .and_then(|bytes| bytes.checked_add(2))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(u64_from_index(bytes), operation)?;
-            if left_child != right_child || left_parent != right_parent { return Ok(false); }
+            if left_child != right_child || left_parent != right_parent {
+                return Ok(false);
+            }
         }
         Ok(true)
     }
@@ -83,16 +97,41 @@ impl FeatureRegenerationParents {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         if !self.0.is_empty() && !incoming.0.is_empty() {
-            let count = self.0.len().checked_add(incoming.0.len()).ok_or_else(|| ctx.refuse_codec_limit("append feature regeneration parents", u64::MAX - 1, u64::MAX))?;
+            let count = self.0.len().checked_add(incoming.0.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "append feature regeneration parents",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
             let mut longest = 0;
             for (child, _) in self.0.iter().chain(incoming.0.iter()) {
                 ctx.charge_work(1, "append feature regeneration parent scan")?;
                 longest = longest.max(child.as_str().len());
                 ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, "append feature regeneration parents")?;
             }
-            let work = count.checked_add(1).and_then(|count| longest.checked_add(std::mem::size_of::<(crate::features::FeatureId, crate::features::FeatureId)>()).and_then(|bytes| count.checked_mul(bytes))).and_then(|work| work.checked_mul(4))
-                .ok_or_else(|| ctx.refuse_codec_limit("append feature regeneration parent moves", u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(u64_from_index(work), "append feature regeneration parent moves")?;
+            let work = count
+                .checked_add(1)
+                .and_then(|count| {
+                    longest
+                        .checked_add(std::mem::size_of::<(
+                            crate::features::FeatureId,
+                            crate::features::FeatureId,
+                        )>())
+                        .and_then(|bytes| count.checked_mul(bytes))
+                })
+                .and_then(|work| work.checked_mul(4))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "append feature regeneration parent moves",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            ctx.charge_work(
+                u64_from_index(work),
+                "append feature regeneration parent moves",
+            )?;
         }
         Ok(())
     }
@@ -106,7 +145,12 @@ impl FeatureRegenerationParents {
         ctx.charge_work(1, operation)?;
         let mut parents = BTreeMap::new();
         for (child, parent) in &self.0 {
-            let work = u64_from_index(child.as_str().len()).checked_add(1).and_then(|length| length.checked_mul(u64_from_index(parents.len()).checked_add(1)?)).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            let work = u64_from_index(child.as_str().len())
+                .checked_add(1)
+                .and_then(|length| {
+                    length.checked_mul(u64_from_index(parents.len()).checked_add(1)?)
+                })
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(work, operation)?;
             let child = child.try_clone_for_decode(ctx, operation)?;
             let parent = parent.try_clone_for_decode(ctx, operation)?;
@@ -335,28 +379,67 @@ macro_rules! sorted_model_type {
 }
 
 macro_rules! sorted_model_value {
-    ($model:expr, $ctx:expr, surfaces) => { sorted_rows($ctx, &$model.surfaces, |value| Ok(SurfaceWire(value)))? };
-    ($model:expr, $ctx:expr, curves) => { sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))? };
+    ($model:expr, $ctx:expr, surfaces) => {
+        sorted_rows($ctx, &$model.surfaces, |value| Ok(SurfaceWire(value)))?
+    };
+    ($model:expr, $ctx:expr, curves) => {
+        sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))?
+    };
     ($model:expr, $ctx:expr, procedural_surfaces) => {
         sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
-            admit_owner_scan($ctx, &$model.surfaces, procedural.id.as_str(), "find digest procedural owner")?;
-            Ok(ProceduralSurfaceWire { owner: $model.procedural_surface_owner(&procedural.id), procedural })
+            admit_owner_scan(
+                $ctx,
+                &$model.surfaces,
+                procedural.id.as_str(),
+                "find digest procedural owner",
+            )?;
+            Ok(ProceduralSurfaceWire {
+                owner: $model.procedural_surface_owner(&procedural.id),
+                procedural,
+            })
         })?
     };
     ($model:expr, $ctx:expr, procedural_curves) => {
         sorted_rows($ctx, &$model.procedural_curves, |procedural| {
-            admit_owner_scan($ctx, &$model.curves, procedural.id.as_str(), "find digest procedural owner")?;
-            Ok(ProceduralCurveWire { owner: $model.procedural_curve_owner(&procedural.id), procedural })
+            admit_owner_scan(
+                $ctx,
+                &$model.curves,
+                procedural.id.as_str(),
+                "find digest procedural owner",
+            )?;
+            Ok(ProceduralCurveWire {
+                owner: $model.procedural_curve_owner(&procedural.id),
+                procedural,
+            })
         })?
     };
     ($model:expr, $ctx:expr, features) => {
         sorted_rows($ctx, &$model.features, |feature| {
-            let count = cadmpeg_core::decode::u64_from_index($model.feature_regeneration_parents.0.len());
-            $ctx.charge_work(count.checked_mul(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len())).ok_or_else(|| $ctx.refuse_codec_limit("find digest feature parent", u64::MAX - 1, u64::MAX))?, "find digest feature parent")?;
-            Ok(FeatureWriteWire::new(feature, $model.feature_regeneration_parent(&feature.id)))
+            let count =
+                cadmpeg_core::decode::u64_from_index($model.feature_regeneration_parents.0.len());
+            $ctx.charge_work(
+                count
+                    .checked_mul(cadmpeg_core::decode::u64_from_index(
+                        feature.id.as_str().len(),
+                    ))
+                    .ok_or_else(|| {
+                        $ctx.refuse_codec_limit(
+                            "find digest feature parent",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+                "find digest feature parent",
+            )?;
+            Ok(FeatureWriteWire::new(
+                feature,
+                $model.feature_regeneration_parent(&feature.id),
+            ))
         })?
     };
-    ($model:expr, $ctx:expr, $field:ident) => { sorted_rows($ctx, &$model.$field, Ok)? };
+    ($model:expr, $ctx:expr, $field:ident) => {
+        sorted_rows($ctx, &$model.$field, Ok)?
+    };
 }
 
 macro_rules! declare_model {
@@ -568,7 +651,10 @@ pub trait EntityRewrite {
     type Error;
 
     /// Rewrite one arena entity.
-    fn rewrite<T: crate::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, Self::Error>;
+    fn rewrite<T: crate::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, Self::Error>;
 }
 
 macro_rules! declare_model_view {
@@ -602,15 +688,35 @@ fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
     mut project: impl FnMut(&'a T) -> Result<U, CodecError>,
 ) -> Result<Vec<U>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "digest arena order")?;
-    let mut refs = storage.with_storage(|| ctx.collect_vec(entities.iter(), "digest arena order"))?;
-    ctx.stable_sort_by(&mut refs, |left, right| left.identity().cmp(right.identity()), |value| value.identity().len(), "sort digest arena")?;
-    let result = ctx.try_collect_vec(refs.into_iter().map(&mut project), "digest arena projection");
+    let mut refs =
+        storage.with_storage(|| ctx.collect_vec(entities.iter(), "digest arena order"))?;
+    ctx.stable_sort_by(
+        &mut refs,
+        |left, right| left.identity().cmp(right.identity()),
+        |value| value.identity().len(),
+        "sort digest arena",
+    )?;
+    let result = ctx.try_collect_vec(
+        refs.into_iter().map(&mut project),
+        "digest arena projection",
+    );
     drop(storage);
     result
 }
 
-fn admit_owner_scan<T>(ctx: &DecodeContext<'_>, owners: &[T], identity: &str, operation: &'static str) -> Result<(), CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(owners.len()).checked_mul(cadmpeg_core::decode::u64_from_index(identity.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+fn admit_owner_scan<T>(
+    ctx: &DecodeContext<'_>,
+    owners: &[T],
+    identity: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(owners.len())
+        .checked_mul(
+            cadmpeg_core::decode::u64_from_index(identity.len())
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+        )
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, operation)
 }
 
@@ -679,17 +785,34 @@ pub struct GeometrySnapshot<'a> {
 
 impl Model {
     /// Admit parent validation and owner scans for a borrowed geometry serialization view.
-    pub fn geometry_snapshot<'a>(&'a self, ctx: &DecodeContext<'_>, kind: &'a str) -> Result<GeometrySnapshot<'a>, CodecError> {
+    pub fn geometry_snapshot<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+        kind: &'a str,
+    ) -> Result<GeometrySnapshot<'a>, CodecError> {
         if let Err(error) = feature_parents::validate(Some(ctx), &[self])? {
-            return Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "geometry snapshot parent diagnostic")?));
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"),
+                "geometry snapshot parent diagnostic",
+            )?));
         }
         for procedural in &self.procedural_surfaces {
             ctx.charge_work(1, "geometry snapshot procedural scan")?;
-            admit_owner_scan(ctx, &self.surfaces, procedural.id.as_str(), "find geometry snapshot procedural owner")?;
+            admit_owner_scan(
+                ctx,
+                &self.surfaces,
+                procedural.id.as_str(),
+                "find geometry snapshot procedural owner",
+            )?;
         }
         for procedural in &self.procedural_curves {
             ctx.charge_work(1, "geometry snapshot procedural scan")?;
-            admit_owner_scan(ctx, &self.curves, procedural.id.as_str(), "find geometry snapshot procedural owner")?;
+            admit_owner_scan(
+                ctx,
+                &self.curves,
+                procedural.id.as_str(),
+                "find geometry snapshot procedural owner",
+            )?;
         }
         Ok(GeometrySnapshot { model: self, kind })
     }
@@ -1022,8 +1145,8 @@ impl Model {
         parent: &'a crate::features::FeatureId,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), RegenerationParentError<'a>>, CodecError> {
-        let admission = ModelAdmission(Some(ctx));
         const OPERATION: &str = "install decoded feature regeneration parent";
+        let admission = ModelAdmission(Some(ctx));
         for candidate in &self.features {
             ctx.charge_work(1, OPERATION)?;
             if let crate::features::FeatureDefinition::Operation(
@@ -1079,8 +1202,18 @@ impl Model {
                 ctx.format_retained(format_args!("{error}"), OPERATION)?,
             ));
         }
-        let work = self.feature_regeneration_parents.0.len().checked_add(1)
-            .and_then(|count| child.as_str().len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+        let work = self
+            .feature_regeneration_parents
+            .0
+            .len()
+            .checked_add(1)
+            .and_then(|count| {
+                child
+                    .as_str()
+                    .len()
+                    .checked_add(1)
+                    .and_then(|bytes| count.checked_mul(bytes))
+            })
             .and_then(|work| work.checked_mul(3))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(u64_from_index(work), OPERATION)?;
@@ -1128,17 +1261,29 @@ impl ModelAdmission<'_, '_> {
         Ok(left == right)
     }
 
-    fn text(&self, args: fmt::Arguments<'_>, operation: &'static str) -> Result<String, CodecError> {
+    fn text(
+        &self,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
         match self.0 {
             Some(ctx) => ctx.format_retained(args, operation),
             None => Ok(args.to_string()),
         }
     }
 
-    fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Result<(), CodecError> {
+    fn reserve<T>(
+        &self,
+        values: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
         match self.0 {
             Some(ctx) => ctx.reserve_retained_vec(values, count, operation),
-            None => { values.reserve(count); Ok(()) }
+            None => {
+                values.reserve(count);
+                Ok(())
+            }
         }
     }
 }
@@ -1180,7 +1325,11 @@ impl Model {
         let admission = ModelAdmission(ctx);
         for existing in &self.procedural_surfaces {
             admission.work(1, "scan procedural surface constructions")?;
-            if admission.equal(existing.id.as_str(), procedural.id.as_str(), "compare procedural surface constructions")? {
+            if admission.equal(
+                existing.id.as_str(),
+                procedural.id.as_str(),
+                "compare procedural surface constructions",
+            )? {
                 return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "procedural surface construction {} already exists",
@@ -1193,13 +1342,21 @@ impl Model {
         let mut owner_index = None;
         for (index, carrier) in self.surfaces.iter().enumerate() {
             admission.work(1, "scan procedural surface carriers")?;
-            let is_owner = admission.equal(carrier.id.as_str(), owner.as_str(), "compare procedural surface owners")?;
+            let is_owner = admission.equal(
+                carrier.id.as_str(),
+                owner.as_str(),
+                "compare procedural surface owners",
+            )?;
             if owner_index.is_none() && is_owner {
                 owner_index = Some(index);
             }
             if !is_owner
                 && match carrier.geometry.procedural_construction() {
-                    Some(construction) => admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural surface constructions")?,
+                    Some(construction) => admission.equal(
+                        construction.as_str(),
+                        procedural.id.as_str(),
+                        "compare procedural surface constructions",
+                    )?,
                     None => false,
                 }
             {
@@ -1225,7 +1382,12 @@ impl Model {
             SurfaceGeometry::Procedural {
                 construction,
                 cache: None,
-            } if admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural surface constructions")? => {
+            } if admission.equal(
+                construction.as_str(),
+                procedural.id.as_str(),
+                "compare procedural surface constructions",
+            )? =>
+            {
                 if procedural.cache_fit_tolerance().is_some() {
                     return Ok(Err(ProceduralCarrierError::new(admission.text(
                         format_args!(
@@ -1250,7 +1412,9 @@ impl Model {
             }
             SurfaceGeometry::Solved(_) => {
                 let construction = match ctx {
-                    Some(ctx) => procedural.id.try_clone_for_decode(ctx, "procedural surface owner identity")?,
+                    Some(ctx) => procedural
+                        .id
+                        .try_clone_for_decode(ctx, "procedural surface owner identity")?,
                     None => procedural.id.clone(),
                 };
                 admission.reserve(
@@ -1289,7 +1453,11 @@ impl Model {
         let admission = ModelAdmission(ctx);
         for existing in &self.procedural_curves {
             admission.work(1, "scan procedural curve constructions")?;
-            if admission.equal(existing.id.as_str(), procedural.id.as_str(), "compare procedural curve constructions")? {
+            if admission.equal(
+                existing.id.as_str(),
+                procedural.id.as_str(),
+                "compare procedural curve constructions",
+            )? {
                 return Ok(Err(ProceduralCarrierError::new(admission.text(
                     format_args!(
                         "procedural curve construction {} already exists",
@@ -1302,13 +1470,21 @@ impl Model {
         let mut owner_index = None;
         for (index, carrier) in self.curves.iter().enumerate() {
             admission.work(1, "scan procedural curve carriers")?;
-            let is_owner = admission.equal(carrier.id.as_str(), owner.as_str(), "compare procedural curve owners")?;
+            let is_owner = admission.equal(
+                carrier.id.as_str(),
+                owner.as_str(),
+                "compare procedural curve owners",
+            )?;
             if owner_index.is_none() && is_owner {
                 owner_index = Some(index);
             }
             if !is_owner
                 && match carrier.geometry.procedural_construction() {
-                    Some(construction) => admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural curve constructions")?,
+                    Some(construction) => admission.equal(
+                        construction.as_str(),
+                        procedural.id.as_str(),
+                        "compare procedural curve constructions",
+                    )?,
                     None => false,
                 }
             {
@@ -1334,7 +1510,12 @@ impl Model {
             CurveGeometry::Procedural {
                 construction,
                 cache: None,
-            } if admission.equal(construction.as_str(), procedural.id.as_str(), "compare procedural curve constructions")? => {
+            } if admission.equal(
+                construction.as_str(),
+                procedural.id.as_str(),
+                "compare procedural curve constructions",
+            )? =>
+            {
                 if procedural.cache_fit_tolerance().is_some() {
                     return Ok(Err(ProceduralCarrierError::new(admission.text(
                         format_args!(
@@ -1359,7 +1540,9 @@ impl Model {
             }
             CurveGeometry::Solved(_) => {
                 let construction = match ctx {
-                    Some(ctx) => procedural.id.try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?,
+                    Some(ctx) => procedural
+                        .id
+                        .try_clone_for_decode(ctx, "ir_procedural_curve_construction_id")?,
                     None => procedural.id.clone(),
                 };
                 admission.reserve(
@@ -1537,8 +1720,19 @@ impl JsonSchema for CadIr {
     }
 }
 
-fn admit_append_key(ctx: &DecodeContext<'_>, entries: usize, bytes: usize, operation: &'static str) -> Result<(), CodecError> {
-    let work = entries.checked_add(1).and_then(|count| bytes.checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
+fn admit_append_key(
+    ctx: &DecodeContext<'_>,
+    entries: usize,
+    bytes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let work = entries
+        .checked_add(1)
+        .and_then(|count| {
+            bytes
+                .checked_add(1)
+                .and_then(|bytes| count.checked_mul(bytes))
+        })
         .and_then(|work| work.checked_mul(4))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(u64_from_index(work), operation)
@@ -1568,27 +1762,56 @@ impl CadIr {
         native: Native,
         admit: impl FnOnce(&Self) -> Result<Result<T, E>, CodecError>,
     ) -> Result<Result<T, E>, CodecError> {
-        let native_lengths = if native.0.is_empty() { None } else {
+        let native_lengths = if native.0.is_empty() {
+            None
+        } else {
             Some(ctx.with_scoped_storage("append native checkpoint", || {
                 let mut lengths = BTreeMap::new();
                 for (format, namespace) in &self.native.0 {
                     ctx.charge_work(1, "append native checkpoint scan")?;
                     let mut arenas = BTreeMap::new();
                     for (arena, records) in namespace.arenas() {
-                        admit_append_key(ctx, arenas.len(), arena.len(), "append native checkpoint keys")?;
-                        let key = ctx.copy_retained_text(arena, "append native checkpoint arena")?;
-                        ctx.insert_btree_map(&mut arenas, key, records.len(), "append native checkpoint arenas")?;
+                        admit_append_key(
+                            ctx,
+                            arenas.len(),
+                            arena.len(),
+                            "append native checkpoint keys",
+                        )?;
+                        let key =
+                            ctx.copy_retained_text(arena, "append native checkpoint arena")?;
+                        ctx.insert_btree_map(
+                            &mut arenas,
+                            key,
+                            records.len(),
+                            "append native checkpoint arenas",
+                        )?;
                     }
-                    admit_append_key(ctx, lengths.len(), format.len(), "append native checkpoint keys")?;
-                    let key = ctx.copy_retained_text(format, "append native checkpoint namespace")?;
-                    ctx.insert_btree_map(&mut lengths, key, arenas, "append native checkpoint namespaces")?;
+                    admit_append_key(
+                        ctx,
+                        lengths.len(),
+                        format.len(),
+                        "append native checkpoint keys",
+                    )?;
+                    let key =
+                        ctx.copy_retained_text(format, "append native checkpoint namespace")?;
+                    ctx.insert_btree_map(
+                        &mut lengths,
+                        key,
+                        arenas,
+                        "append native checkpoint namespaces",
+                    )?;
                 }
                 Ok::<_, CodecError>(lengths)
             })?)
         };
-        let mut speculative_parents = if model.feature_regeneration_parents.0.is_empty() { None } else {
+        let mut speculative_parents = if model.feature_regeneration_parents.0.is_empty() {
+            None
+        } else {
             Some(ctx.with_scoped_storage("append speculative parents", || {
-                let parents = self.model.feature_regeneration_parents.try_clone_for_decode(ctx, "append speculative parent copy")?;
+                let parents = self
+                    .model
+                    .feature_regeneration_parents
+                    .try_clone_for_decode(ctx, "append speculative parent copy")?;
                 parents.reserve_append(&model.feature_regeneration_parents, ctx)?;
                 Ok::<_, CodecError>(parents)
             })?)
@@ -1605,44 +1828,91 @@ impl CadIr {
             )*};
         }
         arena_registry!(reserve_arenas);
-        let namespace_bound = self.native.0.len().checked_add(native.0.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("append native namespace bound", u64::MAX - 1, u64::MAX))?;
+        let namespace_bound = self
+            .native
+            .0
+            .len()
+            .checked_add(native.0.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("append native namespace bound", u64::MAX - 1, u64::MAX)
+            })?;
         for (format, incoming) in &native.0 {
-            admit_append_key(ctx, namespace_bound, format.len(), "append native namespace lookup")?;
+            admit_append_key(
+                ctx,
+                namespace_bound,
+                format.len(),
+                "append native namespace lookup",
+            )?;
             if let Some(destination) = self.native.0.get_mut(format) {
-                let arena_bound = destination.arenas().len().checked_add(incoming.arenas().len())
-                    .ok_or_else(|| ctx.refuse_codec_limit("append native arena bound", u64::MAX - 1, u64::MAX))?;
+                let arena_bound = destination
+                    .arenas()
+                    .len()
+                    .checked_add(incoming.arenas().len())
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("append native arena bound", u64::MAX - 1, u64::MAX)
+                    })?;
                 for (arena, records) in incoming.arenas() {
                     admit_append_key(ctx, arena_bound, arena.len(), "append native arena lookup")?;
                     if let Some(existing) = destination.arenas_mut().get_mut(arena) {
-                        ctx.reserve_retained_vec(existing, records.len(), "append native record slots")?;
-                        let moved = records.len().checked_mul(std::mem::size_of::<crate::native::NativeRecord>())
-                            .ok_or_else(|| ctx.refuse_codec_limit("append native record moves", u64::MAX - 1, u64::MAX))?;
+                        ctx.reserve_retained_vec(
+                            existing,
+                            records.len(),
+                            "append native record slots",
+                        )?;
+                        let moved = records
+                            .len()
+                            .checked_mul(std::mem::size_of::<crate::native::NativeRecord>())
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "append native record moves",
+                                    u64::MAX - 1,
+                                    u64::MAX,
+                                )
+                            })?;
                         ctx.charge_work(u64_from_index(moved), "append native record moves")?;
                     } else {
                         ctx.admit_retained_btree_record::<String, Vec<crate::native::NativeRecord>>(0, "append native arena nodes")?;
                     }
                 }
             } else {
-                ctx.admit_retained_btree_record::<String, crate::native::NativeNamespace>(0, "append native namespace nodes")?;
+                ctx.admit_retained_btree_record::<String, crate::native::NativeNamespace>(
+                    0,
+                    "append native namespace nodes",
+                )?;
             }
         }
         if let Some((lengths, _)) = &native_lengths {
             // Admit the union walk before mutation so rollback can run after a refusal.
             for (format, namespace) in self.native.0.iter().chain(native.0.iter()) {
                 ctx.charge_work(1, "append native rollback admission")?;
-                admit_append_key(ctx, lengths.len(), format.len(), "append native rollback namespace lookup")?;
+                admit_append_key(
+                    ctx,
+                    lengths.len(),
+                    format.len(),
+                    "append native rollback namespace lookup",
+                )?;
                 if let Some(arenas) = lengths.get(format) {
                     for (arena, records) in namespace.arenas() {
                         ctx.charge_work(1, "append native rollback admission")?;
-                        admit_append_key(ctx, arenas.len(), arena.len(), "append native rollback arena lookup")?;
-                        ctx.charge_work(u64_from_index(records.len()), "append native rollback record admission")?;
+                        admit_append_key(
+                            ctx,
+                            arenas.len(),
+                            arena.len(),
+                            "append native rollback arena lookup",
+                        )?;
+                        ctx.charge_work(
+                            u64_from_index(records.len()),
+                            "append native rollback record admission",
+                        )?;
                     }
                 }
             }
         }
         let original_parents = speculative_parents.as_mut().map(|(parents, _)| {
-            std::mem::replace(&mut self.model.feature_regeneration_parents, std::mem::take(parents))
+            std::mem::replace(
+                &mut self.model.feature_regeneration_parents,
+                std::mem::take(parents),
+            )
         });
         macro_rules! append_and_admit {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {{
@@ -1752,29 +2022,77 @@ impl CadIr {
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
         let records = ctx.with_scoped_storage("native unknown replacement", || {
-            crate::native::arena_from(ctx, records.into_iter().map(|record| {
-                Ok::<_, crate::native::NativeConvertError>(UnknownProjection(record))
-            }))
+            crate::native::arena_from(
+                ctx,
+                records.into_iter().map(|record| {
+                    Ok::<_, crate::native::NativeConvertError>(UnknownProjection(record))
+                }),
+            )
         })?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(records.0.len()), "scan native unknown identities")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(records.0.len()),
+            "scan native unknown identities",
+        )?;
         for pair in records.0.windows(2) {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(pair[0].id().len().min(pair[1].id().len())), "compare native unknown identities")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(pair[0].id().len().min(pair[1].id().len())),
+                "compare native unknown identities",
+            )?;
             if pair[0].id() == pair[1].id() {
                 return Err(crate::native::NativeConvertError::InvalidCollection(
-                    ctx.format_retained(format_args!("duplicate native unknown record {}", pair[0].id()), "native unknown identity collision")?,
+                    ctx.format_retained(
+                        format_args!("duplicate native unknown record {}", pair[0].id()),
+                        "native unknown identity collision",
+                    )?,
                 ));
             }
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(format.len()).checked_mul(cadmpeg_core::decode::u64_from_index(self.native.0.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("native unknown namespace lookup", u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit("native unknown namespace lookup", u64::MAX - 1, u64::MAX))?, "native unknown namespace lookup")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(format.len())
+                .checked_mul(
+                    cadmpeg_core::decode::u64_from_index(self.native.0.len())
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "native unknown namespace lookup",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
+                )
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "native unknown namespace lookup",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+            "native unknown namespace lookup",
+        )?;
         let key = ctx.copy_retained_text("unknowns", "native unknown arena key")?;
         records.1.commit()?;
         if let Some(namespace) = self.native.0.get_mut(format) {
-            ctx.insert_btree_map(namespace.arenas_mut(), key, records.0, "native unknown arena")?;
+            ctx.insert_btree_map(
+                namespace.arenas_mut(),
+                key,
+                records.0,
+                "native unknown arena",
+            )?;
         } else {
             let format = ctx.copy_retained_text(format, "native unknown namespace key")?;
             let mut namespace = crate::native::NativeNamespace::default();
-            ctx.insert_btree_map(namespace.arenas_mut(), key, records.0, "native unknown arena")?;
-            ctx.insert_btree_map(&mut self.native.0, format, namespace, "native unknown namespace")?;
+            ctx.insert_btree_map(
+                namespace.arenas_mut(),
+                key,
+                records.0,
+                "native unknown arena",
+            )?;
+            ctx.insert_btree_map(
+                &mut self.native.0,
+                format,
+                namespace,
+                "native unknown namespace",
+            )?;
         }
         Ok(())
     }
@@ -1820,7 +2138,11 @@ impl CadIr {
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
         canonical.finalize(&ctx)?;
         crate::hash::finite_json::to_canonical_json_string(&canonical)
     }
@@ -1849,7 +2171,10 @@ impl CadIr {
 
     /// Count arena rows and native loss tallies without running validation.
     pub fn census(&self) -> BTreeMap<CensusKey, usize> {
-        crate::index::public_result(census::count(&census::StandardStorage, crate::native::view::NativeView::new(self, None)))
+        crate::index::public_result(census::count(
+            &census::StandardStorage,
+            crate::native::view::NativeView::new(self, None),
+        ))
     }
 }
 
@@ -1886,23 +2211,39 @@ impl SourceMeta {
         }
     }
 
-    pub(crate) fn normalized_digest_copy(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    pub(crate) fn normalized_digest_copy(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         let identity = match &self.identity {
-            FormatIdentity::Classified { dialects } => FormatIdentity::classified(dialects.try_clone_for_decode(ctx, operation)?),
-            FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(ctx.copy_retained_text(format, operation)?),
+            FormatIdentity::Classified { dialects } => {
+                FormatIdentity::classified(dialects.try_clone_for_decode(ctx, operation)?)
+            }
+            FormatIdentity::Unclassified { format } => {
+                FormatIdentity::unclassified(ctx.copy_retained_text(format, operation)?)
+            }
         };
         let mut attributes = BTreeMap::new();
         let mut longest = crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.len();
         for (key, value) in &self.attributes {
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.as_str().len()), operation)?;
-            if key.as_str() == crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE { continue; }
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(key.as_str().len()),
+                operation,
+            )?;
+            if key.as_str() == crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE {
+                continue;
+            }
             longest = longest.max(key.as_str().len());
             crate::hash::admit_digest_key(ctx, attributes.len(), longest, operation)?;
             let key = key.try_clone_for_decode(ctx, operation)?;
             let value = ctx.copy_retained_text(value, operation)?;
             ctx.insert_btree_map(&mut attributes, key, value, operation)?;
         }
-        Ok(Self { identity, attributes })
+        Ok(Self {
+            identity,
+            attributes,
+        })
     }
 
     /// The complete source identity: format plus classified layers, if any.

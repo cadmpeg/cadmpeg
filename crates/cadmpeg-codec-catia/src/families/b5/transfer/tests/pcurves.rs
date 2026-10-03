@@ -152,7 +152,8 @@ fn nurbs_isocurve_refuses_collection_limit_before_evaluator_allocates() {
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -163,21 +164,29 @@ fn nurbs_isocurve_refuses_collection_limit_before_evaluator_allocates() {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid bilinear surface");
     let refused = crate::test_support::with_collection_limit(7, |ctx| {
         super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
     });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.used == 7 && limit.additional == 1));
+            && limit.used == 7 && limit.additional == 1)
+    );
     // Two raw positions, four retained knots and two output poles use eight
     // slots. Polynomial output does not keep a homogeneous-sum lane.
     for cap in [8, 9] {
         let curve = crate::test_support::with_collection_limit(cap, |ctx| {
             super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
-        }).expect("exact polynomial slots").expect("bilinear isocurve");
-        assert_eq!(curve.control_points(), [Point3::new(0.5, 0.0, 0.0), Point3::new(0.5, 1.0, 0.0)]);
+        })
+        .expect("exact polynomial slots")
+        .expect("bilinear isocurve");
+        assert_eq!(
+            curve.control_points(),
+            [Point3::new(0.5, 0.0, 0.0), Point3::new(0.5, 1.0, 0.0)]
+        );
         assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
         assert!(curve.weights().is_none());
     }
@@ -244,7 +253,8 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         plan.angular_parameter_interval,
         [0.0, 2.0 * std::f64::consts::PI]
     );
-    let evaluated = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, 
+    let evaluated = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
         0.5,
         std::f64::consts::PI,
@@ -632,13 +642,15 @@ fn affine_plane_lift_preserves_pcurve_weights() {
 #[test]
 fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 10.0, 10.0],
             vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid affine lift curve"),
     ));
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
@@ -676,13 +688,15 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
 
     let tolerant = oriented_nurbs_range(
         &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
                 vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .expect("valid tolerant lift curve"),
         )),
         [2.0, 8.0],
@@ -1168,7 +1182,12 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
     let (geometry, range) =
         sphere_great_circle_pcurve(&pcurve).expect("exact parameter-space curve");
     assert_eq!(range, crate::test_support::test_b5::finite_pair([0.0, 8.0]));
-    let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, 8.0).expect("chart endpoint");
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        8.0,
+    )
+    .expect("chart endpoint");
     assert_eq!(uv.u, 1.0);
     assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1.0e-12);
 
@@ -1199,7 +1218,12 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
         range,
         crate::test_support::test_b5::finite_pair([0.0, tiny])
     );
-    let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, tiny).expect("tiny chart endpoint");
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        tiny,
+    )
+    .expect("tiny chart endpoint");
     assert_eq!(uv.u, 1.0);
 }
 
@@ -1574,8 +1598,12 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         "one component cannot unsort this many arenas: {unsorted_arenas}"
     );
 
-    assert!(crate::assemble::neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[])
-        .expect("resource allocation did not fail"));
+    assert!(crate::assemble::neutral_model_is_admissible(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        &[]
+    )
+    .expect("resource allocation did not fail"));
     assert_eq!(
         ir.model
             .faces
@@ -1661,7 +1689,8 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
-    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1672,9 +1701,11 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid tensor surface");
-    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &surface,
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.25,

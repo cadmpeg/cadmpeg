@@ -12,19 +12,33 @@ pub(super) struct PriorityQueue<'ctx, 'arena, T> {
 impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
     pub(super) fn new(context: &'ctx DecodeContext<'arena>) -> Result<Self, ResourceLimit> {
         let storage = context.reserve_scoped_limit(0, "IR priority queue")?;
-        Ok(Self { values: Vec::new(), context, storage })
+        Ok(Self {
+            values: Vec::new(),
+            context,
+            storage,
+        })
     }
 
     pub(super) fn push(&mut self, value: T) -> Result<(), ResourceLimit> {
-        self.context.reserve_scoped_vec_limit(&mut self.storage, &mut self.values, 1, "IR priority queue")?;
-        self.context.charge_work_limit(1, "IR priority queue append")?;
+        self.context.reserve_scoped_vec_limit(
+            &mut self.storage,
+            &mut self.values,
+            1,
+            "IR priority queue",
+        )?;
+        self.context
+            .charge_work_limit(1, "IR priority queue append")?;
         self.values.push(value);
         let mut index = self.values.len() - 1;
         while index > 0 {
             let parent = (index - 1) / 2;
-            self.context.charge_work_limit(1, "IR priority queue comparison")?;
-            if self.values[index] <= self.values[parent] { break; }
-            self.context.charge_work_limit(2, "IR priority queue swap")?;
+            self.context
+                .charge_work_limit(1, "IR priority queue comparison")?;
+            if self.values[index] <= self.values[parent] {
+                break;
+            }
+            self.context
+                .charge_work_limit(2, "IR priority queue swap")?;
             self.values.swap(index, parent);
             index = parent;
         }
@@ -33,13 +47,20 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
 
     pub(super) fn pop(&mut self) -> Result<Option<T>, ResourceLimit> {
         if self.values.is_empty() {
-            self.context.charge_work_limit(0, "IR priority queue empty")?;
+            self.context
+                .charge_work_limit(0, "IR priority queue empty")?;
             return Ok(None);
         }
-        self.context.charge_work_limit(1, "IR priority queue remove")?;
-        let Some(last) = self.values.pop() else { return Ok(None); };
-        if self.values.is_empty() { return Ok(Some(last)); }
-        self.context.charge_work_limit(2, "IR priority queue root replacement")?;
+        self.context
+            .charge_work_limit(1, "IR priority queue remove")?;
+        let Some(last) = self.values.pop() else {
+            return Ok(None);
+        };
+        if self.values.is_empty() {
+            return Ok(Some(last));
+        }
+        self.context
+            .charge_work_limit(2, "IR priority queue root replacement")?;
         let result = std::mem::replace(&mut self.values[0], last);
         self.restore_root()?;
         Ok(Some(result))
@@ -50,7 +71,8 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
     }
 
     pub(super) fn peek(&self) -> Result<Option<&T>, ResourceLimit> {
-        self.context.charge_work_limit(u64::from(!self.values.is_empty()), "IR priority queue peek")?;
+        self.context
+            .charge_work_limit(u64::from(!self.values.is_empty()), "IR priority queue peek")?;
         Ok(self.values.first())
     }
 
@@ -59,7 +81,8 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
             self.push(value)?;
             return Ok(None);
         }
-        self.context.charge_work_limit(2, "IR priority queue root replacement")?;
+        self.context
+            .charge_work_limit(2, "IR priority queue root replacement")?;
         let result = std::mem::replace(&mut self.values[0], value);
         self.restore_root()?;
         Ok(Some(result))
@@ -68,21 +91,33 @@ impl<'ctx, 'arena, T: Ord> PriorityQueue<'ctx, 'arena, T> {
     fn restore_root(&mut self) -> Result<(), ResourceLimit> {
         let mut index = 0usize;
         while let Some(left) = index.checked_mul(2).and_then(|index| index.checked_add(1)) {
-            if left >= self.values.len() { break; }
+            if left >= self.values.len() {
+                break;
+            }
             let right = left + 1;
             let child = if right < self.values.len() {
-                self.context.charge_work_limit(1, "IR priority queue comparison")?;
-                if self.values[right] > self.values[left] { right } else { left }
-            } else { left };
-            self.context.charge_work_limit(1, "IR priority queue comparison")?;
-            if self.values[index] >= self.values[child] { break; }
-            self.context.charge_work_limit(2, "IR priority queue swap")?;
+                self.context
+                    .charge_work_limit(1, "IR priority queue comparison")?;
+                if self.values[right] > self.values[left] {
+                    right
+                } else {
+                    left
+                }
+            } else {
+                left
+            };
+            self.context
+                .charge_work_limit(1, "IR priority queue comparison")?;
+            if self.values[index] >= self.values[child] {
+                break;
+            }
+            self.context
+                .charge_work_limit(2, "IR priority queue swap")?;
             self.values.swap(index, child);
             index = child;
         }
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -93,7 +128,11 @@ mod tests {
 
     #[test]
     fn priority_queue_preserves_admission_and_max_heap_order() {
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
@@ -107,7 +146,9 @@ mod tests {
             let limit = queue.push(3_u32).expect_err("queue admission");
             assert_eq!(limit.dimension, dimension);
             drop(queue);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 256;
@@ -117,14 +158,23 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
         assert_eq!(queue.pop().expect("empty pop"), None);
-        for value in [4_u32, 7, 2, 7, 1] { queue.push(value).expect("insert"); }
-        for expected in [7, 7, 4, 2, 1] { assert_eq!(queue.pop().expect("remove"), Some(expected)); }
+        for value in [4_u32, 7, 2, 7, 1] {
+            queue.push(value).expect("insert");
+        }
+        for expected in [7, 7, 4, 2, 1] {
+            assert_eq!(queue.pop().expect("remove"), Some(expected));
+        }
         assert_eq!(queue.pop().expect("empty pop"), None);
-        let bytes = u64::try_from(queue.values.capacity() * std::mem::size_of::<u32>()).expect("test bytes fit");
-        let spare = ctx.reserve_scoped_limit(256 - bytes, "test live priority queue").expect("capacity remains reserved after removals");
+        let bytes = u64::try_from(queue.values.capacity() * std::mem::size_of::<u32>())
+            .expect("test bytes fit");
+        let spare = ctx
+            .reserve_scoped_limit(256 - bytes, "test live priority queue")
+            .expect("capacity remains reserved after removals");
         drop(spare);
         drop(queue);
-        let reuse = ctx.reserve_scoped_limit(256, "test priority queue released").expect("all bytes reusable");
+        let reuse = ctx
+            .reserve_scoped_limit(256, "test priority queue released")
+            .expect("all bytes reusable");
         drop(reuse);
         ctx.finish_session().expect("no retained queue storage");
     }
@@ -141,13 +191,26 @@ mod tests {
             let limit = if cap == 2 {
                 queue.push(2).expect_err("comparison needs a third unit")
             } else {
-                queue.push(2).expect("append, comparison and two moved rows");
-                queue.pop().expect_err("root replacement needs two more units")
+                queue
+                    .push(2)
+                    .expect("append, comparison and two moved rows");
+                queue
+                    .pop()
+                    .expect_err("root replacement needs two more units")
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, if cap == 2 { "IR priority queue comparison" } else { "IR priority queue root replacement" });
+            assert_eq!(
+                limit.operation,
+                if cap == 2 {
+                    "IR priority queue comparison"
+                } else {
+                    "IR priority queue root replacement"
+                }
+            );
             drop(queue);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
     }
 
@@ -160,31 +223,43 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
-        assert_eq!(queue.replace_max(1_u32).expect("empty replacement inserts once"), None);
+        assert_eq!(
+            queue
+                .replace_max(1_u32)
+                .expect("empty replacement inserts once"),
+            None
+        );
         queue.push(4).expect("second and final slot");
         assert_eq!(queue.len(), 2);
         assert_eq!(queue.peek().expect("root read"), Some(&4));
         assert_eq!(queue.replace_max(7).expect("reuse root"), Some(4));
         assert_eq!(queue.replace_max(3).expect("reuse root again"), Some(7));
-        assert_eq!(queue.replace_max(0).expect("promote the remaining child"), Some(3));
+        assert_eq!(
+            queue.replace_max(0).expect("promote the remaining child"),
+            Some(3)
+        );
         assert_eq!(queue.pop().expect("remove first"), Some(1));
         assert_eq!(queue.pop().expect("remove second"), Some(0));
         assert_eq!(queue.peek().expect("empty root"), None);
         drop(queue);
-        ctx.finish_session().expect("replacements allocate no additional slots");
+        ctx.finish_session()
+            .expect("replacements allocate no additional slots");
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 2;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
         queue.push(1_u32).expect("one append unit");
-        let limit = queue.replace_max(2).expect_err("two moved rows need admission");
+        let limit = queue
+            .replace_max(2)
+            .expect_err("two moved rows need admission");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "IR priority queue root replacement");
         drop(queue);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
-
 
     #[test]
     fn priority_queue_peek_preserves_work_refusal() {
@@ -198,7 +273,8 @@ mod tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "IR priority queue peek");
         drop(queue);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
-
 }

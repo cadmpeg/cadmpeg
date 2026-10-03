@@ -1,7 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{NativeOperandField, OffsetParameter, OrderedMajorRadius, ReferenceLineDirection, SeededMembers, Sketch, SketchAxis, SketchCircularPattern, SketchCircularPatternInstance, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityUse, SketchFontWeight, SketchGeometry, SketchGeometryDefinition, SketchInternalAlignment, SketchLabelValue, SketchLocus, SketchNativeOperand, SketchOffsetPair, SketchPatternDirection, SketchPatternDistance, SketchPatternInstance, SketchPlacement, SketchPlaneFrame, SketchPolygon, SketchProfiles, SketchRectangularPattern, SketchSameCoordinate, SketchTextHorizontalAlignment, SketchTextVerticalAlignment, SpatialSketch, SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityPair, SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve, SpatialSketchProfile, TextPlacement};
+use super::{
+    NativeOperandField, OffsetParameter, OrderedMajorRadius, ReferenceLineDirection, SeededMembers,
+    Sketch, SketchAxis, SketchCircularPattern, SketchCircularPatternInstance, SketchConstraint,
+    SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchCoordinateAxis,
+    SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityUse, SketchFontWeight,
+    SketchGeometry, SketchGeometryDefinition, SketchInternalAlignment, SketchLabelValue,
+    SketchLocus, SketchNativeOperand, SketchOffsetPair, SketchPatternDirection,
+    SketchPatternDistance, SketchPatternInstance, SketchPlacement, SketchPlaneFrame, SketchPolygon,
+    SketchProfiles, SketchRectangularPattern, SketchSameCoordinate, SketchTextHorizontalAlignment,
+    SketchTextVerticalAlignment, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput, SpatialSketchEntity,
+    SpatialSketchEntityPair, SpatialSketchEntityUse, SpatialSketchGeometry,
+    SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve, SpatialSketchProfile, TextPlacement,
+};
 
 rewrite_record!(NativeOperandField, []; {name, role});
 rewrite_record!(OffsetParameter, []; {id, negated});

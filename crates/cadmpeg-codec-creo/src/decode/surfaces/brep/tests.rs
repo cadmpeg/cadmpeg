@@ -1391,8 +1391,13 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
             let end_vertex_id = base_vertex + next_offset;
             let start_uv = polygon[index];
             let end_uv = polygon[(index + 1) % 4];
-            let point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, start_uv[0], start_uv[1])
-                .expect("analytic cylinder endpoint");
+            let point = cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                start_uv[0],
+                start_uv[1],
+            )
+            .expect("analytic cylinder endpoint");
             solved_vertices.insert(start_vertex_id, [point.x, point.y, point.z]);
             bindings.push(crate::topology::HalfEdgeVertexIncidence {
                 half_edge,

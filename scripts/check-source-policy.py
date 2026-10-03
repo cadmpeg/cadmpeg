@@ -2060,7 +2060,7 @@ DECODE_CONTEXT_BINDING = re.compile(
 )
 
 IR_DECODE_SORT_PATH = re.compile(
-    r"crates/cadmpeg-ir/src/(?:native/.*|math/.*|validate/.*|"
+    r"crates/cadmpeg-ir/src/(?:native/.*|math/.*|validate/.*|eval/.*|"
     r"document\.rs|hash\.rs|eval\.rs|codec\.rs)"
 )
 DECODE_RECEIVER_BINDING = re.compile(

@@ -14,8 +14,8 @@ use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializ
 use serde_json::{Map, Value};
 
 mod canon;
-mod copy;
 pub mod catalogue;
+mod copy;
 mod replay;
 pub(crate) mod view;
 
@@ -367,26 +367,53 @@ impl NativeRecord {
         for key in self.fields.keys() {
             ctx.charge_work(u64_from_index(key.len()), operation)?;
             if key != "links" {
-                return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} has unexpected field {key}", self.id), operation)?));
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("native unknown {} has unexpected field {key}", self.id),
+                    operation,
+                )?));
             }
         }
-        ctx.charge_work(u64_from_index(self.fields.len()).checked_mul(5).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+        ctx.charge_work(
+            u64_from_index(self.fields.len())
+                .checked_mul(5)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            operation,
+        )?;
         let links = match self.fields.get("links") {
             None => &[][..],
             Some(Value::Array(links)) => links.as_slice(),
-            Some(_) => return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} links is not a sequence", self.id), operation)?)),
+            Some(_) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("native unknown {} links is not a sequence", self.id),
+                    operation,
+                )?))
+            }
         };
         for value in links {
             ctx.charge_work(1, operation)?;
             let Value::String(link) = value else {
-                return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} link is not text", self.id), operation)?));
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("native unknown {} link is not text", self.id),
+                    operation,
+                )?));
             };
             ctx.charge_work(u64_from_index(link.len()), operation)?;
             if !crate::ids::is_valid_identity(link) {
-                return Err(CodecError::Malformed(ctx.format_retained(format_args!("native unknown {} has invalid link {link}", self.id), operation)?));
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("native unknown {} has invalid link {link}", self.id),
+                    operation,
+                )?));
             }
         }
-        Self::from_typed_for_decode(ctx, &DigestUnknown { id: self.id.as_str(), links }, None).map_err(CodecError::from)
+        Self::from_typed_for_decode(
+            ctx,
+            &DigestUnknown {
+                id: self.id.as_str(),
+                links,
+            },
+            None,
+        )
+        .map_err(CodecError::from)
     }
 
     /// Globally unique record identity.
@@ -411,10 +438,13 @@ impl NativeRecord {
 
     /// Rewrite native identity fields through their typed owner's field walk.
     pub fn rewrite_fields<T, F>(
-        &self, ctx: &DecodeContext<'_>, map: F,
+        &self,
+        ctx: &DecodeContext<'_>,
+        map: F,
     ) -> Result<Map<String, Value>, NativeConvertError>
-    where T: crate::schema::rewrite::typed::RewriteIdentities,
-          F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+    where
+        T: crate::schema::rewrite::typed::RewriteIdentities,
+        F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
     {
         let projected = ctx.with_scoped_storage("rewrite typed native fields", || {
             let mut fields = copy::fields(ctx, &self.fields)?;
@@ -422,11 +452,30 @@ impl NativeRecord {
             let id = ctx.copy_retained_text(self.id.as_str(), "copy native record identity")?;
             copy::insert(ctx, &mut fields, key, Value::String(id))?;
             let mut value = Value::Object(fields);
-            let mut identities = crate::schema::rewrite::typed::IdentityMap::new(ctx, "rewrite typed native identities", map)?;
+            let mut identities = crate::schema::rewrite::typed::IdentityMap::new(
+                ctx,
+                "rewrite typed native identities",
+                map,
+            )?;
             T::rewrite_native_value(ctx, &mut value, &mut identities)?;
             identities.finish(ctx)?;
-            let Value::Object(mut fields) = value else { return Err(cadmpeg_core::CodecError::malformed("native record must be an object")); };
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(fields.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit("remove native record identity", u64::MAX - 1, u64::MAX))?, "remove native record identity")?;
+            let Value::Object(mut fields) = value else {
+                return Err(cadmpeg_core::CodecError::malformed(
+                    "native record must be an object",
+                ));
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(fields.len())
+                    .checked_mul(2)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "remove native record identity",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+                "remove native record identity",
+            )?;
             fields.remove("id");
             Ok(fields)
         })?;
@@ -705,6 +754,20 @@ impl NativeNamespace {
     ) -> Result<(), NativeConvertError> {
         let name = name.as_ref();
         let name = ctx.copy_retained_text(name, "retain native arena name")?;
+        let comparisons = name
+            .len()
+            .checked_add(1)
+            .and_then(|bytes| {
+                self.arenas
+                    .len()
+                    .checked_add(1)
+                    .and_then(|count| bytes.checked_mul(count))
+            })
+            .and_then(|work| work.checked_mul(2))
+            .map(u64_from_index)
+            .ok_or_else(|| ctx.refuse_codec_limit("store native arena", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(comparisons, "store native arena")?;
+        let vacant = !self.arenas.contains_key(&name);
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
             Ok(converted) => converted,
@@ -720,7 +783,10 @@ impl NativeNamespace {
                 });
             }
         };
-        ctx.insert_btree_map(&mut self.arenas, name, converted, "store native arena")?;
+        if vacant {
+            ctx.admit_retained_btree_record::<String, Vec<NativeRecord>>(0, "store native arena")?;
+        }
+        self.arenas.insert(name, converted);
         Ok(())
     }
 
@@ -834,10 +900,18 @@ impl Native {
     }
 
     /// Sort every arena into canonical identity order.
-    pub(crate) fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
+    pub(crate) fn finalize(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
-                ctx.stable_sort_by(records, |left, right| left.id().cmp(right.id()), |record| record.id().len(), "finalize native arena")?;
+                ctx.stable_sort_by(
+                    records,
+                    |left, right| left.id().cmp(right.id()),
+                    |record| record.id().len(),
+                    "finalize native arena",
+                )?;
             }
         }
         Ok(())

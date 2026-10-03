@@ -626,9 +626,24 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
         )
         .expect("valid EllipseCurve fixture"),
     ));
-    let start = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, 0.0).expect("ellipse start");
-    let end = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");
-    let witness = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, 0.75 * std::f64::consts::PI).expect("ellipse witness");
+    let start = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        0.0,
+    )
+    .expect("ellipse start");
+    let end = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        std::f64::consts::FRAC_PI_2,
+    )
+    .expect("ellipse end");
+    let witness = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        0.75 * std::f64::consts::PI,
+    )
+    .expect("ellipse witness");
     let short = standard_analytic_curve_parameter_range(&geometry, start.get(), end.get(), None)
         .expect("short angular range");
     let mut oriented = geometry.clone();

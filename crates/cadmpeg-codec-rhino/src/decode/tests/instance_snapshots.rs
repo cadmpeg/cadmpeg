@@ -97,24 +97,41 @@ fn instance_snapshots_admit_work_and_hold_scoped_storage() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if links { snapshot_instance_links(&ctx, &[one_instance_link_record()]).err().unwrap() } else { snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)]).unwrap_err() };
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else { panic!("snapshot work must refuse"); };
-        assert_eq!(first.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first));
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = if links {
+            snapshot_instance_links(&ctx, &[one_instance_link_record()])
+                .err()
+                .unwrap()
+        } else {
+            snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)]).unwrap_err()
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
+            panic!("snapshot work must refuse");
+        };
+        assert_eq!(
+            first.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+        );
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 4096;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let links = snapshot_instance_links(&ctx, &[one_instance_link_record()]).unwrap();
     let statuses = snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)]).unwrap();
     assert_eq!(links.links, [vec!["rhino:curve#1".to_string()]]);
     assert_eq!(statuses.0, [Some(GeometryOutcome::Decoded)]);
     drop(statuses);
     drop(links);
-    let all_storage = ctx.reserve_scoped(4096, "instance snapshots released").unwrap();
+    let all_storage = ctx
+        .reserve_scoped(4096, "instance snapshots released")
+        .unwrap();
     drop(all_storage);
     ctx.finish_session().unwrap();
 }

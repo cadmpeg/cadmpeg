@@ -342,9 +342,11 @@ fn bind_consolidated_revolution_faces_and_seams(
                 continue;
             };
             let parameter = start.midpoint(end);
-            if let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, curve, parameter))?,
-            )? {
+            if let Some(point) =
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(ctx, curve, parameter),
+                )?)?
+            {
                 ctx.push_vec(
                     &mut witnesses,
                     point.get(),
@@ -607,7 +609,8 @@ mod consolidated_revolution_binding_tests {
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![
                         -f64::MAX,
@@ -624,7 +627,8 @@ mod consolidated_revolution_binding_tests {
                     ],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("finite wide curve"),
             )),
             source_object: None,
@@ -676,8 +680,13 @@ mod consolidated_revolution_binding_tests {
             id: loop_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
-                    .expect("one-edge loop"),
+                cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    vec![coedge_id.clone()],
+                    Vec::new(),
+                )
+                .expect("fixture ring admission")
+                .expect("one-edge loop"),
             ),
         });
         ir.model.coedges.push(Coedge {
@@ -801,8 +810,13 @@ mod consolidated_revolution_binding_tests {
                 id: loop_id.clone(),
                 face,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge.clone()], Vec::new()).expect("fixture ring admission")
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(
+                        &cadmpeg_test_support::service_decode_context(),
+                        vec![coedge.clone()],
+                        Vec::new(),
+                    )
+                    .expect("fixture ring admission")
+                    .expect("valid loop ring"),
                 ),
             });
             ir.model.coedges.push(Coedge {
@@ -822,7 +836,8 @@ mod consolidated_revolution_binding_tests {
             });
         }
         ir.model
-            .add_procedural_curve(None, 
+            .add_procedural_curve(
+                None,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
@@ -843,7 +858,8 @@ mod consolidated_revolution_binding_tests {
                         cache: None,
                     },
                 ),
-            ).unwrap()
+            )
+            .expect("procedural curve admission")
             .expect("attach construction to its fixture carrier");
 
         assert_eq!(
@@ -2078,8 +2094,16 @@ struct StandardPopulationScope<'a, 'b> {
 impl EntityRewrite for StandardPopulationScope<'_, '_> {
     type Error = CodecError;
 
-    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, Self::Error> {
-        cadmpeg_ir::schema::rewrite::identities(self.ctx, "catia_standard_population_rewrite", entity, |id: &str| rescope_standard_id(self.ctx, id, self.scope))
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, Self::Error> {
+        cadmpeg_ir::schema::rewrite::identities(
+            self.ctx,
+            "catia_standard_population_rewrite",
+            entity,
+            |id: &str| rescope_standard_id(self.ctx, id, self.scope),
+        )
     }
 }
 
@@ -2092,7 +2116,10 @@ fn merge_standard_population_annotations(
     // Only standard-owned entities survive retain_standard_population_model.
     // The first population retains the shared payload and other carriers.
     let mut keep = |id: &str| {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len().min("catia:standard:".len())), "filter standard annotation identity")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(id.len().min("catia:standard:".len())),
+            "filter standard annotation identity",
+        )?;
         Ok(id.starts_with("catia:standard:"))
     };
     source.retain_provenance(ctx, &mut keep)?;
@@ -5126,11 +5153,13 @@ fn standard_limit_curve_bindings(
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
             ));
-            let midpoint = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                ctx,
-                &geometry,
-                0.5 * (start_parameter + end_parameter),
-            ))? {
+            let midpoint = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point(
+                    ctx,
+                    &geometry,
+                    0.5 * (start_parameter + end_parameter),
+                ),
+            )? {
                 Ok(point) => point,
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                     return Err(limit.into());
@@ -5214,7 +5243,9 @@ struct AttachStandardTopologyInputs<
     'input16,
     'input17,
     'input18,
-    'input19, AnnotationAccount> {
+    'input19,
+    AnnotationAccount,
+> {
     ir: &'input0 mut CadIr,
     annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
@@ -5259,7 +5290,8 @@ fn attach_standard_topology(
         '_,
         '_,
         '_,
-    impl cadmpeg_ir::annotations::AnnotationStorage, >,
+        impl cadmpeg_ir::annotations::AnnotationStorage,
+    >,
 ) -> Result<(), StandardTopologyError> {
     let AttachStandardTopologyInputs {
         ir,
@@ -5446,7 +5478,8 @@ fn attach_standard_topology(
                     if !face_incidence_candidates.contains_key(&face) {
                         let mut points = Vec::new();
                         for (index, point) in ir.model.points.iter().enumerate() {
-                            if point_on_standard_face(ctx, 
+                            if point_on_standard_face(
+                                ctx,
                                 point.position().get(),
                                 surface,
                                 face_bounds.as_ref().and_then(|bounds| bounds[face]),
@@ -5691,7 +5724,8 @@ fn attach_standard_topology(
     }
     for edge in 0..supports.len() {
         let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
-            Some(native) => standard_native_support_endpoint_pair(ctx, 
+            Some(native) => standard_native_support_endpoint_pair(
+                ctx,
                 native,
                 &ir.model.points,
                 &endpoint_candidates[edge],
@@ -5790,7 +5824,8 @@ fn attach_standard_topology(
                                     all_points = false;
                                     break;
                                 };
-                                if !point_on_standard_face(ctx, 
+                                if !point_on_standard_face(
+                                    ctx,
                                     point.position().get(),
                                     &surface.geometry,
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
@@ -5803,7 +5838,8 @@ fn attach_standard_topology(
                                 }
                             }
                             if all_points
-                                && standard_nurbs_line_pair_on_face(ctx, 
+                                && standard_nurbs_line_pair_on_face(
+                                    ctx,
                                     &surface.geometry,
                                     support,
                                     pair,
@@ -5941,7 +5977,8 @@ fn attach_standard_topology(
                             all_points = false;
                             break;
                         };
-                        if !point_on_standard_face(ctx, 
+                        if !point_on_standard_face(
+                            ctx,
                             point.position().get(),
                             &surface.geometry,
                             face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
@@ -5995,7 +6032,8 @@ fn attach_standard_topology(
                     };
                     let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
                     if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
-                        || !standard_nurbs_line_pair_on_face(ctx, 
+                        || !standard_nurbs_line_pair_on_face(
+                            ctx,
                             &surface.geometry,
                             &supports[edge],
                             &pair,
@@ -7221,7 +7259,9 @@ struct EmitStandardTopologyInputs<
     'input13,
     'input14,
     'input15,
-    'input16, AnnotationAccount> {
+    'input16,
+    AnnotationAccount,
+> {
     ir: &'input0 mut CadIr,
     annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
@@ -7258,7 +7298,8 @@ fn emit_standard_topology(
         '_,
         '_,
         '_,
-    impl cadmpeg_ir::annotations::AnnotationStorage, >,
+        impl cadmpeg_ir::annotations::AnnotationStorage,
+    >,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let EmitStandardTopologyInputs {
         ir,
@@ -7292,7 +7333,8 @@ fn emit_standard_topology(
             .and_then(Option::as_ref)
         {
             Some(native)
-                if standard_native_support_endpoint_pair(ctx, 
+                if standard_native_support_endpoint_pair(
+                    ctx,
                     native,
                     &ir.model.points,
                     &[start_point, end_point],
@@ -7684,12 +7726,20 @@ fn lifted_standard_support_parameters<const N: usize>(
     ctx.charge_work_limit(0, "geometry helper boundary")?;
     let mut points = [None; N];
     for (index, parameter) in parameters.into_iter().enumerate() {
-        let Some(uv) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), pcurve, parameter))?
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            pcurve,
+            parameter,
+        ))?
         else {
             continue;
         };
-        points[index] = match cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), surface, uv.u, uv.v) {
+        points[index] = match cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+            surface,
+            uv.u,
+            uv.v,
+        ) {
             Ok(point) => Some(point.get()),
             Err(failure) => failure.non_finite()?,
         };
@@ -7704,8 +7754,11 @@ fn standard_native_support_endpoint_pair(
     candidates: &[usize],
     required_pair: Option<[usize; 2]>,
 ) -> Result<Option<[usize; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
+    if points.is_empty() {
+        return Ok(None);
+    }
 
     let mut lifted = [[None; 2]; 2];
     for (index, (carrier, pcurve)) in support.carriers.iter().zip(&support.pcurves).enumerate() {
@@ -7735,21 +7788,23 @@ fn standard_native_support_endpoint_pair(
     if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
         return Ok(None);
     }
-    let point_for = |expected: Point3| -> Result<Option<usize>, cadmpeg_core::decode::ResourceLimit> {
-        let mut selected = None;
-        for &candidate in candidates {
-            ctx.charge_work_limit(1, "catia native support endpoint candidate")?;
-            if points.get(candidate).is_some_and(|point| {
-                point.position().get().distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
-            }) {
-                if selected.is_some() {
-                    return Ok(None);
+    let point_for =
+        |expected: Point3| -> Result<Option<usize>, cadmpeg_core::decode::ResourceLimit> {
+            let mut selected = None;
+            for &candidate in candidates {
+                ctx.charge_work_limit(1, "catia native support endpoint candidate")?;
+                if points.get(candidate).is_some_and(|point| {
+                    point.position().get().distance_squared(expected).sqrt()
+                        <= VERTEX_MATCH_TOLERANCE
+                }) {
+                    if selected.is_some() {
+                        return Ok(None);
+                    }
+                    selected = Some(candidate);
                 }
-                selected = Some(candidate);
             }
-        }
-        Ok(selected)
-    };
+            Ok(selected)
+        };
     let pair = [point_for(first[0])?, point_for(first[1])?];
     Ok(match pair {
         [Some(start), Some(end)] if start != end => {
@@ -8843,7 +8898,9 @@ fn nurbs_surface_control_bounds(
     if let Some(weights) = surface.pole_weights() {
         for weight in weights {
             ctx.charge_work_limit(1, "catia surface bound weight")?;
-            if weight.get() <= 0.0 { return Ok(None); }
+            if weight.get() <= 0.0 {
+                return Ok(None);
+            }
         }
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
@@ -8989,7 +9046,8 @@ fn nurbs_boundary_contains_point(
         return Ok(false);
     };
     for seed in [lower, 0.5 * (lower + upper), upper] {
-        if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(ctx,
+        if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+            ctx,
             curve,
             point,
             NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
@@ -9266,7 +9324,8 @@ fn point_on_nurbs_surface(
             return Ok(Some(false));
         }
     }
-    let Some(distance) = surface_membership::nurbs_surface_witness_distance(ctx, surface, point)? else {
+    let Some(distance) = surface_membership::nurbs_surface_witness_distance(ctx, surface, point)?
+    else {
         return Ok(None);
     };
     Ok((distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE).then_some(true))
@@ -9364,7 +9423,12 @@ fn owner_matches_a5_carrier(
     for u in [tail.lower()[0], tail.upper()[0]] {
         for v in [tail.lower()[1], tail.upper()[1]] {
             let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), surface, u, v),
+                cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                    surface,
+                    u,
+                    v,
+                ),
             )?
             else {
                 return Ok(false);
@@ -10315,7 +10379,8 @@ mod circle_axis_tests {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         let u = NurbsSurfaceAxis::new(1, vec![0., 0., 1e-10, 1e-10], false);
         let v = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
-        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             u,
             v,
             NurbsSurfaceLanes::new(
@@ -10326,9 +10391,11 @@ mod circle_axis_tests {
                 None,
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("anisotropic nurbs surface");
-        let residual = super::surface_membership::nurbs_surface_witness_distance(&cadmpeg_test_support::service_decode_context(), 
+        let residual = super::surface_membership::nurbs_surface_witness_distance(
+            &cadmpeg_test_support::service_decode_context(),
             &surface,
             Point3::new(0.3, 0.4, 0.),
         )

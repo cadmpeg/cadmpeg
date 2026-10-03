@@ -216,7 +216,13 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                     surface.geometry
                 ),
             }
-            assert!(cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface.geometry, 0.25, 0.5).is_ok());
+            assert!(cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface.geometry,
+                0.25,
+                0.5
+            )
+            .is_ok());
             assert!(
                 result.report().losses.is_empty(),
                 "{:#?}",

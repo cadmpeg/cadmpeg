@@ -5,13 +5,15 @@ use cadmpeg_core::CodecError;
 
 #[test]
 fn sketch_nurbs_point_refuses_pole_copy_limit() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap();
     let arena = DecodeArena::new();
@@ -25,13 +27,15 @@ fn sketch_nurbs_point_refuses_pole_copy_limit() {
 
 #[test]
 fn sketch_nurbs_point_refuses_weight_copy_limit() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         Some(vec![1.0, 1.0]),
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap();
     let arena = DecodeArena::new();
@@ -45,13 +49,15 @@ fn sketch_nurbs_point_refuses_weight_copy_limit() {
 
 #[test]
 fn certified_nurbs_tubes_refuse_point_copy_limit() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -65,13 +71,15 @@ fn certified_nurbs_tubes_refuse_point_copy_limit() {
 
 #[test]
 fn certified_nurbs_tubes_refuse_weight_copy_limit() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         Some(vec![1.0, 1.0]),
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -85,13 +93,15 @@ fn certified_nurbs_tubes_refuse_weight_copy_limit() {
 
 #[test]
 fn sketch_nurbs_endpoints_refuse_pole_copy_limit() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#nurbs-endpoint-sketch").unwrap();
     let entity = SketchEntity::new(
@@ -111,13 +121,15 @@ fn sketch_nurbs_endpoints_refuse_pole_copy_limit() {
 
 #[test]
 fn closed_sketch_nurbs_endpoints_propagate_collection_refusal() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#closed-nurbs-sketch").unwrap();
     let entity = SketchEntity::new(
@@ -137,13 +149,15 @@ fn closed_sketch_nurbs_endpoints_propagate_collection_refusal() {
 
 #[test]
 fn coincident_nurbs_loci_propagate_endpoint_refusal() {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#coincident-nurbs-sketch").unwrap();
     let nurbs = SketchEntity::new(

@@ -68,18 +68,31 @@ pub const CATIA_ADMISSION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 pub const SLDPRT_EXPORT_PRECONDITION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 
 /// Drop findings whose [`Check`] is outside `allowed`, after admitting the scan.
-pub fn filter_checks(ctx: &DecodeContext<'_>, mut report: ValidationReport, allowed: &[Check]) -> Result<ValidationReport, CodecError> {
-    let work = allowed.len().checked_add(std::mem::size_of::<crate::report::check::Finding>())
+pub fn filter_checks(
+    ctx: &DecodeContext<'_>,
+    mut report: ValidationReport,
+    allowed: &[Check],
+) -> Result<ValidationReport, CodecError> {
+    let work = allowed
+        .len()
+        .checked_add(std::mem::size_of::<crate::report::check::Finding>())
         .and_then(|units| units.checked_add(1))
         .and_then(|units| units.checked_mul(report.findings.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("filter admission checks", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(u64_from_index(work), "filter admission checks")?;
-    report.findings.retain(|finding| allowed.contains(&finding.check));
+    report
+        .findings
+        .retain(|finding| allowed.contains(&finding.check));
     Ok(report)
 }
 
 /// Validate under the caller's live session, then retain findings in `allowed`.
-pub fn admit(ctx: &DecodeContext<'_>, ir: &CadIr, allowed: &[Check], losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
+pub fn admit(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    allowed: &[Check],
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
     filter_checks(ctx, super::validate_model(ctx, ir, losses)?, allowed)
 }
 
@@ -91,7 +104,11 @@ pub fn admit_with_annotations(
     allowed: &[Check],
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    filter_checks(ctx, super::validate_model_with_annotations(ctx, ir, annotations, losses)?, allowed)
+    filter_checks(
+        ctx,
+        super::validate_model_with_annotations(ctx, ir, annotations, losses)?,
+        allowed,
+    )
 }
 
 /// Admit while treating staged native identities as resolvable in scoped indexes.
@@ -103,7 +120,11 @@ pub fn admit_with_additional_native_identities<'a>(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
-    filter_checks(ctx, super::validate_model_with_index(ctx, ir, losses, &index)?, allowed)
+    filter_checks(
+        ctx,
+        super::validate_model_with_index(ctx, ir, losses, &index)?,
+        allowed,
+    )
 }
 
 /// Admit source records through a borrowed replacement of one native unknown arena.
@@ -120,10 +141,17 @@ pub fn admit_with_native_unknowns(
         Ok(order) => order,
         Err(error) => return Ok(Err(error)),
     };
-    let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.positions, ctx)?;
+    let index =
+        crate::index::ModelIndex::with_native_unknowns(ir, format, records, &order.positions, ctx)?;
     let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
     if let Some(annotations) = annotations {
-        super::validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
+        super::validate_annotations(
+            ctx,
+            &index,
+            annotations,
+            std::iter::empty(),
+            &mut report.findings,
+        )?;
     }
     Ok(Ok(filter_checks(ctx, report, allowed)?))
 }
@@ -149,11 +177,21 @@ fn native_unknown_order<'ctx>(
     for record in records {
         ctx.charge_work(1, "source product record scan")?;
         for (position, link) in record.links().iter().enumerate() {
-            for _ in 0..4 { ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?; }
+            for _ in 0..4 {
+                ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?;
+            }
             ctx.charge_work(1, "source product link grammar")?;
             if !crate::ids::is_valid_identity(link) {
-                let message = ctx.format_retained(format_args!("native unknown {} link {position}: identity is invalid: {link:?}", record.id()), "source product link error")?;
-                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(message)));
+                let message = ctx.format_retained(
+                    format_args!(
+                        "native unknown {} link {position}: identity is invalid: {link:?}",
+                        record.id()
+                    ),
+                    "source product link error",
+                )?;
+                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
+                    message,
+                )));
             }
         }
     }
@@ -163,21 +201,41 @@ fn native_unknown_order<'ctx>(
             ctx.charge_work(1, "source product position scan")?;
             ctx.push_retained_vec(&mut order, position, "source product identity slots")?;
         }
-        ctx.sort_unstable_by(&mut order, |left, right| records[*left].id().as_str().cmp(records[*right].id().as_str()),
-            |position| records[*position].id().as_str().len(), "source product identity order")?;
+        ctx.sort_unstable_by(
+            &mut order,
+            |left, right| {
+                records[*left]
+                    .id()
+                    .as_str()
+                    .cmp(records[*right].id().as_str())
+            },
+            |position| records[*position].id().as_str().len(),
+            "source product identity order",
+        )?;
         Ok::<_, CodecError>(order)
     })?;
     for pair in order.0.windows(2) {
         let first = records[pair[0]].id().as_str();
         let second = records[pair[1]].id().as_str();
         ctx.charge_work(1, "source product identity duplicate scan")?;
-        ctx.charge_work(u64_from_index(first.len().min(second.len())), "source product identity duplicate comparison")?;
+        ctx.charge_work(
+            u64_from_index(first.len().min(second.len())),
+            "source product identity duplicate comparison",
+        )?;
         if first == second {
-            let message = ctx.format_retained(format_args!("duplicate native unknown record {first}"), "native unknown identity collision")?;
-            return Ok(Err(crate::native::NativeConvertError::InvalidCollection(message)));
+            let message = ctx.format_retained(
+                format_args!("duplicate native unknown record {first}"),
+                "native unknown identity collision",
+            )?;
+            return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
+                message,
+            )));
         }
     }
-    Ok(Ok(NativeUnknownOrder { positions: order.0, _storage: order.1 }))
+    Ok(Ok(NativeUnknownOrder {
+        positions: order.0,
+        _storage: order.1,
+    }))
 }
 
 #[cfg(test)]
@@ -207,7 +265,10 @@ mod tests {
         use cadmpeg_core::CodecError;
         let ir = crate::CadIr::empty();
         let annotations = crate::annotations::Annotations::default();
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RecursionDepth,
+        ] {
             for route in 0..3 {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
@@ -219,12 +280,28 @@ mod tests {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let result = match route {
                     0 => admit(&ctx, &ir, DRAFT_CORE_CHECKS, Vec::new()),
-                    1 => super::admit_with_annotations(&ctx, &ir, &annotations, RHINO_DRAFT_CHECKS, Vec::new()),
-                    _ => super::admit_with_additional_native_identities(&ctx, &ir, std::iter::empty(), DRAFT_CORE_CHECKS, Vec::new()),
+                    1 => super::admit_with_annotations(
+                        &ctx,
+                        &ir,
+                        &annotations,
+                        RHINO_DRAFT_CHECKS,
+                        Vec::new(),
+                    ),
+                    _ => super::admit_with_additional_native_identities(
+                        &ctx,
+                        &ir,
+                        std::iter::empty(),
+                        DRAFT_CORE_CHECKS,
+                        Vec::new(),
+                    ),
                 };
-                let Err(CodecError::ResourceLimit(limit)) = result else { panic!("live session must refuse admission"); };
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("live session must refuse admission");
+                };
                 assert_eq!(limit.dimension, dimension);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+                );
             }
         }
     }
@@ -238,10 +315,20 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::admit_with_additional_native_identities(&ctx, &ir, ["test:native:unknown#record"], DRAFT_CORE_CHECKS, Vec::new());
-        let Err(CodecError::ResourceLimit(limit)) = result else { panic!("scoped index must be refused"); };
+        let result = super::admit_with_additional_native_identities(
+            &ctx,
+            &ir,
+            ["test:native:unknown#record"],
+            DRAFT_CORE_CHECKS,
+            Vec::new(),
+        );
+        let Err(CodecError::ResourceLimit(limit)) = result else {
+            panic!("scoped index must be refused");
+        };
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 
     #[test]
@@ -262,32 +349,71 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = super::filter_checks(&ctx, report, &[Check::Identity]) else { panic!("finding scan must be refused"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::filter_checks(&ctx, report, &[Check::Identity])
+        else {
+            panic!("finding scan must be refused");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "filter admission checks");
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 
     #[test]
     fn draft_core_agrees_with_full_on_freeze_fixtures() {
         let accepted = fixture(accepted_empty());
-        assert!(super::super::validate_neutral(&accepted, Vec::new()).expect("resource allocation did not fail").is_ok());
-        assert!(admit(&cadmpeg_test_support::service_decode_context(), &accepted, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(super::super::validate_neutral(&accepted, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
+        assert!(admit(
+            &cadmpeg_test_support::service_decode_context(),
+            &accepted,
+            DRAFT_CORE_CHECKS,
+            Vec::new()
+        )
+        .expect("resource allocation did not fail")
+        .is_ok());
 
         let missing_point = fixture(rejected_missing_point("test:model").expect("valid identity"));
-        assert!(!super::super::validate_neutral(&missing_point, Vec::new()).expect("resource allocation did not fail").is_ok());
-        assert!(!admit(&cadmpeg_test_support::service_decode_context(), &missing_point, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(!super::super::validate_neutral(&missing_point, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
+        assert!(!admit(
+            &cadmpeg_test_support::service_decode_context(),
+            &missing_point,
+            DRAFT_CORE_CHECKS,
+            Vec::new()
+        )
+        .expect("resource allocation did not fail")
+        .is_ok());
 
         let missing_region =
             fixture(rejected_missing_region("test:model").expect("valid identity"));
-        assert!(!super::super::validate_neutral(&missing_region, Vec::new()).expect("resource allocation did not fail").is_ok());
-        assert!(!admit(&cadmpeg_test_support::service_decode_context(), &missing_region, DRAFT_CORE_CHECKS, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(!super::super::validate_neutral(&missing_region, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
+        assert!(!admit(
+            &cadmpeg_test_support::service_decode_context(),
+            &missing_region,
+            DRAFT_CORE_CHECKS,
+            Vec::new()
+        )
+        .expect("resource allocation did not fail")
+        .is_ok());
     }
 
     #[test]
     fn filter_checks_drops_out_of_set_findings() {
         let ir = fixture(rejected_missing_point("test:model").expect("valid identity"));
-        let filtered = admit(&cadmpeg_test_support::service_decode_context(), &ir, &[Check::Identity], Vec::new()).expect("resource allocation did not fail");
+        let filtered = admit(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &[Check::Identity],
+            Vec::new(),
+        )
+        .expect("resource allocation did not fail");
         assert!(
             filtered.is_ok(),
             "referential_integrity must not reject under Identity-only set: {filtered:?}"
@@ -339,8 +465,22 @@ mod tests {
             CATIA_ADMISSION_CHECKS,
             SLDPRT_EXPORT_PRECONDITION_CHECKS,
         ] {
-            assert!(admit(&cadmpeg_test_support::service_decode_context(), &accepted, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
-            assert!(!admit(&cadmpeg_test_support::service_decode_context(), &rejected, allowed, Vec::new()).expect("resource allocation did not fail").is_ok());
+            assert!(admit(
+                &cadmpeg_test_support::service_decode_context(),
+                &accepted,
+                allowed,
+                Vec::new()
+            )
+            .expect("resource allocation did not fail")
+            .is_ok());
+            assert!(!admit(
+                &cadmpeg_test_support::service_decode_context(),
+                &rejected,
+                allowed,
+                Vec::new()
+            )
+            .expect("resource allocation did not fail")
+            .is_ok());
         }
     }
 }

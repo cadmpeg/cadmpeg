@@ -17,6 +17,13 @@ impl Serialize for SubdSymmetry {
             #[serde(skip_serializing_if = "Vec::is_empty")]
             vertex_pairs: &'a Vec<[u32; 2]>,
         }
-        Wire { kind: &self.kind, plane: &self.plane, face_pairs: &self.face_pairs, edge_pairs: &self.edge_pairs, vertex_pairs: &self.vertex_pairs }.serialize(serializer)
+        Wire {
+            kind: &self.kind,
+            plane: &self.plane,
+            face_pairs: &self.face_pairs,
+            edge_pairs: &self.edge_pairs,
+            vertex_pairs: &self.vertex_pairs,
+        }
+        .serialize(serializer)
     }
 }

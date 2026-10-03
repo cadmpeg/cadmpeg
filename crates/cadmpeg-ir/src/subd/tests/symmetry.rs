@@ -93,11 +93,20 @@ fn plane_frame_admission_preserves_the_unit_and_orthogonality_tolerance() {
 
 fn radial(sweep: f64) -> Result<SubdSymmetry, crate::subd::SubdError> {
     SubdSymmetry::new(
-        SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), sweep, Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")?,
+        SubdSymmetryKind::radial(
+            std::num::NonZeroU32::new(1).unwrap(),
+            sweep,
+            Vec::new(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture SubD admission")?,
         plane(),
         Vec::new(),
         Vec::new(),
-        Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+        Vec::new(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("fixture SubD admission")
 }
 
 #[test]
@@ -139,7 +148,10 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
                 plane(),
                 faces,
                 edges,
-                vertices, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+                vertices,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("fixture SubD admission")
             .unwrap_err()
             .to_string()
             .contains(field));
@@ -148,7 +160,10 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
                 plane(),
                 Vec::new(),
                 Vec::new(),
-                Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("fixture SubD admission")
             .unwrap();
             let mut wire = serde_json::to_value(symmetry).unwrap();
             wire[field] = serde_json::json!(invalid);
@@ -164,7 +179,10 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
         plane(),
         pairs.clone(),
         pairs.clone(),
-        pairs.clone(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+        pairs.clone(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("fixture SubD admission")
     .unwrap();
     assert_eq!(symmetry.face_pairs, pairs);
     assert_eq!(symmetry.edge_pairs, pairs);
@@ -185,10 +203,14 @@ fn radial_maps_require_distinct_selectors_and_sources() {
         vec![map(vec![]), map(vec![])],
         vec![map(vec![[0, 0], [0, 1]])],
     ] {
-        assert!(
-            SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), 0.0, maps.clone(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
-                .is_err()
-        );
+        assert!(SubdSymmetryKind::radial(
+            std::num::NonZeroU32::new(1).unwrap(),
+            0.0,
+            maps.clone(),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("fixture SubD admission")
+        .is_err());
         let mut wire = serde_json::to_value(radial(0.0).unwrap()).unwrap();
         wire["kind"]["radial_maps"] = serde_json::to_value(maps).unwrap();
         assert!(serde_json::from_value::<SubdSymmetry>(wire).is_err());
@@ -197,12 +219,18 @@ fn radial_maps_require_distinct_selectors_and_sources() {
         SubdSymmetryKind::radial(
             std::num::NonZeroU32::new(1).unwrap(),
             0.0,
-            vec![map(vec![[0, 0], [u64::MAX, 0]])], &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+            vec![map(vec![[0, 0], [u64::MAX, 0]])],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture SubD admission")
         .unwrap(),
         plane(),
         Vec::new(),
         Vec::new(),
-        Vec::new(), &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+        Vec::new(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("fixture SubD admission")
     .unwrap();
     assert_eq!(
         serde_json::from_value::<SubdSymmetry>(serde_json::to_value(&symmetry).unwrap()).unwrap(),

@@ -373,7 +373,9 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
     let expected = construction.clone();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -430,7 +432,9 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
         let expected = construction.clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -481,7 +485,9 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
         let expected_construction = construction.clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -737,7 +743,9 @@ fn record_level_surface_bounds_round_trip() {
     }
     .expect("finite record bounds");
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -844,7 +852,9 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         let expected = construction.clone();
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
-        source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+        source_less
+            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .unwrap();
         for (ordinal, (curve, _)) in bounded_curves.iter().enumerate() {
             source_less
                 .model
@@ -1131,18 +1141,22 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     };
     let target = nurbs.v_count();
     nurbs
-        .try_map_control_points(|index, pole| {
-            let mut pole = pole.get();
-            if index == target {
-                pole.x = 17.5;
-                pole.z = -3.25;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+        .try_map_control_points(
+            |index, pole| {
+                let mut pole = pole.get();
+                if index == target {
+                    pole.x = 17.5;
+                    pole.z = -3.25;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     edit::replace(&mut nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -1150,7 +1164,8 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             let knots: &mut [f64] = &mut knots;
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -1163,7 +1178,8 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        ).expect("fixture final NURBS admission")
+        )
+        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(&mut nurbs, |previous| {
@@ -1172,7 +1188,8 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             let knots: &mut [f64] = &mut knots;
             knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
         };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -1185,13 +1202,15 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             ),
             previous.pole_grid().clone(),
             previous.normal_reversed(),
-        ).expect("fixture final NURBS admission")
+        )
+        .expect("fixture final NURBS admission")
     })
     .unwrap();
     {
         let replacement = true;
         edit::replace(&mut nurbs, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1204,7 +1223,8 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
                 ),
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
         .unwrap()
     };
@@ -1263,14 +1283,17 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     if let Some(rows) = &mut weight_rows {
         rows[0][1] = 0.65;
     }
-    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         nurbs.pole_grid().raw_points(),
         weight_rows,
-    ).expect("fixture pole pairing admission");
+    )
+    .expect("fixture pole pairing admission");
     {
         let replacement = poles.unwrap();
         edit::replace(&mut nurbs, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1283,7 +1306,8 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
                 ),
                 replacement,
                 previous.normal_reversed(),
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -1340,13 +1364,15 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
-    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let expected = nurbs.clone();
 

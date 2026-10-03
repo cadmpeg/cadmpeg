@@ -480,11 +480,8 @@ pub(in crate::native) fn attach_expression_parameters(
                 )?,
                 display: None,
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    dependencies,
-                    ctx,
-                )
-                .map_err(cadmpeg_core::CodecError::from)?,
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+                    .map_err(cadmpeg_core::CodecError::from)?,
                 properties,
                 pmi: None,
                 native_ref: Some(ctx.format_retained(

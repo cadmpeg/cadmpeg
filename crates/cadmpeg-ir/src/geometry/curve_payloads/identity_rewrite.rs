@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{DeformableCurveConstruction, OffsetCurveConstruction, ProjectionCurvePayload, SilhouetteCurveConstruction, SpatialOffsetCurveConstruction, SpringCurvePayload, SubsetCurveConstruction, SurfaceOffsetCurveConstruction, ThreeSurfaceIntersectionCurvePayload, TwoSidedOffsetCurveConstruction, VectorOffsetCurveConstruction};
+use super::{
+    DeformableCurveConstruction, OffsetCurveConstruction, ProjectionCurvePayload,
+    SilhouetteCurveConstruction, SpatialOffsetCurveConstruction, SpringCurvePayload,
+    SubsetCurveConstruction, SurfaceOffsetCurveConstruction, ThreeSurfaceIntersectionCurvePayload,
+    TwoSidedOffsetCurveConstruction, VectorOffsetCurveConstruction,
+};
 
 rewrite_record!(DeformableCurveConstruction, []; {context, cache_first, source, source_parameter_range, data});
 rewrite_record!(OffsetCurveConstruction, []; {source, distance, side, range});

@@ -771,12 +771,14 @@ impl<'a> WorkBudget<'a> {
     /// Enters a session frame, or an independent frame with a 256-frame ceiling.
     /// Attached child slices share the active session depth.
     pub fn recursion_guard(&self) -> Result<WorkBudgetRecursionGuard<'_, 'a>, ResourceLimit> {
+        const INDEPENDENT_RECURSION_DEPTH: usize = 256;
         if let Some(session) = self.session {
             return session.enter_nested("work_budget_recursion").map(|guard| {
-                WorkBudgetRecursionGuard { account: WorkRecursionAccount::Session { _guard: guard } }
+                WorkBudgetRecursionGuard {
+                    account: WorkRecursionAccount::Session { _guard: guard },
+                }
             });
         }
-        const INDEPENDENT_RECURSION_DEPTH: usize = 256;
         let depth = self.recursion_depth.get();
         if depth >= INDEPENDENT_RECURSION_DEPTH {
             self.exhaust();
@@ -790,7 +792,9 @@ impl<'a> WorkBudget<'a> {
             });
         }
         self.recursion_depth.set(depth + 1);
-        Ok(WorkBudgetRecursionGuard { account: WorkRecursionAccount::Independent(self) })
+        Ok(WorkBudgetRecursionGuard {
+            account: WorkRecursionAccount::Independent(self),
+        })
     }
 
     /// Copy the active cycle path and admit one new frame slot.
@@ -810,7 +814,7 @@ impl<'a> WorkBudget<'a> {
         })?;
         let bytes = u64_from_index(capacity)
             .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-            .ok_or_else(|| ResourceLimit {
+            .ok_or(ResourceLimit {
                 dimension: ResourceDimension::MaterializedBytes,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: u64::MAX,
@@ -821,22 +825,42 @@ impl<'a> WorkBudget<'a> {
         if let Some(session) = self.session {
             session.charge_collection_items_limit(u64_from_index(capacity), OPERATION)?;
             // Copy each path member and compare it once when binding the frame.
-            session.charge_work_limit(bytes.checked_add(u64_from_index(path.len())).ok_or_else(|| {
-                session.refuse_limit(ResourceDimension::WorkUnits, ResourceFailure::BudgetExceeded,
-                    u64::MAX, bytes, u64_from_index(path.len()), OPERATION)
-            })?, OPERATION)?;
+            session.charge_work_limit(
+                bytes
+                    .checked_add(u64_from_index(path.len()))
+                    .ok_or_else(|| {
+                        session.refuse_limit(
+                            ResourceDimension::WorkUnits,
+                            ResourceFailure::BudgetExceeded,
+                            u64::MAX,
+                            bytes,
+                            u64_from_index(path.len()),
+                            OPERATION,
+                        )
+                    })?,
+                OPERATION,
+            )?;
         }
         let storage = self.reserve_scratch(bytes, OPERATION)?;
         let mut copied = Vec::new();
-        copied.try_reserve_exact(capacity).map_err(|_| match self.session {
-            Some(session) => session.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::AllocationFailed,
-                session.materialized_allowance(),
-                session.materialized.get(), bytes, OPERATION),
-            None => ResourceLimit::allocation_failed(
-                ResourceDimension::MaterializedBytes, bytes, bytes, OPERATION),
-        })?;
+        copied
+            .try_reserve_exact(capacity)
+            .map_err(|_| match self.session {
+                Some(session) => session.refuse_limit(
+                    ResourceDimension::MaterializedBytes,
+                    ResourceFailure::AllocationFailed,
+                    session.materialized_allowance(),
+                    session.materialized.get(),
+                    bytes,
+                    OPERATION,
+                ),
+                None => ResourceLimit::allocation_failed(
+                    ResourceDimension::MaterializedBytes,
+                    bytes,
+                    bytes,
+                    OPERATION,
+                ),
+            })?;
         copied.extend_from_slice(path);
         Ok((copied, storage))
     }
@@ -950,7 +974,9 @@ mod tests {
         policy.limits.max_recursion_depth = 0;
         let session = DecodeBudget::new(policy, 1);
         let budget = WorkBudget::for_session(100, &session);
-        let failure = budget.recursion_guard().expect_err("zero depth refuses first frame");
+        let failure = budget
+            .recursion_guard()
+            .expect_err("zero depth refuses first frame");
         assert_eq!(failure.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(failure.limit, 0);
         assert_eq!(failure.used, 0);

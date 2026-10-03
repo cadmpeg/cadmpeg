@@ -448,16 +448,37 @@ fn body_selection_admission_rejects_invalid_members() {
         vec![" ".to_owned()],
         vec!["a".to_owned(), "a".to_owned()],
     ] {
-        assert!(BodySelection::local(names.clone(), "native".into(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission").is_err());
+        assert!(BodySelection::local(
+            names.clone(),
+            "native".into(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("body selection admission")
+        .is_err());
         assert!(NativeSelections::try_from(names).is_err());
     }
-    assert!(BodySelection::local(vec!["body".into()], " ".into(), &cadmpeg_test_support::service_decode_context(),).expect("body selection admission").is_err());
+    assert!(BodySelection::local(
+        vec!["body".into()],
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("body selection admission")
+    .is_err());
     let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
-    assert!(BodySelection::historical(state, vec![], "native".into(), &cadmpeg_test_support::service_decode_context()).expect("selection storage is admitted").is_err());
+    assert!(BodySelection::historical(
+        state,
+        vec![],
+        "native".into(),
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("selection storage is admitted")
+    .is_err());
     assert!(GeneratedBodyRef::new(
         super::FeatureId::mint("test:test:feature#1").unwrap(),
-        " ".into(), &cadmpeg_test_support::service_decode_context(),
-    ).expect("selection reference admission")
+        " ".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
     .is_err());
     for value in [
         serde_json::json!({"kind":"local","value":{"bodies":[],"native":"source"}}),
@@ -474,16 +495,30 @@ fn topology_membership_admission() {
     use super::{DistinctMembers, FeatureResultTopology};
     let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
     let feature = super::FeatureId::mint("test:test:feature#1").unwrap();
-    assert!(crate::features::FeatureResultMembers::new(vec![], vec![], vec![], vec![], &cadmpeg_test_support::service_decode_context(), "validate feature result members")
-        .expect("result membership admission")
-        .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
+    assert!(crate::features::FeatureResultMembers::new(
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        &cadmpeg_test_support::service_decode_context(),
+        "validate feature result members"
+    )
+    .expect("result membership admission")
+    .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
     .is_err());
-    assert!(crate::features::FeatureResultMembers::new(vec![
+    assert!(crate::features::FeatureResultMembers::new(
+        vec![
             cadmpeg_core::nonblank_literal!("a"),
             cadmpeg_core::nonblank_literal!("a"),
-        ], vec![], vec![], vec![], &cadmpeg_test_support::service_decode_context(), "validate feature result members")
-        .expect("result membership admission")
-        .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
+        ],
+        vec![],
+        vec![],
+        vec![],
+        &cadmpeg_test_support::service_decode_context(),
+        "validate feature result members"
+    )
+    .expect("result membership admission")
+    .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
     .is_err());
     // A blank member identity is refused by the member type, so the wire cannot
     // spell one and the constructor cannot be handed one.
@@ -491,7 +526,11 @@ fn topology_membership_admission() {
         serde_json::json!({"kind": "body", "id": ""})
     )
     .is_err());
-    assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()], &cadmpeg_test_support::service_decode_context()).is_err());
+    assert!(DistinctMembers::<String>::try_from(
+        vec!["a".into(), "a".into()],
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .is_err());
     assert!(
         serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
             "test:model:body#1",

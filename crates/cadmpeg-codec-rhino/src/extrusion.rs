@@ -647,20 +647,23 @@ fn transform_nurbs(
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let mut curve = curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?;
-    curve.try_map_control_points(|_, point| {
-        let transformed = transform_local(
-            point.get(),
-            frame.origin,
-            frame.xaxis,
-            frame.yaxis,
-            frame.zaxis,
-            frame.miter,
-            offset,
-        )?;
-        FinitePoint3::new(transformed).ok_or_else(|| {
-            GeometryError::malformed(offset, "control_points contains a non-finite point")
-        })
-    }, ctx)??;
+    curve.try_map_control_points(
+        |_, point| {
+            let transformed = transform_local(
+                point.get(),
+                frame.origin,
+                frame.xaxis,
+                frame.yaxis,
+                frame.zaxis,
+                frame.miter,
+                offset,
+            )?;
+            FinitePoint3::new(transformed).ok_or_else(|| {
+                GeometryError::malformed(offset, "control_points contains a non-finite point")
+            })
+        },
+        ctx,
+    )??;
     Ok(curve)
 }
 
@@ -1431,7 +1434,8 @@ pub(crate) mod tests {
         let count = points.len();
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     (0..count + 2)
                         .map(|value| {
@@ -1442,7 +1446,8 @@ pub(crate) mod tests {
                     points,
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("valid polygon curve"),
             )),
             Diagnostics::new(),
@@ -1490,13 +1495,15 @@ pub(crate) mod tests {
         }
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
                     points,
                     Some(weights),
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("valid circle curve"),
             )),
             Diagnostics::new(),
@@ -1655,17 +1662,21 @@ pub(crate) mod tests {
             unreachable!()
         };
         curve
-            .try_map_control_points(|index, point| {
-                let mut point = point.get();
-                if index == 1 {
-                    point.z = 1.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
-                })
-            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+            .try_map_control_points(
+                |index, point| {
+                    let mut point = point.get();
+                    if index == 1 {
+                        point.z = 1.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("pole edit admission")
             .expect("valid test curve edit");
         assert!(exact_orientation(&ctx, &off_plane, 0).is_err());
     }
@@ -1901,13 +1912,15 @@ pub(crate) mod tests {
 
     #[test]
     fn extrusion_cap_weights_refuse_collection_limit() {
-        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             Some(vec![1.0, 0.5]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid rational cap profile");
         let frame = cap_frame(
             Vector3::new(1.0, 0.0, 0.0),
@@ -2094,30 +2107,44 @@ pub(crate) mod tests {
     #[test]
     fn optional_mesh_cache_propagates_decode_retained_limit() {
         let bytes = payload(3, [false, false], Some(one_mesh_cache()));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root view");
-        let refusal = super::decode(
-            crate::mesh::MeshExpand::new(&ctx, root),
-            &bytes,
-            0..bytes.len(),
-            ExtrusionFormat {
-                archive: ArchiveVersion::V5,
-                writer_version: None,
-                scale: MillimeterScale::IDENTITY,
-            },
-            &[],
-            &mut crate::mesh::MeshBudget::new(),
-        )
-        .expect_err("cache buffer exceeds zero retained bytes");
-        assert!(matches!(
-            refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "rhino_mesh_buffer"
-        ));
+        for _ in 0..4096 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("root view");
+            let refusal = super::decode(
+                crate::mesh::MeshExpand::new(&ctx, root),
+                &bytes,
+                0..bytes.len(),
+                ExtrusionFormat {
+                    archive: ArchiveVersion::V5,
+                    writer_version: None,
+                    scale: MillimeterScale::IDENTITY,
+                },
+                &[],
+                &mut crate::mesh::MeshBudget::new(),
+            )
+            .expect_err("cache buffer exceeds zero retained bytes");
+            let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = refusal
+            else {
+                panic!("retained refusal");
+            };
+            assert_eq!(
+                first.dimension,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            );
+            assert!(matches!(ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            if first.operation == "rhino_mesh_buffer" {
+                return;
+            }
+            let next = first.used.checked_add(first.additional).unwrap();
+            assert!(next > policy.limits.max_retained_bytes);
+            policy.limits.max_retained_bytes = next;
+        }
+        panic!("mesh cache buffer admission must be reached");
     }
 
     #[test]

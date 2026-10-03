@@ -1408,13 +1408,15 @@ fn nonplanar_saved_spline_places_as_model_curve() {
         5,
     )
     .expect("valid section frame");
-    let local = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let local = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid local NURBS");
 
     let placed =
@@ -1442,13 +1444,15 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 
 #[test]
 fn full_revolution_uses_exact_quadratic_circle_poles() {
-    let directrix = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let directrix = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid revolution directrix");
     let surface = crate::decode::with_test_decode_ctx(|ctx| {
         revolved_nurbs_surface(
@@ -1513,7 +1517,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         reference: None,
     };
     let spline = SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
             vec![
@@ -1524,7 +1529,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             ],
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     );
     let segment = crate::decode::with_test_decode_ctx(|ctx| {
@@ -1610,11 +1616,21 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
         assert_eq!(
-            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.0).expect("pcurve start"),
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve,
+                0.0
+            )
+            .expect("pcurve start"),
             cadmpeg_ir::math::Point2::new(expected_u, 0.0)
         );
         assert_eq!(
-            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 1.0).expect("pcurve end"),
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve,
+                1.0
+            )
+            .expect("pcurve end"),
             cadmpeg_ir::math::Point2::new(expected_u, std::f64::consts::TAU)
         );
     }

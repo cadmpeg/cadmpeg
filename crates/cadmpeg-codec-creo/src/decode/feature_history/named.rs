@@ -363,27 +363,30 @@ fn surface_intersect_feature_definition(
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
     let eligible = (|| {
-    numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
-    let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == feature_id
-            && table.table_class_id == 29
-            && table.surface_ids_iter().next().is_some()
-            && table.unique_surface_ids().len() == table.surface_ids_iter().count()
-            && table.surface_ids_iter().all(|surface_id| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
-                    .is_some_and(|surface| surface.feature_id == feature_id)
-            })
-    });
-    surface_tables.next()?;
-    surface_tables.next().is_none().then_some(())?;
-    Some(())
+        numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
+        let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
+            table.feature_id == feature_id
+                && table.table_class_id == 29
+                && table.surface_ids_iter().next().is_some()
+                && table.unique_surface_ids().len() == table.surface_ids_iter().count()
+                && table.surface_ids_iter().all(|surface_id| {
+                    crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+                        .is_some_and(|surface| surface.feature_id == feature_id)
+                })
+        });
+        surface_tables.next()?;
+        surface_tables.next().is_none().then_some(())?;
+        Some(())
     })();
-    if eligible.is_none() { return Ok(None); }
+    if eligible.is_none() {
+        return Ok(None);
+    }
     Ok(Some(IrFeatureDefinition::Operation(
         IrFeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
                 BodySelection::Unresolved,
-                BodySelection::Unresolved, ctx,
+                BodySelection::Unresolved,
+                ctx,
             )?
             .map_err(CodecError::malformed)?,
 
@@ -489,18 +492,32 @@ mod tests {
 
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &scan, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
         scan = valid_scan();
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &scan, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             Some(IrFeatureDefinition::Operation(
                 IrFeatureOperation::SectionShape {
                     operands: cadmpeg_ir::features::SectionOperands::new(
                         BodySelection::Unresolved,
-                        BodySelection::Unresolved, &cadmpeg_test_support::service_decode_context(),
-                    ).expect("operand admission")
+                        BodySelection::Unresolved,
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("operand admission")
                     .expect("valid test fixture"),
 
                     approximate: None,
@@ -509,21 +526,39 @@ mod tests {
         );
         scan.surfaces.rows.pop();
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &scan, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         let mut duplicate_surface_row = valid_scan();
         duplicate_surface_row.surfaces.rows.push(surface(61, 50));
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &duplicate_surface_row, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &duplicate_surface_row,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         let mut foreign_surface = valid_scan();
         foreign_surface.surfaces.rows[1].feature_id = 51;
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &foreign_surface, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &foreign_surface,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
@@ -532,7 +567,13 @@ mod tests {
             .entries
             .push(crate::feature::entity::dummy_table_entry(61));
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &duplicate_surface_id, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &duplicate_surface_id,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
@@ -542,16 +583,34 @@ mod tests {
             .entity_tables
             .push(table());
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &multiple_materialized_tables, 50, "Intersect 1").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &multiple_materialized_tables,
+                50,
+                "Intersect 1"
+            )
+            .expect("section projection admission"),
             None
         );
 
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &scan, 50, "Intersect").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect"
+            )
+            .expect("section projection admission"),
             None
         );
         assert_eq!(
-            surface_intersect_feature_definition(&cadmpeg_test_support::service_decode_context(), &scan, 50, "Intersect copy").expect("section projection admission"),
+            surface_intersect_feature_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &scan,
+                50,
+                "Intersect copy"
+            )
+            .expect("section projection admission"),
             None
         );
     }

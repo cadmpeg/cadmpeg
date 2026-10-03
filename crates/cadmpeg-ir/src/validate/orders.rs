@@ -12,7 +12,11 @@ pub(super) struct Orders<'ctx, 'arena, T = u32> {
 
 impl<'ctx, 'arena, T: Ord + Copy> Orders<'ctx, 'arena, T> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
-        Ok(Self { values: Vec::new(), ctx, storage: ctx.reserve_scoped(0, "validation order storage")? })
+        Ok(Self {
+            values: Vec::new(),
+            ctx,
+            storage: ctx.reserve_scoped(0, "validation order storage")?,
+        })
     }
 
     pub(super) fn insert(&mut self, order: T) -> Result<bool, CodecError> {
@@ -27,8 +31,14 @@ impl<'ctx, 'arena, T: Ord + Copy> Orders<'ctx, 'arena, T> {
                 std::cmp::Ordering::Equal => return Ok(false),
             }
         }
-        self.ctx.charge_work(u64_from_index(self.values.len() - low), "move validation orders")?;
-        self.storage.with_storage(|| self.ctx.reserve_retained_vec(&mut self.values, 1, "validation order slots"))?;
+        self.ctx.charge_work(
+            u64_from_index(self.values.len() - low),
+            "move validation orders",
+        )?;
+        self.storage.with_storage(|| {
+            self.ctx
+                .reserve_retained_vec(&mut self.values, 1, "validation order slots")
+        })?;
         self.values.insert(low, order);
         Ok(true)
     }
@@ -42,8 +52,16 @@ mod tests {
     #[test]
     fn validation_orders_preserve_growth_and_comparison_refusals() {
         for (dimension, cap, operation) in [
-            (ResourceDimension::MaterializedBytes, 0, "validation order slots"),
-            (ResourceDimension::CollectionItems, 0, "validation order slots"),
+            (
+                ResourceDimension::MaterializedBytes,
+                0,
+                "validation order slots",
+            ),
+            (
+                ResourceDimension::CollectionItems,
+                0,
+                "validation order slots",
+            ),
             (ResourceDimension::WorkUnits, 0, "compare validation order"),
             (ResourceDimension::WorkUnits, 1, "move validation orders"),
         ] {
@@ -60,13 +78,26 @@ mod tests {
             let result = if dimension == ResourceDimension::WorkUnits {
                 assert!(orders.insert(10).unwrap());
                 orders.insert(5)
-            } else { orders.insert(10) };
-            let Err(CodecError::ResourceLimit(limit)) = result else { panic!("order operation must refuse"); };
+            } else {
+                orders.insert(10)
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("order operation must refuse");
+            };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, operation);
-            assert_eq!(orders.values, if dimension == ResourceDimension::WorkUnits { vec![10] } else { Vec::new() });
+            assert_eq!(
+                orders.values,
+                if dimension == ResourceDimension::WorkUnits {
+                    vec![10]
+                } else {
+                    Vec::new()
+                }
+            );
             drop(orders);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
     }
 
@@ -79,8 +110,12 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         {
             let mut orders = super::Orders::<u32>::new(&ctx).unwrap();
-            for order in [10, 3, 7] { assert!(orders.insert(order).unwrap()); }
-            for order in [7, 3, 10] { assert!(!orders.insert(order).unwrap()); }
+            for order in [10, 3, 7] {
+                assert!(orders.insert(order).unwrap());
+            }
+            for order in [7, 3, 10] {
+                assert!(!orders.insert(order).unwrap());
+            }
             assert_eq!(orders.values, [3, 7, 10]);
         }
         drop(ctx.reserve_scoped(4096, "order scope released").unwrap());
@@ -97,5 +132,4 @@ mod tests {
         drop(orders);
         ctx.finish_session().unwrap();
     }
-
 }

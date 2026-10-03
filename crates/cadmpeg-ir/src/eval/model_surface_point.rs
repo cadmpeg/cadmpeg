@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model surface point evaluation across stored and procedural carriers.
 
+use super::admission;
 use super::cacheless_constant_rolling_ball_first_order;
 use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
@@ -12,6 +13,7 @@ use super::model_native_revolution_point;
 use super::model_ruled_surface_jet;
 use super::model_sum_surface_jet;
 use super::model_surface_jet_by_id;
+use super::model_surface_point;
 use super::offset;
 use super::placed_reach;
 use super::placed_vectors;
@@ -32,8 +34,6 @@ use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 use cadmpeg_core::decode::ResourceLimit;
-use super::admission;
-use super::model_surface_point;
 
 pub(super) fn model_surface_point_by_id_inner(
     admission: admission::EvaluationAdmission<'_, '_>,
@@ -42,7 +42,6 @@ pub(super) fn model_surface_point_by_id_inner(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-
     /// An arm's point, admitted where the arm computes it raw, and the
     /// support's oriented unit normal for an offset that reads it.
     struct SurfaceEvaluation {
@@ -143,7 +142,11 @@ pub(super) fn model_surface_point_by_id_inner(
     /// A stored cache's point and unit normal. The point is evaluated alone;
     /// the normal is that of the cache's first partials.
     fn cache_evaluation(
-    admission: admission::EvaluationAdmission<'_, '_>,geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfaceEvaluation> {
+        admission: admission::EvaluationAdmission<'_, '_>,
+        geometry: &SurfaceGeometry,
+        u: f64,
+        v: f64,
+    ) -> Option<SurfaceEvaluation> {
         let point = match crate::eval::decode::surface_point(admission, geometry, u, v) {
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(point)) => Err(point),
@@ -174,14 +177,16 @@ pub(super) fn model_surface_point_by_id_inner(
     /// is read; otherwise it is the point of the first partials, which leave
     /// the point finite where they leave the finite range.
     fn direct_evaluation(
-    admission: admission::EvaluationAdmission<'_, '_>,
+        admission: admission::EvaluationAdmission<'_, '_>,
         geometry: &SurfaceGeometry,
         u: f64,
         v: f64,
         normal: bool,
     ) -> Option<SurfaceEvaluation> {
         if !normal {
-            return point_evaluation(crate::eval::decode::surface_point(admission, geometry, u, v));
+            return point_evaluation(crate::eval::decode::surface_point(
+                admission, geometry, u, v,
+            ));
         }
         let order = match surface_first_order(admission, geometry, u, v) {
             Ok(order) => order,
@@ -233,7 +238,7 @@ pub(super) fn model_surface_point_by_id_inner(
     }
 
     fn linear_nurbs_support_extension(
-    admission: admission::EvaluationAdmission<'_, '_>,
+        admission: admission::EvaluationAdmission<'_, '_>,
         index: &crate::index::ModelIndex<'_>,
         support: &crate::ids::SurfaceId,
         u: f64,
@@ -276,7 +281,8 @@ pub(super) fn model_surface_point_by_id_inner(
         if !u_extended && !v_extended {
             return None;
         }
-        let order = match surface_first_order(admission, &support.geometry, boundary_u, boundary_v) {
+        let order = match surface_first_order(admission, &support.geometry, boundary_u, boundary_v)
+        {
             Ok(order) => order,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
@@ -310,14 +316,14 @@ pub(super) fn model_surface_point_by_id_inner(
     /// where `normal` is set: an offset reads its support's normal, and a
     /// placement or subset passes its reader's need on to its support.
     fn evaluate(
-    admission: admission::EvaluationAdmission<'_, '_>,
+        admission: admission::EvaluationAdmission<'_, '_>,
         index: &crate::index::ModelIndex<'_>,
         surface_id: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
         normal: bool,
     ) -> Option<SurfaceEvaluation> {
-    let budget = admission.work_slice();
+        let budget = admission.work_slice();
         let depth_guard = match ModelEvaluationDepthGuard::enter(budget) {
             Ok(guard) => guard,
             Err(limit) => return Some(resource(limit)),
@@ -339,34 +345,69 @@ pub(super) fn model_surface_point_by_id_inner(
         ) {
             return None;
         }
-        let procedural = match index.procedural_surface_for_surface(surface_id.as_str(), admission) { Ok(value) => value, Err(limit) => return Some(resource(limit)), };
+        let procedural = match index.procedural_surface_for_surface(surface_id.as_str(), admission)
+        {
+            Ok(value) => value,
+            Err(limit) => return Some(resource(limit)),
+        };
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
-                point_evaluation(model_axis_revolution_point(admission, index, definition_payload.directrix(), definition_payload.axis_origin().get(), definition_payload.axis_direction(), u, v))
+                point_evaluation(model_axis_revolution_point(
+                    admission,
+                    index,
+                    definition_payload.directrix(),
+                    definition_payload.axis_origin().get(),
+                    definition_payload.axis_direction(),
+                    u,
+                    v,
+                ))
             }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-                point_evaluation(model_native_extrusion_point(admission, index, definition_payload, carrier_interval, u, v))
+                point_evaluation(model_native_extrusion_point(
+                    admission,
+                    index,
+                    definition_payload,
+                    carrier_interval,
+                    u,
+                    v,
+                ))
             }
             Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
                 model_linear_sweep_point(admission, index, definition_payload, u, v),
             ),
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-                point_evaluation(model_native_revolution_point(admission, index, definition_payload, carrier_interval, u, v))
+                point_evaluation(model_native_revolution_point(
+                    admission,
+                    index,
+                    definition_payload,
+                    carrier_interval,
+                    u,
+                    v,
+                ))
             }
             Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => point_evaluation(
                 model_ruled_surface_jet(admission, index, first, second, u, v).map(|jet| jet.point),
             ),
             Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => point_evaluation(
-                model_sum_surface_jet(admission, index, definition_payload, u, v).map(|jet| jet.point),
+                model_sum_surface_jet(admission, index, definition_payload, u, v)
+                    .map(|jet| jet.point),
             ),
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
                 if let Some(construction) = definition_payload.native() {
                     let profile = definition_payload.profile();
                     let spine = definition_payload.spine();
 
-                    match cacheless_law_sweep_point(admission, index, profile, spine, construction, u, v) {
+                    match cacheless_law_sweep_point(
+                        admission,
+                        index,
+                        profile,
+                        spine,
+                        construction,
+                        u,
+                        v,
+                    ) {
                         Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
@@ -404,12 +445,24 @@ pub(super) fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
                 if let Some(native) = definition_payload.native() {
-                    match cacheless_constant_rolling_ball_point(admission, index, definition_payload, u, v) {
+                    match cacheless_constant_rolling_ball_point(
+                        admission,
+                        index,
+                        definition_payload,
+                        u,
+                        v,
+                    ) {
                         Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
                             oriented_normal: if normal {
-                                cacheless_constant_rolling_ball_first_order(admission, index, definition_payload, u, v)
+                                cacheless_constant_rolling_ball_first_order(
+                                    admission,
+                                    index,
+                                    definition_payload,
+                                    u,
+                                    v,
+                                )
                                 .map_err(|failure| failure.map(|_| ()))
                                 .and_then(|order| {
                                     let [du, dv] = order.first?;
@@ -564,7 +617,13 @@ pub(super) fn model_surface_point_by_id_inner(
             _ if procedural.is_some() => {
                 // A non-finite point enters the evaluation as a finite one
                 // does.
-                point_evaluation(model_surface_point(admission, index.ir(), &surface.geometry, u, v))
+                point_evaluation(model_surface_point(
+                    admission,
+                    index.ir(),
+                    &surface.geometry,
+                    u,
+                    v,
+                ))
             }
             _ => direct_evaluation(admission, &surface.geometry, u, v, normal),
         };

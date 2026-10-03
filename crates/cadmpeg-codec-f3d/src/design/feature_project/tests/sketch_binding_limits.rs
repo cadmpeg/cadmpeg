@@ -150,7 +150,11 @@ fn spatial_fixture() -> (
                 )
                 .unwrap(),
                 reversed: false,
-            }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+            }],
+            &cadmpeg_test_support::service_decode_context(),
+            "spatial profile uniqueness",
+        )
+        .expect("fixture collection admission")
         .unwrap()],
         native_ref: Some(placement.id.clone()),
     };

@@ -1065,15 +1065,13 @@ pub(in crate::families) fn rolling_ball_jet_definition(
                 ),
             }),
     );
-    Ok(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
-            A8FreeformCurve::DEGREE,
-            stations,
-            ctx,
-        )?
-        .ok()
-        .map(ProceduralSurfaceDefinition::RollingBallJet),
-    )
+    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
+        A8FreeformCurve::DEGREE,
+        stations,
+        ctx,
+    )?
+    .ok()
+    .map(ProceduralSurfaceDefinition::RollingBallJet))
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -1654,15 +1652,13 @@ fn a8_surface_from_external_grid(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsSurface::from_checked_lanes(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        header.u_degree,
-                        u_knots,
-                        false,
-                    ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        header.v_degree,
-                        v_knots,
-                        false,
-                    ), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights), false)?,
+        NurbsSurface::from_checked_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+            false,
+        )?,
         refusal,
         format_args!(
             "a8 NURBS surface record #{} at byte {}",
@@ -1949,7 +1945,11 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    if !knots_strictly_increasing(&u_distinct, |count| ctx.charge_work(count, "IR strict knot order"))? || !knots_strictly_increasing(&v_distinct, |count| ctx.charge_work(count, "IR strict knot order"))? {
+    if !knots_strictly_increasing(&u_distinct, |count| {
+        ctx.charge_work(count, "IR strict knot order")
+    })? || !knots_strictly_increasing(&v_distinct, |count| {
+        ctx.charge_work(count, "IR strict knot order")
+    })? {
         return Ok(None);
     }
     let Some((u_knots, u_count)) = a5_knots(ctx, &u_distinct, u_degree)? else {
@@ -2001,7 +2001,13 @@ fn a5_surface(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsSurface::from_checked_lanes(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights), false)?,
+        NurbsSurface::from_checked_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+            false,
+        )?,
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
     )
@@ -2307,7 +2313,13 @@ fn a8_surface_from_parsed(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsSurface::from_checked_lanes(ctx, cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false), cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights), false)?,
+        NurbsSurface::from_checked_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+            false,
+        )?,
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
     )

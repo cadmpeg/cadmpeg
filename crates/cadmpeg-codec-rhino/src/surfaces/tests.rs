@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 #![allow(clippy::disallowed_methods)]
 
 use super::{
@@ -38,21 +39,25 @@ fn with_collection_limit<R>(
 
 fn simple_extrusion_curves() -> (NurbsCurve, NurbsCurve) {
     let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let start = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let start = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         knots.clone(),
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid start profile");
-    let end = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let end = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         knots,
         vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid end profile");
     (start, end)
 }
@@ -243,19 +248,35 @@ fn nurbs_curve_poles_refuse_collection_limit_before_reserve() {
 #[test]
 fn nurbs_surface_grid_refuses_collection_limit_before_copy() {
     let bytes = surface_payload(2, 2, 2, 3, false, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
-    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 27;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("surface input fits service profile");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds");
-    let refusal = super::read_nurbs_surface(&ctx, &mut reader, MillimeterScale::IDENTITY)
-        .expect_err("the pole grid exceeds the remaining collection items");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino NURBS surface pole grid",
-    );
+    let mut reached = false;
+    for _ in 0..128 {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("surface input fits service profile");
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds");
+        let refusal = super::read_nurbs_surface(&ctx, &mut reader, MillimeterScale::IDENTITY)
+            .expect_err("the next collection exceeds the selected cap");
+        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = refusal else {
+            panic!("collection refusal");
+        };
+        assert_eq!(
+            first.dimension,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems
+        );
+        assert_eq!(first.limit, policy.limits.max_collection_items);
+        assert!(matches!(ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+        if first.operation == "Rhino NURBS surface pole grid" {
+            reached = true;
+            break;
+        }
+        let next = first.used.checked_add(first.additional).unwrap();
+        assert!(next > policy.limits.max_collection_items);
+        policy.limits.max_collection_items = next;
+    }
+    assert!(reached, "pole grid admission must be reached");
     assert!(read_nurbs_surface(
         &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds"),
         MillimeterScale::IDENTITY
@@ -665,13 +686,15 @@ fn plane_payload(version: u8, bad_frame: bool, bad_range: bool) -> Vec<u8> {
 }
 
 fn test_curve(points: Vec<Point3>, weights: Option<Vec<f64>>, domain: [f64; 2]) -> NurbsCurve {
-    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         points,
         weights,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid test curve")
 }
 
@@ -837,21 +860,43 @@ fn valid_sum_payload() -> Vec<u8> {
 #[test]
 fn reconstructs_spec_examples_and_one_sided_vectors() {
     assert_eq!(
-        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("required invariant"),
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+            3,
+            6
+        )
+        .expect("required invariant"),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
     );
     assert_eq!(
-        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6).expect("required invariant"),
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0],
+            3,
+            6
+        )
+        .expect("required invariant"),
         vec![-2.0, 0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0]
     );
     assert_eq!(
-        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6).expect("required invariant")
-            [0],
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0],
+            3,
+            6
+        )
+        .expect("required invariant")[0],
         0.0
     );
     assert_eq!(
-        reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6).expect("required invariant")
-            [8],
+        reconstruct_knots(
+            &cadmpeg_test_support::service_decode_context(),
+            &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0],
+            3,
+            6
+        )
+        .expect("required invariant")[8],
         5.0
     );
 }
@@ -860,7 +905,13 @@ fn reconstructs_spec_examples_and_one_sided_vectors() {
 /// locates, so the refusal names no offset instead of naming byte 0.
 #[test]
 fn a_knot_reconstruction_refusal_names_no_byte() {
-    let error = reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0], 3, 6).expect_err("knot count mismatch");
+    let error = reconstruct_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0],
+        3,
+        6,
+    )
+    .expect_err("knot count mismatch");
     assert!(matches!(
         error,
         GeometryError::Malformed(FramingError::Unpositioned { ref message })
@@ -950,9 +1001,20 @@ fn checked_source_knots_reconstruct_without_scalar_readmission() {
             .as_slice(),
         stored
     );
-    let reconstructed = super::reconstruct_checked_knots(&cadmpeg_test_support::service_decode_context(), &checked, 3, 6)
-        .expect("reconstructed checked knot vector");
-    let expected = reconstruct_knots(&cadmpeg_test_support::service_decode_context(), &stored, 3, 6).expect("raw reference reconstruction");
+    let reconstructed = super::reconstruct_checked_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &checked,
+        3,
+        6,
+    )
+    .expect("reconstructed checked knot vector");
+    let expected = reconstruct_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &stored,
+        3,
+        6,
+    )
+    .expect("raw reference reconstruction");
     assert_eq!(reconstructed.as_slice(), expected.as_slice());
 }
 
@@ -1041,14 +1103,40 @@ fn c2_nurbs_preserves_periodic_parameterization() {
 
 #[test]
 fn periodic_rule_matches_native_tolerance_and_rejects_clamping() {
-    assert!(!periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("periodic admission"));
-    assert!(periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6).expect("periodic admission"));
-    assert!(!periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6).expect("periodic admission"));
-    assert!(!periodic_knots(&cadmpeg_test_support::service_decode_context(), &[0.0, 1.0, 2.0, 3.0], 2, 4).expect("periodic admission"));
+    assert!(!periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        3,
+        6
+    )
+    .expect("periodic admission"));
+    assert!(periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        3,
+        6
+    )
+    .expect("periodic admission"));
+    assert!(!periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0],
+        3,
+        6
+    )
+    .expect("periodic admission"));
+    assert!(!periodic_knots(
+        &cadmpeg_test_support::service_decode_context(),
+        &[0.0, 1.0, 2.0, 3.0],
+        2,
+        4
+    )
+    .expect("periodic admission"));
     let mut near = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-    const EPS_PERIODIC_PERTURBATION: f64 = 1.0e-8;
     near[6] += EPS_PERIODIC_PERTURBATION;
-    assert!(periodic_knots(&cadmpeg_test_support::service_decode_context(), &near, 3, 6).expect("periodic admission"));
+    assert!(
+        periodic_knots(&cadmpeg_test_support::service_decode_context(), &near, 3, 6)
+            .expect("periodic admission")
+    );
 }
 
 #[test]
@@ -1179,7 +1267,8 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         None,
         [2.0, 5.0],
     );
-    let second = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let second = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![7.0, 7.0, 7.0, 9.0, 9.0, 9.0],
         vec![
@@ -1189,7 +1278,8 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
         ],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid test curve");
     let surface =
         sum_nurbs(&first, &second, Vector3::new(0.5, 1.5, 2.5), 0).expect("required invariant");
@@ -1247,7 +1337,8 @@ fn sum_surface_multiplies_each_rational_weight_pair() {
 
 #[test]
 fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
-    let start = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let start = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
         vec![
@@ -1257,18 +1348,23 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         ],
         Some(vec![1.0, 0.5, 1.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid test curve");
     let mut end = start.clone();
-    end.try_map_control_points(|_, point| {
-        let mut point = point.get();
-        point.z = 7.0;
-        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                "control_points contains a non-finite point".into(),
-            )
-        })
-    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+    end.try_map_control_points(
+        |_, point| {
+            let mut point = point.get();
+            point.z = 7.0;
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        },
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("pole edit admission")
     .expect("valid test curve edit");
     let plain = super::extrusion_nurbs(
         &cadmpeg_test_support::service_decode_context(),
@@ -1775,7 +1871,8 @@ fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
         &[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308],
         3,
         5
-    ).expect("periodic admission"));
+    )
+    .expect("periodic admission"));
 }
 
 #[test]
@@ -1815,8 +1912,15 @@ fn numerical_followup_plane_map_retains_finite_extrapolated_controls() {
 fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    let knots = (0..7).map(|value| cadmpeg_ir::scalar::FiniteReal::new(f64::from(value)).expect("finite knot")).collect::<Vec<_>>();
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes] {
+    let knots = (0..7)
+        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(f64::from(value)).expect("finite knot"))
+        .collect::<Vec<_>>();
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::RetainedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -1827,12 +1931,18 @@ fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit))) = super::reconstruct_checked_knots(&ctx, &knots, 3, 6) else {
+        let Err(crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit))) =
+            super::reconstruct_checked_knots(&ctx, &knots, 3, 6)
+        else {
             panic!("knot reconstruction must retain the caller refusal");
         };
         assert_eq!(limit.dimension, dimension);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }
 
 mod reconstruction;
+
+const EPS_PERIODIC_PERTURBATION: f64 = 1.0e-8;

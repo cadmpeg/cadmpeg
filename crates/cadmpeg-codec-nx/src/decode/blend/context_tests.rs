@@ -72,13 +72,15 @@ fn closest_pcurve_controls_refuse_one_below_collection_need() {
     use cadmpeg_ir::math::Point2;
 
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("polynomial pcurve"),
     };
     let error = crate::test_support::with_decode_context_over(

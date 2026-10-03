@@ -14,8 +14,8 @@ use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::model_surface_partials_by_id;
+use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal, nurbs_surface_closest_parameter_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials,
@@ -315,7 +315,12 @@ fn offset_candidate_sample_error(
         }
         let u = u0 + (u1 - u0) * 0.5;
         let v = v0 + (v1 - v0) * 0.5;
-        let support_partials = match finite_or_refusal(nurbs_surface_partials(geometry_budget.charges, support, u, v)) {
+        let support_partials = match finite_or_refusal(nurbs_surface_partials(
+            geometry_budget.charges,
+            support,
+            u,
+            v,
+        )) {
             Ok(Some(partials)) => partials,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
@@ -325,7 +330,10 @@ fn offset_candidate_sample_error(
             support_partials.du.cross(support_partials.dv.get()),
         )?;
         let candidate_point = match finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)
+                }),
         ) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
@@ -802,20 +810,31 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 return None;
             }
             let support_point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                    .within_work_slice(geometry_budget, |admission| {
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)
+                    }),
             ) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),
             };
             let candidate_point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                    .within_work_slice(geometry_budget, |admission| {
+                        cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)
+                    }),
             ) {
                 Ok(Some(point)) => point,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),
             };
-            let partials = match finite_or_refusal(nurbs_surface_partials(geometry_budget.charges, support, u, v)) {
+            let partials = match finite_or_refusal(nurbs_surface_partials(
+                geometry_budget.charges,
+                support,
+                u,
+                v,
+            )) {
                 Ok(Some(partials)) => partials,
                 Ok(None) => return None,
                 Err(limit) => return Some(Err(limit)),
@@ -1115,7 +1134,8 @@ fn offset_support_control_hull_excludes_point(
     surface: &SurfaceId,
     point: Point3,
     mut allowance: f64,
- ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let mut current = surface;
     for _ in &index.ir().model.surfaces {
         ctx.charge_work_limit(1, "NX offset control hull carrier scan")?;
@@ -1159,7 +1179,8 @@ fn offset_support_control_hull_excludes_point(
                     || point.z > maximum.z + allowance);
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)? else {
+                let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)?
+                else {
                     return Ok(false);
                 };
                 let ProceduralSurfaceDefinition::Offset(definition) = procedural.definition()
@@ -1251,7 +1272,9 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     let SurfaceGeometry::Procedural { construction, .. } = &carrier.geometry else {
         return Ok(None);
     };
-    let Some(procedural) = index.procedural_surfaces(construction.as_str(), geometry_budget.charges)? else {
+    let Some(procedural) =
+        index.procedural_surfaces(construction.as_str(), geometry_budget.charges)?
+    else {
         return Ok(None);
     };
     let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
@@ -1276,7 +1299,11 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     if !linear_extension
         && match fit_tolerance {
             Some(tolerance) => offset_support_control_hull_excludes_point(
-                index, support, point, tolerance + distance.abs(), geometry_budget.charges,
+                index,
+                support,
+                point,
+                tolerance + distance.abs(),
+                geometry_budget.charges,
             )?,
             None => false,
         }
@@ -1352,7 +1379,18 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                     break;
                 }
             }
-            let Some(position) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
+            let Some(position) = finite_or_refusal(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                    .within_work_slice(geometry_budget, |admission| {
+                        model_surface_point_by_id(
+                            admission,
+                            index,
+                            surface,
+                            parameters.u,
+                            parameters.v,
+                        )
+                    }),
+            )?
             else {
                 return Ok(None);
             };
@@ -1445,7 +1483,9 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
     let SurfaceGeometry::Procedural { construction, .. } = &carrier.geometry else {
         return Ok(None);
     };
-    let Some(procedural) = index.procedural_surfaces(construction.as_str(), geometry_budget.charges)? else {
+    let Some(procedural) =
+        index.procedural_surfaces(construction.as_str(), geometry_budget.charges)?
+    else {
         return Ok(None);
     };
     let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
@@ -1500,10 +1540,17 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             }
             // A non-finite candidate position is measured as a finite one is,
             // and its non-finite distance halves the step.
-            let Some(candidate_position) = (match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, candidate.u, candidate.v)) {
-                Ok(point) => Some(point.get()),
-                Err(failure) => failure.non_finite()?,
-            }) else {
+            let Some(candidate_position) =
+                (match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(
+                    geometry_budget.charges,
+                )
+                .within_work_slice(geometry_budget, |admission| {
+                    model_surface_point_by_id(admission, index, surface, candidate.u, candidate.v)
+                }) {
+                    Ok(point) => Some(point.get()),
+                    Err(failure) => failure.non_finite()?,
+                })
+            else {
                 return Ok(None);
             };
             let candidate_distance = distance(candidate_position);
@@ -1530,7 +1577,12 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             break;
         }
     }
-    let Some(position) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
+    let Some(position) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)
+            }),
+    )?
     else {
         return Ok(None);
     };
@@ -1541,11 +1593,12 @@ pub(super) fn coarse_model_surface_parameters(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
-    domain: ([f64; 2], [f64; 2]),
+    domain: [[f64; 2]; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let (u_domain, v_domain) = domain;
-    let [u_samples, v_samples] = coarse_surface_sample_counts(index, surface, 0, geometry_budget.charges)?;
+    let [u_domain, v_domain] = domain;
+    let [u_samples, v_samples] =
+        coarse_surface_sample_counts(index, surface, 0, geometry_budget.charges)?;
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     for ui in 0..u_samples.get() {
@@ -1587,7 +1640,18 @@ pub(super) fn coarse_model_surface_parameters(
                 return Ok(None);
             };
             let parameters = Point2::new(u.get(), v.get());
-            let Some(candidate) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
+            let Some(candidate) = finite_or_refusal(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                    .within_work_slice(geometry_budget, |admission| {
+                        model_surface_point_by_id(
+                            admission,
+                            index,
+                            surface,
+                            parameters.u,
+                            parameters.v,
+                        )
+                    }),
+            )?
             else {
                 continue;
             };
@@ -1605,7 +1669,8 @@ fn coarse_surface_sample_counts(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     depth: usize,
- ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<[CoarseSampleCount; 2], cadmpeg_core::decode::ResourceLimit> {
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<[CoarseSampleCount; 2], cadmpeg_core::decode::ResourceLimit> {
     let _depth = ctx.enter_nested_limit("NX coarse surface sample depth")?;
     if depth >= 32 {
         return Ok([CoarseSampleCount::unknown(); 2]);
@@ -1624,7 +1689,12 @@ fn coarse_surface_sample_counts(
             };
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    coarse_surface_sample_counts(index, definition_payload.support(), depth + 1, ctx)?
+                    coarse_surface_sample_counts(
+                        index,
+                        definition_payload.support(),
+                        depth + 1,
+                        ctx,
+                    )?
                 }
                 _ => [CoarseSampleCount::unknown(); 2],
             }
@@ -1647,11 +1717,18 @@ fn initial_surface_parameters_with_index_and_budget(
     match &carrier.geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => fit_tolerance.map_or_else(
             || {
-                nurbs_surface_closest_parameter_with_budget(geometry_budget.charges, nurbs, point, seed, geometry_budget)
-                    .map(|parameter| parameter.map(FinitePoint2::get))
+                nurbs_surface_closest_parameter_with_budget(
+                    geometry_budget.charges,
+                    nurbs,
+                    point,
+                    seed,
+                    geometry_budget,
+                )
+                .map(|parameter| parameter.map(FinitePoint2::get))
             },
             |tolerance| {
-                nurbs_surface_parameter_within_tolerance_with_budget(geometry_budget.charges,
+                nurbs_surface_parameter_within_tolerance_with_budget(
+                    geometry_budget.charges,
                     nurbs,
                     point,
                     seed,
@@ -1662,7 +1739,9 @@ fn initial_surface_parameters_with_index_and_budget(
             },
         ),
         SurfaceGeometry::Procedural { construction, .. } => {
-            let Some(procedural) = index.procedural_surfaces(construction.as_str(), geometry_budget.charges)? else {
+            let Some(procedural) =
+                index.procedural_surfaces(construction.as_str(), geometry_budget.charges)?
+            else {
                 return Ok(None);
             };
             let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
@@ -1693,27 +1772,43 @@ fn initial_surface_parameters_with_index_and_budget(
 pub(super) fn surface_parameter_domain_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
- ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<Option<([f64; 2], [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
-let _depth = ctx.enter_nested_limit("NX surface parameter domain depth")?;
-    let Some(carrier) = index.surfaces(surface.as_str(), ctx)? else { return Ok(None); };
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let _depth = ctx.enter_nested_limit("NX surface parameter domain depth")?;
+    let Some(carrier) = index.surfaces(surface.as_str(), ctx)? else {
+        return Ok(None);
+    };
     match &carrier.geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => Ok((|| {
             let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
             let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
-            Some(([*nurbs.u_knots().get(u_degree)?, *nurbs.u_knots().get(nurbs.u_count())?],
-                  [*nurbs.v_knots().get(v_degree)?, *nurbs.v_knots().get(nurbs.v_count())?]))
+            Some([
+                [
+                    *nurbs.u_knots().get(u_degree)?,
+                    *nurbs.u_knots().get(nurbs.u_count())?,
+                ],
+                [
+                    *nurbs.v_knots().get(v_degree)?,
+                    *nurbs.v_knots().get(nurbs.v_count())?,
+                ],
+            ])
         })()),
         SurfaceGeometry::Procedural { construction, .. } => {
-            let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)? else { return Ok(None); };
-            let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else { return Ok(None); };
+            let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)? else {
+                return Ok(None);
+            };
+            let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
+            else {
+                return Ok(None);
+            };
             surface_parameter_domain_with_index(index, definition_payload.support(), ctx)
         }
         SurfaceGeometry::Solved(_) => Ok(None),
     }
 }
 
-fn clamp_surface_parameters(parameters: &mut Point2, domain: Option<([f64; 2], [f64; 2])>) {
-    if let Some((u_domain, v_domain)) = domain {
+fn clamp_surface_parameters(parameters: &mut Point2, domain: Option<[[f64; 2]; 2]>) {
+    if let Some([u_domain, v_domain]) = domain {
         parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
         parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
     }
@@ -1742,7 +1837,7 @@ struct SurfaceDerivative {
     parameters: Point2,
     step: f64,
     along_u: bool,
-    domain: Option<([f64; 2], [f64; 2])>,
+    domain: Option<[[f64; 2]; 2]>,
     periods: [Option<f64>; 2],
 }
 
@@ -1760,7 +1855,12 @@ fn model_surface_derivative(
         periods,
     } = surface_derivative;
 
-    if let Some(partials) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, index, surface, parameters.u, parameters.v)))? {
+    if let Some(partials) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_partials_by_id(admission, index, surface, parameters.u, parameters.v)
+            }),
+    )? {
         return Ok(Some(if along_u { partials.du } else { partials.dv }.get()));
     }
 
@@ -1783,11 +1883,21 @@ fn model_surface_derivative(
     if !width.is_finite() || width == 0.0 {
         return Ok(None);
     }
-    let Some(first) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, before.u, before.v)))?
+    let Some(first) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_point_by_id(admission, index, surface, before.u, before.v)
+            }),
+    )?
     else {
         return Ok(None);
     };
-    let Some(second) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, after.u, after.v)))?
+    let Some(second) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_point_by_id(admission, index, surface, after.u, after.v)
+            }),
+    )?
     else {
         return Ok(None);
     };
@@ -1802,19 +1912,29 @@ fn model_surface_point_and_derivatives(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     parameters: Point2,
-    domain: Option<([f64; 2], [f64; 2])>,
+    domain: Option<[[f64; 2]; 2]>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<(Point3, Vector3, Vector3)>, cadmpeg_core::decode::ResourceLimit> {
-    if let Some(partials) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, index, surface, parameters.u, parameters.v)))? {
+    if let Some(partials) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_partials_by_id(admission, index, surface, parameters.u, parameters.v)
+            }),
+    )? {
         let partials = partials.into_raw();
         return Ok(Some((partials.point, partials.du, partials.dv)));
     }
-    let Some(position) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)))?
+    let Some(position) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_point_by_id(admission, index, surface, parameters.u, parameters.v)
+            }),
+    )?
     else {
         return Ok(None);
     };
-    let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
-    let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
+    let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain[0]));
+    let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain[1]));
     let Some(du) = model_surface_derivative(
         index,
         surface,
@@ -1945,7 +2065,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         let geometry = &carrier.geometry;
         match geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                nurbs_surface_parameter_within_tolerance_with_budget(geometry_budget.charges,
+                nurbs_surface_parameter_within_tolerance_with_budget(
+                    geometry_budget.charges,
                     nurbs,
                     point,
                     seed,
@@ -2005,8 +2126,14 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     };
     let first = [first0, first1];
     let space = IntersectionParameterSpace {
-        domains: [surface_parameter_domain_with_index(index, surfaces[0], geometry_budget.charges)?, surface_parameter_domain_with_index(index, surfaces[1], geometry_budget.charges)?],
-        periods: [surface_parameter_periods_with_index(index, surfaces[0], geometry_budget.charges)?, surface_parameter_periods_with_index(index, surfaces[1], geometry_budget.charges)?],
+        domains: [
+            surface_parameter_domain_with_index(index, surfaces[0], geometry_budget.charges)?,
+            surface_parameter_domain_with_index(index, surfaces[1], geometry_budget.charges)?,
+        ],
+        periods: [
+            surface_parameter_periods_with_index(index, surfaces[0], geometry_budget.charges)?,
+            surface_parameter_periods_with_index(index, surfaces[1], geometry_budget.charges)?,
+        ],
     };
     let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
     let first_chord = Vector3::new(
@@ -2034,7 +2161,12 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     else {
         return Ok(None);
     };
-    let Some(first_point) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[0], current[0], current[1])))?
+    let Some(first_point) = finite_or_refusal(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            .within_work_slice(geometry_budget, |admission| {
+                model_surface_point_by_id(admission, index, surfaces[0], current[0], current[1])
+            }),
+    )?
     else {
         return Ok(None);
     };
@@ -2120,7 +2252,18 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         else {
             return Ok(None);
         };
-        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[0], corrected[0], corrected[1])))?
+        let Some(point) = finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    model_surface_point_by_id(
+                        admission,
+                        index,
+                        surfaces[0],
+                        corrected[0],
+                        corrected[1],
+                    )
+                }),
+        )?
         else {
             return Ok(None);
         };
@@ -2162,7 +2305,8 @@ pub(super) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -
 pub(super) fn surface_parameter_periods_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
- ctx: &cadmpeg_core::decode::DecodeContext<'_>, ) -> Result<[Option<f64>; 2], cadmpeg_core::decode::ResourceLimit> {
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<[Option<f64>; 2], cadmpeg_core::decode::ResourceLimit> {
     let mut current = surface;
     for _ in &index.ir().model.surfaces {
         ctx.charge_work_limit(1, "NX surface parameter period carrier scan")?;
@@ -2204,7 +2348,8 @@ pub(super) fn surface_parameter_periods_with_index(
                 ]);
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)? else {
+                let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)?
+                else {
                     return Ok([None, None]);
                 };
                 let ProceduralSurfaceDefinition::Offset(definition) = procedural.definition()
@@ -2248,11 +2393,33 @@ fn correct_intersection_parameters(
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
-        let Some(first) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[0], corrected[0], corrected[1])))?
+        let Some(first) = finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    model_surface_point_by_id(
+                        admission,
+                        index,
+                        surfaces[0],
+                        corrected[0],
+                        corrected[1],
+                    )
+                }),
+        )?
         else {
             return Ok(None);
         };
-        let Some(second) = finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surfaces[1], corrected[2], corrected[3])))?
+        let Some(second) = finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    model_surface_point_by_id(
+                        admission,
+                        index,
+                        surfaces[1],
+                        corrected[2],
+                        corrected[3],
+                    )
+                }),
+        )?
         else {
             return Ok(None);
         };
@@ -2293,7 +2460,7 @@ fn correct_intersection_parameters(
 
 #[derive(Clone, Copy)]
 struct IntersectionParameterSpace {
-    domains: [Option<([f64; 2], [f64; 2])>; 2],
+    domains: [Option<[[f64; 2]; 2]>; 2],
     periods: [[Option<f64>; 2]; 2],
 }
 
@@ -2373,9 +2540,9 @@ fn intersection_parameter_jacobian(
     let mut derivatives = [[Vector3::new(0.0, 0.0, 0.0); 2]; 2];
     for side in 0..2 {
         let u_step =
-            parameter_derivative_step(pairs[side].u, space.domains[side].map(|value| value.0));
+            parameter_derivative_step(pairs[side].u, space.domains[side].map(|value| value[0]));
         let v_step =
-            parameter_derivative_step(pairs[side].v, space.domains[side].map(|value| value.1));
+            parameter_derivative_step(pairs[side].v, space.domains[side].map(|value| value[1]));
         let Some(du) = model_surface_derivative(
             index,
             surfaces[side],
@@ -2427,10 +2594,10 @@ fn clamp_intersection_parameters(parameters: &mut [f64; 4], space: IntersectionP
 
 fn clamp_surface_parameters_with_periods(
     parameters: &mut Point2,
-    domain: Option<([f64; 2], [f64; 2])>,
+    domain: Option<[[f64; 2]; 2]>,
     periods: [Option<f64>; 2],
 ) {
-    if let Some((u_domain, v_domain)) = domain {
+    if let Some([u_domain, v_domain]) = domain {
         if periods[0].is_none() {
             parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
         }
@@ -2657,7 +2824,8 @@ pub(super) fn intersection_side(
     };
     let pcurve = match lanes {
         Some((control_points, knots)) => Some(PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                ctx,
                 1,
                 knots,
                 control_points,
@@ -2721,7 +2889,8 @@ pub(super) fn normalize_pcurve_parameters(
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
-            let Some(converted_origin) = surface_parameters(ctx, surface, [origin.u, origin.v])? else {
+            let Some(converted_origin) = surface_parameters(ctx, surface, [origin.u, origin.v])?
+            else {
                 return Ok(None);
             };
             let Some(converted_end) = surface_parameters(ctx, surface, [end.u, end.v])? else {
@@ -2742,7 +2911,12 @@ pub(super) fn normalize_pcurve_parameters(
             let mut storage = ctx.reserve_scoped(0, "nx normalized pcurve controls")?;
             let mut converted = Vec::new();
             let count = nurbs.pole_rows().count();
-            ctx.reserve_scoped_vec(&mut storage, &mut converted, count, "nx normalized pcurve controls")?;
+            ctx.reserve_scoped_vec(
+                &mut storage,
+                &mut converted,
+                count,
+                "nx normalized pcurve controls",
+            )?;
             for ordinal in 0..count {
                 ctx.charge_work(1, "nx normalized pcurve control conversion")?;
                 let Some(point) = nurbs.pole_rows().point_at(ordinal) else {
@@ -2789,9 +2963,12 @@ mod tests {
         let mut ir = CadIr::empty();
         let surface = SurfaceId::mint("test:model:surface#unknown").unwrap();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: surface.clone(), geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }), source_object: None,
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         for depth in [false, true] {
             let mut policy = DecodePolicy::service();
             let dimension = if depth {
@@ -2803,26 +2980,40 @@ mod tests {
             };
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let first = super::surface_parameter_domain_with_index(&index, &surface, &ctx).unwrap_err();
+            let first =
+                super::surface_parameter_domain_with_index(&index, &surface, &ctx).unwrap_err();
             assert_eq!(first.dimension, dimension);
             assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-            assert_eq!(super::surface_parameter_domain_with_index(&index, &surface, &ctx).unwrap_err(), first);
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            assert_eq!(
+                super::surface_parameter_domain_with_index(&index, &surface, &ctx).unwrap_err(),
+                first
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+            );
         }
     }
 
     #[test]
     fn support_parameter_surface_walk_admits_every_visit_without_recursion() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_ir::geometry::{PlacedSurface, analytic::PlaneSurface};
+        use cadmpeg_ir::geometry::{analytic::PlaneSurface, PlacedSurface};
         use cadmpeg_ir::math::Vector3;
         use cadmpeg_ir::transform::Transform;
 
-        let mut solved = SolvedSurfaceGeometry::Plane(PlaneSurface::try_new(Point3::new(0., 0., 0.),
-            Vector3::new(0., 0., 1.), Vector3::new(1., 0., 0.)).expect("plane"));
+        let mut solved = SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.),
+            )
+            .expect("plane"),
+        );
         for _ in 0..4 {
-            solved = SolvedSurfaceGeometry::Transformed(PlacedSurface::try_new(Box::new(solved),
-                Transform::identity()).expect("placed surface"));
+            solved = SolvedSurfaceGeometry::Transformed(
+                PlacedSurface::try_new(Box::new(solved), Transform::identity())
+                    .expect("placed surface"),
+            );
         }
         let surface = SurfaceGeometry::Solved(solved);
         for cap in 0..5 {
@@ -2830,10 +3021,13 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit = super::surface_parameters(&ctx, &surface, [2., 3.]).expect_err("every layer requires work");
+            let limit = super::surface_parameters(&ctx, &surface, [2., 3.])
+                .expect_err("every layer requires work");
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(limit.operation, "nx support parameter surface visit");
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -2843,27 +3037,50 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(super::surface_parameters(&ctx, &surface, [2., 3.]).expect("exact visits")
-            .expect("finite point").get(), Point2::new(2000., 3000.));
-        ctx.finish_session().expect("constant stack and zero storage");
+        assert_eq!(
+            super::surface_parameters(&ctx, &surface, [2., 3.])
+                .expect("exact visits")
+                .expect("finite point")
+                .get(),
+            Point2::new(2000., 3000.)
+        );
+        ctx.finish_session()
+            .expect("constant stack and zero storage");
     }
 
     #[test]
     fn pcurve_parameter_normalization_preserves_refusals_and_releases_scratch() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
         use cadmpeg_ir::geometry::analytic::PlaneSurface;
+        use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
         use cadmpeg_ir::math::Vector3;
 
         let setup = cadmpeg_test_support::service_decode_context();
-        let original = PcurveGeometry::Nurbs { nurbs: PcurveNurbs::from_lanes(&setup,
-            1, vec![0., 0., 1., 1.], vec![Point2::new(1., 2.), Point2::new(3., 4.)],
-            Some(vec![2., 1.]), false).expect("admission").expect("curve") };
+        let original = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                &setup,
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point2::new(1., 2.), Point2::new(3., 4.)],
+                Some(vec![2., 1.]),
+                false,
+            )
+            .expect("admission")
+            .expect("curve"),
+        };
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            PlaneSurface::try_new(Point3::new(0., 0., 0.), Vector3::new(0., 0., 1.),
-                Vector3::new(1., 0., 0.)).expect("plane")));
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+            PlaneSurface::try_new(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.),
+            )
+            .expect("plane"),
+        ));
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             if dimension == ResourceDimension::MaterializedBytes {
@@ -2873,11 +3090,16 @@ mod tests {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut edited = original.clone();
-            let Err(CodecError::ResourceLimit(limit)) = super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
-                else { panic!("normalization requires scoped storage"); };
+            let Err(CodecError::ResourceLimit(limit)) =
+                super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
+            else {
+                panic!("normalization requires scoped storage");
+            };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(edited, original);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
         for cap in 0..6 {
             let arena = DecodeArena::new();
@@ -2885,14 +3107,26 @@ mod tests {
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut edited = original.clone();
-            let Err(CodecError::ResourceLimit(limit)) = super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
-                else { panic!("normalization requires both passes"); };
+            let Err(CodecError::ResourceLimit(limit)) =
+                super::normalize_pcurve_parameters(&ctx, &mut edited, &surface)
+            else {
+                panic!("normalization requires both passes");
+            };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, if cap >= 4 { "IR pcurve pole replacement" }
-                else if cap % 2 == 0 { "nx normalized pcurve control conversion" }
-                else { "nx support parameter surface visit" });
+            assert_eq!(
+                limit.operation,
+                if cap >= 4 {
+                    "IR pcurve pole replacement"
+                } else if cap % 2 == 0 {
+                    "nx normalized pcurve control conversion"
+                } else {
+                    "nx support parameter surface visit"
+                }
+            );
             assert_eq!(edited, original);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            );
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -2902,14 +3136,27 @@ mod tests {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut edited = original.clone();
-        assert_eq!(super::normalize_pcurve_parameters(&ctx, &mut edited, &surface).expect("exact work"), Some(()));
-        let PcurveGeometry::Nurbs { nurbs } = edited else { panic!("NURBS carrier"); };
-        assert_eq!(nurbs.control_points(), vec![cadmpeg_ir::units::FinitePoint2::new(Point2::new(1000., 2000.)).unwrap(),
-            cadmpeg_ir::units::FinitePoint2::new(Point2::new(3000., 4000.)).unwrap()]);
+        assert_eq!(
+            super::normalize_pcurve_parameters(&ctx, &mut edited, &surface).expect("exact work"),
+            Some(())
+        );
+        let PcurveGeometry::Nurbs { nurbs } = edited else {
+            panic!("NURBS carrier");
+        };
+        assert_eq!(
+            nurbs.control_points(),
+            vec![
+                cadmpeg_ir::units::FinitePoint2::new(Point2::new(1000., 2000.)).unwrap(),
+                cadmpeg_ir::units::FinitePoint2::new(Point2::new(3000., 4000.)).unwrap()
+            ]
+        );
         assert_eq!(nurbs.pole_rows().weights(), Some(vec![2., 1.]));
-        let reuse = ctx.reserve_scoped(4096, "normalization scratch reuse").expect("scratch released");
+        let reuse = ctx
+            .reserve_scoped(4096, "normalization scratch reuse")
+            .expect("scratch released");
         drop(reuse);
-        ctx.finish_session().expect("exact work and temporary storage");
+        ctx.finish_session()
+            .expect("exact work and temporary storage");
     }
 
     #[test]
@@ -2924,7 +3171,8 @@ mod tests {
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                    NurbsSurface::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         NurbsSurfaceAxis::new(
                             1,
                             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
@@ -2939,12 +3187,16 @@ mod tests {
                             None,
                         ),
                         false,
-                    ).expect("fixture constructor admission")
+                    )
+                    .expect("fixture constructor admission")
                     .expect("finite wide surface"),
                 )),
                 source_object: None,
             });
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
+                &ir,
+                cadmpeg_ir::index::StandardIndex,
+            );
             let geometry_budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -2953,7 +3205,7 @@ mod tests {
                 &index,
                 &surface,
                 Point3::new(1.0, 0.5, 0.0),
-                ([-f64::MAX, f64::MAX], [0.0, 1.0]),
+                [[-f64::MAX, f64::MAX], [0.0, 1.0]],
                 &geometry_budget,
             )
             .expect("evaluator allocation succeeds")
@@ -2995,14 +3247,27 @@ mod tests {
         let absent = SurfaceId::mint("test:model:entity#synthetic:absent-surface")
             .expect("identity grammar");
         let ir = CadIr::empty();
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
 
         assert_eq!(
-            coarse_surface_sample_counts(&index, &absent, 0, &cadmpeg_test_support::service_decode_context()).unwrap(),
+            coarse_surface_sample_counts(
+                &index,
+                &absent,
+                0,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .unwrap(),
             [CoarseSampleCount::unknown(); 2]
         );
         assert_eq!(
-            coarse_surface_sample_counts(&index, &absent, 32, &cadmpeg_test_support::service_decode_context()).unwrap(),
+            coarse_surface_sample_counts(
+                &index,
+                &absent,
+                32,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .unwrap(),
             [CoarseSampleCount::unknown(); 2]
         );
     }
@@ -3012,7 +3277,8 @@ mod tests {
         crate::test_support::with_decode_context(|geometry_ctx| {
             let coordinates = [0.0, 0.5, 1.0];
             let square_controls = [0.0, 0.0, 1.0];
-            let support = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            let support = NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -3040,21 +3306,26 @@ mod tests {
                     None,
                 ),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .expect("valid offset support");
             let mut candidate = support.clone();
             candidate
-                .try_map_control_points(|index, pole| {
-                    let mut pole = pole.get();
-                    if index == 4 {
-                        pole.z += 1.0;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+                .try_map_control_points(
+                    |index, pole| {
+                        let mut pole = pole.get();
+                        if index == 4 {
+                            pole.z += 1.0;
+                        }
+                        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
+                    },
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("pole edit admission")
                 .expect("finite offset-support test pole edit");
             let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
             let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
@@ -3085,7 +3356,8 @@ mod tests {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -3105,25 +3377,31 @@ mod tests {
                             .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
                     ),
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("valid rational hull support"),
             )),
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
 
         assert!(offset_support_control_hull_excludes_point(
             &index,
             &support,
             Point3::new(100.0, 0.5, 0.0),
             1.1,
-         &cadmpeg_test_support::service_decode_context()).unwrap());
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .unwrap());
         assert!(!offset_support_control_hull_excludes_point(
             &index,
             &support,
             Point3::new(2.0, 0.5, 0.0),
             1.1,
-         &cadmpeg_test_support::service_decode_context()).unwrap());
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .unwrap());
     }
 
     #[test]
@@ -3141,7 +3419,8 @@ mod tests {
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                    NurbsSurface::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -3160,7 +3439,8 @@ mod tests {
                             None,
                         ),
                         false,
-                    ).expect("fixture constructor admission")
+                    )
+                    .expect("fixture constructor admission")
                     .expect("valid linear support"),
                 )),
                 source_object: None,
@@ -3195,18 +3475,29 @@ mod tests {
                 ));
 
             let fit_tolerance = f64::EPSILON.sqrt();
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
+                &ir,
+                cadmpeg_ir::index::StandardIndex,
+            );
             let target = Point3::new(3.0, 0.25, 1.0);
-            let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &offset, 3.0, 0.25)
-                .expect("linear offset evaluation")
-                .get();
+            let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &index,
+                &offset,
+                3.0,
+                0.25,
+            )
+            .expect("linear offset evaluation")
+            .get();
             assert!(Point3::distance(evaluated, target) <= fit_tolerance);
             assert!(!offset_support_control_hull_excludes_point(
                 &index,
                 &offset,
                 target,
                 fit_tolerance,
-             &cadmpeg_test_support::service_decode_context()).unwrap());
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .unwrap());
             let parameters = offset_surface_parameters_with_tolerance(
                 geometry_ctx,
                 &ir,
@@ -3255,7 +3546,7 @@ mod tests {
                 &index,
                 &offset,
                 remote,
-                ([0., 1.], [0., 1.]),
+                [[0., 1.], [0., 1.]],
                 &geometry_budget,
             )
             .expect("evaluator allocation succeeds")
@@ -3270,17 +3561,24 @@ mod tests {
                 panic!("the test support is a NURBS plane");
             };
             support
-                .try_map_control_points(|_, point| {
-                    let mut point = point.get();
-                    point.z = -1.0;
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+                .try_map_control_points(
+                    |_, point| {
+                        let mut point = point.get();
+                        point.z = -1.0;
+                        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
+                    },
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("pole edit admission")
                 .expect("finite translated support");
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero, cadmpeg_ir::index::StandardIndex);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
+                &near_zero,
+                cadmpeg_ir::index::StandardIndex,
+            );
             let target = Point3::new(3., 0.25, 1e-200);
             assert!(offset_surface_parameters_with_tolerance(
                 geometry_ctx,
@@ -3332,7 +3630,8 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
         let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
-        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             axis.clone(),
             axis,
             NurbsSurfaceLanes::new(
@@ -3343,7 +3642,8 @@ mod tests {
                 None,
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -3376,7 +3676,8 @@ mod tests {
         crate::test_support::with_decode_context(|geometry_ctx| {
             for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
                 let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
-                let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                let surface = NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     axis.clone(),
                     axis,
                     NurbsSurfaceLanes::new(
@@ -3387,7 +3688,8 @@ mod tests {
                         Some(vec![vec![weight, weight], vec![weight, weight]]),
                     ),
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap();
                 let geometry_budget = super::GeometryWorkBudget::from_context(
                     geometry_ctx,
@@ -3437,9 +3739,15 @@ mod tests {
                 })
                 .collect();
             let [u, v] = axes;
-            let surface =
-                NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), u, v, NurbsSurfaceLanes::new(points, None), false).expect("fixture constructor admission")
-                    .expect("a degree-zero axis can contain a single pole");
+            let surface = NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                u,
+                v,
+                NurbsSurfaceLanes::new(points, None),
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("a degree-zero axis can contain a single pole");
             assert!(super::translation_net_normal(&surface).is_none());
         }
     }
@@ -3532,9 +3840,15 @@ mod tests {
             let axis_x = 1.701e308;
             let radius = 1.0e307;
             let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
-            let first_candidate =
-                cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, offset, -0.2, 0.0);
+            let index =
+                cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
+            let first_candidate = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &index,
+                offset,
+                -0.2,
+                0.0,
+            );
             assert!(
                 matches!(
                     first_candidate,

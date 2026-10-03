@@ -388,13 +388,15 @@ fn linear_boundary_path_refuses_collection_limit_before_append() {
 #[test]
 fn pcurve_bounds_keep_a_wide_finite_knot_span() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     assert!(pcurve_within_declared_bounds(
@@ -408,13 +410,15 @@ fn pcurve_bounds_keep_a_wide_finite_knot_span() {
 #[test]
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.2), Some(0.8), None, None]);
@@ -436,7 +440,8 @@ fn pcurve_bounds_use_the_active_nurbs_subrange() {
 #[test]
 fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
             vec![
@@ -449,7 +454,8 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
             ],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.0), Some(1.0), None, None]);
@@ -471,13 +477,15 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
 #[test]
 fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("valid test pcurve"),
     };
 
@@ -1029,7 +1037,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         ),
         [0.0, 1.0],
     )];
-    let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     assert!(!crate::test_support::with_service_context(
         &[],
         |ctx| super::edge_range_matches_curve(
@@ -1111,7 +1119,7 @@ fn trimmed_pcurve_mapping_refuses_before_an_absent_surface_candidate() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let ir = CadIr::empty();
-    let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let surface_id = SurfaceId::mint("test:model:surface#absent").expect("identity grammar");
     let pcurves = [(
         PcurveGeometry::Line(
@@ -1695,12 +1703,20 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
                 .expect("coedge pcurve resolves");
             (
-                cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0)
-                    .expect("start evaluates")
-                    .get(),
-                cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 1.0)
-                    .expect("end evaluates")
-                    .get(),
+                cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &pcurve.geometry,
+                    0.0,
+                )
+                .expect("start evaluates")
+                .get(),
+                cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &pcurve.geometry,
+                    1.0,
+                )
+                .expect("end evaluates")
+                .get(),
             )
         })
         .collect::<Vec<_>>();
@@ -1828,9 +1844,13 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
                 .iter()
                 .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
                 .unwrap();
-            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0)
-                .unwrap()
-                .u
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                0.0,
+            )
+            .unwrap()
+            .u
         })
         .collect::<Vec<_>>();
     assert!((seam_u[0] - 0.0).abs() < 1.0e-12);

@@ -157,13 +157,15 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::nurbs(
-                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     degree,
                     knots,
                     control_points,
                     None,
                     false,
-                ).expect("fixture pcurve construction admission")
+                )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         )
@@ -215,13 +217,17 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
             };
             let last = curve.pole_rows().count().checked_sub(1);
             curve
-                .try_map_control_points(|pole_index, point| {
-                    let mut point = point.get();
-                    if Some(pole_index) == last {
-                        point.u += 0.01;
-                    }
-                    cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-                }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+                .try_map_control_points(
+                    |pole_index, point| {
+                        let mut point = point.get();
+                        if Some(pole_index) == last {
+                            point.u += 0.01;
+                        }
+                        cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+                    },
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("pole edit admission")
                 .unwrap();
         };
         definition.try_into()
@@ -244,13 +250,24 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
 
 #[test]
 fn counted_offset_preserves_fitted_frame_work_refusal() {
-    let entity = |key, v| SketchEntity::new(
-        format!("test:model:entity#{key}").try_into().unwrap(),
-        "test:model:sketch#owner".try_into().unwrap(),
-        SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
-            1, vec![0.0, 0.0, 1.0, 1.0], vec![Point2::new(0.0, v), Point2::new(1.0, v)], None, false,
-        ).expect("fixture pcurve construction admission").unwrap()),
-    );
+    let entity = |key, v| {
+        SketchEntity::new(
+            format!("test:model:entity#{key}").try_into().unwrap(),
+            "test:model:sketch#owner".try_into().unwrap(),
+            SketchGeometry::nurbs(
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, v), Point2::new(1.0, v)],
+                    None,
+                    false,
+                )
+                .expect("fixture pcurve construction admission")
+                .unwrap(),
+            ),
+        )
+    };
     let source = entity("source", 0.0);
     let result = entity("result", 1.0);
     let entities = HashMap::from([(1, &source), (2, &result)]);
@@ -258,10 +275,20 @@ fn counted_offset_preserves_fitted_frame_work_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Some(Err(cadmpeg_core::CodecError::ResourceLimit(limit))) = exact_counted_offset(&ctx, &loci, &entities, &HashMap::new(), 0.0) else { panic!("fitted offset must preserve refusal"); };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Some(Err(cadmpeg_core::CodecError::ResourceLimit(limit))) =
+        exact_counted_offset(&ctx, &loci, &entities, &HashMap::new(), 0.0)
+    else {
+        panic!("fitted offset must preserve refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -436,13 +463,15 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         })
         .unwrap(),
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
-            curve: cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            curve: cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(70.0, -5.0, 3.0), Point3::new(74.0, -2.0, 6.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap()
             .try_into()
             .unwrap(),
@@ -484,7 +513,11 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                 entity: entity.id().clone(),
                 reversed: false,
             })
-            .collect(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+            .collect(),
+        &cadmpeg_test_support::service_decode_context(),
+        "spatial profile uniqueness",
+    )
+    .expect("fixture collection admission")
     .unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),

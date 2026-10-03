@@ -96,7 +96,8 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
         for id in ids {
             ir.model.points.push(point(&id));
         }
-        ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
         ir
     })
 }
@@ -125,38 +126,55 @@ fn insert_free_vertex_shell(
     region_id: &str,
     shell_id: &str,
 ) {
-    draft.insert(point(point_id), &cadmpeg_test_support::service_decode_context()).unwrap();
     draft
-        .insert(Vertex {
-            id: VertexId::mint(vertex_id).expect("valid identity"),
-            point: PointId::mint(point_id).expect("valid identity"),
-            tolerance: None,
-        }, &cadmpeg_test_support::service_decode_context())
+        .insert(
+            point(point_id),
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
     draft
-        .insert(Body {
-            id: BodyId::mint(body_id).expect("valid identity"),
-            kind: BodyKind::Wire,
-            regions: vec![RegionId::mint(region_id).expect("valid identity")],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }, &cadmpeg_test_support::service_decode_context())
+        .insert(
+            Vertex {
+                id: VertexId::mint(vertex_id).expect("valid identity"),
+                point: PointId::mint(point_id).expect("valid identity"),
+                tolerance: None,
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
     draft
-        .insert(Region {
-            id: RegionId::mint(region_id).expect("valid identity"),
-            body: BodyId::mint(body_id).expect("valid identity"),
-            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-        }, &cadmpeg_test_support::service_decode_context())
+        .insert(
+            Body {
+                id: BodyId::mint(body_id).expect("valid identity"),
+                kind: BodyKind::Wire,
+                regions: vec![RegionId::mint(region_id).expect("valid identity")],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
     draft
-        .insert(Shell::with_free_vertex(
-            ShellId::mint(shell_id).expect("valid identity"),
-            RegionId::mint(region_id).expect("valid identity"),
-            VertexId::mint(vertex_id).expect("valid identity"),
-        ), &cadmpeg_test_support::service_decode_context())
+        .insert(
+            Region {
+                id: RegionId::mint(region_id).expect("valid identity"),
+                body: BodyId::mint(body_id).expect("valid identity"),
+                shells: vec![ShellId::mint(shell_id).expect("valid identity")],
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
+    draft
+        .insert(
+            Shell::with_free_vertex(
+                ShellId::mint(shell_id).expect("valid identity"),
+                RegionId::mint(region_id).expect("valid identity"),
+                VertexId::mint(vertex_id).expect("valid identity"),
+            ),
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .unwrap();
 }
 

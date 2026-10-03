@@ -125,7 +125,8 @@ fn subtype_definition_index_refuses_collection_limit_before_construction() {
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
         vec![
@@ -151,7 +152,8 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
             1.0,
         ]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -193,17 +195,21 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     );
     let mut approximate = exact_circle_directrix();
     approximate
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 3 {
-                point.x += 1.0e-5;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 3 {
+                    point.x += 1.0e-5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &approximate).is_none());
 }
@@ -253,7 +259,8 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
             )
         })
         .unzip();
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
@@ -261,7 +268,8 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         control_points,
         Some(weights),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -282,18 +290,22 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
             .collect()
     });
     {
-        let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             scaled.pole_rows().raw_points(),
             scaled_weights,
-        ).expect("fixture pole pairing admission")
+        )
+        .expect("fixture pole pairing admission")
         .expect("scaled weights are finite and non-zero");
         edit::replace(&mut scaled, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 replacement,
                 previous.periodic(),
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -315,17 +327,21 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 5 {
-                point.x += 1.0e-5;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 5 {
+                    point.x += 1.0e-5;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_none());
 }
@@ -349,13 +365,15 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
 }
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         points,
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -409,17 +427,21 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         unreachable!()
     };
     spine
-        .try_map_control_points(|index, point| {
-            let mut point = point.get();
-            if index == 1 {
-                point.x = 2.1;
-            }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+        .try_map_control_points(
+            |index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.x = 2.1;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     assert!(analytic_procedural_surface(&resource_ctx, &definition).is_none());
 }
@@ -435,17 +457,21 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     .expect("test decode context");
     let mut circle = exact_circle_directrix();
     circle
-        .try_map_control_points(|_, point| {
-            let mut point = point.get();
-            point.x -= 2.0;
-            point.y -= 3.0;
-            point.z -= 3.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+        .try_map_control_points(
+            |_, point| {
+                let mut point = point.get();
+                point.x -= 2.0;
+                point.y -= 3.0;
+                point.z -= 3.0;
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("pole edit admission")
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
@@ -972,11 +998,13 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
                         .expect("identity grammar")],
                     Vec::new(),
-                ).expect("fixture ring admission")
+                )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         }],
@@ -1299,7 +1327,8 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -1308,7 +1337,8 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         ],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
         pcurve_ranges_on_domain(&candidate, Some(&edge)),
@@ -1537,7 +1567,8 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
     .expect("test decode context");
     for curve in [exact_circle_directrix(), degree_elevated_circle()] {
         for scale in [1e-200, 1.0, 1e200] {
-            let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 curve.degree(),
                 curve.knots().to_vec(),
                 curve.pole_rows().raw_points(),
@@ -1550,20 +1581,23 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
                         .collect(),
                 ),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap();
             assert!(rational_four_arc_circle(&resource_ctx, &rescaled).is_some());
         }
     }
     let curve = exact_circle_directrix();
     for scale in [1e-200, 1.0, 1e200] {
-        let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             curve.degree(),
             curve.knots().to_vec(),
             curve.pole_rows().raw_points(),
             Some(vec![scale; 9]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
         assert!(rational_four_arc_circle(&resource_ctx, &polynomial).is_none());
     }

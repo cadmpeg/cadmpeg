@@ -4,14 +4,30 @@
 macro_rules! rewrite_scalar {
     ($type:ty) => {
         impl crate::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value<
+                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+            >(
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _value: &mut serde_json::Value,
+                _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+            ) -> Result<(), cadmpeg_core::CodecError> {
                 ctx.charge_work(1, "walk native identity scalar")
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+            fn visit_identity_references(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+            ) -> Result<(), cadmpeg_core::CodecError> {
                 ctx.charge_work(1, "walk typed reference scalar")
             }
-            fn rewrite_identities<RewriteMapFn>(self, rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>, _identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError>
-            where RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities<RewriteMapFn>(
+                self,
+                rewrite_context: &cadmpeg_core::decode::DecodeContext<'_>,
+                _identity_map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+            ) -> Result<Self, cadmpeg_core::CodecError>
+            where
+                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+            {
                 rewrite_context.charge_work(1, "typed rewrite value")?;
                 Ok(self)
             }

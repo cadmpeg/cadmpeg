@@ -187,8 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let second = FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
         let canonical = first.ir().to_canonical_json()?;
         let deterministic = canonical == second.ir().to_canonical_json()?;
-        let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new())
-            .map_err(cadmpeg_core::CodecError::from)?;
+        let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new())?;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
         let native = FcstdCodec.validate_native(&ctx, first.ir())?;

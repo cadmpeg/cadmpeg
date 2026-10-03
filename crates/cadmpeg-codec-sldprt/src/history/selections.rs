@@ -208,9 +208,11 @@ pub(crate) fn bind_topology_selections(
             if let Some(outputs) =
                 resolve_ids(ctx, scope, &body_ids, cadmpeg_ir::ids::BodyId::as_str)?
             {
-                feature.evaluation.set_outputs(
-                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)?,
-                );
+                feature
+                    .evaluation
+                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                        outputs, ctx,
+                    )?);
             }
         }
         let source_properties = &feature.source_properties;
@@ -451,15 +453,17 @@ pub(crate) fn bind_topology_selections(
                         }) => {
                             let empty = cadmpeg_ir::features::CombineOperands::new(
                                 BodySelection::Unresolved,
-                                BodySelection::Unresolved, ctx,
+                                BodySelection::Unresolved,
+                                ctx,
                             )?
                             .map_err(CodecError::malformed)?;
                             let (mut target, mut tools) =
                                 std::mem::replace(operands, empty).into_parts();
                             resolve_body_selection(ctx, &mut target, &body_ids)?;
                             resolve_body_selection(ctx, &mut tools, &body_ids)?;
-                            *operands = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx,)?
-                                .map_err(CodecError::malformed)?;
+                            *operands =
+                                cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?
+                                    .map_err(CodecError::malformed)?;
                         }
                         FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                             targets,
@@ -504,7 +508,8 @@ pub(crate) fn bind_topology_selections(
                         }) => {
                             let empty = cadmpeg_ir::features::ReplaceFaceOperands::new(
                                 FaceSelection::Unresolved,
-                                FaceSelection::Unresolved, ctx,
+                                FaceSelection::Unresolved,
+                                ctx,
                             )?
                             .map_err(CodecError::malformed)?;
                             let (mut targets, mut replacements) =
@@ -513,7 +518,8 @@ pub(crate) fn bind_topology_selections(
                             resolve_face(&mut replacements)?;
                             *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(
                                 targets,
-                                replacements, ctx,
+                                replacements,
+                                ctx,
                             )?
                             .map_err(CodecError::malformed)?;
                         }
@@ -862,15 +868,13 @@ fn resolve_body_selection(
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let BodySelection::Native(native) = selection {
         let bodies = match resolve_ids(ctx, native, ids, cadmpeg_ir::ids::BodyId::as_str)? {
-            Some(bodies) => {
-                match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
-                    Ok(bodies) => Some(bodies),
-                    Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
-                        return Err(error.into())
-                    }
-                    Err(_) => None,
+            Some(bodies) => match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
+                Ok(bodies) => Some(bodies),
+                Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
+                    return Err(error.into())
                 }
-            }
+                Err(_) => None,
+            },
             None => None,
         };
         if let Some(bodies) = bodies {

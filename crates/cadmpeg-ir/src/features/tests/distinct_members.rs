@@ -10,10 +10,8 @@ fn insert_for_decode_refuses_before_allocation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut members = DistinctMembers::default();
-    assert!(
-        matches!(members.insert(&ctx, 1_u8, "test member insert"),
-        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
-    );
+    assert!(matches!(members.insert(&ctx, 1_u8, "test member insert"),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems));
     assert_eq!(members.0.capacity(), 0);
     assert!(members.is_empty());
 }
@@ -65,7 +63,6 @@ fn reserve_for_decode_service_profile() {
     assert!(members.is_empty());
 }
 
-
 #[test]
 fn member_insert_admits_only_the_comparisons_it_performs() {
     use std::cell::Cell;
@@ -80,7 +77,10 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
     }
     for allowance in 0..=2 {
         let comparisons = Rc::new(Cell::new(0));
-        let mut members = DistinctMembers(vec![Counted(1, comparisons.clone()), Counted(2, comparisons.clone())]);
+        let mut members = DistinctMembers(vec![
+            Counted(1, comparisons.clone()),
+            Counted(2, comparisons.clone()),
+        ]);
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
         policy.limits.max_materialized_bytes = 0;
@@ -93,20 +93,32 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
         assert_eq!(comparisons.get(), allowance);
         assert_eq!(members.len(), 2);
         if allowance < 2 {
-            let Err(CodecError::ResourceLimit(limit)) = result else { panic!("work refusal required"); };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("work refusal required");
+            };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         } else {
             assert!(!result.unwrap());
             ctx.finish_session().unwrap();
         }
     }
     let comparisons = Rc::new(Cell::new(0));
-    let mut members = DistinctMembers(vec![Counted(1, comparisons.clone()), Counted(2, comparisons.clone())]);
+    let mut members = DistinctMembers(vec![
+        Counted(1, comparisons.clone()),
+        Counted(2, comparisons.clone()),
+    ]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(members.insert(&ctx, Counted(3, comparisons.clone()), "member append").unwrap());
+    assert!(members
+        .insert(&ctx, Counted(3, comparisons.clone()), "member append")
+        .unwrap());
     assert_eq!(comparisons.get(), 2);
-    assert_eq!(members.iter().map(|value| value.0).collect::<Vec<_>>(), [1, 2, 3]);
+    assert_eq!(
+        members.iter().map(|value| value.0).collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
 }
 
 #[test]
@@ -115,10 +127,16 @@ fn empty_member_mutations_preserve_a_fused_session() {
     policy.limits.max_work_units = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx.charge_work_limit(1, "original member mutation refusal").unwrap_err();
+    let original = ctx
+        .charge_work_limit(1, "original member mutation refusal")
+        .unwrap_err();
     let mut members = DistinctMembers::<u8>::default();
-    assert!(matches!(members.insert(&ctx, 1, "empty insert"), Err(CodecError::ResourceLimit(limit)) if limit == original));
-    assert!(matches!(members.append(&ctx, [], "empty append"), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(members.insert(&ctx, 1, "empty insert"), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
+    assert!(
+        matches!(members.append(&ctx, [], "empty append"), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
     assert!(members.is_empty());
 }
 

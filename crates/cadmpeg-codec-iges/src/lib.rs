@@ -132,7 +132,14 @@ fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = document_local_sha256(&ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID, "iges_document_digest")?;
+    let digest = document_local_sha256(
+        &ctx,
+        ir,
+        ir.source.as_ref(),
+        "iges",
+        SOURCE_IMAGE_ID,
+        "iges_document_digest",
+    )?;
     ctx.finish_session()?;
     Ok(digest)
 }

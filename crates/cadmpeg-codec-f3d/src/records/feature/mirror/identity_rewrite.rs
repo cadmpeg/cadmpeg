@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignMirrorConstruction, DesignMirrorScopeTolerance, DesignMirrorToleranceMarker, DesignMirrorToleranceSource};
+use super::{
+    DesignMirrorConstruction, DesignMirrorScopeTolerance, DesignMirrorToleranceMarker,
+    DesignMirrorToleranceSource,
+};
 
 rewrite_native_scalar!(DesignMirrorConstruction);
 rewrite_native_scalar!(DesignMirrorScopeTolerance);

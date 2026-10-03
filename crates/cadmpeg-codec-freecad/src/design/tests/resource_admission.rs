@@ -86,7 +86,7 @@ fn design_distinct_feature_outputs_refuse_at_collection_limit() {
     .expect("valid body ID");
     crate::test_support::assert_collection_refusal_at(
         &[],
-        "fcstd distinct feature outputs",
+        "validate distinct decoded members",
         |ctx| {
             let mut ir = cadmpeg_ir::CadIr::empty();
             ir.model.bodies.push(cadmpeg_ir::topology::Body {

@@ -62,7 +62,14 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
         Point3::new(0.0, 1.0, 0.0),
     ];
     let polygon = SurfaceGeometry::Solved(crate::geometry::SolvedSurfaceGeometry::Polygonal(
-        PolygonalSurface::new(points.clone(), vec![[0, 1, 2]], 0.0, &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission").unwrap(),
+        PolygonalSurface::new(
+            points.clone(),
+            vec![[0, 1, 2]],
+            0.0,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polygonal construction admission")
+        .unwrap(),
     ));
     let polyline =
         crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Polyline(
@@ -71,7 +78,9 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
                     points: points.try_into().unwrap(),
                 },
                 0.0,
-             &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("polyline construction admission")
             .unwrap(),
         ));
     let arena = DecodeArena::new();
@@ -185,7 +194,8 @@ fn numerical_audit_large_finite_axis_keeps_an_orthogonal_reference() {
 fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
+    ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),

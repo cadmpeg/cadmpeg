@@ -2575,19 +2575,41 @@ fn bind_opaque_geometry(
     Ok(())
 }
 
-fn append_brep_arena<T>(ctx: &DecodeContext<'_>, target: &mut Vec<T>, source: &mut Vec<T>) -> Result<(), CodecError> {
-    let work = source.len().checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| ctx.refuse_codec_limit("merge SLDPRT B-rep arena moves", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "merge SLDPRT B-rep arena moves")?;
+fn append_brep_arena<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+) -> Result<(), CodecError> {
+    let work = source
+        .len()
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("merge SLDPRT B-rep arena moves", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "merge SLDPRT B-rep arena moves",
+    )?;
     ctx.reserve_retained_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
     target.append(source);
     Ok(())
 }
 
-fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
+fn merge_brep(
+    ctx: &DecodeContext<'_>,
+    target: &mut Brep,
+    mut source: Brep,
+) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
-    target.annotations.append(ctx, source.annotations, "merge SLDPRT annotation identities")?.map_err(CodecError::from)?;
+    target
+        .annotations
+        .append(
+            ctx,
+            source.annotations,
+            "merge SLDPRT annotation identities",
+        )?
+        .map_err(CodecError::from)?;
     append_brep_arena(ctx, &mut target.bodies, &mut source.bodies)?;
     append_brep_arena(ctx, &mut target.regions, &mut source.regions)?;
     append_brep_arena(ctx, &mut target.shells, &mut source.shells)?;
@@ -3609,18 +3631,8 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(
-            ctx,
-            id.as_str(),
-            "body",
-            Exactness::Derived,
-        )?;
-        annotation_builder.field_exactness(
-            ctx,
-            id.as_str(),
-            "faces",
-            Exactness::Derived,
-        )?;
+        annotation_builder.field_exactness(ctx, id.as_str(), "body", Exactness::Derived)?;
+        annotation_builder.field_exactness(ctx, id.as_str(), "faces", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -5197,11 +5209,10 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies =
-                Some(cadmpeg_ir::features::DistinctMembers::try_from(
-                    partition_map.remove(&source_index).unwrap_or_default(),
-                    ctx,
-                )?);
+            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from(
+                partition_map.remove(&source_index).unwrap_or_default(),
+                ctx,
+            )?);
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
@@ -5396,28 +5407,32 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             crate::writer::swobjects_material_local_sha256(ctx, ir),
         ) {
             (Ok(swobjects_hash), Ok(material_hash)) => {
-            let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?;
-            if let Some(source) = &mut ir.source {
-                source.attributes.insert(
-                    cadmpeg_core::nonblank_const!(crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE),
-                    swobjects_hash,
-                );
-                source.attributes.insert(
-                    cadmpeg_core::nonblank_const!(
-                        crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE
-                    ),
-                    material_hash,
-                );
-                source.attributes.insert(
-                    cadmpeg_core::nonblank_const!(
-                        crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE
-                    ),
-                    identity_hash,
-                );
+                let identity_hash =
+                    crate::writer::swobjects_metadata_identity_local_sha256(ctx, ir)?;
+                if let Some(source) = &mut ir.source {
+                    source.attributes.insert(
+                        cadmpeg_core::nonblank_const!(
+                            crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE
+                        ),
+                        swobjects_hash,
+                    );
+                    source.attributes.insert(
+                        cadmpeg_core::nonblank_const!(
+                            crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE
+                        ),
+                        material_hash,
+                    );
+                    source.attributes.insert(
+                        cadmpeg_core::nonblank_const!(
+                            crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE
+                        ),
+                        identity_hash,
+                    );
+                }
             }
-            }
-            (Err(error @ CodecError::ResourceLimit(_)), _) | (_, Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
-            _ => {},
+            (Err(error @ CodecError::ResourceLimit(_)), _)
+            | (_, Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
+            _ => {}
         }
     }
     if !ir.model.pmi.is_empty() {
@@ -5430,7 +5445,14 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             }
         }
     }
-    let hash = cadmpeg_ir::hash::document_local_sha256(ctx, ir, ir.source.as_ref(), "sldprt", "sldprt:file:source-image#0", "record SLDPRT document digest")?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(
+        ctx,
+        ir,
+        ir.source.as_ref(),
+        "sldprt",
+        "sldprt:file:source-image#0",
+        "record SLDPRT document digest",
+    )?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
@@ -5476,7 +5498,11 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::desktop())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
     brep_partition_sha256(&ctx, ir.tolerances, partition).0
 }
 
@@ -5661,19 +5687,28 @@ mod digest_tests {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(b"digest", &arena, &policy).unwrap();
         let mut ir = named_body_document();
-        ir.model.appearances.push(appearance("synthetic:test:id#face-appearance"));
+        ir.model
+            .appearances
+            .push(appearance("synthetic:test:id#face-appearance"));
         ir.model.appearance_bindings.push(binding(
             "synthetic:test:id#face-binding",
             AppearanceTarget::Face(FaceId::mint("synthetic:test:id#digest-face").unwrap()),
             "synthetic:test:id#face-appearance",
         ));
         let original = ir.clone();
-        let CodecError::ResourceLimit(limit) = brep_local_sha256_in_place(&ctx, &mut ir).unwrap_err() else {
+        let CodecError::ResourceLimit(limit) =
+            brep_local_sha256_in_place(&ctx, &mut ir).unwrap_err()
+        else {
             panic!("digest must refuse recursion");
         };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
         assert_eq!(ir, original);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+        );
     }
 
     #[test]
@@ -5776,7 +5811,8 @@ fn brep_partition_sha256(
             .any(|binding| binding.appearance == appearance.id)
     });
     (
-        cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized, "hash SLDPRT BREP partition").map_err(Into::into),
+        cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized, "hash SLDPRT BREP partition")
+            .map_err(Into::into),
         normalized.model,
     )
 }
@@ -5788,7 +5824,14 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(&ctx, ir, ir.source.as_ref(), "sldprt", "sldprt:file:source-image#0", "record SLDPRT document digest")?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(
+        &ctx,
+        ir,
+        ir.source.as_ref(),
+        "sldprt",
+        "sldprt:file:source-image#0",
+        "record SLDPRT document digest",
+    )?;
     ctx.finish_session()?;
     Ok(digest)
 }

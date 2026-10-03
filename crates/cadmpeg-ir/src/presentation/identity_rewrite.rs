@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{CameraState, PresentationDocument, PresentationItem, PresentationLayer, PresentationState, PresentationStateKind, ViewPresentation};
+use super::{
+    CameraState, PresentationDocument, PresentationItem, PresentationLayer, PresentationState,
+    PresentationStateKind, ViewPresentation,
+};
 
 rewrite_record!(CameraState, []; {position, orientation, properties});
 rewrite_record!(PresentationDocument, []; {id, schema_version, active_view, states, native_ref});

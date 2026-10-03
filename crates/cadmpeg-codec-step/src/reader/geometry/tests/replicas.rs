@@ -324,14 +324,24 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
                     && source.as_str() == "step:data:curve#6"
         )
     }));
-    let index = ModelIndex::new(result.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
     assert_eq!(
-        model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &CurveId::mint("step:data:curve#9").expect("identity grammar"), 0.0)
+        model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            0.0
+        )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &CurveId::mint("step:data:curve#9").expect("identity grammar"), 2.0)
+        model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            2.0
+        )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(12.0, 0.0, 0.0))
     );
@@ -494,14 +504,26 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                         && source.as_str() == "step:data:surface#9"
             )
         }));
-    let index = ModelIndex::new(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     assert_eq!(
-        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &SurfaceId::mint("step:data:surface#10").expect("identity grammar"), 0.0, 0.0)
+        model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
+            0.0,
+            0.0
+        )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &SurfaceId::mint("step:data:surface#10").expect("identity grammar"), 1.0, 1.0)
+        model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
+            1.0,
+            1.0
+        )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.0, 0.0))
     );
@@ -843,14 +865,25 @@ fn replicas_retain_bounded_parent_relations() {
                         && source.as_str() == "step:data:surface#12"
             )
         }));
-    let index = ModelIndex::new(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     assert_eq!(
-        model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &CurveId::mint("step:data:curve#9").expect("identity grammar"), 0.0)
+        model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            0.0
+        )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &SurfaceId::mint("step:data:surface#13").expect("identity grammar"), 0.0, 0.0)
+        model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &SurfaceId::mint("step:data:surface#13").expect("identity grammar"),
+            0.0,
+            0.0
+        )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(3.0, 9.0, 0.0))
     );

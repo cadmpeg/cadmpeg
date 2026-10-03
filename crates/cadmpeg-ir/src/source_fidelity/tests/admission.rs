@@ -57,7 +57,8 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
     let mut ir = CadIr::empty();
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
+    ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
         "other",
         &[crate::NativeUnknownRecord {
             id: id("occupied"),
@@ -91,7 +92,8 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
 fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
     let mut prior = CadIr::empty();
     prior
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
+        .set_native_unknowns(
+            &cadmpeg_test_support::service_decode_context(),
             "synthetic",
             &[crate::NativeUnknownRecord {
                 id: id("prior"),
@@ -172,7 +174,8 @@ fn charged_unknown_limit_error(
     policy: &cadmpeg_core::decode::DecodePolicy,
 ) -> cadmpeg_core::CodecError {
     let mut ir = CadIr::empty();
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
+    ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
         "synthetic",
         &[crate::NativeUnknownRecord {
             id: id("prior"),
@@ -536,10 +539,20 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
             .insert_retained_record(id("existing"), record(b"original"))
             .unwrap();
         let mut existing = AnnotationBuilder::new();
-        existing.note(&cadmpeg_test_support::service_decode_context(), 
-            id("annotated"),
-            &StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("original"), "fixture stream handle").unwrap(),
-            7, None).unwrap();
+        existing
+            .note(
+                &cadmpeg_test_support::service_decode_context(),
+                id("annotated"),
+                &StreamHandle::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    crate::stream_name!("original"),
+                    "fixture stream handle",
+                )
+                .unwrap(),
+                7,
+                None,
+            )
+            .unwrap();
         target.annotations = existing.build();
         let before = target.clone();
         let mut incoming = SourceFidelity::default();
@@ -555,10 +568,20 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         } else {
             "annotated"
         });
-        annotations.note(&cadmpeg_test_support::service_decode_context(), 
-            annotation_id,
-            &StreamHandle::new(&cadmpeg_test_support::service_decode_context(), crate::stream_name!("incoming"), "fixture stream handle").unwrap(),
-            9, None).unwrap();
+        annotations
+            .note(
+                &cadmpeg_test_support::service_decode_context(),
+                annotation_id,
+                &StreamHandle::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    crate::stream_name!("incoming"),
+                    "fixture stream handle",
+                )
+                .unwrap(),
+                9,
+                None,
+            )
+            .unwrap();
         incoming.annotations = annotations.build();
         let error =
             crate::test_support::with_service_decode_context(|ctx| target.append(ctx, incoming))
