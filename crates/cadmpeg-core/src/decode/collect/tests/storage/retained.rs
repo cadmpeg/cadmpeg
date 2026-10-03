@@ -265,7 +265,7 @@ storage_case!(
             .expect("bounded count");
         let mut values = super::super::super::ExactVec::new(ctx, bounded, "exact vector storage")?;
         for _ in 0..count {
-            values.push(0u64)?;
+            values.push(ctx, 0u64, "exact vector storage")?;
         }
         values.finish()
     }
