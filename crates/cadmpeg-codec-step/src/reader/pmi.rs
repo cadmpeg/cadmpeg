@@ -982,7 +982,7 @@ fn resolve_feature_for_datum_target_relationships(
         push_target(
             basis,
             PmiTarget::ShapeAspect {
-                source_id: super::step_source_id(relating),
+                source_id: super::step_source_id(ctx, relating)?,
             },
             ctx,
             "step_pmi_datum_basis_targets",
@@ -1714,7 +1714,7 @@ fn targets(
 
         ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
         targets.push(PmiTarget::ShapeAspect {
-            source_id: super::step_source_id(id),
+            source_id: super::step_source_id(ctx, id)?,
         });
     }
     Ok(targets)

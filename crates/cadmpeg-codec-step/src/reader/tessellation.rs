@@ -1585,8 +1585,7 @@ fn admitted_source_association(
     id: u64,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::SourceObjectAssociation, CodecError> {
-    ctx.charge_retained(decimal_digits(id) + 1, "step_tessellation_source_object_id")?;
-    Ok(super::step_source_association(id, None))
+    super::step_source_association(ctx, id, None)
 }
 
 fn push_loss(

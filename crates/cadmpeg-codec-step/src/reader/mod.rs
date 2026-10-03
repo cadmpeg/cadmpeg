@@ -366,9 +366,10 @@ fn decode_exchange_mode(
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-    );
+        session.ctx,
+    )?;
     session.charge_stage("step_replica_association")?;
-    geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index);
+    geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     session.charge_stage("step_pcurve_association")?;
     geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     session.charge_stage("step_geometric_set_association")?;
@@ -858,7 +859,7 @@ fn retain_unowned_carriers(
             "step_unowned_direct_carriers",
         )?;
     }
-    associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
+    associate_unowned_direct_carriers(ir, &unowned_direct_carriers, ctx)?;
     if unowned_pcurves.is_empty() {
         return Ok(());
     }
@@ -999,13 +1000,13 @@ fn retain_unowned_carriers(
     Ok(())
 }
 
-fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
+fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
     for point in &mut ir.model.points {
         let Some(id) = step_instance_id(point.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) && point.source_object.is_none() {
-            point.source_object = Some(step_source_association(id, None));
+            point.source_object = Some(step_source_association(ctx, id, None)?);
         }
     }
     for curve in &mut ir.model.curves {
@@ -1013,7 +1014,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && curve.source_object.is_none() {
-            curve.source_object = Some(step_source_association(id, None));
+            curve.source_object = Some(step_source_association(ctx, id, None)?);
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -1021,27 +1022,28 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && surface.source_object.is_none() {
-            surface.source_object = Some(step_source_association(id, None));
+            surface.source_object = Some(step_source_association(ctx, id, None)?);
         }
     }
+    Ok(())
 }
 
 /// A non-blank STEP record reference.
-fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
-    cadmpeg_core::nonblank_literal!("#{id}")
+fn step_source_id(ctx: &DecodeContext<'_>, id: u64) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
+    cadmpeg_core::nonblank_literal!(ctx, "#{id}")
 }
 
 /// A source association for a STEP record.
-fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+fn step_source_association(ctx: &DecodeContext<'_>, id: u64, name: Option<String>) -> Result<SourceObjectAssociation, CodecError> {
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
-        object_id: step_source_id(id),
+        object_id: step_source_id(ctx, id)?,
         name,
         color: None,
         visible: None,
         layer: None,
         instance_path: Vec::new(),
-    }
+    })
 }
 
 fn retains_carrier(

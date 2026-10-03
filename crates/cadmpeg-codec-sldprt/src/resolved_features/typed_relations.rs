@@ -457,9 +457,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         }
         Ok(SketchConstraintDefinitionInput::Native {
             native_kind: nonblank_literal!(
-                "sldprt:marker-relation:{}",
+                ctx, "sldprt:marker-relation:{}",
                 marker.kind().native_code()
-            ),
+            )?,
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),

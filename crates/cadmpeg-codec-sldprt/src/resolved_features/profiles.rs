@@ -1627,9 +1627,9 @@ pub(crate) fn project_marker_backed_sketches(
             let mut projected = Vec::new();
             for marker in markers.iter().copied() {
                 let native_kind = cadmpeg_core::nonblank_literal!(
-                    "sldprt:marker-geometry:{}",
+                    ctx, "sldprt:marker-geometry:{}",
                     marker.kind().native_code()
-                );
+                )?;
                 let entity = (|| -> Result<_, MarkerGeometryFailure> {
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?.get();

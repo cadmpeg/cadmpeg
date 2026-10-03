@@ -7194,9 +7194,8 @@ impl<B> BodyMember<B> {
     }
 
     /// Consume the row and return its body identity and native member.
-    #[must_use]
-    pub fn into_parts(self) -> (B, String) {
-        (self.body, self.native.into_string())
+    pub fn into_parts(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<(B, String), cadmpeg_core::CodecError> {
+        Ok((self.body, self.native.into_string(ctx, "retain body member native identity")?))
     }
 }
 

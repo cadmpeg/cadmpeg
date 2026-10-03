@@ -3829,16 +3829,16 @@ fn add_preview_metadata(
                     continue;
                 };
                 let key = |field: &str| {
-                    cadmpeg_core::nonblank_literal!("png_preview_{png_index}_{field}")
+                    cadmpeg_core::nonblank_literal!(ctx, "png_preview_{png_index}_{field}")
                 };
                 ctx.charge_collection_items(7, "collect SLDPRT PNG preview metadata")?;
-                attributes.insert(key("width"), width.to_string());
-                attributes.insert(key("height"), height.to_string());
-                attributes.insert(key("bit_depth"), fields[0].to_string());
-                attributes.insert(key("color_type"), fields[1].to_string());
-                attributes.insert(key("compression"), fields[2].to_string());
-                attributes.insert(key("filter"), fields[3].to_string());
-                attributes.insert(key("interlace"), fields[4].to_string());
+                attributes.insert(key("width")?, width.to_string());
+                attributes.insert(key("height")?, height.to_string());
+                attributes.insert(key("bit_depth")?, fields[0].to_string());
+                attributes.insert(key("color_type")?, fields[1].to_string());
+                attributes.insert(key("compression")?, fields[2].to_string());
+                attributes.insert(key("filter")?, fields[3].to_string());
+                attributes.insert(key("interlace")?, fields[4].to_string());
                 png_index += 1;
             }
             container::PayloadFamily::BmpThumbnail => {
@@ -3857,15 +3857,15 @@ fn add_preview_metadata(
                     continue;
                 };
                 let key = |field: &str| {
-                    cadmpeg_core::nonblank_literal!("bmp_thumbnail_{bmp_index}_{field}")
+                    cadmpeg_core::nonblank_literal!(ctx, "bmp_thumbnail_{bmp_index}_{field}")
                 };
                 ctx.charge_collection_items(6, "collect SLDPRT BMP preview metadata")?;
-                attributes.insert(key("width"), width.to_string());
-                attributes.insert(key("height"), height.to_string());
-                attributes.insert(key("planes"), planes.to_string());
-                attributes.insert(key("bit_count"), bits_per_pixel.to_string());
-                attributes.insert(key("compression"), compression.to_string());
-                attributes.insert(key("image_size"), image_size.to_string());
+                attributes.insert(key("width")?, width.to_string());
+                attributes.insert(key("height")?, height.to_string());
+                attributes.insert(key("planes")?, planes.to_string());
+                attributes.insert(key("bit_count")?, bits_per_pixel.to_string());
+                attributes.insert(key("compression")?, compression.to_string());
+                attributes.insert(key("image_size")?, image_size.to_string());
                 bmp_index += 1;
             }
             _ => {}
