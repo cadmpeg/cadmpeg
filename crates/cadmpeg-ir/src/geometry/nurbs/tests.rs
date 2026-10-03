@@ -1610,3 +1610,5 @@ mod transposition;
 mod knot_edits;
 
 mod reflected_reversal;
+
+mod knot_order;

@@ -1949,7 +1949,7 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    if !knots_strictly_increasing(&u_distinct) || !knots_strictly_increasing(&v_distinct) {
+    if !knots_strictly_increasing(&u_distinct, |count| ctx.charge_work(count, "IR strict knot order"))? || !knots_strictly_increasing(&v_distinct, |count| ctx.charge_work(count, "IR strict knot order"))? {
         return Ok(None);
     }
     let Some((u_knots, u_count)) = a5_knots(ctx, &u_distinct, u_degree)? else {

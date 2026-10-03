@@ -1825,22 +1825,33 @@ pub fn knots_nondecreasing<E>(
     knots: &[f64],
     mut work: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<bool, E> {
+    knots_ordered(knots, true, &mut work)
+}
+
+/// Tests strict adjacent knot order after admitting each comparison.
+/// A repeated knot or NaN pair fails this predicate.
+pub fn knots_strictly_increasing<E>(
+    knots: &[f64],
+    mut work: impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
+    knots_ordered(knots, false, &mut work)
+}
+
+fn knots_ordered<E>(
+    knots: &[f64],
+    repeats: bool,
+    work: &mut impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
     work(0)?;
     for pair in knots.windows(2) {
         work(1)?;
-        if !matches!(pair[0].partial_cmp(&pair[1]), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)) {
-            return Ok(false);
+        match pair[0].partial_cmp(&pair[1]) {
+            Some(std::cmp::Ordering::Less) => {},
+            Some(std::cmp::Ordering::Equal) if repeats => {},
+            _ => return Ok(false),
         }
     }
     Ok(true)
-}
-
-/// True when each knot is strictly larger than the previous.
-///
-/// A NaN pair fails this predicate. Prefer this form when the site already
-/// used `windows(2).all(|pair| pair[0] < pair[1])`.
-pub fn knots_strictly_increasing(knots: &[f64]) -> bool {
-    knots.windows(2).all(|pair| pair[0] < pair[1])
 }
 
 #[cfg(test)]

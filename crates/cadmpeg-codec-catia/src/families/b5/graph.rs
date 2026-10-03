@@ -1882,7 +1882,11 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
-        knots_strictly_increasing(&knot_values).then_some(())?;
+        match knots_strictly_increasing(&knot_values, |count| ctx.charge_work(count, "IR strict knot order")) {
+            Ok(true) => {},
+            Ok(false) => return None,
+            Err(error) => return Some(Err(error)),
+        }
         let mut multiplicities_valid = true;
         for index in 0..knot_count {
             let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;

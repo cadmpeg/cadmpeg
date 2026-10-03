@@ -1759,4 +1759,21 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     ));
 }
 
+#[test]
+fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let payload = a8_class21_test_payload();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(original)) = parse_a8_class21_pcurve(&ctx, 7, &payload) else { panic!("strict knot refusal must not disappear as a missing candidate"); };
+    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(original.operation, "IR strict knot order");
+    assert_eq!(original.used, 0);
+    assert_eq!(original.additional, 1);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+}
+
 mod topology_walk;
