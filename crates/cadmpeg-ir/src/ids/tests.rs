@@ -522,3 +522,50 @@ fn local_identity_copy_succeeds_under_service_profile() {
     check_copy!(super::HistoricalEdgeId);
     check_copy!(super::HistoricalVertexId);
 }
+
+#[test]
+fn identity_grammar_admits_only_the_scalars_inspected() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for (text, visits, valid) in [
+        ("", 0, false),
+        (":unread", 1, false),
+        ("a::unread", 3, false),
+        ("a:b:c:d#unread", 6, false),
+        ("a:b:c#", 6, false),
+        ("a:b:c#é", 7, true),
+        ("a:b:c#:", 7, true),
+        ("a:b:c#\u{2003}unread", 7, false),
+        ("a:b:c##unread", 7, false),
+        ("abc", 3, false),
+    ] {
+        for allowance in 0..=visits {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::Identity::admit_text(text.to_owned(), |work| ctx.charge_work_limit(work, "identity grammar visit"));
+            if allowance < visits {
+                let original = result.unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(original.operation, "identity grammar visit");
+                assert_eq!(original.additional, 1);
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original));
+            } else {
+                let result = result.unwrap();
+                assert_eq!(result.is_ok(), valid, "{text:?}");
+                assert_eq!(result.map(super::Identity::into_string).unwrap_or_else(|text| text), text);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx.charge_work_limit(1, "original grammar refusal").unwrap_err();
+    assert_eq!(super::Identity::admit_text(String::new(), |work| ctx.charge_work_limit(work, "empty grammar")).unwrap_err(), original);
+}
