@@ -70,9 +70,19 @@ impl DecodeBudget {
         self.input_bytes.get()
     }
 
-    pub(super) fn charge_input(&self, amount: u64, operation: &'static str) -> Result<(), CodecError> {
-        self.charge(ResourceDimension::InputBytes, &self.input_bytes,
-            self.policy.limits.max_input_bytes, amount, operation).map_err(Into::into)
+    pub(super) fn charge_input(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::InputBytes,
+            &self.input_bytes,
+            self.policy.limits.max_input_bytes,
+            amount,
+            operation,
+        )
+        .map_err(Into::into)
     }
 
     pub(super) fn charge_decompressed(
