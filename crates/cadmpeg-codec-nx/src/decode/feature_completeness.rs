@@ -748,15 +748,10 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     let mode = shape.mode();
-    let profiles = shape.referenced_profiles();
+    let mut profiles = shape.referenced_profiles();
     shape.any_section_is_unresolved()
-        || profiles
-            .iter()
-            .copied()
-            .any(planar_profile_ref_is_incomplete)
-        || profiles
-            .iter()
-            .any(|profile| planar_profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || profiles.clone().any(planar_profile_ref_is_incomplete)
+        || profiles.any(|profile| planar_profile_dependency_is_incomplete(profile, &feature.dependencies))
         || path.as_ref().is_none_or(path_ref_is_incomplete)
         || sweep_mode_is_incomplete(mode)
         || orientation

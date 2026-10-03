@@ -3361,6 +3361,8 @@ fn definition_profiles<'ctx, 'a>(
             profiles.extend(construction.profile.as_ref())?;
         }
         crate::features::FeatureOperation::Sweep { shape, .. } => {
+            ctx.charge_work(1, "primary sweep profile scan")?;
+            ctx.charge_work(u64_from_index(shape.additional_section_count()), "additional sweep profile scan")?;
             profiles.extend(shape.referenced_profiles())?;
         }
         crate::features::FeatureOperation::HelicalSweep { construction, .. } => {
@@ -3714,10 +3716,11 @@ fn check_feature_sketch_references(ctx: &DecodeContext<'_>,
                 guide_rail,
                 ..
             } => {
+                ctx.charge_work(1, "primary sweep profile scan")?;
+                ctx.charge_work(u64_from_index(shape.additional_section_count()), "additional sweep profile scan")?;
                 profiles.extend(
                     shape
                         .referenced_profiles()
-                        .into_iter()
                         .map(|profile| ProfileReference::Planar(profile)),
                 )?;
                 paths.extend(path)?;

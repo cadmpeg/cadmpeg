@@ -1459,7 +1459,6 @@ fn append_design_losses(
                 shape.any_section_is_unresolved()
                     || shape
                         .referenced_profiles()
-                        .into_iter()
                         .any(incomplete_planar_profile)
                     || path.as_ref().is_none_or(incomplete_path)
                     || matches!(
