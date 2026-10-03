@@ -43,6 +43,9 @@ use crate::CadIr;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation, WorkBudget};
 use cadmpeg_core::CodecError;
 
+/// Resource policies for geometry evaluation.
+pub mod admission;
+
 /// Evaluation under the caller decode resource limits.
 pub mod decode;
 
@@ -1531,7 +1534,7 @@ fn nurbs_curve_point_unsettled(
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
-    let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, count, t)).flatten().ok_or(no_value)?;
+    let span = scratch.admit(basis::bspline_span(scratch.admission, knots, degree, count, t)).flatten().ok_or(no_value)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
@@ -2272,7 +2275,7 @@ fn nurbs_pcurve_differential_unsettled(
     let t = t.get();
     let unreached = EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN));
     let degree = usize::try_from(degree).map_err(|_| EvaluationFailure::NoValue)?;
-    let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, count, t)).flatten().ok_or(EvaluationFailure::NoValue)?;
+    let span = scratch.admit(basis::bspline_span(scratch.admission, knots, degree, count, t)).flatten().ok_or(EvaluationFailure::NoValue)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(unreached)?;
@@ -2734,8 +2737,8 @@ fn nurbs_surface_local_unsettled<'a>(
     )
     .ok_or(no_value)?
     .get();
-    let u_span = scratch.admit(basis::bspline_span(scratch.context, surface.u_knots(), u_degree, u_count, u_at)).flatten().ok_or(no_value)?;
-    let v_span = scratch.admit(basis::bspline_span(scratch.context, surface.v_knots(), v_degree, v_count, v_at)).flatten().ok_or(no_value)?;
+    let u_span = scratch.admit(basis::bspline_span(scratch.admission, surface.u_knots(), u_degree, u_count, u_at)).flatten().ok_or(no_value)?;
+    let v_span = scratch.admit(basis::bspline_span(scratch.admission, surface.v_knots(), v_degree, v_count, v_at)).flatten().ok_or(no_value)?;
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let u_basis = basis::bspline_basis(scratch, surface.u_knots(), u_degree, u_span, u_at)
@@ -3745,7 +3748,7 @@ fn nurbs_curve_derivative_unsettled(
     let non_finite = EvaluationFailure::NonFinite(());
     let second = order == CurveDerivative::Second;
     let degree = usize::try_from(degree).map_err(|_| no_value)?;
-    let span = scratch.admit(basis::bspline_span(scratch.context, knots, degree, control_points.len(), t)).flatten().ok_or(no_value)?;
+    let span = scratch.admit(basis::bspline_span(scratch.admission, knots, degree, control_points.len(), t)).flatten().ok_or(no_value)?;
     let basis = basis::bspline_basis(scratch, knots, degree, span, t).ok_or(non_finite)?;
     if !basis::all_finite(scratch, &basis).ok_or_else(|| scratch.failure(non_finite))? {
         return Err(non_finite);
@@ -9924,11 +9927,9 @@ mod numerical_range_tests;
 fn default_scratch_evaluation<T, R>(
     run: impl FnOnce(&decode::Scratch<'_, '_>) -> Result<T, EvaluationFailure<R>>,
 ) -> Result<T, EvaluationFailure<R>> {
-    default_evaluation(|ctx| {
-        let scratch = decode::Scratch::new(ctx);
-        let result = run(&scratch);
-        scratch.finish_evaluation(result)
-    })
+    let scratch = decode::Scratch::new(admission::EvaluationAdmission::Standard);
+    let result = run(&scratch);
+    scratch.finish_evaluation(result).map_err(EvaluationFailure::ResourceLimit)?
 }
 
 fn default_evaluation<T, R>(

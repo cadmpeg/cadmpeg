@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry evaluation with caller-owned decode resource admission.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, DepthGuard, ResourceLimit, ScopedReservation,
+    u64_from_index, DecodeContext, ResourceLimit, ScopedReservation,
 };
 
+use super::admission::{EvaluationAdmission, EvaluationDepthGuard};
 use super::{CurveDerivative, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::NurbsCurve;
@@ -43,15 +44,17 @@ impl<T> std::ops::DerefMut for SupportValues<T> {
 
 /// Scratch admission shared by one evaluation and its recursive calls.
 pub(super) struct Scratch<'ctx, 'arena> {
-    pub(super) context: &'ctx DecodeContext<'arena>,
+    pub(super) admission: EvaluationAdmission<'ctx, 'arena>,
+    independent_depth: Cell<usize>,
     storage: RefCell<Option<ScopedReservation<'ctx>>>,
     refusal: RefCell<Option<ResourceLimit>>,
 }
 
 impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
-    pub(super) fn new(context: &'ctx DecodeContext<'arena>) -> Self {
+    pub(super) fn new(admission: impl Into<EvaluationAdmission<'ctx, 'arena>>) -> Self {
         Self {
-            context,
+            admission: admission.into(),
+            independent_depth: Cell::new(0),
             storage: RefCell::new(None),
             refusal: RefCell::new(None),
         }
@@ -73,7 +76,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     /// The resource refusal recorded by an allocation, charge or evaluation.
     pub(super) fn refused(&self) -> Option<ResourceLimit> {
         if let Some(limit) = *self.refusal.borrow() { return Some(limit); }
-        let original = self.context.charge_work_limit(0, "observe geometry evaluation refusal").err();
+        let original = self.admission.work(0, "observe geometry evaluation refusal").err();
         if let Some(limit) = original { *self.refusal.borrow_mut() = Some(limit); }
         original
     }
@@ -140,15 +143,20 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     }
 
     pub(super) fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Option<()> {
-        let mut storage = self.storage.borrow_mut();
-        if storage.is_none() {
-            *storage = Some(self.admit(self.context.reserve_scoped_limit(0, operation))?);
+        self.work(0, operation)?;
+        match self.admission {
+            EvaluationAdmission::Decode(context) => {
+                let mut storage = self.storage.borrow_mut();
+                if storage.is_none() {
+                    *storage = Some(self.admit(context.reserve_scoped_limit(0, operation))?);
+                }
+                let reservation = storage.as_mut()?;
+                self.admit(context.reserve_scoped_vec_limit(reservation, values, count, operation))
+            }
+            EvaluationAdmission::Standard => self.admit(
+                crate::geometry::nurbs::scratch::reserve_exact(values, count, operation),
+            ),
         }
-        let reservation = storage.as_mut()?;
-        self.admit(
-            self.context
-                .reserve_scoped_vec_limit(reservation, values, count, operation),
-        )
     }
 
     pub(super) fn work(&self, count: usize, operation: &'static str) -> Option<()> {
@@ -156,18 +164,16 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
             return None;
         }
         self.admit(
-            self.context
-                .charge_work_limit(u64_from_index(count), operation),
+            self.admission.work(u64_from_index(count), operation),
         )
     }
 
-    pub(super) fn enter(&self) -> Option<DepthGuard<'_>> {
+    pub(super) fn enter(&self) -> Option<EvaluationDepthGuard<'_>> {
         if self.refusal.borrow().is_some() {
             return None;
         }
         self.admit(
-            self.context
-                .enter_nested_limit("geometry evaluation nesting"),
+            self.admission.enter(&self.independent_depth),
         )
     }
 
