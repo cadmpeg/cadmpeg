@@ -467,10 +467,23 @@ fn btree_node_bound_increments_at_first_entry_and_each_five_keys() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("test context");
     // Each u64/u64 node has eleven lane pairs, sixteen pointer widths and two alignments.
-    for (len, bytes) in [(0, 320), (1, 0), (4, 0), (5, 320), (6, 0), (9, 0), (10, 320)] {
-        assert_eq!(ctx.tree_growth_bytes::<u64, u64>(len, "node bound").unwrap(), bytes);
+    for (len, bytes) in [
+        (0, 320),
+        (1, 0),
+        (4, 0),
+        (5, 320),
+        (6, 0),
+        (9, 0),
+        (10, 320),
+    ] {
+        assert_eq!(
+            ctx.tree_growth_bytes::<u64, u64>(len, "node bound")
+                .expect("bounded entry count"),
+            bytes
+        );
     }
-    let error = ctx.tree_growth_bytes::<u64, u64>(usize::MAX, "node bound")
+    let error = ctx
+        .tree_growth_bytes::<u64, u64>(usize::MAX, "node bound")
         .expect_err("entry count overflow");
     assert_eq!(error.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(error.operation, "node bound");
@@ -485,10 +498,16 @@ fn btree_node_bound_refuses_before_bound_step_and_keeps_map_unchanged() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let mut values = BTreeMap::new();
     for key in 0u64..5 {
-        ctx.insert_btree_map(&mut values, key, 0u64, "bound step").unwrap();
+        ctx.insert_btree_map(&mut values, key, 0u64, "bound step")
+            .expect("node bound admits this key");
     }
-    assert_eq!(ctx.insert_btree_map(&mut values, 0, 7, "replacement").unwrap(), Some(0));
-    let error = ctx.insert_btree_map(&mut values, 5, 0, "bound step")
+    assert_eq!(
+        ctx.insert_btree_map(&mut values, 0, 7, "replacement")
+            .expect("replacement needs no additional backing node"),
+        Some(0)
+    );
+    let error = ctx
+        .insert_btree_map(&mut values, 5, 0, "bound step")
         .expect_err("sixth key exceeds node bound");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -503,10 +522,12 @@ fn btree_node_bound_refuses_before_bound_step_and_keeps_map_unchanged() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let mut values = BTreeMap::new();
     for key in 0u64..10 {
-        ctx.insert_btree_map(&mut values, key, 0u64, "bound step").unwrap();
+        ctx.insert_btree_map(&mut values, key, 0u64, "bound step")
+            .expect("node bound admits this key");
     }
     assert_eq!(values.len(), 10);
-    let error = ctx.insert_btree_map(&mut values, 10, 0, "bound step")
+    let error = ctx
+        .insert_btree_map(&mut values, 10, 0, "bound step")
         .expect_err("eleventh key requires third node admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.used == 640 && limit.additional == 320));
