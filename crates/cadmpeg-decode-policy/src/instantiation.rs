@@ -279,6 +279,9 @@ pub(crate) fn check_imported<'tcx>(
     root: &Instantiation<'tcx>,
     findings: &mut Findings,
 ) {
+    let key_work_proofs: HashSet<String> = std::env::var_os("CADMPEG_POLICY_KEY_WORK_PROOFS")
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map_or_else(HashSet::new, |source| source.lines().map(str::to_owned).collect());
     let mut pending = vec![(
         root.instance,
         root.fixed_operands.clone(),
@@ -731,13 +734,15 @@ pub(crate) fn check_imported<'tcx>(
             let symbolic_work = raw_extent.map_or(types::Shape::Unknown, |extent| {
                 work_shape(extent, symbolic_allocation, false)
             });
-            let work = raw_extent.map_or(types::Shape::Unknown, |extent| {
+            let work = if key_work_proofs.contains(&crate::key_work::proof_key(tcx, instance.def_id(), block.terminator().source_info.span)) {
+                types::Shape::Fixed
+            } else { raw_extent.map_or(types::Shape::Unknown, |extent| {
                 work_shape(
                     instance.instantiate_mir(tcx, rustc_middle::ty::EarlyBinder::bind(tcx, extent)),
                     allocation,
                     true,
                 )
-            });
+            }) };
             for (shape, symbolic, rule) in [
                 (
                     allocation,

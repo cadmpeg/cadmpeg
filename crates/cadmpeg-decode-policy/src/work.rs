@@ -35,7 +35,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | BinOpKind::Gt
                     | BinOpKind::Ge
             ) {
-                if self.key_work_paid(&[left, right], "comparison") { return; }
+                if self.key_work_paid(&[left, right], "comparison") { self.record_key_work_proof(expression); return; }
                 let shape = types::work(self.tcx, self.expr_ty(left), &mut Vec::new())
                     .join(types::work(self.tcx, self.expr_ty(right), &mut Vec::new()));
                 // Comparing a dynamic sequence with a fixed-size operand reads
@@ -96,7 +96,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         let name = name.as_str();
-        if self.key_work_paid(&operands, name) { return; }
+        if self.key_work_paid(&operands, name) { self.record_key_work_proof(expression); return; }
         if let Some(custom) = self.custom_trait(expression, definition) {
             if self.checked_body(custom) {
                 return;

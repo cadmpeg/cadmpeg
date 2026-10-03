@@ -339,6 +339,10 @@ def main():
             args.output.write_text(excluded)
         return 0
     del env["CADMPEG_POLICY_GRAPH"]
+    key_proofs = target / "decode-key-work-proofs.txt"
+    key_proofs.write_text("".join(line.split("\t", 1)[1] + "\n" for line in graph.stdout.splitlines()
+                                if line.startswith("decode_key_work_proof\t")))
+    env["CADMPEG_POLICY_KEY_WORK_PROOFS"] = str(key_proofs)
     env["CADMPEG_POLICY_SCOPE"] = str(scope)
     clean = clean_packages()
     if clean:

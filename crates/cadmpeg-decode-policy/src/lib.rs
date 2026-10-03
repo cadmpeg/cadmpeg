@@ -41,6 +41,7 @@ struct Findings {
     externals: BTreeSet<String>,
     conversions: HashMap<rustc_hir::HirId, Vec<bool>>,
     admitted_operations: HashSet<rustc_hir::HirId>,
+    key_work_proofs: BTreeSet<String>,
     entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,
 }
 
@@ -55,6 +56,17 @@ impl Callbacks for DecodeCallbacks {
         let graph = scope::collect(tcx, &owners);
         if std::env::var_os("CADMPEG_POLICY_GRAPH").is_some() {
             graph.print();
+            for owner in &owners {
+                if !production(tcx, owner.to_def_id()) { continue; }
+                let mut findings = Findings::default();
+                Analysis {
+                    tcx, typeck: tcx.typeck(*owner), typing_owner: *owner, arguments: None,
+                    fixed_parameters: HashSet::new(), flow: flow::Flow::default(), findings: &mut findings,
+                }.visit_body(tcx.hir_body_owned_by(*owner));
+                for proof in findings.key_work_proofs {
+                    println!("decode_key_work_proof\t{proof}");
+                }
+            }
             return Compilation::Continue;
         }
         let reachable = graph.reachable();
