@@ -12,7 +12,7 @@ use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 use std::hash::Hash;
 
-fn collect_index<K: Eq + Hash, V>(
+fn collect_index<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     items: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,

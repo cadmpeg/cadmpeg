@@ -153,6 +153,14 @@ pub(crate) enum VariableType {
     Unknown(UnknownVariableType),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for VariableType {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 /// Unclassified code, constructed only by normalizing the encoded integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct UnknownVariableType(u32);

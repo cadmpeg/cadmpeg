@@ -7014,6 +7014,15 @@ pub(super) enum MeshEndpointRelationSelection {
     Deferred,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for MeshEndpointRelationSelection {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        match self {
+            Self::Enumerated { assignments, edge_pairs } => (1_u8, assignments, edge_pairs).decode_cost(ctx, operation),
+            Self::Deferred => Ok(1),
+        }
+    }
+}
+
 impl MeshEndpointRelationSelection {
     /// Explicit edge constraints of this selection.
     pub(super) fn edge_pairs(&self) -> &[(usize, [usize; 2])] {

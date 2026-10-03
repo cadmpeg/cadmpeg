@@ -1214,7 +1214,7 @@ fn available_parameter_ids<'a>(
     Ok(ids)
 }
 
-fn collect_numeric_set<T: Ord>(
+fn collect_numeric_set<T: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: impl IntoIterator<Item = T>,
     operation: &'static str,

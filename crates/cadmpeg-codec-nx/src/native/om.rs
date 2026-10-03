@@ -712,6 +712,12 @@ pub(super) enum ExpressionUnit {
     Native(String),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ExpressionUnit {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self { Self::Native(text) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, text), ctx, operation), _ => Ok(1) }
+    }
+}
+
 const INCH_TO_MILLIMETERS: f64 = 25.4;
 
 impl ExpressionUnit {

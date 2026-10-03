@@ -97,6 +97,18 @@ impl DecodeContext<'_> {
         self.charge_key(key, self.tree_comparisons(values.len()), operation)?;
         Ok(values.remove(key))
     }
+    /// Admits lookup and new entry storage before returning an entry.
+    pub fn entry_hash_map<'values, K: DecodeCost + Eq + Hash, V>(&self, values: &'values mut std::collections::HashMap<K, V>, key: K, operation: &'static str) -> Result<std::collections::hash_map::Entry<'values, K, V>, CodecError> {
+        self.admit_hash_map_entry(values, &key, operation)?;
+        self.charge_key(&key, 1, operation)?;
+        Ok(values.entry(key))
+    }
+    /// Admits lookup and new entry storage before returning an entry.
+    pub fn entry_btree_map<'values, K: DecodeCost + Ord, V>(&self, values: &'values mut std::collections::BTreeMap<K, V>, key: K, operation: &'static str) -> Result<std::collections::btree_map::Entry<'values, K, V>, CodecError> {
+        self.admit_btree_entry(values, &key, operation)?;
+        self.charge_key(&key, self.tree_comparisons(values.len()), operation)?;
+        Ok(values.entry(key))
+    }
 }
 
 #[cfg(test)]

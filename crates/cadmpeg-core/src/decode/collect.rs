@@ -7,6 +7,8 @@ use std::hash::Hash;
 
 use crate::CodecError;
 
+use super::cost::DecodeCost;
+
 use super::{
     u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit,
     ScopedReservation,
@@ -314,7 +316,7 @@ impl DecodeContext<'_> {
     }
 
     /// Inserts a new scoped tree key after charging lookup work and node storage.
-    pub fn insert_scoped_btree_set<T: Ord>(
+    pub fn insert_scoped_btree_set<T: Ord + DecodeCost>(
         &self,
         reservation: &mut ScopedReservation<'_>,
         values: &mut BTreeSet<T>,
@@ -327,7 +329,7 @@ impl DecodeContext<'_> {
     }
 
     /// Inserts a vacant scoped tree entry after charging lookup work and node storage.
-    pub fn insert_scoped_btree_map_if_vacant<K: Ord, V>(
+    pub fn insert_scoped_btree_map_if_vacant<K: Ord + DecodeCost, V>(
         &self,
         reservation: &mut ScopedReservation<'_>,
         values: &mut BTreeMap<K, V>,
@@ -338,7 +340,7 @@ impl DecodeContext<'_> {
     ) -> Result<bool, CodecError> {
         self.charge_work(u64_from_index(values.len()), work_operation)?;
         reservation.with_storage(|| {
-            if values.contains_key(&key) {
+            if self.contains_key_btree_map(values, &key, work_operation)? {
                 return Ok(false);
             }
             self.insert_btree_map(values, key, value, operation)?;
@@ -347,7 +349,7 @@ impl DecodeContext<'_> {
     }
 
     /// Appends a lazily built value to a scoped group after aggregate admission.
-    pub fn push_scoped_btree_group<K: Ord, V>(
+    pub fn push_scoped_btree_group<K: Ord + DecodeCost, V>(
         &self,
         reservation: &mut ScopedReservation<'_>,
         groups: &mut BTreeMap<K, Vec<V>>,
@@ -358,7 +360,7 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         self.charge_work(u64_from_index(groups.len()) + 1, operation)?;
         reservation.with_storage(|| {
-            if let Some(values) = groups.get_mut(&key) {
+            if let Some(values) = self.get_mut_btree_map(groups, &key, operation)? {
                 self.reserve_vec(values, 1, operation)?;
                 self.charge_retained(u64_from_index(owned_bytes), operation)?;
                 values.push(value());
@@ -368,6 +370,7 @@ impl DecodeContext<'_> {
             let mut values = self.collection_vec(1, operation)?;
             self.charge_retained(u64_from_index(owned_bytes), operation)?;
             values.push(value());
+            self.charge_key(&key, self.tree_comparisons(groups.len()), operation)?;
             groups.insert(key, values);
             Ok(())
         })
@@ -395,7 +398,7 @@ impl DecodeContext<'_> {
     }
 
     /// Collects scoped groups in input order within each key.
-    pub fn collect_scoped_btree_groups<'ctx, K: Ord, V>(
+    pub fn collect_scoped_btree_groups<'ctx, K: Ord + DecodeCost, V>(
         &'ctx self,
         values: impl IntoIterator<Item = (K, V)>,
         operation: &'static str,
@@ -417,7 +420,7 @@ impl DecodeContext<'_> {
     }
 
     /// Collects scoped entries, keeping the last value for each key.
-    pub fn collect_scoped_btree_map<'ctx, K: Ord, V>(
+    pub fn collect_scoped_btree_map<'ctx, K: Ord + DecodeCost, V>(
         &'ctx self,
         values: impl IntoIterator<Item = (K, V)>,
         operation: &'static str,
@@ -617,7 +620,7 @@ impl DecodeContext<'_> {
     }
 
     /// Inserts a unique tree value after admitting its scoped value storage.
-    pub fn insert_scoped_btree_value<T: Ord>(
+    pub fn insert_scoped_btree_value<T: Ord + DecodeCost>(
         &self,
         reservation: &mut ScopedReservation<'_>,
         values: &mut BTreeSet<T>,
@@ -628,17 +631,18 @@ impl DecodeContext<'_> {
     }
 
     /// Inserts a new set item after charging its slot.
-    pub fn insert_hash_set<T: Eq + Hash>(
+    pub fn insert_hash_set<T: Eq + Hash + DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         self.charge_work(u64_from_index(values.len()), operation)?;
-        if values.contains(&value) {
+        if self.contains_hash_set(values, &value, operation)? {
             return Ok(false);
         }
         self.reserve_set(values, 1, operation)?;
+        self.charge_key(&value, 1, operation)?;
         Ok(values.insert(value))
     }
 
@@ -651,16 +655,17 @@ impl DecodeContext<'_> {
     ) -> Result<bool, CodecError> {
         self.charge_work(u64_from_index(values.len()), operation)?;
         self.charge_work(u64_from_index(value.len()), operation)?;
-        if values.contains(value) {
+        if self.contains_hash_set(values, value, operation)? {
             return Ok(false);
         }
         self.reserve_set(values, 1, operation)?;
         let owned = self.copy_retained_text(value, operation)?;
+        self.charge_key(&owned, 1, operation)?;
         Ok(values.insert(owned))
     }
 
     /// Extends a set with one charged slot for each distinct new value.
-    pub fn extend_hash_set<T: Eq + Hash>(
+    pub fn extend_hash_set<T: Eq + Hash + DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         additions: impl IntoIterator<Item = T>,
@@ -674,7 +679,7 @@ impl DecodeContext<'_> {
     }
 
     /// Collects distinct values into a charged hash set.
-    pub fn collect_hash_set<T: Eq + Hash>(
+    pub fn collect_hash_set<T: Eq + Hash + DecodeCost>(
         &self,
         values: impl IntoIterator<Item = T>,
         operation: &'static str,
@@ -688,20 +693,20 @@ impl DecodeContext<'_> {
     }
 
     /// Reserves a map slot only when the key is new.
-    pub fn admit_hash_map_entry<K: Eq + Hash, V>(
+    pub fn admit_hash_map_entry<K: Eq + Hash + DecodeCost, V>(
         &self,
         values: &mut HashMap<K, V>,
         key: &K,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        if !values.contains_key(key) {
+        if !self.contains_key_hash_map(values, key, operation)? {
             self.reserve_map(values, 1, operation)?;
         }
         Ok(())
     }
 
     /// Appends a grouped value after admitting both new index and value slots.
-    pub fn push_hash_group<K: Eq + Hash, V>(
+    pub fn push_hash_group<K: Eq + Hash + DecodeCost, V>(
         &self,
         values: &mut HashMap<K, Vec<V>>,
         key: K,
@@ -709,29 +714,21 @@ impl DecodeContext<'_> {
         index_operation: &'static str,
         value_operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(group) = values.get_mut(&key) {
+        if let Some(group) = self.get_mut_hash_map(values, &key, index_operation)? {
             return self.push_vec(group, value, value_operation);
         }
         self.charge_collection_items(1, index_operation)?;
         self.charge_collection_items(1, value_operation)?;
+        self.reserve_hash_map_storage(values, 1, index_operation)?;
         let mut group = self.vector_storage(1, value_operation)?;
-        let bytes = self.charge_hash_growth::<(K, Vec<V>)>(
-            values.len(),
-            values.capacity(),
-            1,
-            index_operation,
-        )?;
-        values.try_reserve(1).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(u64_from_index(bytes), index_operation)
-        })?;
         group.push(value);
+        self.charge_key(&key, 1, index_operation)?;
         values.insert(key, group);
         Ok(())
     }
 
     /// Inserts a map entry after admitting a new key, if needed.
-    pub fn insert_hash_map<K: Eq + Hash, V>(
+    pub fn insert_hash_map<K: Eq + Hash + DecodeCost, V>(
         &self,
         values: &mut HashMap<K, V>,
         key: K,
@@ -739,11 +736,12 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Option<V>, CodecError> {
         self.admit_hash_map_entry(values, &key, operation)?;
+        self.charge_key(&key, 1, operation)?;
         Ok(values.insert(key, value))
     }
 
     /// Collects entries into a charged hash map.
-    pub fn collect_hash_map<K: Eq + Hash, V>(
+    pub fn collect_hash_map<K: Eq + Hash + DecodeCost, V>(
         &self,
         values: impl IntoIterator<Item = (K, V)>,
         operation: &'static str,
@@ -985,16 +983,12 @@ impl DecodeContext<'_> {
     }
 
     /// Copies a retained set after charging storage and entries.
-    pub fn copy_retained_set<T: Copy + Eq + Hash>(
+    pub fn copy_retained_set<T: Copy + Eq + Hash + DecodeCost>(
         &self,
         values: &HashSet<T>,
         operation: &'static str,
     ) -> Result<HashSet<T>, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        let mut copy = HashSet::new();
-        self.reserve_set(&mut copy, values.len(), operation)?;
-        copy.extend(values.iter().copied());
-        Ok(copy)
+        self.collect_hash_set(self.admit_iter(values, operation)?.copied(), operation)
     }
 
     // SwissTable has a maximum 7/8 load, power-of-two bucket storage, and
@@ -1052,12 +1046,20 @@ impl DecodeContext<'_> {
     }
 
     /// Reserves hash set entries after charging their slots.
-    pub fn reserve_set<T: Eq + Hash>(
+    pub fn reserve_set<T: Eq + Hash + DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        let required = values.len().checked_add(count)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        if required > values.capacity() {
+            self.charge_work(u64_from_index(values.len()), operation)?;
+            for key in self.admit_iter(values, operation)? {
+                self.charge_key(key, 1, operation)?;
+            }
+        }
         let bytes =
             self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
@@ -1068,15 +1070,32 @@ impl DecodeContext<'_> {
     }
 
     /// Reserves hash map entries after charging their slots.
-    pub fn reserve_map<K: Eq + Hash, V>(
+    pub fn reserve_map<K: Eq + Hash + DecodeCost, V>(
         &self,
         values: &mut HashMap<K, V>,
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        self.reserve_hash_map_storage(values, count, operation)
+    }
+
+    fn reserve_hash_map_storage<K: Eq + Hash + DecodeCost, V>(
+        &self,
+        values: &mut HashMap<K, V>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let required = values.len().checked_add(count)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        if required > values.capacity() {
+            self.charge_work(u64_from_index(values.len()), operation)?;
+            for key in self.admit_iter(values, operation)? {
+                self.charge_key(key.0, 1, operation)?;
+            }
+        }
         let bytes =
             self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
-        self.charge_collection_items(u64_from_index(count), operation)?;
         values.try_reserve(count).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
@@ -1123,13 +1142,13 @@ impl DecodeContext<'_> {
     }
 
     /// Charges a new B-tree map key before insertion.
-    pub fn admit_btree_entry<K: Ord, V>(
+    pub fn admit_btree_entry<K: Ord + DecodeCost, V>(
         &self,
         values: &BTreeMap<K, V>,
         key: &K,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        if !values.contains_key(key) {
+        if !self.contains_key_btree_map(values, key, operation)? {
             self.admit_btree_node_storage::<K, V>(values.len(), operation)?;
             self.charge_collection_items(1, operation)?;
         }
@@ -1137,7 +1156,7 @@ impl DecodeContext<'_> {
     }
 
     /// Inserts a B-tree map entry after charging a new key.
-    pub fn insert_btree_map<K: Ord, V>(
+    pub fn insert_btree_map<K: Ord + DecodeCost, V>(
         &self,
         values: &mut BTreeMap<K, V>,
         key: K,
@@ -1145,18 +1164,19 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Option<V>, CodecError> {
         self.admit_btree_entry(values, &key, operation)?;
+        self.charge_key(&key, self.tree_comparisons(values.len()), operation)?;
         Ok(values.insert(key, value))
     }
 
     /// Inserts a B-tree set item after charging a new value.
-    pub fn insert_btree_set<T: Ord>(
+    pub fn insert_btree_set<T: Ord + DecodeCost>(
         &self,
         values: &mut BTreeSet<T>,
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         self.charge_work(u64_from_index(values.len()), operation)?;
-        if values.contains(&value) {
+        if self.contains_btree_set(values, &value, operation)? {
             return Ok(false);
         }
         self.charge_retained(
@@ -1164,11 +1184,12 @@ impl DecodeContext<'_> {
             operation,
         )?;
         self.charge_collection_items(1, operation)?;
+        self.charge_key(&value, self.tree_comparisons(values.len()), operation)?;
         Ok(values.insert(value))
     }
 
     /// Collects distinct ordered values after admitting each new entry.
-    pub fn collect_btree_set<T: Ord>(
+    pub fn collect_btree_set<T: Ord + DecodeCost>(
         &self,
         values: impl IntoIterator<Item = T>,
         operation: &'static str,
@@ -1182,7 +1203,7 @@ impl DecodeContext<'_> {
     }
 
     /// Appends an ordered group member after admitting its group and slot.
-    pub fn push_btree_group<K: Ord, V>(
+    pub fn push_btree_group<K: Ord + DecodeCost, V>(
         &self,
         groups: &mut BTreeMap<K, Vec<V>>,
         key: K,
@@ -1190,18 +1211,19 @@ impl DecodeContext<'_> {
         group_operation: &'static str,
         item_operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(values) = groups.get_mut(&key) {
+        if let Some(values) = self.get_mut_btree_map(groups, &key, group_operation)? {
             return self.push_vec(values, value, item_operation);
         }
         self.admit_btree_entry(groups, &key, group_operation)?;
         let mut values = self.collection_vec(1, item_operation)?;
         values.push(value);
+        self.charge_key(&key, self.tree_comparisons(groups.len()), group_operation)?;
         groups.insert(key, values);
         Ok(())
     }
 
     /// Inserts an ordered group member after admitting its group and value.
-    pub fn insert_btree_group_set<K: Ord, V: Ord>(
+    pub fn insert_btree_group_set<K: Ord + DecodeCost, V: Ord + DecodeCost>(
         &self,
         groups: &mut BTreeMap<K, BTreeSet<V>>,
         key: K,
@@ -1209,13 +1231,14 @@ impl DecodeContext<'_> {
         group_operation: &'static str,
         item_operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(values) = groups.get_mut(&key) {
+        if let Some(values) = self.get_mut_btree_map(groups, &key, group_operation)? {
             self.insert_btree_set(values, value, item_operation)?;
             return Ok(());
         }
         self.admit_btree_entry(groups, &key, group_operation)?;
         let mut values = BTreeSet::new();
         self.insert_btree_set(&mut values, value, item_operation)?;
+        self.charge_key(&key, self.tree_comparisons(groups.len()), group_operation)?;
         groups.insert(key, values);
         Ok(())
     }

@@ -70,6 +70,12 @@ impl From<DesignGuidText> for String {
 #[serde(try_from = "String")]
 pub(crate) struct DesignRelaxedGuidText(cadmpeg_ir::ids::IdentityKey);
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignRelaxedGuidText {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
+
 impl Serialize for DesignRelaxedGuidText {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())

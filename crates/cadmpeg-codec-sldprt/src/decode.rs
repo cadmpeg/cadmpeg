@@ -353,7 +353,7 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
-fn count_keys<K: Ord>(
+fn count_keys<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     keys: impl IntoIterator<Item = K>,
     operation: &'static str,
@@ -373,7 +373,7 @@ fn count_keys<K: Ord>(
     Ok(counts)
 }
 
-fn charged_map<K: Ord, V>(
+fn charged_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     entries: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,
@@ -386,7 +386,7 @@ fn charged_map<K: Ord, V>(
     Ok(map)
 }
 
-fn charged_btree_set<T: Ord>(
+fn charged_btree_set<T: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = T>,
     operation: &'static str,
@@ -412,7 +412,7 @@ fn charged_vec<T>(
     Ok(result)
 }
 
-fn charged_set<'a, T: Eq + Hash + ?Sized + 'a>(
+fn charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost + ?Sized + 'a>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = &'a T>,
     operation: &'static str,
@@ -424,7 +424,7 @@ fn charged_set<'a, T: Eq + Hash + ?Sized + 'a>(
     Ok(set)
 }
 
-fn insert_charged_set<'a, T: Eq + Hash + ?Sized>(
+fn insert_charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost + ?Sized>(
     ctx: &DecodeContext<'_>,
     set: &mut HashSet<&'a T>,
     value: &'a T,
@@ -435,7 +435,7 @@ fn insert_charged_set<'a, T: Eq + Hash + ?Sized>(
     Ok(())
 }
 
-fn charged_hash_map<K: Eq + Hash, V>(
+fn charged_hash_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     entries: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,
@@ -448,7 +448,7 @@ fn charged_hash_map<K: Eq + Hash, V>(
     Ok(map)
 }
 
-fn has_incoherent_refs<T: Eq + Hash>(
+fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     references: &[T],
     known: &HashSet<&T>,

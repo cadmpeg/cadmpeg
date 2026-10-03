@@ -69,6 +69,12 @@ pub(crate) struct PersistentFaceIdentity {
     pub(crate) trailing_fields: Vec<u32>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PersistentFaceIdentity {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.feature_source_id, self.local_id, &self.trailing_fields), ctx, operation)
+    }
+}
+
 fn scale_point(v: &[f64]) -> Point3 {
     Point3::new(v[0] * LEN_TO_MM, v[1] * LEN_TO_MM, v[2] * LEN_TO_MM)
 }

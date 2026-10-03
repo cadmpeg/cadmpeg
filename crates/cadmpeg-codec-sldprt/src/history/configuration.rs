@@ -192,7 +192,7 @@ fn charge_configuration_state_lookup(
     )
 }
 
-fn insert_configuration_value<K: Ord, V>(
+fn insert_configuration_value<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &mut BTreeMap<K, V>,
     key: K,
@@ -1582,7 +1582,7 @@ struct ConfigurationIdentitySet<'id, T> {
     match_operation: &'static str,
 }
 
-impl<'id, T: Eq + std::hash::Hash> ConfigurationIdentitySet<'id, T> {
+impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost> ConfigurationIdentitySet<'id, T> {
     fn new(insert_operation: &'static str, match_operation: &'static str) -> Self {
         Self {
             ids: HashSet::new(),

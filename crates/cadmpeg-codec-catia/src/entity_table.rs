@@ -799,7 +799,7 @@ trait PacketGrowth {
         value: T,
         operation: &'static str,
     ) -> Result<(), Self::Error>;
-    fn insert<T: Eq + Hash>(
+    fn insert<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,
@@ -829,7 +829,7 @@ impl PacketGrowth for UnchargedPacketGrowth {
         Ok(())
     }
 
-    fn insert<T: Eq + Hash>(
+    fn insert<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,
@@ -873,7 +873,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         self.0.push_vec(values, value, operation)
     }
 
-    fn insert<T: Eq + Hash>(
+    fn insert<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,

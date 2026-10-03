@@ -481,11 +481,6 @@ pub(crate) fn project_parameters(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor expressions", 0, u64::MAX))
-        },
         "index Inventor expressions",
     )?;
     let (units, _units_storage) = ctx.unique_index(
@@ -500,11 +495,6 @@ pub(crate) fn project_parameters(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor units", 0, u64::MAX))
-        },
         "index Inventor units",
     )?;
     let (parameters, _parameters_storage) = ctx.unique_index(
@@ -519,11 +509,6 @@ pub(crate) fn project_parameters(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor parameters", 0, u64::MAX))
-        },
         "index Inventor parameters",
     )?;
     let mut projected = Vec::new();

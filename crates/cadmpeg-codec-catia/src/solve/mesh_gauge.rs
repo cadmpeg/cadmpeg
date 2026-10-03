@@ -24,6 +24,14 @@ pub(crate) enum MeshEdgeGeometry {
     Bspline,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for MeshEdgeGeometry {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
+
 type MeshEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, MeshEdgeGeometry, usize, [usize; 2]);
 
 type MeshEdgeGaugeKey = (MeshEdgeGaugeBaseKey, Vec<[usize; 2]>);
@@ -566,7 +574,7 @@ fn bounded_factorial(
     Ok(result)
 }
 
-fn intern_gauge_signatures<T: Ord>(
+fn intern_gauge_signatures<T: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     signatures: impl IntoIterator<Item = T>,
     key_bytes: impl Fn(&T) -> usize,

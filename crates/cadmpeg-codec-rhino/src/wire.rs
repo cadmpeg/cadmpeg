@@ -248,6 +248,13 @@ pub(crate) struct Uuid {
     bytes: [u8; uuid_wire::LEN],
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for Uuid {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl Uuid {
     /// Creates a UUID from bytes in canonical textual order.
     pub(crate) const fn from_canonical(bytes: [u8; uuid_wire::LEN]) -> Self {

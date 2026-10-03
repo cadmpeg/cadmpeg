@@ -1350,7 +1350,7 @@ fn copy_feature_binding_sketch_id(
     SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
-fn reserve_feature_binding_map<K: Eq + std::hash::Hash, V>(
+fn reserve_feature_binding_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     values: &mut HashMap<K, V>,
     operation: &'static str,

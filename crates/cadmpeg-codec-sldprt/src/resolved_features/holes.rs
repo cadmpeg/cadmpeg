@@ -4112,7 +4112,7 @@ fn carrier_placements(
     Ok((!placements.is_empty()).then_some(placements))
 }
 
-fn topology_index<'a, T, K: Eq + std::hash::Hash>(
+fn topology_index<'a, T, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     records: &'a [T],
     key: impl Fn(&'a T) -> &'a K,

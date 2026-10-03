@@ -16,7 +16,7 @@ use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-fn distinct_form_cage_ids<T: Eq + Hash>(
+fn distinct_form_cage_ids<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     ids: &[T],
 ) -> Result<bool, CodecError> {

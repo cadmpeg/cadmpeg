@@ -1026,7 +1026,7 @@ fn full_configuration_mask(ctx: &DecodeContext<'_>, len: usize) -> Result<Vec<u6
     Ok(mask)
 }
 
-fn set_mask_bit<K: Eq + std::hash::Hash>(
+fn set_mask_bit<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     map: &mut HashMap<K, Vec<u64>>,
     key: K,
