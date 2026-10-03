@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cross-record curve and surface dependencies used by model evaluation.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
@@ -9,7 +8,7 @@ use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
-use crate::index::ModelIndex;
+use crate::index::{identities::BorrowedIdentities, ModelIndex};
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -89,14 +88,16 @@ impl fmt::Display for CyclePath<'_, '_, '_> {
     }
 }
 
-fn lookup_work(ctx: &DecodeContext<'_>, count: usize, key_bytes: usize, max_key: usize) -> Result<(), CodecError> {
-    let levels = u64::from(usize::BITS - count.leading_zeros()) + 1;
-    let work = u64_from_index(key_bytes).checked_add(u64_from_index(max_key))
-        .and_then(|bytes| bytes.checked_add(1))
-        .and_then(|bytes| bytes.checked_mul(levels))
-        .and_then(|bytes| bytes.checked_mul(12))
-        .ok_or_else(|| ctx.refuse_codec_limit("cycle identity comparisons", u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, "cycle identity comparisons")
+#[derive(Clone, Copy)]
+enum Visit {
+    Unseen,
+    Active(usize),
+    Complete,
+}
+
+struct Node<'ir> {
+    dependencies: Vec<&'ir str>,
+    visit: Visit,
 }
 
 /// Walk the evaluator graph, stopping when the finding consumer asks to stop.
@@ -106,77 +107,70 @@ fn walk_cycles(
     index: &ModelIndex<'_>,
     mut emit: impl FnMut(Finding) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
-    let ((graph, max_key), mut graph_storage) = ctx.with_scoped_storage("cycle dependency graph", || {
-        let mut graph = BTreeMap::<&str, Vec<&str>>::new();
-        let mut max_key = 0;
-        ctx.charge_work(u64_from_index(ir.model.curves.len()), "cycle carrier scan")?;
-        for curve in &ir.model.curves {
-            if let Some(procedural) = index.procedural_curves_for_curve(curve.id.as_str(), ctx)?.and_then(|rows| rows.first().copied()) {
-                let dependencies = curve_dependencies(ctx, procedural.definition())?;
-                if !dependencies.is_empty() {
-                    max_key = max_key.max(curve.id.as_str().len());
-                    lookup_work(ctx, graph.len(), curve.id.as_str().len(), max_key)?;
-                    ctx.insert_btree_map(&mut graph, curve.id.as_str(), dependencies, "cycle graph nodes")?;
+    let mut graph_storage = ctx.reserve_scoped(0, "cycle dependency graph")?;
+    let mut graph = graph_storage.with_storage(|| {
+        BorrowedIdentities::build(ctx, |add| {
+            for curve in &ir.model.curves {
+                ctx.charge_work(1, "cycle carrier scan")?;
+                if let Some(procedural) = index.procedural_curves_for_curve(curve.id.as_str(), ctx)?.and_then(|rows| rows.first().copied()) {
+                    let dependencies = curve_dependencies(ctx, procedural.definition())?;
+                    if !dependencies.is_empty() {
+                        add(curve.id.as_str(), Node { dependencies, visit: Visit::Unseen })?;
+                    }
                 }
             }
-        }
-        ctx.charge_work(u64_from_index(ir.model.surfaces.len()), "cycle carrier scan")?;
-        for surface in &ir.model.surfaces {
-            if let Some(procedural) = index.procedural_surface_for_surface(surface.id.as_str(), ctx)? {
-                let dependencies = surface_dependencies(ctx, procedural.definition())?;
-                if !dependencies.is_empty() {
-                    max_key = max_key.max(surface.id.as_str().len());
-                    lookup_work(ctx, graph.len(), surface.id.as_str().len(), max_key)?;
-                    ctx.insert_btree_map(&mut graph, surface.id.as_str(), dependencies, "cycle graph nodes")?;
+            for surface in &ir.model.surfaces {
+                ctx.charge_work(1, "cycle carrier scan")?;
+                if let Some(procedural) = index.procedural_surface_for_surface(surface.id.as_str(), ctx)? {
+                    let dependencies = surface_dependencies(ctx, procedural.definition())?;
+                    if !dependencies.is_empty() {
+                        add(surface.id.as_str(), Node { dependencies, visit: Visit::Unseen })?;
+                    }
                 }
             }
-        }
-        Ok::<_, CodecError>((graph, max_key))
+            Ok(())
+        })
     })?;
-    let mut complete = BTreeSet::new();
-    let mut active = BTreeMap::new();
+    let mut starts = graph_storage.with_storage(|| ctx.collect_vec(graph.identities(), "cycle start identities"))?;
+    ctx.stable_sort_by(&mut starts, |first, second| first.cmp(second), |id| id.len(), "cycle start order")?;
     let mut stack = Vec::new();
-    for &start in graph.keys() {
-        lookup_work(ctx, graph.len(), start.len(), max_key)?;
-        if complete.contains(start) {
-            continue;
-        }
-        graph_storage.with_storage(|| ctx.insert_btree_map(&mut active, start, 0usize, "cycle active nodes"))?;
+    for start in starts {
+        ctx.charge_work(1, "cycle start scan")?;
+        let Some(node) = graph.get_mut(ctx, start)? else { continue; };
+        if matches!(node.visit, Visit::Complete) { continue; }
+        node.visit = Visit::Active(0);
         let depth = ctx.enter_nested("cycle traversal depth")?;
         graph_storage.with_storage(|| ctx.push_vec(&mut stack, Frame { node: start, next_child: 0, _depth: depth }, "cycle traversal stack"))?;
         while let Some(frame) = stack.last_mut() {
             ctx.charge_work(1, "cycle traversal")?;
-            lookup_work(ctx, graph.len(), frame.node.len(), max_key)?;
-            let children = &graph[frame.node];
-            if frame.next_child == children.len() {
+            let child = graph.get(ctx, frame.node)?
+                .and_then(|node| node.dependencies.get(frame.next_child)).copied();
+            let Some(child) = child else {
                 if let Some(finished) = stack.pop() {
-                    lookup_work(ctx, graph.len(), finished.node.len(), max_key)?;
-                    active.remove(finished.node);
-                    graph_storage.with_storage(|| ctx.insert_btree_set(&mut complete, finished.node, "cycle completed nodes"))?;
+                    if let Some(node) = graph.get_mut(ctx, finished.node)? { node.visit = Visit::Complete; }
                 }
                 continue;
-            }
-            let child = children[frame.next_child];
+            };
             frame.next_child += 1;
-            lookup_work(ctx, graph.len(), child.len(), max_key)?;
-            if !graph.contains_key(child) || complete.contains(child) {
-                continue;
+            let Some(node) = graph.get_mut(ctx, child)? else { continue; };
+            match node.visit {
+                Visit::Complete => continue,
+                Visit::Active(start_index) => {
+                    ctx.charge_work(u64_from_index(stack.len() - start_index), "cycle path walk")?;
+                    let finding = Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: ctx.format_retained(format_args!("malformed curve/surface reference cycle: {}", CyclePath { stack: &stack[start_index..], child }), "cycle finding message")?,
+                        entity: Some(ctx.copy_retained_text(child, "cycle finding identity")?),
+                    };
+                    if !emit(finding)? { return Ok(()); }
+                }
+                Visit::Unseen => {
+                    node.visit = Visit::Active(stack.len());
+                    let depth = ctx.enter_nested("cycle traversal depth")?;
+                    graph_storage.with_storage(|| ctx.push_vec(&mut stack, Frame { node: child, next_child: 0, _depth: depth }, "cycle traversal stack"))?;
+                }
             }
-            lookup_work(ctx, graph.len(), child.len(), max_key)?;
-            if let Some(&start_index) = active.get(child) {
-                ctx.charge_work(u64_from_index(stack.len() - start_index), "cycle path walk")?;
-                let finding = Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: ctx.format_retained(format_args!("malformed curve/surface reference cycle: {}", CyclePath { stack: &stack[start_index..], child }), "cycle finding message")?,
-                    entity: Some(ctx.copy_retained_text(child, "cycle finding identity")?),
-                };
-                if !emit(finding)? { return Ok(()); }
-                continue;
-            }
-            graph_storage.with_storage(|| ctx.insert_btree_map(&mut active, child, stack.len(), "cycle active nodes"))?;
-            let depth = ctx.enter_nested("cycle traversal depth")?;
-            graph_storage.with_storage(|| ctx.push_vec(&mut stack, Frame { node: child, next_child: 0, _depth: depth }, "cycle traversal stack"))?;
         }
     }
     Ok(())
