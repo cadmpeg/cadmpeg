@@ -7,7 +7,8 @@ trait CodecLike {
 struct Backend;
 impl CodecLike for Backend {
     fn decode(&self, bytes: &[u8]) {
-        for byte in bytes { // finding: uncharged_decode_work
+        for byte in bytes {
+            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -19,7 +20,8 @@ impl CodecLike for Backend {
 }
 trait Base {
     fn scan(&self, bytes: &[u8]) {
-        for byte in bytes { // finding: uncharged_decode_work
+        for byte in bytes {
+            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }

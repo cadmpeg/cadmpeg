@@ -1,30 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 fn leaf(bytes: &[u8]) {
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
 }
-fn short(bytes: &[u8]) { leaf(bytes); }
-fn long(bytes: &[u8]) { short(bytes); }
+fn short(bytes: &[u8]) {
+    leaf(bytes);
+}
+fn long(bytes: &[u8]) {
+    short(bytes);
+}
 fn addressed(bytes: &[u8]) -> usize {
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
     bytes.len()
 }
 fn fallback(bytes: &[u8]) -> usize {
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
     bytes.len()
 }
 static TABLE: [fn(&[u8]) -> usize; 1] = [fallback];
-trait Work { fn work(&self, bytes: &[u8]); }
+trait Work {
+    fn work(&self, bytes: &[u8]);
+}
 struct Inner;
 impl Work for Inner {
     fn work(&self, bytes: &[u8]) {
-        for byte in bytes { // finding: uncharged_decode_work
+        for byte in bytes {
+            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
     }
@@ -35,7 +45,9 @@ trait Object {
 }
 struct Wrapper<T>(T);
 impl<T: Work> Object for Wrapper<T> {
-    fn run(&self, bytes: &[u8]) { self.0.work(bytes); }
+    fn run(&self, bytes: &[u8]) {
+        self.0.work(bytes);
+    }
     fn write(&self, bytes: &[u8]) {
         for byte in bytes {
             std::hint::black_box(byte);
