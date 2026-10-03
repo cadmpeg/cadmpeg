@@ -216,7 +216,10 @@ fn typed_text_rewrite_preserves_its_first_refusal() {
         panic!("text replacement must refuse");
     };
     assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(first.additional, "test:occurrence:point#one".len() as u64);
+    assert_eq!(
+        first.additional,
+        cadmpeg_core::decode::u64_from_index("test:occurrence:point#one".len())
+    );
     assert!(
         matches!("ordinary text".to_owned().rewrite_identities(&ctx, &mut map), Err(CodecError::ResourceLimit(limit)) if limit == first)
     );

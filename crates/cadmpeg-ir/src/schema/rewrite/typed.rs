@@ -214,11 +214,13 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             );
         }
         ctx.charge_work(1, operation)?;
-        self.storage.with_storage(|| ctx.insert_btree_set(&mut self.occupied, destination, operation))?;
+        self.storage
+            .with_storage(|| ctx.insert_btree_set(&mut self.occupied, destination, operation))?;
         self.context.charge_work_limit(0, operation)?;
         let key = Key::owned(self.context, key, operation);
         ctx.charge_work(1, operation)?;
-        self.storage.with_storage(|| ctx.admit_btree_entry(&self.targets, &key, operation))?;
+        self.storage
+            .with_storage(|| ctx.admit_btree_entry(&self.targets, &key, operation))?;
         self.context.charge_work_limit(0, operation)?;
         self.targets.insert(key, cached);
         self.context.charge_work_limit(0, operation)?;

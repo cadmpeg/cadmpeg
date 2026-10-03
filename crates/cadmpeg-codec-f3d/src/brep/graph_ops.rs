@@ -720,7 +720,10 @@ mod tests {
             original.z.to_bits()
         );
         let storage = ctx
-            .reserve_scoped(policy.limits.max_materialized_bytes, "BREP graph scratch released")
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "BREP graph scratch released",
+            )
             .unwrap();
         drop(storage);
         ctx.finish_session().unwrap();

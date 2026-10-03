@@ -1179,9 +1179,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_curves",
             )?;
-            let _attached = ir
-                .model
-                .add_procedural_curve(ctx, &curve, procedural)?;
+            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
                 id,
@@ -1322,9 +1320,7 @@ pub(super) fn decode(
                 "step_geometry_ir_curves",
             )?;
 
-            let _attached = ir
-                .model
-                .add_procedural_curve(ctx, &curve, procedural)?;
+            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
 
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
@@ -1506,9 +1502,7 @@ pub(super) fn decode(
             },
             "step_geometry_ir_curves",
         )?;
-        let _attached = ir
-            .model
-            .add_procedural_curve(ctx, &curve, procedural)?;
+        let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
         ctx.insert_hash_map(
             &mut carrier_index.curves,
             id,

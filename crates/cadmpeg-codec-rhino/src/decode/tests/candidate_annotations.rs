@@ -75,7 +75,10 @@ fn candidate_native_projection_preserves_materialized_refusal() {
         let Err(CodecError::ResourceLimit(first)) = DecodeContext::new(&scan, expand) else {
             panic!("candidate keys must refuse before construction");
         };
-        assert_eq!(first.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        assert_eq!(
+            first.dimension,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        );
         assert_eq!(first.operation, "Rhino object candidate keys");
         assert_eq!(expand.ctx().resource_refusal(), Some(first));
     });
@@ -83,21 +86,28 @@ fn candidate_native_projection_preserves_materialized_refusal() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "source product identity slots",
-        |cap| with_transaction_limits(&scan, u64::MAX, None, Some(cap), |expand| {
-            let mut context = DecodeContext::new(&scan, expand)?;
-            let before = context.session.document().clone();
-            match context.validate_candidate::<()>(|_, _| ()) {
-                Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) => {
-                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-                    assert_eq!(context.session.document(), &before);
-                    assert!(matches!(expand.ctx().charge_work(0, "test native projection fuse"),
-                        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
-                    Err(CodecError::ResourceLimit(limit))
+        |cap| {
+            with_transaction_limits(&scan, u64::MAX, None, Some(cap), |expand| {
+                let mut context = DecodeContext::new(&scan, expand)?;
+                let before = context.session.document().clone();
+                match context.validate_candidate::<()>(|_, _| ()) {
+                    Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) => {
+                        assert_eq!(
+                            limit.dimension,
+                            cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                        );
+                        assert_eq!(context.session.document(), &before);
+                        assert!(
+                            matches!(expand.ctx().charge_work(0, "test native projection fuse"),
+                        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+                        );
+                        Err(CodecError::ResourceLimit(limit))
+                    }
+                    Ok(()) => Ok(()),
+                    other => panic!("unexpected candidate admission result: {other:?}"),
                 }
-                Ok(()) => Ok(()),
-                other => panic!("unexpected candidate admission result: {other:?}"),
-            }
-        }),
+            })
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes

@@ -479,7 +479,11 @@ impl ModelDraft<DraftAccounting> {
             && !self.accounting.exactness.contains_key(&identity)
         {
             ctx.charge_work(1, "draft exactness records")?;
-            ctx.admit_btree_entry(&self.accounting.exactness, &identity, "draft exactness records")?;
+            ctx.admit_btree_entry(
+                &self.accounting.exactness,
+                &identity,
+                "draft exactness records",
+            )?;
             ctx.copy_retained_text(&identity, "draft exactness identity")?
         } else {
             identity

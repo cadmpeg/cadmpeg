@@ -1492,9 +1492,7 @@ fn emit_standard_extrusion_definition(
                     )),
                 },
             );
-            let _attached = ir
-                .model
-                .add_procedural_curve(ctx, &owner, procedure)?;
+            let _attached = ir.model.add_procedural_curve(ctx, &owner, procedure)?;
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
             curve, ..

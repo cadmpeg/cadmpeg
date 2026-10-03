@@ -42,7 +42,11 @@ fn insert_test_procedural_surface(
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(&cadmpeg_ir::document::admission::StandardAdmission, owner, procedural)
+        .add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            owner,
+            procedural,
+        )
         .unwrap()
         .unwrap();
 }

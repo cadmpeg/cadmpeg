@@ -38,8 +38,13 @@ fn extrusion_pcurve_identity_copy_refuses_below_retained_limit() {
             policy.limits.max_retained_bytes = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             add_extrusion_pcurve(
-                &ctx, &mut CadIr::empty(), &mut AnnotationBuilder::new(),
-                PcurveAdmission::Pending(&source, &surface), id.clone(), 0, geometry.clone(),
+                &ctx,
+                &mut CadIr::empty(),
+                &mut AnnotationBuilder::new(),
+                PcurveAdmission::Pending(&source, &surface),
+                id.clone(),
+                0,
+                geometry.clone(),
             )
         },
     );
