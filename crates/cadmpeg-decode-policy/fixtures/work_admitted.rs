@@ -51,3 +51,23 @@ pub fn fixed_and_admitted_chain(ctx: &DecodeContext, bytes: &[u8]) {
     for value in admitted.chain(Some(0)) { std::hint::black_box(value); }
     for value in Some(0).into_iter().chain(bytes.iter().copied()) { std::hint::black_box(value); } // finding: uncharged_decode_work
 }
+
+fn fallible_opaque_chain(bytes: &[u8]) -> Result<impl Iterator<Item = &u8>, ()> {
+    Ok(bytes.first().into_iter().chain(decode::scan::source(bytes.iter())))
+}
+
+fn fallible_opaque_raw(bytes: &[u8]) -> Result<impl Iterator<Item = &u8>, ()> {
+    Ok(bytes.first().into_iter().chain(bytes.iter()))
+}
+
+fn fallible_opaque_utf16(units: &[u16]) -> Result<impl Iterator<Item = Result<char, std::char::DecodeUtf16Error>> + '_, ()> {
+    Ok(char::decode_utf16(decode::scan::source(units.iter()).copied()).map(|character| character))
+}
+
+pub fn fallible_opaque(ctx: &DecodeContext, bytes: &[u8], units: &[u16]) -> Result<(), ()> {
+    let _ctx = ctx;
+    for byte in fallible_opaque_chain(bytes)? { std::hint::black_box(byte); }
+    for character in fallible_opaque_utf16(units)? { std::hint::black_box(character); }
+    for byte in fallible_opaque_raw(bytes)? { std::hint::black_box(byte); } // finding: uncharged_decode_work
+    Ok(())
+}

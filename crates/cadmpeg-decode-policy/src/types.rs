@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt};
+use rustc_middle::ty::{self, Ty, TyCtxt, TypeFoldable, TypeFolder, TypeSuperFoldable, TypeVisitableExt};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Shape {
@@ -26,10 +26,32 @@ pub(crate) fn standard(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -
 }
 
 pub(crate) fn reveal_opaque<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Ty<'tcx> {
-    let ty::Alias(_, alias) = value.kind() else { return value; };
-    let ty::AliasTyKind::Opaque { def_id, .. } = alias.kind else { return value; };
-    let hidden = tcx.type_of(def_id).instantiate(tcx, alias.args).skip_norm_wip();
-    if hidden == value { value } else { reveal_opaque(tcx, hidden) }
+    value.fold_with(&mut RevealOpaque { tcx, active: Vec::new() })
+}
+
+struct RevealOpaque<'tcx> {
+    tcx: TyCtxt<'tcx>,
+    active: Vec<Ty<'tcx>>,
+}
+
+impl<'tcx> TypeFolder<TyCtxt<'tcx>> for RevealOpaque<'tcx> {
+    fn cx(&self) -> TyCtxt<'tcx> { self.tcx }
+
+    fn fold_ty(&mut self, value: Ty<'tcx>) -> Ty<'tcx> {
+        if self.active.contains(&value) { return value; }
+        self.active.push(value);
+        let hidden = match value.kind() {
+            ty::Alias(_, alias) => match alias.kind {
+                ty::AliasTyKind::Opaque { def_id, .. } => self.tcx.type_of(def_id)
+                    .instantiate(self.tcx, alias.args).skip_norm_wip(),
+                _ => value,
+            },
+            _ => value,
+        };
+        let revealed = if hidden == value { value.super_fold_with(self) } else { hidden.fold_with(self) };
+        self.active.pop();
+        revealed
+    }
 }
 
 pub(crate) fn checked(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
