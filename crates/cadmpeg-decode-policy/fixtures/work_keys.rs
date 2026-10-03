@@ -73,6 +73,24 @@ pub fn moves<T: Copy>(ctx: &DecodeContext, target: &mut [T], source: &[T]) -> Re
     Ok(())
 }
 
+pub fn rotations_and_overlap<T: Copy>(ctx: &DecodeContext, target: &mut [T], other: &[T], count: usize) -> Result<(), ()> {
+    ctx.admit_moves(target, 3, "left")?;
+    target.rotate_left(count);
+    target.rotate_right(count); // finding: uncharged_decode_work
+    ctx.admit_moves(other, 3, "wrong slice")?;
+    target.rotate_left(count); // finding: uncharged_decode_work
+    ctx.admit_moves(target, 1, "too few moves")?;
+    target.rotate_right(count); // finding: uncharged_decode_work
+    ctx.admit_moves(target, 3, "right")?;
+    target.rotate_right(count);
+    ctx.admit_moves(target, 1, "overlapping copy")?;
+    target.copy_within(0..count, 1);
+    target.copy_within(0..count, 1); // finding: uncharged_decode_work
+    ctx.admit_moves(other, 1, "wrong source")?;
+    target.copy_within(0..count, 1); // finding: uncharged_decode_work
+    Ok(())
+}
+
 pub fn replaced_child(ctx: &DecodeContext, values: &mut [String], other: &String, replacement: String) -> Result<(), ()> {
     ctx.charge_key(&values[0], 1, "child before mutation")?;
     ctx.charge_key(other, 1, "other")?;
