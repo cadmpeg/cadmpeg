@@ -68,6 +68,31 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Rotates slots left after admitting three inline moves per slot.
+    pub fn rotate_left<T>(&self, values: &mut [T], count: usize, operation: &'static str) -> Result<(), CodecError> {
+        if count > values.len() { return Err(CodecError::malformed("slice rotation exceeds length")); }
+        self.admit_moves(values, 3, operation)?;
+        values.rotate_left(count);
+        Ok(())
+    }
+
+    /// Rotates slots right through the admitted left rotation.
+    pub fn rotate_right<T>(&self, values: &mut [T], count: usize, operation: &'static str) -> Result<(), CodecError> {
+        let Some(left) = values.len().checked_sub(count) else { return Err(CodecError::malformed("slice rotation exceeds length")); };
+        self.rotate_left(values, left, operation)
+    }
+
+    /// Copies an overlapping range after admitting the complete inline slice.
+    pub fn copy_within<T: Copy>(&self, values: &mut [T], source: std::ops::Range<usize>, target: usize, operation: &'static str) -> Result<(), CodecError> {
+        let Some(count) = source.end.checked_sub(source.start) else { return Err(CodecError::malformed("slice copy range is reversed")); };
+        if source.end > values.len() || target > values.len() || count > values.len() - target {
+            return Err(CodecError::malformed("slice copy range exceeds length"));
+        }
+        self.admit_moves(values, 1, operation)?;
+        values.copy_within(source, target);
+        Ok(())
+    }
+
     /// Drops a vector suffix after admitting its slots and complete child bytes.
     pub fn truncate_vec<T: DecodeCost>(&self, values: &mut Vec<T>, length: usize, operation: &'static str) -> Result<(), CodecError> {
         if let Some(removed) = values.get(length..) {
@@ -223,6 +248,64 @@ mod tests {
         let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("refusal") };
         // Two three-slot visits and twelve two-byte moves: one copy and three per swap.
         assert_eq!(limit.used, 30);
+    }
+
+    #[test]
+    fn slice_rotation_and_overlapping_copy_admit_inline_moves() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Three four-slot visits, two rotations of three moves, and one copy of two-byte values.
+        policy.limits.max_work_units = 68;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut values = [1_u16, 2, 3, 4];
+        ctx.rotate_left(&mut values, 1, "left").expect("admission");
+        assert_eq!(values, [2, 3, 4, 1]);
+        ctx.rotate_right(&mut values, 1, "right").expect("admission");
+        assert_eq!(values, [1, 2, 3, 4]);
+        ctx.copy_within(&mut values, 0..3, 1, "overlap").expect("admission");
+        assert_eq!(values, [1, 1, 2, 3]);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").expect_err("exact total") else { panic!("refusal") };
+        assert_eq!(limit.used, 68);
+    }
+
+    #[test]
+    fn slice_rotation_and_copy_refuse_before_mutation() {
+        let arena = DecodeArena::new();
+        for rotation in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = if rotation { 27 } else { 11 };
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let mut values = [1_u16, 2, 3, 4];
+            let result = if rotation { ctx.rotate_right(&mut values, 1, "rotate") } else { ctx.copy_within(&mut values, 0..3, 1, "copy") };
+            let CodecError::ResourceLimit(first) = result.expect_err("refusal") else { panic!("refusal") };
+            assert_eq!(values, [1, 2, 3, 4]);
+            let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").expect_err("fused") else { panic!("refusal") };
+            assert_eq!(first, second);
+        }
+    }
+
+    #[test]
+    fn slice_rotation_and_copy_validate_ranges_and_empty_slices() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let mut values = [1_u8, 2, 3];
+        assert!(matches!(ctx.rotate_left(&mut values, 4, "left"), Err(CodecError::Malformed(_))));
+        assert!(matches!(ctx.rotate_right(&mut values, 4, "right"), Err(CodecError::Malformed(_))));
+        for (source, target) in [(2..1, 0), (0..4, 0), (0..1, 4), (0..3, 1), (usize::MAX..usize::MAX, 0)] {
+            assert!(matches!(ctx.copy_within(&mut values, source, target, "copy"), Err(CodecError::Malformed(_))));
+            assert_eq!(values, [1, 2, 3]);
+        }
+        ctx.rotate_left(&mut values, 0, "zero").expect("admission");
+        ctx.rotate_right(&mut values, 3, "full").expect("admission");
+        assert_eq!(values, [1, 2, 3]);
+        let mut empty: [u8; 0] = [];
+        ctx.rotate_left(&mut empty, 0, "empty").expect("admission");
+        ctx.rotate_right(&mut empty, 0, "empty").expect("admission");
+        ctx.copy_within(&mut empty, 0..0, 0, "empty").expect("admission");
+        let mut owned = [String::from("first"), String::from("second")];
+        ctx.rotate_right(&mut owned, 1, "owned slots").expect("admission");
+        assert_eq!(owned, ["second", "first"]);
     }
 
     #[test]

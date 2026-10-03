@@ -96,9 +96,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(coefficient) = count.checked_mul(self.flow.iterations) else { return; };
         self.flow.work.push(Credit { extents: vec![ExtentTerm { factors: vec![format!("movebytes:{key}")], coefficient }], opaque: false });
     }
-    pub(crate) fn move_work_paid(&mut self, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+    pub(crate) fn move_work_paid(&mut self, definition: DefId, operands: &[&'tcx Expr<'tcx>], name: &str) -> bool {
+        if !types::standard(self.tcx, definition) { return false; }
         let (index, moves): (usize, u64) = match name {
-            "reverse" => (0, 3),
+            "reverse" | "rotate_left" | "rotate_right" => (0, 3),
+            "copy_within" => (0, 1),
             "into_boxed_slice" => (0, 1),
             "copy_from_slice" | "extend_from_slice" | "append" => (1, 1),
             _ => return false,
