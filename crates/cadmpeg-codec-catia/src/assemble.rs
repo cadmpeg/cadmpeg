@@ -47,8 +47,9 @@ pub(crate) fn cgm_source_key(
         format_args!("cgm-{kind}:{key}"),
         "catia_cgm_source_object_id",
     )?;
-    let object_id = cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
+    let object_id =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?
+            .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id,

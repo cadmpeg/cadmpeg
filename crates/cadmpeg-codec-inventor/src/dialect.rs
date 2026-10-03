@@ -603,7 +603,10 @@ fn kernel_layer_for_state(
     match state {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => Ok(Some(kernel_layer(ctx, carrier.family, header)?)),
-            Err(_) => Ok(Some(cadmpeg_asm::dialect::classify(ctx, cadmpeg_asm::dialect::KernelHeaderRef::Unknown)?)),
+            Err(_) => Ok(Some(cadmpeg_asm::dialect::classify(
+                ctx,
+                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+            )?)),
         },
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => Ok(None),
     }

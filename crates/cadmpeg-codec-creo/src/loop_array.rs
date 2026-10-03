@@ -240,8 +240,10 @@ fn parse_frame(
     let header_end = after_class + 2;
     let mut end = section_end;
     for label in ARRAY_BOUNDARY_LABELS {
-        if let Some(offset) = ctx.find_bytes_from(data, label, header_end, "creo loop frame boundaries")?
-            .filter(|offset| *offset < section_end) {
+        if let Some(offset) = ctx
+            .find_bytes_from(data, label, header_end, "creo loop frame boundaries")?
+            .filter(|offset| *offset < section_end)
+        {
             end = end.min(offset);
         }
     }
@@ -329,10 +331,9 @@ fn parse_frame(
 pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
     let mut result = LoopArrayScan::default();
     let mut search = 0;
-    loop {
-        let Some(offset) = ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")? else {
-            break;
-        };
+    while let Some(offset) =
+        ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")?
+    {
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };
@@ -352,14 +353,14 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
     }
     ctx.stable_sort_by(
         result.frames.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan result frames ordering",
     )?;
     ctx.stable_sort_by(
         result.records.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan result records ordering",
     )?;
     Ok(result)

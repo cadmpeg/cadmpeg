@@ -243,8 +243,8 @@ pub(crate) fn consolidated_owner_packets(
         ), "catia_native_owner_packet_rows")?;
     ctx.stable_sort_by_key(
         &mut packets,
-            |value| (value.0, value.1),
-            Ord::cmp,
+        |value| (value.0, value.1),
+        Ord::cmp,
         "catia_native_owner_packet_sort",
     )?;
     let mut output = Vec::new();

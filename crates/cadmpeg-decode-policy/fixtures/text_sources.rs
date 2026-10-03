@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod decode {
     pub mod text {
-        pub trait TextSource { fn as_text(&self) -> &str; }
+        pub trait TextSource {
+            fn as_text(&self) -> &str;
+        }
     }
 }
 use decode::text::TextSource;
 pub struct DecodeContext;
 impl TextSource for str {
-    fn as_text(&self) -> &str { self }
+    fn as_text(&self) -> &str {
+        self
+    }
 }
 impl TextSource for String {
-    fn as_text(&self) -> &str { self.as_str() }
+    fn as_text(&self) -> &str {
+        self.as_str()
+    }
 }
 pub struct Bad<'a>(&'a str);
 impl TextSource for Bad<'_> {

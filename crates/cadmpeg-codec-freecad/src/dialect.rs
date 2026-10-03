@@ -150,7 +150,11 @@ impl FcstdDialect {
     /// decode path, container-only or full, and every inspect reads an
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
-    pub(crate) fn classify(ctx: &cadmpeg_core::decode::DecodeContext<'_>, document: &DocumentFacts, schema_version: &str) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    pub(crate) fn classify(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        document: &DocumentFacts,
+        schema_version: &str,
+    ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
         let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
         declared.insert(
@@ -168,7 +172,10 @@ impl FcstdDialect {
             );
         }
         Ok(if dialect == Self::Unknown {
-            DialectMatch::unverified(dialect.id(), Grammar::of(ctx, &Self::NEAREST_VERIFIED.id())?)
+            DialectMatch::unverified(
+                dialect.id(),
+                Grammar::of(ctx, &Self::NEAREST_VERIFIED.id())?,
+            )
         } else {
             DialectMatch::admitted(dialect.id())
         }

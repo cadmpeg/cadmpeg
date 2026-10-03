@@ -117,13 +117,14 @@ fn hole_enumeration_selected_label_refuses_at_retained_limit() {
 #[test]
 fn binder_sources_and_selectors_refuse_at_matching_limits() {
     let mut support = linked_property("binder", "Support", "binder-support");
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("base".into()),
-        subelements: vec!["Face1".into()],
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("base".into()),
+            subelements: vec!["Face1".into()],
+        })
+        .expect("valid link");
     if let crate::native::PropertyBody::Persisted { links, .. } = &mut support.body {
         links[0] = link;
     }
@@ -150,25 +151,27 @@ fn binder_sources_and_selectors_refuse_at_matching_limits() {
 
 #[test]
 fn binder_native_and_external_targets_refuse_at_retained_limits() {
-    let native = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("native-object".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link")
-    .expect("present link");
+    let native =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("native-object".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link")
+        .expect("present link");
     crate::test_support::assert_retained_refusal_at(&[], "fcstd binder native target", |ctx| {
         super::binder_target(ctx, &native, &std::collections::HashMap::new())
     });
-    let external = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: Some("other-document".into()),
-        document_attribute: None,
-        object: Some("external-object".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link")
-    .expect("present link");
+    let external =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: Some("other-document".into()),
+            document_attribute: None,
+            object: Some("external-object".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link")
+        .expect("present link");
     for operation in [
         "fcstd external binder document",
         "fcstd external binder object",
@@ -446,13 +449,14 @@ fn linked_property_count_to(
     count: usize,
     target: &str,
 ) -> crate::native::PropertyRecord {
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some(target.into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some(target.into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     crate::native::PropertyRecord {
         id: id.into(),
         owner: owner.into(),
@@ -565,13 +569,14 @@ fn dress_up_edge_identity_refuses_at_retained_limit() {
 
 #[test]
 fn scale_base_identity_refuses_at_retained_limit() {
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("body".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("body".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     let base = crate::native::PropertyRecord {
         id: "base-body-property".into(),
         owner: "scale".into(),
@@ -646,13 +651,14 @@ fn part_fillet_edge_values_refuse_at_collection_limit() {
 
 #[test]
 fn part_face_source_selection_refuses_at_retained_limit() {
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("source".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("source".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     let sources = crate::native::PropertyRecord {
         id: "sources-property".into(),
         owner: "face".into(),
@@ -693,7 +699,9 @@ fn part_face_source_selection_refuses_at_retained_limit() {
 #[test]
 fn singular_reference_link_keeps_one_selector_and_rejects_two() {
     let property = |subelements: Vec<String>| {
-        let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+        let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<
+            String,
+        > {
             document: None,
             document_attribute: None,
             object: Some("source".into()),
@@ -771,13 +779,14 @@ fn design_revolution_reference_copies_refuse_at_retained_limits() {
         "<Property><Integer value=\"2\"/></Property>",
         Vec::new(),
     );
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("target".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("target".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     let face = property(
         "terminal-face",
         "UpToFace",
@@ -968,13 +977,14 @@ fn design_profile_references_refuse_at_matching_retained_limits() {
         "fcstd unresolved profile reference",
         |ctx| super::profile_ref(ctx, "source-owner", &[], &sketches),
     );
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("target".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("target".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     let property = crate::native::PropertyRecord {
         id: "profile-property".into(),
         owner: "source-owner".into(),
@@ -1419,13 +1429,14 @@ fn design_ordered_objects_refuse_at_caller_limit() {
 
 #[test]
 fn design_body_member_identity_refuses_at_retained_limit() {
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("child-object".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("child-object".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     let property = crate::native::PropertyRecord {
         id: "group-property".into(),
         owner: "body".into(),
@@ -1463,13 +1474,14 @@ fn design_body_member_identity_refuses_at_retained_limit() {
 
 #[test]
 fn design_body_tip_identity_refuses_at_retained_limit() {
-    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
-        document: None,
-        document_attribute: None,
-        object: Some("child-object".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid link");
+    let link =
+        crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+            document: None,
+            document_attribute: None,
+            object: Some("child-object".into()),
+            subelements: Vec::new(),
+        })
+        .expect("valid link");
     let property = crate::native::PropertyRecord {
         id: "tip-property".into(),
         owner: "body".into(),

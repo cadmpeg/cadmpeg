@@ -25,7 +25,8 @@ fn geometry_census_charges_each_namespace_pass() {
     let region = [0; 64];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 64;
+    // Search admits the 64-byte haystack and the nine-byte namespace marker.
+    policy.limits.max_work_units = 64 + cadmpeg_core::decode::u64_from_index(b"srf_array".len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         read_array_count(&ctx, &region, b"srf_array").expect("first scan"),

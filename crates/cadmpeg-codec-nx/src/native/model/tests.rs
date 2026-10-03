@@ -201,22 +201,16 @@ fn terminal_body_selection_refuses_prefix_materialization_limit() {
 #[test]
 fn terminal_body_selection_refuses_scan_work_limit() {
     let (emitted, bindings, statuses) = one_terminal_body();
-
-    crate::test_support::with_decode_context_over(
+    // Admit status-key lookup before refusing the body scan.
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses)
-                .expect_err("one body scan exceeds zero work units");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "nx terminal body scan"
-            ));
-        },
+        ResourceDimension::WorkUnits,
+        "nx terminal body scan",
+        |ctx| terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "nx terminal body scan")
     );
 }
 

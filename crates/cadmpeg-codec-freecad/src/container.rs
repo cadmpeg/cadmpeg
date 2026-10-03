@@ -65,8 +65,10 @@ pub(crate) fn has_document_markers(
         }
         _ => return Ok(false),
     };
-    Ok(ctx.contains_bytes(document, b"<Document", "scan FreeCAD probe XML")?
-        && ctx.contains_bytes(document, b"SchemaVersion", "scan FreeCAD probe XML")?)
+    Ok(
+        ctx.contains_bytes(document, b"<Document", "scan FreeCAD probe XML")?
+            && ctx.contains_bytes(document, b"SchemaVersion", "scan FreeCAD probe XML")?,
+    )
 }
 
 /// Fully scanned container used by inspection and decode.
@@ -274,8 +276,12 @@ pub(crate) fn source_attributes(
             0,
             "FCStd source attribute records",
         )?;
-        let key = NonBlankString::for_decode(ctx, ctx.copy_retained_text(key, "FCStd source attribute key")?, "validate nonblank text")?
-            .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
+        let key = NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(key, "FCStd source attribute key")?,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
         attributes.insert(key, value);
     }
     Ok(attributes)
@@ -286,7 +292,8 @@ pub(crate) fn summarize(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<ContainerSummary, CodecError> {
-    let matched = crate::dialect::FcstdDialect::classify(ctx, &scan.document, &scan.schema_version)?;
+    let matched =
+        crate::dialect::FcstdDialect::classify(ctx, &scan.document, &scan.schema_version)?;
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()
         .collect();
@@ -686,8 +693,8 @@ pub(crate) fn logical_ledger(
             }
             ctx.stable_sort_by(
                 &mut ranges,
-            |value| &value.0,
-            Ord::cmp,
+                |value| &value.0,
+                Ord::cmp,
                 "FCStd logical GUI range sort",
             )?;
             let mut cursor = 0_u64;
@@ -776,8 +783,8 @@ pub(crate) fn byte_coverage(
     ordered_physical.extend(physical.iter());
     ctx.stable_sort_by_key(
         &mut ordered_physical,
-            |value| value.span.start(),
-            Ord::cmp,
+        |value| value.span.start(),
+        Ord::cmp,
         "FCStd physical span sort",
     )?;
     let physical_exact = ordered_physical
@@ -801,8 +808,8 @@ pub(crate) fn byte_coverage(
             }
             ctx.stable_sort_by_key(
                 &mut spans,
-            |value| value.span.start(),
-            Ord::cmp,
+                |value| value.span.start(),
+                Ord::cmp,
                 "FCStd entry logical span sort",
             )?;
             let exact = if entry.byte_len() == 0 {

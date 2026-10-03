@@ -70,8 +70,16 @@ pub(crate) struct PersistentFaceIdentity {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for PersistentFaceIdentity {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.feature_source_id, self.local_id, &self.trailing_fields), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.feature_source_id, self.local_id, &self.trailing_fields),
+            ctx,
+            operation,
+        )
     }
 }
 

@@ -218,8 +218,9 @@ pub fn classify_layer(
     let mut declared = BTreeMap::new();
     let schema_key =
         ctx.format_retained(format_args!("schema"), "retain Parasolid declaration key")?;
-    let schema_key = cadmpeg_core::text::NonBlankString::for_decode(ctx, schema_key, "validate nonblank text")?
-        .ok_or_else(|| CodecError::malformed("empty Parasolid schema declaration key"))?;
+    let schema_key =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, schema_key, "validate nonblank text")?
+            .ok_or_else(|| CodecError::malformed("empty Parasolid schema declaration key"))?;
     ctx.insert_btree_map(
         &mut declared,
         schema_key,
@@ -228,8 +229,9 @@ pub fn classify_layer(
     )?;
     let carrier_key =
         ctx.format_retained(format_args!("carrier"), "retain Parasolid declaration key")?;
-    let carrier_key = cadmpeg_core::text::NonBlankString::for_decode(ctx, carrier_key, "validate nonblank text")?
-        .ok_or_else(|| CodecError::malformed("empty Parasolid carrier declaration key"))?;
+    let carrier_key =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, carrier_key, "validate nonblank text")?
+            .ok_or_else(|| CodecError::malformed("empty Parasolid carrier declaration key"))?;
     let carrier_text = ctx.format_retained(
         format_args!("{carrier}"),
         "retain Parasolid carrier declaration",

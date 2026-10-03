@@ -43,7 +43,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn allocation(&mut self, expression: &'tcx Expr<'tcx>) {
-        if self.closed_scalar_parse(expression) { return; }
+        if self.closed_scalar_parse(expression) {
+            return;
+        }
         if self.admit_conversion(expression) {
             return;
         }
@@ -116,7 +118,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             if self.symbolic_storage(expression, &operands, name)
                 || self.admitted_slots(expression, &operands, name)
             {
-                self.findings.admitted_growth_operations.insert(expression.hir_id);
+                self.findings
+                    .admitted_growth_operations
+                    .insert(expression.hir_id);
                 return;
             }
             if let Some(receiver) = operands.first() {
@@ -370,7 +374,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.findings.admitted_operations.insert(expression.hir_id);
                     return;
                 }
-                if operands.first().is_some_and(|operand| self.box_storage_paid(expression, operand)) { return; }
+                if operands
+                    .first()
+                    .is_some_and(|operand| self.box_storage_paid(expression, operand))
+                {
+                    return;
+                }
                 self.shape_report(
                     expression,
                     Shape::Unknown,

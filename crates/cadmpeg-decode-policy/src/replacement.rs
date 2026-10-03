@@ -9,13 +9,24 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match value.peel_refs().kind() {
             ty::Str => "text",
             ty::Slice(element) | ty::Array(element, _) => {
-                if matches!(element.kind(), ty::Uint(ty::UintTy::U8)) { "bytes" } else { "slice" }
+                if matches!(element.kind(), ty::Uint(ty::UintTy::U8)) {
+                    "bytes"
+                } else {
+                    "slice"
+                }
             }
-            ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) => match self.tcx.item_name(owner.did()).as_str() {
-                "String" => "text", "Vec" => "vector", "HashMap" => "hash_map",
-                "BTreeMap" => "btree_map", "BinaryHeap" => "heap", "HashSet" => "hash_set", "BTreeSet" => "btree_set",
-                _ => "other",
-            },
+            ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) => {
+                match self.tcx.item_name(owner.did()).as_str() {
+                    "String" => "text",
+                    "Vec" => "vector",
+                    "HashMap" => "hash_map",
+                    "BTreeMap" => "btree_map",
+                    "BinaryHeap" => "heap",
+                    "HashSet" => "hash_set",
+                    "BTreeSet" => "btree_set",
+                    _ => "other",
+                }
+            }
             _ => "other",
         }
     }
@@ -23,29 +34,68 @@ impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn replacement(&self, expression: &'tcx Expr<'tcx>, operation: &str) -> String {
         if let ExprKind::Binary(operator, left, _) = expression.kind {
             return method(match operator.node {
-                BinOpKind::Eq | BinOpKind::Ne if self.replacement_kind(self.expr_ty(left)) == "bytes" => "equal_bytes",
+                BinOpKind::Eq | BinOpKind::Ne
+                    if self.replacement_kind(self.expr_ty(left)) == "bytes" =>
+                {
+                    "equal_bytes"
+                }
                 BinOpKind::Eq | BinOpKind::Ne => "equal",
                 _ => "compare",
             });
         }
-        if matches!(operation, "for loop" | "loop") { return fallback(operation); }
-        let Some((definition, operands)) = self.call(expression) else { return fallback(operation); };
+        if matches!(operation, "for loop" | "loop") {
+            return fallback(operation);
+        }
+        let Some((definition, operands)) = self.call(expression) else {
+            return fallback(operation);
+        };
         let name = self.tcx.item_name(definition);
-        let kind = operands.first().map_or("other", |value| self.replacement_kind(self.expr_ty(value)));
+        let kind = operands
+            .first()
+            .map_or("other", |value| self.replacement_kind(self.expr_ty(value)));
         let result = self.replacement_kind(self.expr_ty(expression));
         let map = matches!(kind, "hash_map" | "btree_map");
         let set = matches!(kind, "hash_set" | "btree_set");
-        if map && matches!(name.as_str(), "get" | "get_mut" | "contains_key" | "remove" | "remove_entry" | "get_key_value" | "entry" | "insert") {
+        if map
+            && matches!(
+                name.as_str(),
+                "get"
+                    | "get_mut"
+                    | "contains_key"
+                    | "remove"
+                    | "remove_entry"
+                    | "get_key_value"
+                    | "entry"
+                    | "insert"
+            )
+        {
             let stem = match name.as_str() {
-                "get_mut" => "get_mut", "contains_key" => "contains_key", "remove_entry" => "remove_entry",
-                "get_key_value" => "get_key_value", "entry" => "entry", "insert" => "insert", "remove" => "remove", _ => "get",
+                "get_mut" => "get_mut",
+                "contains_key" => "contains_key",
+                "remove_entry" => "remove_entry",
+                "get_key_value" => "get_key_value",
+                "entry" => "entry",
+                "insert" => "insert",
+                "remove" => "remove",
+                _ => "get",
             };
             return method(&format!("{stem}_{kind}"));
         }
-        if set && matches!(name.as_str(), "get" | "contains" | "remove" | "insert" | "is_subset" | "is_disjoint") {
+        if set
+            && matches!(
+                name.as_str(),
+                "get" | "contains" | "remove" | "insert" | "is_subset" | "is_disjoint"
+            )
+        {
             return method(&format!("{}_{kind}", name.as_str()));
         }
-        if kind == "heap" && matches!(name.as_str(), "pop" | "push") { return method(if name.as_str() == "pop" { "pop_heap" } else { "push_heap" }); }
+        if kind == "heap" && matches!(name.as_str(), "pop" | "push") {
+            return method(if name.as_str() == "pop" {
+                "pop_heap"
+            } else {
+                "push_heap"
+            });
+        }
         match name.as_str() {
             "contains" if kind == "text" => method("contains_text"),
             "contains" if matches!(kind, "slice" | "bytes" | "vector") => method("contains"),
@@ -73,7 +123,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 }
 
-fn method(name: &str) -> String { format!("DecodeContext::{name}") }
+fn method(name: &str) -> String {
+    format!("DecodeContext::{name}")
+}
 
 pub(crate) fn fallback(name: &str) -> String {
     let operation = match name {
@@ -125,8 +177,21 @@ pub(crate) fn fallback(name: &str) -> String {
 }
 
 pub(crate) fn diagnostic(message: &str) -> String {
-    for shape in ["alloc_filled reaches resize child Clone", "alloc_filled child Clone", "resize child Clone", "into_boxed_slice may shrink/reallocate: capacity equality unresolved", "owning vector iterator collection may move or copy", "vector collection storage reuse", "cloned iterator child copies", "Display output extent unresolved", "derived Default", "custom comparison work"] {
-        if message.contains(shape) { return fallback(shape); }
+    for shape in [
+        "alloc_filled reaches resize child Clone",
+        "alloc_filled child Clone",
+        "resize child Clone",
+        "into_boxed_slice may shrink/reallocate: capacity equality unresolved",
+        "owning vector iterator collection may move or copy",
+        "vector collection storage reuse",
+        "cloned iterator child copies",
+        "Display output extent unresolved",
+        "derived Default",
+        "custom comparison work",
+    ] {
+        if message.contains(shape) {
+            return fallback(shape);
+        }
     }
     let name = message.split([':', ' ']).next().unwrap_or("");
     fallback(name)

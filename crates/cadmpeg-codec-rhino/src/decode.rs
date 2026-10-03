@@ -94,7 +94,9 @@ fn insert_feature_property_owned(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.format_retained(key, "Rhino feature property key")?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino property key"))?;
+        .ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("blank generated Rhino property key")
+    })?;
     ctx.insert_btree_map(properties, key, value, "Rhino feature property entries")?;
     Ok(())
 }
@@ -5495,7 +5497,10 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         ));
         face_ids.push(id);
     }
-    let mut face_loop_ids = ctx.collect_indexed_vec(raw.faces.len(), "Rhino staged Brep face loop lists", |_| Ok(Vec::<cadmpeg_ir::ids::LoopId>::new()))?;
+    let mut face_loop_ids =
+        ctx.collect_indexed_vec(raw.faces.len(), "Rhino staged Brep face loop lists", |_| {
+            Ok(Vec::<cadmpeg_ir::ids::LoopId>::new())
+        })?;
     let mut coedge_positions = ctx.alloc_filled(
         raw.trims.len(),
         None::<usize>,
@@ -6740,8 +6745,8 @@ fn ordered_group_faces<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ordered.extend(groups);
     ctx.sort_unstable_by(
         &mut ordered,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "Rhino Brep ordered shell group sort",
     )?;
     Ok(ordered)
@@ -7204,8 +7209,9 @@ fn source_association(
         format_args!("{}", identity.object_id),
         "Rhino source association object ID",
     )?;
-    let object_id = cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
+    let object_id =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
     let name = (!identity.name.is_empty())
         .then(|| ctx.copy_retained_text(&identity.name, "Rhino source association name"))
         .transpose()?;
@@ -7481,7 +7487,8 @@ fn insert_full_source_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.format_retained(key, "Rhino full source attribute key")?;
-    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+        .ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("generated Rhino source attribute key is blank")
     })?;
     let value = ctx.format_retained(value, "Rhino full source attribute value")?;

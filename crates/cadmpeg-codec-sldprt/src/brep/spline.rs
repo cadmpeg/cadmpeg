@@ -605,8 +605,8 @@ fn array_spans(
     }
     ctx.stable_sort_by_key(
         &mut spans,
-            |value| (value.start,value.count),
-            Ord::cmp,
+        |value| (value.start, value.count),
+        Ord::cmp,
         "sldprt parasolid array spans sort",
     )?;
     ctx.charge_work(
@@ -752,8 +752,15 @@ fn unique_surface_knot_span(
     }
     ctx.stable_sort_by_key(
         &mut pairs,
-            |value| { let (left_knots, left_multiplicities) = value; (left_knots.start,left_knots.count,left_multiplicities.start,) },
-            Ord::cmp,
+        |value| {
+            let (left_knots, left_multiplicities) = value;
+            (
+                left_knots.start,
+                left_knots.count,
+                left_multiplicities.start,
+            )
+        },
+        Ord::cmp,
         "sldprt parasolid surface knot span pairs sort",
     )?;
     ctx.charge_work(

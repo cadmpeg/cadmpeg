@@ -69,11 +69,11 @@ pub(super) fn exact_assembly_alignment(
     lanes.extend(parameter_owners.iter().filter(matching));
     ctx.stable_sort_by_key(
         &mut lanes[..],
-            |value| {
-                let owner = value;
-                owner.local_ordinal()
-            },
-            Ord::cmp,
+        |value| {
+            let owner = value;
+            owner.local_ordinal()
+        },
+        Ord::cmp,
         "sort f3d design assembly_alignment 1",
     )?;
     (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {

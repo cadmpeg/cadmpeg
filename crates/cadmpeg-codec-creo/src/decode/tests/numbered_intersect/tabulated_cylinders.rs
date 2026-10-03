@@ -397,11 +397,14 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         0x07, 0xeb, 0x3f, 0xff, 0xf8, 0x2d, 0x1a, 0x89, 0xfe, 0x14, 0x80, 0xb6, 0x48, 0x9e, 0x85,
         0x1e, 0xb8, 0x51, 0xeb, 0x85,
     ];
-    let tabulated_cylinder_frame = crate::decode::with_test_decode_ctx(|ctx| crate::surface::decode_tabulated_cylinder_frame(
-        ctx,
-        &body,
-        &crate::scalar::ScalarCache::default(),
-    )).expect("frame search admitted")
+    let tabulated_cylinder_frame = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::decode_tabulated_cylinder_frame(
+            ctx,
+            &body,
+            &crate::scalar::ScalarCache::default(),
+        )
+    })
+    .expect("frame search admitted")
     .map(|(frame, _)| frame);
     let parameters = crate::surface::SurfaceParameterRecord {
         surface_id: 815,

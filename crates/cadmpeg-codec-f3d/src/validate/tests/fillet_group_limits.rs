@@ -174,8 +174,12 @@ fn add_radius_parameter(
         class_tag: "305".to_owned().try_into().unwrap(),
         record_index,
         source_ordinal: 0,
-        source: DesignParameterSource::new::<String>(source_kind.to_owned(), Some(owner_index), None)
-            .unwrap(),
+        source: DesignParameterSource::new::<String>(
+            source_kind.to_owned(),
+            Some(owner_index),
+            None,
+        )
+        .unwrap(),
         expression: format!("{value}"),
         expression_offset: base + 12,
         source_kind_offset: base + 32,

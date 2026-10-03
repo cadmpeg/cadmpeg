@@ -42,13 +42,23 @@ fn retained_concatenation_admits_exact_storage_and_both_source_passes() {
     policy.limits.max_retained_bytes = 3;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert_eq!(ctx.concat_retained(&inputs, "concat").expect("admitted"), [1, 2, 3]);
+    assert_eq!(
+        ctx.concat_retained(&inputs, "concat").expect("admitted"),
+        [1, 2, 3]
+    );
     for (work, retained) in [(6, 3), (7, 2)] {
         policy.limits.max_work_units = work;
         policy.limits.max_retained_bytes = retained;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let CodecError::ResourceLimit(first) = ctx.concat_retained(&inputs, "concat").expect_err("refusal") else { panic!("resource refusal") };
-        let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(first) =
+            ctx.concat_retained(&inputs, "concat").expect_err("refusal")
+        else {
+            panic!("resource refusal")
+        };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(first, second);
     }
 }
@@ -95,7 +105,11 @@ fn scan_fill_copies_without_running_clone() {
     struct CopyValue<'a>(&'a std::cell::Cell<usize>);
 
     // Clone has an observable effect so the test detects clone-based fills.
-    #[allow(clippy::non_canonical_clone_impl)]
+    #[allow(
+        clippy::non_canonical_clone_impl,
+        clippy::expl_impl_clone_on_copy,
+        reason = "Clone instrumentation detects a clone-based fill."
+    )]
     impl Clone for CopyValue<'_> {
         fn clone(&self) -> Self {
             self.0.set(self.0.get() + 1);
@@ -107,7 +121,9 @@ fn scan_fill_copies_without_running_clone() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("empty root is admitted");
-    let values = ctx.alloc_filled(3, CopyValue(&clones), "fixed copies").expect("admitted copies");
+    let values = ctx
+        .alloc_filled(3, CopyValue(&clones), "fixed copies")
+        .expect("admitted copies");
     assert_eq!(values.len(), 3);
     assert_eq!(clones.get(), 0);
 }
@@ -125,8 +141,13 @@ fn lossy_utf8_copy_admits_scans_prefix_validation_and_output_fragments() {
         if work == 18 {
             assert_eq!(result.expect("admission"), "a�b");
         } else {
-            let CodecError::ResourceLimit(first) = result.expect_err("refusal") else { panic!("refusal") };
-            let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("refusal") };
+            let CodecError::ResourceLimit(first) = result.expect_err("refusal") else {
+                panic!("refusal")
+            };
+            let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused")
+            else {
+                panic!("refusal")
+            };
             assert_eq!(first, second);
         }
     }

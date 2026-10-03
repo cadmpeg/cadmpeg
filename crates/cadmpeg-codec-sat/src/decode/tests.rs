@@ -393,7 +393,11 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
         vec![1],
         vec!["sat:test:unknown#2".into()],
     ));
-    let (matched, kernel) = crate::dialect::layers(&cadmpeg_test_support::service_decode_context(), &crate::dialect::StreamEvidence::Text(None)).unwrap();
+    let (matched, kernel) = crate::dialect::layers(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::dialect::StreamEvidence::Text(None),
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     // One dialect layer, twelve native arenas and two coverage nodes precede the unknown links.
     policy.limits.max_collection_items = 15;
@@ -454,7 +458,11 @@ fn sat_annotation_storage_uses_the_callers_collection_budget() {
             tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("sphere-surface".into()),
             derived_fields: Vec::new(),
         });
-    let (matched, kernel) = crate::dialect::layers(&cadmpeg_test_support::service_decode_context(), &crate::dialect::StreamEvidence::Text(None)).unwrap();
+    let (matched, kernel) = crate::dialect::layers(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::dialect::StreamEvidence::Text(None),
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     // One dialect layer, twelve native arenas and two coverage nodes precede the handle.
     policy.limits.max_collection_items = 15;

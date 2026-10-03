@@ -1586,6 +1586,8 @@ fn compact_face_quotient_state_cap_is_exhausted() {
     const EDGE_COUNT: usize = 14;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Global byte work admits all states; the local search budget and collection ceiling own this assertion.
+    policy.limits.max_work_units = u64::MAX;
     policy.limits.max_collection_items = 100_000_000;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test root fits the collection limit");

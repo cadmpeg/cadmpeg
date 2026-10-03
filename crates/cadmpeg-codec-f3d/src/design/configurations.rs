@@ -396,8 +396,8 @@ pub(crate) fn project_configurations(
     }
     ctx.stable_sort_by(
         &mut projected,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d configuration variants",
     )?;
     Ok(projected)
@@ -1716,7 +1716,7 @@ mod tests {
         .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        // The sort scratch holds two index vectors for the 21 projected variants.
+        // The allowance is below index scratch and the earlier replacement-vector peak.
         policy.limits.max_materialized_bytes =
             u64::try_from(21 * 2 * std::mem::size_of::<usize>() - 1).unwrap();
 
@@ -1724,7 +1724,7 @@ mod tests {
         assert!(
             matches!(project_configurations(&ctx, std::slice::from_ref(&table)),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::MaterializedBytes
-                && failure.operation == "sort f3d configuration variants")
+                && failure.operation == "f3d projected configuration")
         );
     }
 }

@@ -473,7 +473,8 @@ mod tests {
                 .expect("compound context");
         let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
         let stream = snapshot
-            .stream(&cfb_ctx, "RSeStorage/RSeSegInfo").expect("lookup admission")
+            .stream(&cfb_ctx, "RSeStorage/RSeSegInfo")
+            .expect("lookup admission")
             .expect("fixture stream")
             .id();
         let package = ProteinEnvelope {
@@ -555,36 +556,69 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "ZIP end record search"
         ));
-        // Each inventory admits the end search, one end candidate, three
-        // headers, and dependency indexing at sixteen work units per ZIP byte.
-        // Stored payloads need CRC work; instances scan pages and copy records.
-        let inventory_work = 17 * cadmpeg_core::decode::u64_from_index(zip.len()) + 4;
+        // One public inventory admission includes private ZIP index and record layouts.
+        let inventory_limit = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "verify inventory work",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut inventory_policy = DecodePolicy::service();
+                inventory_policy.limits.max_work_units = cap;
+                let (ctx, root) = DecodeContext::from_root_bytes(&zip, &arena, &inventory_policy)
+                    .expect("inventory input");
+                cadmpeg_container::ArchiveSnapshot::new(&ctx, root)?;
+                ctx.charge_work(1, "verify inventory work")
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(inventory_limit) = inventory_limit else {
+            panic!("inventory work limit")
+        };
+        let inventory_work = inventory_limit.used;
+        // Each stored member lookup reads its name at the three-entry tree depth bound.
+        let instance_lookup_work = 22
+            * cadmpeg_core::decode::u64_from_index(
+                "First/InstanceProperties.bin".len() + "Second/InstanceProperties.bin".len(),
+            );
+        // Each frame grows past its eight-byte marker buffer, then past the marker plus first page body.
+        let frame_growth_work =
+            2 * cadmpeg_core::decode::u64_from_index(8 + RECORD_MARKER.len() + PAGE_SIZE - 8);
         let instance_work = cadmpeg_core::decode::u64_from_index(
             instance.len() + instance.len() - STREAM_HEADER_LEN
                 + RECORD_MARKER.len()
                 + record.len(),
         );
-        // The schema's XML tree admission charges what one parse of its text needs.
-        let schema_text = std::str::from_utf8(schema).expect("ASCII schema");
-        let schema_tree_work = (0..u64::MAX)
-            .find(|&limit| {
+        // One catalog load admits ZIP inventory, CRC, UTF-8, XML and schema property/key storage work.
+        let catalog_limit = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "verify catalog work",
+            |cap| {
                 let arena = DecodeArena::new();
-                let mut tree_policy = DecodePolicy::service();
-                tree_policy.limits.max_work_units = limit;
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(&[], &arena, &tree_policy).expect("empty root");
-                let parsed = ctx
-                    .parse_xml(schema_text, "Protein schema XML tree")
-                    .is_ok();
-                parsed
-            })
-            .expect("schema parses");
+                let mut load_policy = DecodePolicy::service();
+                load_policy.limits.max_work_units = cap;
+                let (ctx, root) = DecodeContext::from_root_bytes(&zip, &arena, &load_policy)
+                    .expect("catalog input");
+                assert!(cadmpeg_protein::SchemaCatalog::load(&ctx, root)?.is_some());
+                ctx.charge_work(1, "verify catalog work")
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(catalog_limit) = catalog_limit else {
+            panic!("catalog work limit")
+        };
+        let catalog_work = catalog_limit.used;
+        let property_node = 11
+            * (std::mem::size_of::<String>()
+                + std::mem::size_of::<cadmpeg_protein::property::DecodedProperty>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<cadmpeg_protein::property::DecodedProperty>()
+                .max(std::mem::align_of::<String>());
         // Each instance copies its decoded strings into retained storage.
         let decoded_string_bytes = "SimpleSchema".len() + "asset-guid".len() + "Simple".len() + 160;
         // One schema CRC, one UTF-8 validation, one XML tree, and one two-step property closure.
-        policy.limits.max_work_units = 2 * inventory_work
-            + 2 * cadmpeg_core::decode::u64_from_index(schema.len())
-            + schema_tree_work
+        policy.limits.max_work_units = inventory_work
+            + catalog_work
+            + instance_lookup_work
+            + frame_growth_work
+            + 2 * 4 * cadmpeg_core::decode::u64_from_index(property_node)
             + 2 * (instance_work + cadmpeg_core::decode::u64_from_index(decoded_string_bytes))
             + 2;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)

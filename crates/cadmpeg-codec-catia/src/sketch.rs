@@ -398,9 +398,24 @@ pub(crate) fn transfer_native_sketch_constraints(
         candidates.into_values(),
         "catia_sketch_constraint_candidate_order",
     )?;
-    ctx.stable_sort_by(&mut candidates, |value| &value.sketch, Ord::cmp, "catia_sketch_constraint_candidates_sort")?;
-    ctx.stable_sort_by(&mut candidates, |value| value.target_record.id.as_str(), Ord::cmp, "catia_sketch_constraint_candidates_sort")?;
-    ctx.stable_sort_by_key(&mut candidates, |value| value.target_record.byte_offset, Ord::cmp, "catia_sketch_constraint_candidates_sort")?;
+    ctx.stable_sort_by(
+        &mut candidates,
+        |value| &value.sketch,
+        Ord::cmp,
+        "catia_sketch_constraint_candidates_sort",
+    )?;
+    ctx.stable_sort_by(
+        &mut candidates,
+        |value| value.target_record.id.as_str(),
+        Ord::cmp,
+        "catia_sketch_constraint_candidates_sort",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut candidates,
+        |value| value.target_record.byte_offset,
+        Ord::cmp,
+        "catia_sketch_constraint_candidates_sort",
+    )?;
 
     let mut transferred = HashSet::new();
     for candidate in candidates {
@@ -492,7 +507,12 @@ pub(crate) fn transfer_native_sketch_constraints(
             &candidate.target_record.id,
             "catia_sketch_constraint_field_name",
         )?;
-        let Some(field_name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, field_id, "validate nonblank text")? else {
+        let Some(field_name) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            field_id,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
         let operand_ref = ctx.copy_retained_text(
@@ -818,7 +838,12 @@ pub(crate) fn transfer_constraint_ranges(
             )?;
         }
         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::native_with_operand(
-            cadmpeg_core::text::NonBlankString::for_decode(ctx, constraint_kind, "validate nonblank text")?.ok_or_else(|| {
+            cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                constraint_kind,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("empty native sketch constraint kind")
             })?,
             constraint_properties(ctx, range)?,
@@ -1009,7 +1034,12 @@ fn constraint_binding(
     let native_kind = match source_record.class_name().filter(|class| !class.is_empty()) {
         Some(name) => {
             let name = ctx.copy_retained_text(name, "catia_sketch_range_operand_kind")?;
-            let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")? else {
+            let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                name,
+                "validate nonblank text",
+            )?
+            else {
                 return Ok(None);
             };
             name
@@ -1017,7 +1047,9 @@ fn constraint_binding(
         None => cadmpeg_core::nonblank_literal!("record"),
     };
     let field_id = ctx.copy_retained_text(&source_record.id, "catia_sketch_range_field_name")?;
-    let Some(field_name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, field_id, "validate nonblank text")? else {
+    let Some(field_name) =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, field_id, "validate nonblank text")?
+    else {
         return Ok(None);
     };
     let source_object_record =

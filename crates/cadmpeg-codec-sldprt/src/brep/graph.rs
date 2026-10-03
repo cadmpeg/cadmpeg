@@ -1384,8 +1384,8 @@ pub(crate) fn decode_bodies(
     ordered.extend(bodies.iter());
     ctx.stable_sort_by(
         &mut ordered,
-            |value| value.1.description.as_str(),
-            |left, right| is_deltas_stream(left).cmp(&is_deltas_stream(right)),
+        |value| value.1.description.as_str(),
+        |left, right| is_deltas_stream(left).cmp(&is_deltas_stream(right)),
         "sort Parasolid body streams",
     )?;
     let mut entity_streams = Vec::new();
@@ -1512,8 +1512,8 @@ fn unique_body_modifiers(
     }
     ctx.stable_sort_by(
         &mut out,
-            |value| &value.body_attr,
-            Ord::cmp,
+        |value| &value.body_attr,
+        Ord::cmp,
         "sort Parasolid body modifiers",
     )?;
     Ok(out)
@@ -1598,8 +1598,8 @@ fn unique_face_colors(
     }
     ctx.stable_sort_by_key(
         &mut out,
-            |value| (value.face_attr,value.offset),
-            Ord::cmp,
+        |value| (value.face_attr, value.offset),
+        Ord::cmp,
         "sort Parasolid face colors",
     )?;
     Ok((out, unresolved))
@@ -1658,8 +1658,8 @@ fn typed_body_records(
                 }
                 ctx.sort_unstable_by(
                     &mut refs,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "sort typed Parasolid shell faces",
                 )?;
                 refs.dedup();
@@ -1672,8 +1672,8 @@ fn typed_body_records(
             }
             ctx.stable_sort_by(
                 &mut shells,
-            |value| &value.attr,
-            Ord::cmp,
+                |value| &value.attr,
+                Ord::cmp,
                 "sort Parasolid topology",
             )?;
             ctx.reserve_vec(&mut regions, 1, "collect typed Parasolid body regions")?;
@@ -1700,8 +1700,8 @@ fn typed_body_records(
     }
     ctx.stable_sort_by(
         &mut records,
-            |value| &value.attr,
-            Ord::cmp,
+        |value| &value.attr,
+        Ord::cmp,
         "sort Parasolid topology",
     )?;
     Ok((!records.is_empty()).then_some(records))
@@ -1719,9 +1719,7 @@ fn sorted_topology_sequences(
     let mut sequences = Vec::new();
     ctx.reserve_vec(&mut sequences, count, operation)?;
     sequences.extend(pairs);
-    ctx.sort_unstable_by(&mut sequences,
-            |value| value,
-            Ord::cmp, operation)?;
+    ctx.sort_unstable_by(&mut sequences, |value| value, Ord::cmp, operation)?;
     sequences.dedup();
     Ok(sequences)
 }
@@ -1738,9 +1736,7 @@ fn sorted_graph_attrs(
     let mut sorted = Vec::new();
     ctx.reserve_vec(&mut sorted, count, operation)?;
     sorted.extend(attrs);
-    ctx.sort_unstable_by(&mut sorted,
-            |value| value,
-            Ord::cmp, operation)?;
+    ctx.sort_unstable_by(&mut sorted, |value| value, Ord::cmp, operation)?;
     Ok(sorted)
 }
 
@@ -1860,7 +1856,7 @@ fn decode_graph(
         ctx.charge_work(work, "resolve Parasolid face owners")?;
         ctx.stable_sort_by_key(
             &mut uses,
-            |value| (value.0.offset,value.0.attr),
+            |value| (value.0.offset, value.0.attr),
             Ord::cmp,
             "sort Parasolid face owners",
         )?;
@@ -1885,8 +1881,8 @@ fn decode_graph(
     }
     ctx.stable_sort_by(
         &mut faces,
-            |value| &value.bridge_attr,
-            Ord::cmp,
+        |value| &value.bridge_attr,
+        Ord::cmp,
         "sort Parasolid topology",
     )?;
     out.stats.ambiguous_face_owners += ambiguous_face_owners;
@@ -3153,80 +3149,80 @@ fn decode_graph(
     }
     ctx.stable_sort_by(
         &mut out.bodies,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.regions,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.shells,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.faces,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.loops,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.coedges,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.edges,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.vertices,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.points,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.surfaces,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.procedural_surfaces,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.curves,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     ctx.stable_sort_by(
         &mut out.pcurves,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort Parasolid graph ids",
     )?;
     out.annotations = annotations.build();
@@ -4297,8 +4293,8 @@ fn unique_inverse_parameter(
     });
     ctx.stable_sort_by(
         &mut candidates,
-            |value| &value.0,
-            f64::total_cmp,
+        |value| &value.0,
+        f64::total_cmp,
         "sort Parasolid inverse parameters",
     )?;
     let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * parameter_domain[1]
@@ -6405,8 +6401,8 @@ fn nurbs_curve_sample_parameters(
     }
     ctx.stable_sort_by(
         &mut parameters,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "sort NURBS sample parameters",
     )?;
     // Every distinct sample participates in the fit bound, including tiny spans.
@@ -7278,7 +7274,9 @@ fn synthesize_cylinder_seams(
             lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(ring);
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ctx.collect_retained_vec([loop_a], "bind Parasolid cylinder seam loop")?);
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(
+                ctx.collect_retained_vec([loop_a], "bind Parasolid cylinder seam loop")?,
+            );
         }
         ctx.insert_hash_set(&mut removed, loop_b, "track replaced Parasolid seam loops")?;
     }
@@ -7528,8 +7526,8 @@ fn synthesize_sphere_seams(
             }
             ctx.stable_sort_by(
                 &mut pole_vertices,
-            |value| value.as_str(),
-            Ord::cmp,
+                |value| value.as_str(),
+                Ord::cmp,
                 "sort Parasolid sphere pole vertices",
             )?;
             pole_vertices.dedup();

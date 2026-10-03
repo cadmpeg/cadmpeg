@@ -849,8 +849,20 @@ fn revolution_line_reference_inputs(
     let mut candidates = selected;
     ctx.stable_sort_by_key(
         &mut candidates,
-            |value| (value.0,[value.1.x.to_bits(),value.1.y.to_bits(),value.1.z.to_bits(),value.2.as_raw().x.to_bits(),value.2.as_raw().y.to_bits(),value.2.as_raw().z.to_bits(),]),
-            Ord::cmp,
+        |value| {
+            (
+                value.0,
+                [
+                    value.1.x.to_bits(),
+                    value.1.y.to_bits(),
+                    value.1.z.to_bits(),
+                    value.2.as_raw().x.to_bits(),
+                    value.2.as_raw().y.to_bits(),
+                    value.2.as_raw().z.to_bits(),
+                ],
+            )
+        },
+        Ord::cmp,
         "sort SLDPRT revolution line references",
     )?;
     candidates.dedup();
@@ -1072,8 +1084,8 @@ pub(crate) fn enrich_history_revolution_inputs(
             }
             ctx.sort_unstable_by(
                 &mut objects,
-            |value| &value.0,
-            Ord::cmp,
+                |value| &value.0,
+                Ord::cmp,
                 "sort SLDPRT revolution feature objects",
             )?;
             for (index, &(start, feature)) in objects.iter().enumerate() {
@@ -1342,7 +1354,16 @@ pub(crate) fn bind_profile_revolution_axes(
         }
         ctx.stable_sort_by_key(
             &mut candidates,
-            |value| [value.origin.x.to_bits(),value.origin.y.to_bits(),value.origin.z.to_bits(),value.direction.x.to_bits(),value.direction.y.to_bits(),value.direction.z.to_bits(),],
+            |value| {
+                [
+                    value.origin.x.to_bits(),
+                    value.origin.y.to_bits(),
+                    value.origin.z.to_bits(),
+                    value.direction.x.to_bits(),
+                    value.direction.y.to_bits(),
+                    value.direction.z.to_bits(),
+                ]
+            },
             Ord::cmp,
             "sort SLDPRT revolution axis candidates",
         )?;
@@ -1757,8 +1778,8 @@ fn profile_roster_origin_axis_endpoints(
     }
     ctx.stable_sort_by_key(
         &mut candidates_sorted,
-            |value| (value[1][0], value[1][1],),
-            |left, right| left.0.total_cmp(&right.0).then(left.1.total_cmp(&right.1)),
+        |value| (value[1][0], value[1][1]),
+        |left, right| left.0.total_cmp(&right.0).then(left.1.total_cmp(&right.1)),
         "sort SLDPRT origin axis candidates",
     )?;
     let mut lines = Vec::<[[f64; 2]; 2]>::new();
@@ -1988,8 +2009,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     }
     ctx.sort_unstable_by_key(
         &mut boundary_relations,
-            |value| [value[0].offset(),value[1].offset()],
-            Ord::cmp,
+        |value| [value[0].offset(), value[1].offset()],
+        Ord::cmp,
         "sldprt profile axis boundary relations sort",
     )?;
     boundary_relations.dedup_by_key(|endpoints| [endpoints[0].id(), endpoints[1].id()]);

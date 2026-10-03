@@ -102,8 +102,12 @@ pub(crate) fn source_object_id_checked(
     value: impl Display,
     operation: &'static str,
 ) -> Result<NonBlankString, CodecError> {
-    NonBlankString::for_decode(ctx, ctx.format_retained(format_args!("{value}"), operation)?, "validate nonblank text")?
-        .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
+    NonBlankString::for_decode(
+        ctx,
+        ctx.format_retained(format_args!("{value}"), operation)?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
 }
 
 /// Return unique native rows after admitting the count map and selected rows.

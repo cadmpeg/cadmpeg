@@ -438,8 +438,8 @@ fn assign_document_parameter_ordinals(
     }
     ctx.sort_unstable_by(
         &mut parameters,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia_document_parameter_order_sort",
     )?;
 
@@ -481,7 +481,12 @@ fn assign_native_operation_parameter_values(
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
             continue;
         };
-        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&parameter.name, "catia_feature_operation_parameter_name")?, "validate nonblank text")? else {
+        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(&parameter.name, "catia_feature_operation_parameter_name")?,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
         if !values_by_feature.contains_key(feature_id) {
@@ -541,9 +546,12 @@ fn assign_native_operation_parameter_values(
                         format_args!("catia_parameter_{name}"),
                         "catia_feature_source_parameter_key",
                     )?;
-                    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
-                        CodecError::malformed("CATIA source parameter key is blank")
-                    })?;
+                    let key = cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        key,
+                        "validate nonblank text",
+                    )?
+                    .ok_or_else(|| CodecError::malformed("CATIA source parameter key is blank"))?;
                     ctx.insert_btree_map(
                         &mut feature.source_properties,
                         key,
@@ -1323,8 +1331,11 @@ fn native_operation_definition_properties(
     )?;
     ctx.sort_unstable_by_key(
         &mut definition_values,
-            |value| { let entity = value.0; (entity.byte_offset, entity.ordinal, entity.id.as_str()) },
-            Ord::cmp,
+        |value| {
+            let entity = value.0;
+            (entity.byte_offset, entity.ordinal, entity.id.as_str())
+        },
+        Ord::cmp,
         "catia_feature_definition_values_sort",
     )?;
     for (ordinal, (entity, value)) in definition_values.into_iter().enumerate() {
@@ -1376,8 +1387,11 @@ fn native_operation_definition_properties(
     )?;
     ctx.sort_unstable_by_key(
         &mut definition_chain_values,
-            |value| { let entity = value.0; (entity.byte_offset, entity.ordinal, entity.id.as_str()) },
-            Ord::cmp,
+        |value| {
+            let entity = value.0;
+            (entity.byte_offset, entity.ordinal, entity.id.as_str())
+        },
+        Ord::cmp,
         "catia_feature_definition_chain_values_sort",
     )?;
     for (ordinal, (entity, value)) in definition_chain_values.into_iter().enumerate() {
@@ -1436,8 +1450,11 @@ fn native_operation_definition_properties(
     )?;
     ctx.sort_unstable_by_key(
         &mut range_intervals,
-            |value| { let entity = value.0; (entity.byte_offset, entity.ordinal, entity.id.as_str()) },
-            Ord::cmp,
+        |value| {
+            let entity = value.0;
+            (entity.byte_offset, entity.ordinal, entity.id.as_str())
+        },
+        Ord::cmp,
         "catia_feature_range_intervals_sort",
     )?;
     range_intervals.dedup_by(|(left, _), (right, _)| left.id == right.id);

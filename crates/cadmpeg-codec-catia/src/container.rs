@@ -420,20 +420,24 @@ fn parse_last_save_version(
     ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Option<LastSaveVersion>, CodecError> {
-    let Some(version) = tagged_ascii(ctx, data, b"<Version>", b"/<Version>")?
-        .and_then(|value| value.parse().ok()) else {
+    let Some(version) =
+        tagged_ascii(ctx, data, b"<Version>", b"/<Version>")?.and_then(|value| value.parse().ok())
+    else {
         return Ok(None);
     };
-    let Some(release) = tagged_ascii(ctx, data, b"<Release>", b"/<Release>")?
-        .and_then(|value| value.parse().ok()) else {
+    let Some(release) =
+        tagged_ascii(ctx, data, b"<Release>", b"/<Release>")?.and_then(|value| value.parse().ok())
+    else {
         return Ok(None);
     };
     let Some(service_pack) = tagged_ascii(ctx, data, b"<ServicePack>", b"/<ServicePack>")?
-        .and_then(|value| value.parse().ok()) else {
+        .and_then(|value| value.parse().ok())
+    else {
         return Ok(None);
     };
-    let Some(hot_fix) = tagged_ascii(ctx, data, b"<HotFix>", b"/<HotFix>")?
-        .and_then(|value| value.parse().ok()) else {
+    let Some(hot_fix) =
+        tagged_ascii(ctx, data, b"<HotFix>", b"/<HotFix>")?.and_then(|value| value.parse().ok())
+    else {
         return Ok(None);
     };
     let Some(build_date) = tagged_ascii(ctx, data, b"<BuildDate>", b"/<BuildDate>")? else {
@@ -449,7 +453,12 @@ fn parse_last_save_version(
     }))
 }
 
-fn tagged_ascii<'a>(ctx: &DecodeContext<'_>, data: &'a [u8], open: &[u8], close: &[u8]) -> Result<Option<&'a str>, CodecError> {
+fn tagged_ascii<'a>(
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    open: &[u8],
+    close: &[u8],
+) -> Result<Option<&'a str>, CodecError> {
     let Some(open_start) = ctx.find_bytes(data, open, "catia_version_tag_scan")? else {
         return Ok(None);
     };
@@ -1059,7 +1068,13 @@ pub(crate) fn parse_stream_directory(
     if data.len() < inner_hdr::LEN {
         return Ok(None);
     }
-    let Some(inner) = ctx.find_bytes_from(data, OUTER_MAGIC, OUTER_MAGIC.len(), "catia_nested_magic_scan")? else {
+    let Some(inner) = ctx.find_bytes_from(
+        data,
+        OUTER_MAGIC,
+        OUTER_MAGIC.len(),
+        "catia_nested_magic_scan",
+    )?
+    else {
         return Ok(None);
     };
     let Some((inner, dir_offset, b)) = (|| {

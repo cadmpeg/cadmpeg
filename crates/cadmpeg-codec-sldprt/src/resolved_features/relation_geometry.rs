@@ -210,8 +210,11 @@ fn spatial_relation_point_line_entities(
     }
     ctx.sort_unstable_by_key(
         &mut point_markers,
-            |value| { let (left, _) = value; left.offset() },
-            Ord::cmp,
+        |value| {
+            let (left, _) = value;
+            left.offset()
+        },
+        Ord::cmp,
         "sort SLDPRT spatial point markers",
     )?;
     let Some(point_operand) = relation.operands.first() else {
@@ -253,8 +256,11 @@ fn spatial_relation_point_line_entities(
     }
     ctx.sort_unstable_by_key(
         &mut line_markers,
-            |value| { let (left, _) = value; left.offset() },
-            Ord::cmp,
+        |value| {
+            let (left, _) = value;
+            left.offset()
+        },
+        Ord::cmp,
         "sort SLDPRT spatial line markers",
     )?;
     let mut line_matches = line_markers.chunks_exact(2).filter_map(|pair| {
@@ -890,8 +896,8 @@ pub(crate) fn project_relation_point_geometry(
                 }
                 ctx.sort_unstable_by_key(
                     &mut endpoints,
-            |value| value.offset(),
-            Ord::cmp,
+                    |value| value.offset(),
+                    Ord::cmp,
                     "sort SLDPRT relation-line fallback endpoints",
                 )?;
                 endpoints.dedup_by_key(|endpoint| endpoint.id());
@@ -1212,8 +1218,8 @@ pub(crate) fn project_relation_solved_line_geometry(
             }
             ctx.stable_sort_by_key(
                 &mut points,
-            |value| value.offset(),
-            Ord::cmp,
+                |value| value.offset(),
+                Ord::cmp,
                 "sort SLDPRT solved-line point markers",
             )?;
             let endpoint_line_markers = |operand_index: usize| -> Result<
@@ -1753,8 +1759,8 @@ fn unique_dynamic_line_pair<'a>(
                 let mut pair_key = [*first_key, *second_key];
                 ctx.sort_unstable_by(
                     &mut pair_key,
-            |value| value,
-            Ord::cmp,
+                    |value| value,
+                    Ord::cmp,
                     "sldprt dynamic line pair keys sort",
                 )?;
                 if let Some((previous, _)) = match_pair {
@@ -1856,8 +1862,8 @@ fn dynamic_line_geometry_key(
     let mut endpoints = [quantize(start.get(), quantum), quantize(end.get(), quantum)];
     ctx.sort_unstable_by(
         &mut endpoints,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sldprt dynamic line endpoints sort",
     )?;
     Ok(Some(endpoints))
@@ -2182,8 +2188,8 @@ fn sort_handle_markers(
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.sort_unstable_by_key(
         markers,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         DIMENSIONED_HANDLE_OPERATION,
     )?;
     Ok(())
@@ -3042,8 +3048,11 @@ fn declared_entity_handle_pairs<'a>(
     pairs.extend(indexed);
     ctx.sort_unstable_by_key(
         &mut pairs,
-            |value| { let [left_center, left_radial] = value; (left_center.offset(),left_radial.offset()) },
-            Ord::cmp,
+        |value| {
+            let [left_center, left_radial] = value;
+            (left_center.offset(), left_radial.offset())
+        },
+        Ord::cmp,
         "sldprt declared entity handle pairs sort",
     )?;
     for [center, radial] in &pairs {
@@ -3301,12 +3310,7 @@ pub(crate) fn project_relation_bindings(
                     entities.push(entity);
                 }
             }
-            ctx.sort_unstable_by(
-                &mut entities,
-            |value| value.as_str(),
-            Ord::cmp,
-                ENTITY_SORT,
-            )?;
+            ctx.sort_unstable_by(&mut entities, |value| value.as_str(), Ord::cmp, ENTITY_SORT)?;
             entities.dedup();
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance

@@ -1261,8 +1261,16 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
     }
     ctx.sort_unstable_by_key(
         &mut chronology,
-            |value| { let record = value.1; (value.2, record.section_link.as_str(), std::cmp::Reverse(record.source_offset), value.0) },
-            Ord::cmp,
+        |value| {
+            let record = value.1;
+            (
+                value.2,
+                record.section_link.as_str(),
+                std::cmp::Reverse(record.source_offset),
+                value.0,
+            )
+        },
+        Ord::cmp,
         "sort NX hole operation chronology",
     )?;
     let group_work = references
@@ -1366,7 +1374,10 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         }
         ctx.sort_unstable_by_key(
             &mut positioned,
-            |value| { let reference = value.2; (value.0, reference.operation_label.as_str(), value.1) },
+            |value| {
+                let reference = value.2;
+                (value.0, reference.operation_label.as_str(), value.1)
+            },
             Ord::cmp,
             "sort NX simple hole group members",
         )?;
@@ -1610,8 +1621,11 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
     }
     ctx.sort_unstable_by_key(
         &mut matches,
-            |value| { let (left, _) = value; simple_hole_group_key(*left) },
-            Ord::cmp,
+        |value| {
+            let (left, _) = value;
+            simple_hole_group_key(left)
+        },
+        Ord::cmp,
         "sort NX hole package groups",
     )?;
     let mut uses = Vec::new();

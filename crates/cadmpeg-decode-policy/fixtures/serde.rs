@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
 impl DecodeContext {
-    pub fn parse_json<T: serde::de::DeserializeOwned>(&self, _text: &str, _operation: &str) -> Result<T, ()> {
+    pub fn parse_json<T: serde::de::DeserializeOwned>(
+        &self,
+        _text: &str,
+        _operation: &str,
+    ) -> Result<T, ()> {
         Err(())
     }
 }
@@ -85,5 +89,6 @@ pub fn custom_decode(_ctx: &DecodeContext, text: &str) {
 pub fn admitted_decode(ctx: &DecodeContext, text: &str) {
     let _derived = ctx.parse_json::<Owned>(text, "derived");
     let _custom = ctx.parse_json::<Custom>(text, "custom"); // finding: unproven_decode_charge
-    let _contained = ctx.parse_json::<ContainsCustom>(text, "contained custom"); // finding: unproven_decode_charge
+    let _contained = ctx.parse_json::<ContainsCustom>(text, "contained custom");
+    // finding: unproven_decode_charge
 }

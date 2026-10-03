@@ -116,8 +116,12 @@ fn copy_history_key(
     ctx: &DecodeContext<'_>,
     key: &NonBlankString,
 ) -> Result<NonBlankString, CodecError> {
-    NonBlankString::for_decode(ctx, copy_history_text(ctx, key.as_str())?, "validate nonblank text")?
-        .ok_or_else(|| CodecError::malformed("blank admitted SLDPRT history key"))
+    NonBlankString::for_decode(
+        ctx,
+        copy_history_text(ctx, key.as_str())?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| CodecError::malformed("blank admitted SLDPRT history key"))
 }
 
 fn clone_feature_content(

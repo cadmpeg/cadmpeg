@@ -7,20 +7,22 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 fn scoped_storage_cases<T>(
     small: u64,
     grown: u64,
+    small_peak: u64,
+    grown_peak: u64,
     build: impl for<'ctx> Fn(
         &'ctx DecodeContext<'ctx>,
         usize,
     ) -> Result<(T, crate::decode::ScopedReservation<'ctx>), CodecError>,
 ) {
-    for (count, bytes) in [(1, small), (5, grown)] {
+    for (count, bytes, peak) in [(1, small, small_peak), (5, grown, grown_peak)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = bytes;
+        policy.limits.max_materialized_bytes = peak;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let (values, reservation) = build(&ctx, count).expect("exact scoped storage");
         let error = ctx
-            .reserve_scoped(1, "verify scoped wrapper charge")
+            .reserve_scoped(peak - bytes + 1, "verify scoped wrapper charge")
             .expect_err("all scoped bytes used");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == bytes
@@ -29,7 +31,7 @@ fn scoped_storage_cases<T>(
         drop(reservation);
 
         let arena = DecodeArena::new();
-        policy.limits.max_materialized_bytes = bytes - 1;
+        policy.limits.max_materialized_bytes = peak - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let Err(error) = build(&ctx, count) else {
             panic!("one below the scoped charge must refuse");
@@ -38,7 +40,7 @@ fn scoped_storage_cases<T>(
             if limit.dimension == ResourceDimension::MaterializedBytes && ctx.resource_refusal() == Some(limit)));
 
         let arena = DecodeArena::new();
-        policy.limits.max_materialized_bytes = bytes;
+        policy.limits.max_materialized_bytes = peak;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let (values, reservation) = build(&ctx, count).expect("unfused scoped storage");
         drop(values);
@@ -49,11 +51,18 @@ fn scoped_storage_cases<T>(
 }
 
 macro_rules! scoped_storage_case {
+    ($name:ident, $small:expr, $grown:expr, peak = ($small_peak:expr, $grown_peak:expr), $value:ty, $ctx:ident, $count:ident, $body:block) => {
+        #[test]
+        fn $name() {
+            fn build<'ctx>($ctx: &'ctx DecodeContext<'ctx>, $count: usize) -> Result<($value, crate::decode::ScopedReservation<'ctx>), CodecError> $body
+            scoped_storage_cases($small, $grown, $small_peak, $grown_peak, build);
+        }
+    };
     ($name:ident, $small:expr, $grown:expr, $value:ty, $ctx:ident, $count:ident, $body:block) => {
         #[test]
         fn $name() {
             fn build<'ctx>($ctx: &'ctx DecodeContext<'ctx>, $count: usize) -> Result<($value, crate::decode::ScopedReservation<'ctx>), CodecError> $body
-            scoped_storage_cases($small, $grown, build);
+            scoped_storage_cases($small, $grown, $small, $grown, build);
         }
     };
 }
@@ -81,34 +90,55 @@ scoped_storage_case!(
 scoped_storage_case!(copy_temporary_slice_storage, 8, 40, Vec<u64>, ctx, count, {
     Ok(ctx.copy_temporary_slice(&[0u64; 5][..count], "temporary copied storage")?)
 });
-scoped_storage_case!(reserve_scoped_vec_storage, 32, 64, Vec<u64>, ctx, count, {
-    let mut reservation = ctx.reserve_scoped(0, "scoped growth storage")?;
-    let mut values = Vec::new();
-    for _ in 0..count {
-        let capacity = values.capacity();
-        let result =
-            ctx.reserve_scoped_vec(&mut reservation, &mut values, 1, "scoped growth storage");
-        if result.is_err() {
-            assert_eq!(values.capacity(), capacity);
+// The growth peak includes the eight new u64 slots and four old slots.
+scoped_storage_case!(
+    reserve_scoped_vec_storage,
+    32,
+    64,
+    peak = (32, 64 + 32),
+    Vec<u64>,
+    ctx,
+    count,
+    {
+        let mut reservation = ctx.reserve_scoped(0, "scoped growth storage")?;
+        let mut values = Vec::new();
+        for _ in 0..count {
+            let capacity = values.capacity();
+            let result =
+                ctx.reserve_scoped_vec(&mut reservation, &mut values, 1, "scoped growth storage");
+            if result.is_err() {
+                assert_eq!(values.capacity(), capacity);
+            }
+            result?;
+            values.push(0);
         }
-        result?;
-        values.push(0);
+        Ok((values, reservation))
     }
-    Ok((values, reservation))
-});
-scoped_storage_case!(push_scoped_vec_storage, 32, 64, Vec<u64>, ctx, count, {
-    let mut reservation = ctx.reserve_scoped(0, "scoped push storage")?;
-    let mut values = Vec::new();
-    for _ in 0..count {
-        let capacity = values.capacity();
-        let result = ctx.push_scoped_vec(&mut reservation, &mut values, 0, "scoped push storage");
-        if result.is_err() {
-            assert_eq!(values.capacity(), capacity);
+);
+// The growth peak includes the eight new u64 slots and four old slots.
+scoped_storage_case!(
+    push_scoped_vec_storage,
+    32,
+    64,
+    peak = (32, 64 + 32),
+    Vec<u64>,
+    ctx,
+    count,
+    {
+        let mut reservation = ctx.reserve_scoped(0, "scoped push storage")?;
+        let mut values = Vec::new();
+        for _ in 0..count {
+            let capacity = values.capacity();
+            let result =
+                ctx.push_scoped_vec(&mut reservation, &mut values, 0, "scoped push storage");
+            if result.is_err() {
+                assert_eq!(values.capacity(), capacity);
+            }
+            result?;
         }
-        result?;
+        Ok((values, reservation))
     }
-    Ok((values, reservation))
-});
+);
 scoped_storage_case!(temporary_set_storage, 67, 103, HashSet<u64>, ctx, count, {
     ctx.temporary_set(count, "temporary set storage")
 });
@@ -150,21 +180,35 @@ scoped_storage_case!(copy_scoped_text_storage, 1, 5, String, ctx, count, {
 scoped_storage_case!(scoped_string_storage, 1, 5, String, ctx, count, {
     ctx.scoped_string(count, "scoped string storage")
 });
-scoped_storage_case!(reserve_scoped_string_storage, 1, 5, String, ctx, count, {
-    let mut reservation = ctx.reserve_scoped(0, "scoped text growth storage")?;
-    let mut text = String::new();
-    for _ in 0..count {
-        let capacity = text.capacity();
-        let result =
-            ctx.reserve_scoped_string(&mut reservation, &mut text, 1, "scoped text growth storage");
-        if result.is_err() {
-            assert_eq!(text.capacity(), capacity);
+// The largest text growth has five live bytes and four old bytes.
+scoped_storage_case!(
+    reserve_scoped_string_storage,
+    1,
+    5,
+    peak = (1, 5 + 4),
+    String,
+    ctx,
+    count,
+    {
+        let mut reservation = ctx.reserve_scoped(0, "scoped text growth storage")?;
+        let mut text = String::new();
+        for _ in 0..count {
+            let capacity = text.capacity();
+            let result = ctx.reserve_scoped_string(
+                &mut reservation,
+                &mut text,
+                1,
+                "scoped text growth storage",
+            );
+            if result.is_err() {
+                assert_eq!(text.capacity(), capacity);
+            }
+            result?;
+            text.push('x');
         }
-        result?;
-        text.push('x');
+        Ok((text, reservation))
     }
-    Ok((text, reservation))
-});
+);
 scoped_storage_case!(format_scoped_storage, 1, 5, String, ctx, count, {
     ctx.format_scoped(
         format_args!("{}", &"xxxxx"[..count]),
@@ -229,13 +273,17 @@ scoped_storage_case!(insert_scoped_btree_map_if_vacant_storage, 320, 4160, BTree
     for value in 0..count { ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, u64::try_from(value).expect("small key"), 0, "tree work", "scoped tree map storage")?; }
     Ok((values, reservation))
 });
-scoped_storage_case!(push_scoped_btree_group_storage, 504, 560, BTreeMap<u64, Vec<u64>>, ctx, count, {
+// The group growth peak includes the old four-member vector allocation.
+scoped_storage_case!(push_scoped_btree_group_storage, 504, 560,
+    peak = (504, 560 + 32), BTreeMap<u64, Vec<u64>>, ctx, count, {
     let mut reservation = ctx.reserve_scoped(0, "scoped tree group storage")?;
     let mut values = BTreeMap::new();
     for _ in 0..count { ctx.push_scoped_btree_group(&mut reservation, &mut values, 0, || 0, 0, "scoped tree group storage")?; }
     Ok((values, reservation))
 });
-scoped_storage_case!(collect_scoped_btree_groups_storage, 504, 560, BTreeMap<u64, Vec<u64>>, ctx, count, {
+// The group growth peak includes the old four-member vector allocation.
+scoped_storage_case!(collect_scoped_btree_groups_storage, 504, 560,
+    peak = (504, 560 + 32), BTreeMap<u64, Vec<u64>>, ctx, count, {
     ctx.collect_scoped_btree_groups(std::iter::repeat_n((0, 0), count), "scoped collected group storage")
 });
 scoped_storage_case!(collect_scoped_btree_map_storage, 320, 4160, BTreeMap<u64, u64>, ctx, count, {
@@ -275,10 +323,12 @@ scoped_storage_case!(
     }
 );
 
+// The growth peak includes the eight new u64 slots and four old slots.
 scoped_storage_case!(
     reserve_scoped_vec_limit_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     Vec<u64>,
     ctx,
     count,

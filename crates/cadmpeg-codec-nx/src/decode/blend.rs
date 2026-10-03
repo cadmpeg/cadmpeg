@@ -3696,8 +3696,8 @@ fn lift_periodic_parameters(
     }
     ctx.stable_sort_by(
         &mut parameters,
-            |value| value,
-            |first, second| {
+        |value| value,
+        |first, second| {
             if period.is_finite() {
                 (first - seed)
                     .abs()
@@ -4810,8 +4810,8 @@ pub(super) fn real_polynomial_roots(
     );
     ctx.stable_sort_by(
         &mut roots,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "nx polynomial real roots sort",
     )?;
     roots.dedup_by(|first, second| {
@@ -4875,8 +4875,8 @@ fn polynomial_roots_in_unit_interval(
     };
     ctx.stable_sort_by(
         &mut critical,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "nx polynomial critical points sort",
     )?;
     critical.dedup_by(|first, second| {
@@ -4937,8 +4937,8 @@ fn polynomial_roots_in_unit_interval(
     }
     ctx.stable_sort_by(
         &mut roots,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "nx polynomial unit interval roots sort",
     )?;
     roots.dedup_by(|first, second| {

@@ -212,10 +212,16 @@ enum IdentityKey<'owner> {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for IdentityKey<'_> {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::EndpointRecord(record) => (1_u8, record).decode_cost(ctx, operation),
-            Self::Unresolved(index, owner, vertex) => (1_u8, index, owner, vertex).decode_cost(ctx, operation),
+            Self::Unresolved(index, owner, vertex) => {
+                (1_u8, index, owner, vertex).decode_cost(ctx, operation)
+            }
         }
     }
 }

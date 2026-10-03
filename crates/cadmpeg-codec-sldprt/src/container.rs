@@ -66,7 +66,11 @@ impl PayloadFamily {
 /// Classify a decompressed block payload by signature.
 ///
 /// Unknown signatures return [`PayloadFamily::Unknown`].
-pub(crate) fn payload_family(ctx: &DecodeContext<'_>, payload: &[u8], operation: &'static str) -> Result<PayloadFamily, CodecError> {
+pub(crate) fn payload_family(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    operation: &'static str,
+) -> Result<PayloadFamily, CodecError> {
     ctx.charge_work(0, operation)?;
     Ok(if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         PayloadFamily::PngPreview
@@ -84,7 +88,8 @@ pub(crate) fn payload_family(ctx: &DecodeContext<'_>, payload: &[u8], operation:
         PayloadFamily::Unqlite
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
-        || (payload.first() == Some(&0x86) && ctx.contains_bytes(&payload[..payload.len().min(64)], b"<", operation)?)
+        || (payload.first() == Some(&0x86)
+            && ctx.contains_bytes(&payload[..payload.len().min(64)], b"<", operation)?)
     {
         PayloadFamily::Xml
     } else {

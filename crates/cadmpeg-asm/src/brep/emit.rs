@@ -211,9 +211,9 @@ fn emit_carrier_surface(
                         program,
                         separator,
                         values,
-                    } => TSplineSubtransform::Inline(
-                        InlineTSplineSubtransform::try_new(ctx, program, separator, values)?,
-                    ),
+                    } => TSplineSubtransform::Inline(InlineTSplineSubtransform::try_new(
+                        ctx, program, separator, values,
+                    )?),
                     EmbeddedTSplineSubtransform::Reference { index, resolved } => {
                         TSplineSubtransform::Resolved {
                             index: SubtypeTableIndex::try_new(index)

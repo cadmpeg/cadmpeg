@@ -59,7 +59,9 @@ fn source_association_is_a_free_carrier_root() {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: Some(SourceObjectAssociation {
             format: crate::CodecFormat::Rhino,
-            object_id: cadmpeg_core::text::NonBlankString::try_from("00000000-0000-0000-0000-000000000000")
+            object_id: cadmpeg_core::text::NonBlankString::try_from(
+                "00000000-0000-0000-0000-000000000000",
+            )
             .expect("nonempty source identity"),
             name: Some("curve".into()),
             color: None,

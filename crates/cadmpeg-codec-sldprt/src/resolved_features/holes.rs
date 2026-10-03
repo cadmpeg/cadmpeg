@@ -930,26 +930,16 @@ fn profiled_hole_construction_with_evidence(
     }
     ctx.sort_unstable_by_key(
         &mut diameters,
-            |value| value.get(),
-            f64::total_cmp,
+        |value| value.get(),
+        f64::total_cmp,
         OPERATION,
     )?;
     ctx.charge_work(u64_from_index(diameters.len()), OPERATION)?;
     diameters.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
-    ctx.sort_unstable_by_key(
-        &mut angles,
-            |value| value.get(),
-            f64::total_cmp,
-        OPERATION,
-    )?;
+    ctx.sort_unstable_by_key(&mut angles, |value| value.get(), f64::total_cmp, OPERATION)?;
     ctx.charge_work(u64_from_index(angles.len()), OPERATION)?;
     angles.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_EXACT_GEOMETRY);
-    ctx.sort_unstable_by_key(
-        &mut lengths,
-            |value| value.get(),
-            f64::total_cmp,
-        OPERATION,
-    )?;
+    ctx.sort_unstable_by_key(&mut lengths, |value| value.get(), f64::total_cmp, OPERATION)?;
     ctx.charge_work(u64_from_index(lengths.len()), OPERATION)?;
     lengths.dedup_by(|left, right| (left.get() - right.get()).abs() <= EPS_HOLE_GEOMETRY);
     let dimension_only =
@@ -1478,7 +1468,11 @@ pub(crate) fn project_profiled_hole_constructions(
             )?;
         }
     }
-    let mut unowned_incomplete_holes = ctx.collect_indexed_vec(histories.len(), "SLDPRT unowned incomplete-hole histories", |_| Ok(Vec::<(&str, u32)>::new()))?;
+    let mut unowned_incomplete_holes = ctx.collect_indexed_vec(
+        histories.len(),
+        "SLDPRT unowned incomplete-hole histories",
+        |_| Ok(Vec::<(&str, u32)>::new()),
+    )?;
     for feature in features.iter() {
         ctx.charge_work(1, OPERATION)?;
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
@@ -1564,14 +1558,17 @@ pub(crate) fn project_profiled_hole_constructions(
         }
         ctx.sort_unstable_by_key(
             holes,
-            |value| (value.1, value.0,),
-            |left, right| left.0.cmp(&right.0).then_with(||left.1.cmp(&right.1)),
+            |value| (value.1, value.0),
+            |left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(right.1)),
             OPERATION,
         )?;
         // The input index preserves history order for equal ordinals.
         ctx.sort_unstable_by_key(
             &mut profiles,
-            |value| { let (left_ordinal, left_index, _) = value; (*left_ordinal,*left_index) },
+            |value| {
+                let (left_ordinal, left_index, _) = value;
+                (*left_ordinal, *left_index)
+            },
             Ord::cmp,
             OPERATION,
         )?;
@@ -2276,8 +2273,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 }
                 ctx.sort_unstable_by(
                     &mut support_axes,
-            |value| value,
-            |left, right| {
+                    |value| value,
+                    |left, right| {
                         [left.x.to_bits(), left.y.to_bits(), left.z.to_bits()].cmp(&[
                             right.x.to_bits(),
                             right.y.to_bits(),
@@ -2380,8 +2377,8 @@ fn coplanar_spatial_position_placements(
     let mut points = sorted_points;
     ctx.sort_unstable_by(
         &mut points,
-            |value| value,
-            |left, right| {
+        |value| value,
+        |left, right| {
             [left.x.to_bits(), left.y.to_bits(), left.z.to_bits()].cmp(&[
                 right.x.to_bits(),
                 right.y.to_bits(),
@@ -2630,8 +2627,8 @@ pub(crate) fn project_generated_hole_axes(
                 solution.extend(axes);
                 ctx.sort_unstable_by(
                     &mut solution,
-            |value| &value.0,
-            Ord::cmp,
+                    |value| &value.0,
+                    Ord::cmp,
                     "sort SLDPRT generated hole axes",
                 )?;
                 let mut placements = Vec::new();
@@ -2669,8 +2666,8 @@ pub(crate) fn project_generated_hole_axes(
             let count = u64_from_index(lane_solutions.len());
             ctx.sort_unstable_by(
                 &mut lane_solutions,
-            |value| value,
-            |(left_index, left), (right_index, right)| {
+                |value| value,
+                |(left_index, left), (right_index, right)| {
                     left.iter()
                         .map(placement_key)
                         .cmp(right.iter().map(placement_key))
@@ -3267,7 +3264,10 @@ fn partition_seeded_hole_axes(
         seed_directions.push(direction);
     }
 
-    let mut partitions = ctx.collect_indexed_vec(siblings.len(), "SLDPRT seeded hole-axis partitions", |_| Ok(Vec::<HolePlacement>::new()))?;
+    let mut partitions =
+        ctx.collect_indexed_vec(siblings.len(), "SLDPRT seeded hole-axis partitions", |_| {
+            Ok(Vec::<HolePlacement>::new())
+        })?;
     for placement in candidates {
         let HolePlacement::Axis { axis, .. } = placement else {
             return Ok(());
@@ -3870,8 +3870,8 @@ pub(crate) fn project_hole_axes(
             };
             ctx.sort_unstable_by(
                 &mut solutions,
-            |value| value,
-            |left, right| {
+                |value| value,
+                |left, right| {
                     left.iter()
                         .map(placement_key)
                         .cmp(right.iter().map(placement_key))
@@ -3941,8 +3941,18 @@ fn cylindrical_bore_axes(
     }
     ctx.sort_unstable_by_key(
         &mut axes,
-            |value| { let (left_origin, left_axis) = value; [left_origin.x.to_bits(),left_origin.y.to_bits(),left_origin.z.to_bits(),left_axis.x.to_bits(),left_axis.y.to_bits(),left_axis.z.to_bits(),] },
-            Ord::cmp,
+        |value| {
+            let (left_origin, left_axis) = value;
+            [
+                left_origin.x.to_bits(),
+                left_origin.y.to_bits(),
+                left_origin.z.to_bits(),
+                left_axis.x.to_bits(),
+                left_axis.y.to_bits(),
+                left_axis.z.to_bits(),
+            ]
+        },
+        Ord::cmp,
         "sort SLDPRT bore carrier axes",
     )?;
     axes.dedup();
@@ -3992,8 +4002,8 @@ fn plane_owned_bore_placements(
     placements.extend(by_position);
     ctx.sort_unstable_by(
         &mut placements,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT plane-owned bore axes",
     )?;
     let mut axes = Vec::new();
@@ -4075,8 +4085,8 @@ fn carrier_placements(
     carriers.extend(by_axis);
     ctx.sort_unstable_by(
         &mut carriers,
-            |value| &value.0,
-            Ord::cmp,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT hole carrier axes",
     )?;
     let mut placements = Vec::new();
@@ -4252,8 +4262,12 @@ pub(crate) fn project_topological_hole_constructions(
                     }
                     ctx.sort_unstable_by_key(
                         &mut candidates,
-            |value| (value.0, value.1,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)),
+                        |value| (value.0, value.1),
+                        |left, right| {
+                            left.0
+                                .total_cmp(&right.0)
+                                .then_with(|| left.1.total_cmp(&right.1))
+                        },
                         "sort SLDPRT matching hole bores",
                     )?;
                     ctx.charge_work(
@@ -4649,8 +4663,12 @@ fn marker_pattern_bore_axes(
         }
         ctx.sort_unstable_by_key(
             &mut loci,
-            |value| (value.u, value.v,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)),
+            |value| (value.u, value.v),
+            |left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+            },
             OPERATION,
         )?;
         ctx.charge_work(u64_from_index(loci.len()), OPERATION)?;
@@ -4767,12 +4785,7 @@ fn match_marker_loci_to_bore_axes(
             ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((point, *origin, axis));
         }
-        ctx.sort_unstable_by(
-            &mut candidates,
-            |value| &value.0,
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut candidates, |value| &value.0, Ord::cmp, OPERATION)?;
         let mut candidate_loci = Vec::new();
         ctx.reserve_vec(&mut candidate_loci, candidates.len(), OPERATION)?;
         for ([x, y, z], ..) in &candidates {
@@ -4903,9 +4916,7 @@ impl BoreSubsetSearch<'_, '_> {
                 .reserve_vec(&mut subset, assigned.len(), OPERATION)?;
             subset.extend_from_slice(assigned);
             self.ctx
-                .sort_unstable_by(&mut subset,
-            |value| value,
-            Ord::cmp, OPERATION)?;
+                .sort_unstable_by(&mut subset, |value| value, Ord::cmp, OPERATION)?;
             self.ctx
                 .charge_work(u64_from_index(subset.len()), OPERATION)?;
             self.ctx.insert_hash_set(subsets, subset, OPERATION)?;
@@ -5008,8 +5019,11 @@ pub(super) fn feature_object_byte_ranges<'a>(
     }
     ctx.sort_unstable_by_key(
         &mut objects,
-            |value| { let (left_offset, left_index, _) = value; (*left_offset,*left_index) },
-            Ord::cmp,
+        |value| {
+            let (left_offset, left_index, _) = value;
+            (*left_offset, *left_index)
+        },
+        Ord::cmp,
         OPERATION,
     )?;
     let mut ranges = HashMap::new();
@@ -5349,9 +5363,7 @@ fn constrained_bore_axes(
             QUANTUM,
         ));
     }
-    ctx.sort_unstable_by(&mut axes,
-            |value| value,
-            Ord::cmp, OPERATION)?;
+    ctx.sort_unstable_by(&mut axes, |value| value, Ord::cmp, OPERATION)?;
     axes.dedup();
     if axes.is_empty() {
         return Ok(None);
@@ -5410,9 +5422,7 @@ fn compact_position_loci(
         ctx.reserve_vec(&mut nodes, 2, OPERATION)?;
         nodes.extend([*first, *second]);
     }
-    ctx.sort_unstable_by(&mut nodes,
-            |value| value,
-            Ord::cmp, OPERATION)?;
+    ctx.sort_unstable_by(&mut nodes, |value| value, Ord::cmp, OPERATION)?;
     nodes.dedup();
     if nodes.is_empty() || nodes.len() > loci.len() {
         return Ok(None);
@@ -5472,9 +5482,7 @@ impl CompactPositionSearch<'_, '_> {
                 return Ok(());
             }
             self.ctx
-                .sort_unstable_by(&mut solution,
-            |value| value,
-            Ord::cmp, OPERATION)?;
+                .sort_unstable_by(&mut solution, |value| value, Ord::cmp, OPERATION)?;
             self.ctx.insert_hash_set(solutions, solution, OPERATION)?;
             return Ok(());
         }

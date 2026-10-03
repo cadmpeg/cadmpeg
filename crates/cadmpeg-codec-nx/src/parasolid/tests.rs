@@ -768,14 +768,15 @@ fn legacy_stream_slots_refuse_exhausted_collection() {
 fn attribute_duplicate_identifier_index_refuses_lookup_work() {
     let record = [0, 0x4f, 0, 0, 0, 1, 0, 17, b'A'];
     let bytes = record.repeat(2);
-    crate::test_support::with_decode_context_over(
+    // Admit the first insertion and refuse the duplicate-key lookup.
+    let error = crate::test_support::resource_refusal_at(
         &bytes,
-        |policy| policy.limits.max_work_units = 21,
-        |ctx| {
-            assert!(
-                matches!(crate::parasolid::attribute_identifiers(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "resolve duplicate NX attribute identifier")
-            );
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "resolve duplicate NX attribute identifier",
+        |ctx| crate::parasolid::attribute_identifiers(ctx, &bytes).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "resolve duplicate NX attribute identifier")
     );
 }
 

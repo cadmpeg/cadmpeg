@@ -390,8 +390,8 @@ fn cmnm_model_name_refuses_before_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(data, &arena, &policy).expect("CMNM input is admitted");
-    let error = super::super::cmnm_model_name(&ctx, data)
-        .expect_err("model name needs retained bytes");
+    let error =
+        super::super::cmnm_model_name(&ctx, data).expect_err("model name needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo CMNM model name"));

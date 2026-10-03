@@ -263,7 +263,8 @@ pub(crate) fn decode(
                 "hatch loop object is not a curve",
             ));
         };
-        if let Err(error) = loops.push(expand.ctx(), HatchLoop { kind, curve }, "Rhino hatch loops") {
+        if let Err(error) = loops.push(expand.ctx(), HatchLoop { kind, curve }, "Rhino hatch loops")
+        {
             return Err(refused(body.position(), &error));
         }
         warnings.append_admitted(expand.ctx(), &mut loop_warnings)?;

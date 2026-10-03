@@ -218,8 +218,11 @@ impl<T: TryInto<NonBlankString>> TryFrom<DesignParameterDraft<T>> for DesignPara
     fn try_from(draft: DesignParameterDraft<T>) -> Result<Self, Self::Error> {
         let evaluated_value =
             FiniteReal::new(draft.evaluated_value).ok_or("evaluated_value must be finite")?;
-        let expression =
-            draft.expression.try_into().ok().ok_or("expression must not be empty")?;
+        let expression = draft
+            .expression
+            .try_into()
+            .ok()
+            .ok_or("expression must not be empty")?;
         let name = draft.name.try_into().ok().ok_or("name must not be empty")?;
         let unit = draft
             .unit
@@ -293,7 +296,9 @@ impl DesignParameter {
     #[cfg(test)]
     /// Checked replacement of a present unit token.
     pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {
-        let value = NonBlankString::try_from(value).ok().ok_or("unit must not be empty")?;
+        let value = NonBlankString::try_from(value)
+            .ok()
+            .ok_or("unit must not be empty")?;
         let unit = self.unit.as_mut().ok_or("unit is absent")?;
         unit.value = value;
         Ok(())

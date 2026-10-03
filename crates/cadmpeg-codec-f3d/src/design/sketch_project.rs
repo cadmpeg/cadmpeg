@@ -295,8 +295,8 @@ pub(crate) fn project_sketch_design(
     }
     ctx.stable_sort_by(
         &mut sketches[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch_project 1",
     )?;
 
@@ -481,10 +481,20 @@ pub(crate) fn project_sketch_design(
             continue;
         };
         let sketch = crate::design::identity::neutral_sketch_id(ctx, placement)?;
-        let Some(text_value) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&text.text, "f3d planar sketch text")?, "validate nonblank text")? else {
+        let Some(text_value) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(&text.text, "f3d planar sketch text")?,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
-        let Some(font_family) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&text.font_family, "f3d planar sketch font family")?, "validate nonblank text")? else {
+        let Some(font_family) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            ctx.copy_retained_text(&text.font_family, "f3d planar sketch font family")?,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
         let Ok(font_weight) = text.font_weight.try_into() else {
@@ -534,8 +544,8 @@ pub(crate) fn project_sketch_design(
     }
     ctx.stable_sort_by(
         &mut entities[..],
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design sketch_project 2",
     )?;
     for sketch in &mut sketches {
@@ -987,8 +997,8 @@ pub(crate) fn project_spatial_sketch_design(
     }
     ctx.stable_sort_by(
         &mut entities[..],
-            |value| value.id(),
-            Ord::cmp,
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design sketch_project 3",
     )?;
     let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
@@ -1031,8 +1041,8 @@ pub(crate) fn project_spatial_sketch_design(
     }
     ctx.stable_sort_by(
         &mut sketches[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch_project 4",
     )?;
     Ok((sketches, entities))
@@ -1361,8 +1371,8 @@ pub(crate) fn project_spatial_sketch_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch_project 5",
     )?;
     Ok(constraints)

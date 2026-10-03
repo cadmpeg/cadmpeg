@@ -179,8 +179,8 @@ pub(super) fn decode(
     }
     ctx.stable_sort_by(
         &mut candidates,
-            |value| &value.offset,
-            Ord::cmp,
+        |value| &value.offset,
+        Ord::cmp,
         "step_drawing_candidates_sort",
     )?;
 
@@ -584,7 +584,11 @@ fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> DrawingParameters
     DrawingParameters::from_slice(direct.unwrap_or_default())
 }
 
-fn parameter_key(ctx: &DecodeContext<'_>, name: &str, index: usize) -> Result<NonBlankString, CodecError> {
+fn parameter_key(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    index: usize,
+) -> Result<NonBlankString, CodecError> {
     Ok(match (name, index) {
         ("DRAWING_DEFINITION", 0) => cadmpeg_core::nonblank_literal!("name"),
         ("DRAWING_DEFINITION", 1) => cadmpeg_core::nonblank_literal!("description"),

@@ -185,7 +185,9 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
     );
     group.type_name = "App::PropertyLinkList".into();
     if let PropertyBody::Persisted { links, .. } = &mut group.body {
-        links[1] = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<String> {
+        links[1] = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire::<
+            String,
+        > {
             document: None,
             document_attribute: None,
             object: Some("stage".into()),

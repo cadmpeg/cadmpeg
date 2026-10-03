@@ -9,7 +9,11 @@ use serde::{Deserialize, Serialize};
 pub(super) struct ToggleId(String);
 
 impl cadmpeg_core::decode::cost::DecodeCost for ToggleId {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }

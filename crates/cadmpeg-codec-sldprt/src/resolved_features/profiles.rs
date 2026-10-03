@@ -135,12 +135,7 @@ pub(crate) fn bind_sketch_profiles(
             ctx.reserve_vec(&mut starts, 1, OPERATION)?;
             starts.push((name.offset, ordinal, feature));
         }
-        ctx.sort_unstable_by_key(
-            &mut starts,
-            |value| (value.0,value.1),
-            Ord::cmp,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by_key(&mut starts, |value| (value.0, value.1), Ord::cmp, OPERATION)?;
         for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
             for feature in features.iter() {
                 let work = u64_from_index(feature.native_ref.as_ref().map_or(0, String::len))
@@ -461,7 +456,10 @@ pub(crate) fn project_compact_sketch_profiles(
         )?;
         ctx.sort_unstable_by_key(
             &mut objects,
-            |value| { let (left_offset, left_ordinal, _) = value; (*left_offset,*left_ordinal) },
+            |value| {
+                let (left_offset, left_ordinal, _) = value;
+                (*left_offset, *left_ordinal)
+            },
             Ord::cmp,
             OPERATION,
         )?;
@@ -1627,7 +1625,8 @@ pub(crate) fn project_marker_backed_sketches(
             let mut projected = Vec::new();
             for marker in markers.iter().copied() {
                 let native_kind = cadmpeg_core::nonblank_literal!(
-                    ctx, "sldprt:marker-geometry:{}",
+                    ctx,
+                    "sldprt:marker-geometry:{}",
                     marker.kind().native_code()
                 )?;
                 let entity = (|| -> Result<_, MarkerGeometryFailure> {
@@ -2674,8 +2673,11 @@ pub(crate) fn project_sketch_block_profiles(
             }
             ctx.sort_unstable_by_key(
                 &mut objects,
-            |value| { let (left_offset, _, left_ordinal) = value; (*left_offset,*left_ordinal) },
-            Ord::cmp,
+                |value| {
+                    let (left_offset, _, left_ordinal) = value;
+                    (*left_offset, *left_ordinal)
+                },
+                Ord::cmp,
                 "sort SLDPRT sketch block objects",
             )?;
 
@@ -3286,17 +3288,17 @@ fn transform_sketch_block_geometry(
                 return Ok(None);
             };
             return Ok(SketchGeometry::from_parts(SketchGeometryDefinition::Text {
-                text: cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_profile_text(
+                text: cadmpeg_core::text::NonBlankString::for_decode(
                     ctx,
-                    text.as_str(),
-                    OPERATION,
-                )?, "validate nonblank text")?
+                    copy_profile_text(ctx, text.as_str(), OPERATION)?,
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| CodecError::malformed("blank decoded sketch text"))?,
-                font_family: cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_profile_text(
+                font_family: cadmpeg_core::text::NonBlankString::for_decode(
                     ctx,
-                    font_family.as_str(),
-                    OPERATION,
-                )?, "validate nonblank text")?
+                    copy_profile_text(ctx, font_family.as_str(), OPERATION)?,
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| CodecError::malformed("blank decoded sketch font"))?,
                 font_weight: *font_weight,
                 height: *height,
@@ -3472,8 +3474,8 @@ fn project_detached_legacy_config_sketches(
             )?;
             ctx.sort_unstable_by_key(
                 &mut frames,
-            |value| reference_plane_frame_key(value),
-            Ord::cmp,
+                reference_plane_frame_key,
+                Ord::cmp,
                 "sort SLDPRT legacy config sketch frames",
             )?;
             frames.dedup();
@@ -3632,8 +3634,8 @@ fn legacy_config_hex_sketch(
     )?;
     ctx.sort_unstable_by_key(
         &mut curves,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         "sort SLDPRT legacy hex sketch curves",
     )?;
     let prepared = (|| {
@@ -3915,8 +3917,8 @@ fn legacy_config_collinear_sketch(
     )?;
     ctx.sort_unstable_by_key(
         &mut curves,
-            |value| value.offset(),
-            Ord::cmp,
+        |value| value.offset(),
+        Ord::cmp,
         "sort SLDPRT legacy collinear sketch curves",
     )?;
     let prepared = (|| {
@@ -3972,8 +3974,12 @@ fn legacy_config_collinear_sketch(
     chain.push((origin.0, origin.1, ordinal));
     ctx.sort_unstable_by_key(
         &mut chain,
-            |value| (value.1[0], value.2,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.cmp(&right.1)),
+        |value| (value.1[0], value.2),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+        },
         "sort SLDPRT legacy collinear sketch chain",
     )?;
     chain.dedup_by(|left, right| {
@@ -4048,8 +4054,13 @@ fn legacy_config_collinear_sketch(
     )?;
     ctx.sort_unstable_by_key(
         &mut points,
-            |value| (value.1[0], value.1[1], value.2,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)).then_with(||left.2.cmp(&right.2)),
+        |value| (value.1[0], value.1[1], value.2),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+        },
         "sort SLDPRT legacy collinear sketch points",
     )?;
     points.dedup_by(|left, right| {

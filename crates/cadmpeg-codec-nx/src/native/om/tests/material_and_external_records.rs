@@ -1545,11 +1545,12 @@ fn fastload_identity_map_refuses_materialized_limit_before_reserve() {
 
 #[test]
 fn fastload_identity_map_refuses_work_limit_before_counting() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = 100;
-    };
-    let error =
-        native_fastload_result(adjust_policy).expect_err("fifty IDs need one hundred work units");
+    // Admit the registry scan before refusing the identity count.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "count NX FastLoad identities",
+        |cap| native_fastload_result(|policy| policy.limits.max_work_units = cap),
+    );
     assert_fastload_limit(
         &error,
         ResourceDimension::WorkUnits,

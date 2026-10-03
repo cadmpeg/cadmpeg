@@ -429,13 +429,19 @@ fn each_document_classifies_into_the_row_its_declarations_match() {
             Admission::Admitted
         } else {
             Admission::Unverified {
-                using: cadmpeg_core::dialect::Grammar::of(&cadmpeg_test_support::service_decode_context(), &InventorDialect::Cfb3Rse31Meta8.id()).unwrap(),
+                using: cadmpeg_core::dialect::Grammar::of(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &InventorDialect::Cfb3Rse31Meta8.id(),
+                )
+                .unwrap(),
             }
         };
         assert_eq!(matched.admission(), &expected_admission, "{}", case.label);
         if !case.admitted {
             assert_eq!(
-                matched.using(&cadmpeg_test_support::service_decode_context()).unwrap(),
+                matched
+                    .using(&cadmpeg_test_support::service_decode_context())
+                    .unwrap(),
                 Some(InventorDialect::Cfb3Rse31Meta8.id()),
                 "{}",
                 case.label
@@ -576,7 +582,11 @@ fn inspect_and_decode_do_not_invent_a_kernel_layer_without_kernel_evidence() {
 
 #[test]
 fn a_selected_unparseable_kernel_carrier_charges_its_retained_layer() {
-    let matched = cadmpeg_asm::dialect::classify(&cadmpeg_test_support::service_decode_context(), cadmpeg_asm::dialect::KernelHeaderRef::Unknown).unwrap();
+    let matched = cadmpeg_asm::dialect::classify(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
@@ -589,7 +599,11 @@ fn a_selected_unparseable_kernel_carrier_charges_its_retained_layer() {
 
 #[test]
 fn kernel_dialect_loss_refuses_collection_limit_before_note() {
-    let matched = cadmpeg_asm::dialect::classify(&cadmpeg_test_support::service_decode_context(), cadmpeg_asm::dialect::KernelHeaderRef::Unknown).unwrap();
+    let matched = cadmpeg_asm::dialect::classify(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -665,14 +679,20 @@ fn kernel_layer_refuses_retained_limit_before_recovery_grammar() {
     let container = InventorContainer::open(&setup_ctx, root).expect("primary container");
     let primary = DialectMatch::admitted(InventorDialect::Unknown.id());
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 5;
+    // Five value bytes and the three copied declaration keys precede the grammar.
+    let retained = 5 + cadmpeg_core::decode::u64_from_index(
+        cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR.len()
+            + cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR.len()
+            + cadmpeg_asm::dialect::DECLARED_REFERENCE_WIDTH.len(),
+    );
+    policy.limits.max_retained_bytes = retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    // Major, minor and reference-width text use five bytes before the fifteen-byte grammar copy.
+    // The grammar copy owns fifteen bytes after complete declaration storage.
     assert!(matches!(
         layers(&ctx, &primary, &container.rse.active_carrier),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 5
+                && limit.used == retained
                 && limit.additional == 15
                 && limit.operation == "copy dialect grammar"
     ));
@@ -708,8 +728,13 @@ fn kernel_recovery_message_refuses_retained_limit_and_matches_asm_text() {
         .expect("residual kernel note");
     assert_eq!(
         note.message,
-        cadmpeg_asm::dialect::unverified_message(&cadmpeg_test_support::service_decode_context(), "the active kernel carrier", &matched).unwrap()
-            .expect("residual message")
+        cadmpeg_asm::dialect::unverified_message(
+            &cadmpeg_test_support::service_decode_context(),
+            "the active kernel carrier",
+            &matched
+        )
+        .unwrap()
+        .expect("residual message")
     );
 }
 

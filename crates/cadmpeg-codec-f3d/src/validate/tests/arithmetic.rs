@@ -61,7 +61,8 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
             class_tag: "305".to_owned().try_into().unwrap(),
             record_index: 7,
             source_ordinal: 0,
-            source: DesignParameterSource::new::<String>("Dimension".into(), Some(6), None).unwrap(),
+            source: DesignParameterSource::new::<String>("Dimension".into(), Some(6), None)
+                .unwrap(),
             expression: "1".into(),
             expression_offset: 32,
             source_kind_offset: 52,
@@ -282,7 +283,8 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
             class_tag: "305".to_owned().try_into().unwrap(),
             record_index: 7,
             source_ordinal: 0,
-            source: DesignParameterSource::new::<String>("Dimension".into(), Some(6), None).unwrap(),
+            source: DesignParameterSource::new::<String>("Dimension".into(), Some(6), None)
+                .unwrap(),
             expression: "1".into(),
             expression_offset: 32,
             source_kind_offset: 52,

@@ -753,8 +753,12 @@ pub(super) fn source_meta(
     let mut placement_instruction_count = 0usize;
     for definition in &scan.features.definitions {
         let count = crate::feature::definitions::placement_instructions(ctx, definition)?.count();
-        placement_instruction_count = placement_instruction_count.checked_add(count)
-            .ok_or_else(|| CodecError::Malformed("Creo placement instruction count overflow".into()))?;
+        placement_instruction_count =
+            placement_instruction_count
+                .checked_add(count)
+                .ok_or_else(|| {
+                    CodecError::Malformed("Creo placement instruction count overflow".into())
+                })?;
     }
     coverage.record(
         ctx,

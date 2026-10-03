@@ -2340,8 +2340,24 @@ fn active_body_streams<'a>(
             });
         }
     }
-    ctx.stable_sort_by(&mut streams, |value| value.header.description.as_str(), |left: &str, right: &str| (!contains_ascii_case_insensitive(left, "partition")).cmp(&(!contains_ascii_case_insensitive(right, "partition"))), "sort SLDPRT active body streams")?;
-        ctx.stable_sort_by(&mut streams, |value| value.source_stream().as_str(), |left: &str, right: &str| (!contains_ascii_case_insensitive(left, "partition")).cmp(&(!contains_ascii_case_insensitive(right, "partition"))), "sort SLDPRT active body streams")?;
+    ctx.stable_sort_by(
+        &mut streams,
+        |value| value.header.description.as_str(),
+        |left: &str, right: &str| {
+            (!contains_ascii_case_insensitive(left, "partition"))
+                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
+        },
+        "sort SLDPRT active body streams",
+    )?;
+    ctx.stable_sort_by(
+        &mut streams,
+        |value| value.source_stream().as_str(),
+        |left: &str, right: &str| {
+            (!contains_ascii_case_insensitive(left, "partition"))
+                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
+        },
+        "sort SLDPRT active body streams",
+    )?;
     Ok(streams)
 }
 
@@ -3648,7 +3664,12 @@ fn build_geometry_ir(
             id.as_str(),
             &source_stream.path,
             0,
-            container::payload_family(ctx, &source_stream.payload, "classify SLDPRT compound source payload")?.label(),
+            container::payload_family(
+                ctx,
+                &source_stream.payload,
+                "classify SLDPRT compound source payload",
+            )?
+            .label(),
             Exactness::ByteExact,
         )?;
         unknowns.push(UnknownRecord::retained(
@@ -3923,8 +3944,12 @@ fn add_solidworks_xml_metadata(
         }
         for (key, value) in &envelope.configuration_attributes {
             let name = copy_retained_string(ctx, key, "retain SLDPRT configuration key")?;
-            let name = cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
-                .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
+            let name = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                name,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
             let value = copy_retained_string(ctx, value, "retain SLDPRT configuration value")?;
             ctx.insert_btree_map(
                 attributes,

@@ -1312,8 +1312,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression: text.to_string(),
         value: None,
         source_entry: "entry".to_string(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 0,
     };
     let parameter_use = |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
@@ -1451,8 +1453,10 @@ fn native_parameter_with_limit(
         expression: "12.5".into(),
         value: None,
         source_entry: "entry".into(),
-        source_table: cadmpeg_core::text::NonBlankString::try_from("nx:test:expression-table#table")
-            .unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::try_from(
+            "nx:test:expression-table#table",
+        )
+        .unwrap(),
         source_offset: 0,
     };
     let use_ = crate::native::features::FeatureParameterUse {

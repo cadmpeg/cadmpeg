@@ -7,8 +7,8 @@ use std::io::SeekFrom;
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
-use super::collect::LinearGrowth;
 use super::budget::{DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
+use super::collect::LinearGrowth;
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
@@ -280,10 +280,15 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let (reserve, bytes, _growth) = self.linear_growth::<u8>(
-            text.len(), text.capacity(), additional, LinearGrowth::Exact, operation,
+            text.len(),
+            text.capacity(),
+            additional,
+            LinearGrowth::Exact,
+            operation,
         )?;
         text.try_reserve_exact(reserve).map_err(|_| {
-            self.budget.retained_allocation_failed(u64_from_index(bytes), operation)
+            self.budget
+                .retained_allocation_failed(u64_from_index(bytes), operation)
         })
     }
 
@@ -329,7 +334,8 @@ impl<'a> DecodeContext<'a> {
                 }
                 Err(error) => {
                     let valid_len = error.valid_up_to();
-                    let prefix = self.validate_utf8(&remaining[..valid_len], operation)?
+                    let prefix = self
+                        .validate_utf8(&remaining[..valid_len], operation)?
                         .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?;
                     self.append_retained(&mut text, prefix, operation)?;
                     self.append_retained(&mut text, "�", operation)?;
@@ -352,8 +358,9 @@ impl<'a> DecodeContext<'a> {
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
         self.charge_work(u64_from_index(count), operation)?;
-        let mut values = self.collection_vec(count, operation)?;
+        let mut values = self.vector_storage(count, operation)?;
         for _ in 0..count {
             values.push(value);
         }
@@ -454,7 +461,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Sort admitted values stably using fallible index scratch.
     ///
-    /// `key` borrows the compared projection; its DecodeCost includes owned children.
+    /// `key` borrows the compared projection; its `DecodeCost` includes owned children.
     /// Equal values retain input order. Values move in place without cloning children.
     /// Each value must project the same key and comparison cost throughout the sort.
     pub fn stable_sort_by<T, K: super::cost::DecodeCost + ?Sized>(
@@ -464,8 +471,16 @@ impl<'a> DecodeContext<'a> {
         mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let projection = super::sort::BorrowedKey { key, marker: std::marker::PhantomData };
-        self.stable_sort_projected(values, &projection, |left, right| compare((projection.key)(left), (projection.key)(right)), operation)
+        let projection = super::sort::BorrowedKey {
+            key,
+            marker: std::marker::PhantomData,
+        };
+        self.stable_sort_projected(
+            values,
+            &projection,
+            |left, right| compare((projection.key)(left), (projection.key)(right)),
+            operation,
+        )
     }
 
     /// Sorts copied keys stably without cloning any owned children.
@@ -477,8 +492,16 @@ impl<'a> DecodeContext<'a> {
         mut compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let projection = super::sort::CopiedKey { key, marker: std::marker::PhantomData };
-        self.stable_sort_projected(values, &projection, |left, right| compare(&(projection.key)(left), &(projection.key)(right)), operation)
+        let projection = super::sort::CopiedKey {
+            key,
+            marker: std::marker::PhantomData,
+        };
+        self.stable_sort_projected(
+            values,
+            &projection,
+            |left, right| compare(&(projection.key)(left), &(projection.key)(right)),
+            operation,
+        )
     }
 
     fn stable_sort_projected<T, P: super::sort::SortProjection<T>>(
@@ -513,16 +536,21 @@ impl<'a> DecodeContext<'a> {
             operation,
         )?;
         let (mut order, _order_storage) = self.scoped_vector_storage(values.len(), operation)?;
-        let (mut destinations, _destination_storage) = self.scoped_vector_storage(values.len(), operation)?;
+        let (mut destinations, _destination_storage) =
+            self.scoped_vector_storage(values.len(), operation)?;
         for index in 0..values.len() {
             self.charge_work(2, operation)?;
             order.push(index);
             destinations.push(0usize);
         }
-        self.sort_unstable_by_key(&mut order,
+        self.sort_unstable_by_key(
+            &mut order,
             |&index| (projection.project(&values[index]), index),
-            |(_, left), (_, right)| compare(&values[*left], &values[*right]).then_with(|| left.cmp(right)),
-            operation)?;
+            |(_, left), (_, right)| {
+                compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
+            },
+            operation,
+        )?;
         for (destination, source) in order.into_iter().enumerate() {
             self.charge_work(1, operation)?;
             destinations[source] = destination;
@@ -633,18 +661,20 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty view list".into(),
             ));
         }
-        let total = self.admit_iter(inputs, "concat_views")?.try_fold(0usize, |total, view| {
-            total.checked_add(view.window().len()).ok_or_else(|| {
-                self.budget.refuse(
-                    ResourceDimension::RetainedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    self.budget.policy().limits.max_retained_bytes,
-                    u64_from_index(total),
-                    u64_from_index(view.window().len()),
-                    "concat_views",
-                )
-            })
-        })?;
+        let total = self
+            .admit_iter(inputs, "concat_views")?
+            .try_fold(0usize, |total, view| {
+                total.checked_add(view.window().len()).ok_or_else(|| {
+                    self.budget.refuse(
+                        ResourceDimension::RetainedBytes,
+                        ResourceFailure::BudgetExceeded,
+                        self.budget.policy().limits.max_retained_bytes,
+                        u64_from_index(total),
+                        u64_from_index(view.window().len()),
+                        "concat_views",
+                    )
+                })
+            })?;
         let (mut buffer, reservation) = self.scoped_vector_storage(total, "concat_views")?;
         for view in self.admit_iter(inputs, "concat_views")? {
             let data = view.window();
@@ -652,7 +682,9 @@ impl<'a> DecodeContext<'a> {
             self.charge_work(u64_from_index(data.len()), "concat_views")?;
             buffer.extend_from_slice(data);
         }
-        let bytes = self.arena.alloc(self, self.into_boxed_slice(buffer, "concat_views boxing")?)?;
+        let bytes = self
+            .arena
+            .alloc(self, self.into_boxed_slice(buffer, "concat_views boxing")?)?;
         reservation.commit()?;
         let space = self.allocate_space()?;
         Ok(View::over_space(bytes, space))
@@ -672,11 +704,13 @@ impl<'a> DecodeContext<'a> {
                 "cannot concatenate an empty buffer list".into(),
             ));
         }
-        let total = self.admit_iter(inputs, operation)?.try_fold(0_usize, |total, input| {
-            total.checked_add(input.len()).ok_or_else(|| {
-                CodecError::NotImplemented("retained concatenation exceeds usize".into())
-            })
-        })?;
+        let total = self
+            .admit_iter(inputs, operation)?
+            .try_fold(0_usize, |total, input| {
+                total.checked_add(input.len()).ok_or_else(|| {
+                    CodecError::NotImplemented("retained concatenation exceeds usize".into())
+                })
+            })?;
         let mut buffer = self.vector_storage(total, operation)?;
         for input in self.admit_iter(inputs, operation)? {
             self.reserve_capacity(&mut buffer, input.len(), operation)?;
@@ -803,15 +837,21 @@ impl<'a> ExpandWriter<'_, 'a> {
             ));
         }
         self.ctx.budget.charge_decompressed(len, "expand_write")?;
-        self.ctx.reserve_precharged_bytes(&mut self.buffer, data.len(), "expand_write storage", |storage| {
-            self.ctx.fuse(
-                ResourceFailure::AllocationFailed,
-                LimitScope::PerExpand,
-                storage,
-                "expand_write",
-            )
-        })?;
-        self.ctx.charge_work(u64_from_index(data.len()), "expand_write copy")?;
+        self.ctx.reserve_precharged_bytes(
+            &mut self.buffer,
+            data.len(),
+            "expand_write storage",
+            |storage| {
+                self.ctx.fuse(
+                    ResourceFailure::AllocationFailed,
+                    LimitScope::PerExpand,
+                    storage,
+                    "expand_write",
+                )
+            },
+        )?;
+        self.ctx
+            .charge_work(u64_from_index(data.len()), "expand_write copy")?;
         self.buffer.extend_from_slice(data);
         Ok(())
     }
@@ -819,10 +859,10 @@ impl<'a> ExpandWriter<'_, 'a> {
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         self.check_exact()?;
-        let bytes = self
-            .ctx
-            .arena
-            .alloc(self.ctx, self.ctx.into_boxed_slice(self.buffer, "expansion boxing")?)?;
+        let bytes = self.ctx.arena.alloc(
+            self.ctx,
+            self.ctx.into_boxed_slice(self.buffer, "expansion boxing")?,
+        )?;
         let space = self.ctx.allocate_space()?;
         Ok(View::over_space(bytes, space))
     }
@@ -904,8 +944,12 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let first = ctx.begin_expand(super::ExpandSpec::Exact(512)).expect("first declaration");
-        let second = ctx.begin_expand(super::ExpandSpec::Exact(512)).expect("second declaration");
+        let first = ctx
+            .begin_expand(super::ExpandSpec::Exact(512))
+            .expect("first declaration");
+        let second = ctx
+            .begin_expand(super::ExpandSpec::Exact(512))
+            .expect("second declaration");
         assert_eq!(first.buffer.capacity(), 0);
         assert_eq!(second.buffer.capacity(), 0);
         assert_eq!(ctx.budget.decompressed_used(), 0);
@@ -917,12 +961,17 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 1;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut writer = ctx.begin_expand(spec).expect("writer");
             writer.write(b"ab").expect("first output");
             let capacity = writer.buffer.capacity();
-            let CodecError::ResourceLimit(limit) = writer.write(b"c")
-                .expect_err("two old allocation bytes exceed the overlap limit") else { panic!("resource refusal") };
+            let CodecError::ResourceLimit(limit) = writer
+                .write(b"c")
+                .expect_err("two old allocation bytes exceed the overlap limit")
+            else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(limit.operation, "expand_write storage");
             assert_eq!(limit.additional, 2);
@@ -941,15 +990,20 @@ mod tests {
             policy.limits.max_materialized_bytes = 2;
             // Two first-output bytes, two old-allocation bytes and one appended byte.
             policy.limits.max_work_units = 5;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let mut writer = ctx.begin_expand(spec).expect("writer");
             writer.write(b"ab").expect("first output");
             writer.write(b"c").expect("second output");
             assert_eq!(writer.buffer, b"abc");
             assert_eq!(ctx.budget.decompressed_used(), 3);
             assert!(ctx.reserve_scoped(2, "released overlap").is_ok());
-            let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "work probe")
-                .expect_err("exact work total") else { panic!("resource refusal") };
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(1, "work probe")
+                .expect_err("exact work total")
+            else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.used, 5);
         }
     }
@@ -961,11 +1015,17 @@ mod tests {
         // The first output copies two bytes before the next two-byte move.
         policy.limits.max_work_units = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut writer = ctx.begin_expand(super::ExpandSpec::Unknown).expect("writer");
+        let mut writer = ctx
+            .begin_expand(super::ExpandSpec::Unknown)
+            .expect("writer");
         writer.write(b"ab").expect("first output");
         let capacity = writer.buffer.capacity();
-        let CodecError::ResourceLimit(limit) = writer.write(b"c")
-            .expect_err("old allocation move exceeds work") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(limit) = writer
+            .write(b"c")
+            .expect_err("old allocation move exceeds work")
+        else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "expand_write storage");
         assert_eq!(limit.used, 2);
@@ -1353,9 +1413,14 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut writer = ctx.begin_expand(super::ExpandSpec::Exact(4)).expect("writer");
-        let crate::CodecError::ResourceLimit(original) = writer.write(b"work")
-            .expect_err("copy work") else { panic!("resource refusal"); };
+        let mut writer = ctx
+            .begin_expand(super::ExpandSpec::Exact(4))
+            .expect("writer");
+        let crate::CodecError::ResourceLimit(original) =
+            writer.write(b"work").expect_err("copy work")
+        else {
+            panic!("resource refusal");
+        };
         assert_eq!(writer.written(), 0);
         assert_eq!(original.operation, "expand_write copy");
         assert!(matches!(writer.write(b"x"),

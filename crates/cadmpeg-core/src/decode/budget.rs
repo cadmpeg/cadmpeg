@@ -70,9 +70,19 @@ impl DecodeBudget {
         self.input_bytes.get()
     }
 
-    pub(super) fn charge_input(&self, amount: u64, operation: &'static str) -> Result<(), CodecError> {
-        self.charge(ResourceDimension::InputBytes, &self.input_bytes,
-            self.policy.limits.max_input_bytes, amount, operation).map_err(Into::into)
+    pub(super) fn charge_input(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::InputBytes,
+            &self.input_bytes,
+            self.policy.limits.max_input_bytes,
+            amount,
+            operation,
+        )
+        .map_err(Into::into)
     }
 
     pub(super) fn charge_decompressed(
@@ -178,7 +188,9 @@ impl DecodeBudget {
         additional: u64,
         operation: &'static str,
     ) -> CodecError {
-        CodecError::ResourceLimit(self.refuse_limit(dimension, reason, limit, used, additional, operation))
+        CodecError::ResourceLimit(
+            self.refuse_limit(dimension, reason, limit, used, additional, operation),
+        )
     }
 
     pub(super) fn reserve_scoped(
@@ -987,13 +999,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let session = DecodeBudget::new(policy, 1);
-        let first = session.charge_work_limit(1, "first work refusal").expect_err("refusal");
+        let first = session
+            .charge_work_limit(1, "first work refusal")
+            .expect_err("refusal");
         let later = session.retained_allocation_failed_limit(7, "later allocator refusal");
         assert_eq!(later, first);
         assert_eq!(session.fused(), Some(first));
-        let later = session.refuse_limit(ResourceDimension::Codec("later codec"), ResourceFailure::BudgetExceeded, 2, 2, 1, "later codec");
+        let later = session.refuse_limit(
+            ResourceDimension::Codec("later codec"),
+            ResourceFailure::BudgetExceeded,
+            2,
+            2,
+            1,
+            "later codec",
+        );
         assert_eq!(later, first);
         assert_eq!(session.fused(), Some(first));
     }
-
 }

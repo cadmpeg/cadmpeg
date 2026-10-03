@@ -477,8 +477,16 @@ pub struct SketchEntityUse {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SketchEntityUse {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.entity, self.reversed), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.entity, self.reversed),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -2501,8 +2509,15 @@ pub enum SketchLocus {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SketchLocus {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        let id = match self { Self::Entity(id) | Self::Start(id) | Self::End(id) | Self::Center(id) => id }; cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8,id),ctx,operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let id = match self {
+            Self::Entity(id) | Self::Start(id) | Self::End(id) | Self::Center(id) => id,
+        };
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, id), ctx, operation)
     }
 }
 

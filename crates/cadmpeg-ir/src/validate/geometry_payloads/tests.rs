@@ -103,7 +103,8 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.assets.push(
-        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+        Asset::try_new(
+            &cadmpeg_test_support::service_decode_context(),
             texture,
             None,
             None,

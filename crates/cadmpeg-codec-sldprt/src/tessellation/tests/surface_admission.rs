@@ -52,14 +52,30 @@ fn assign(model: &mut Model, policy: &DecodePolicy) -> Result<Vec<String>, Codec
 #[test]
 fn geometric_nurbs_surface_route_refuses_scoped_limit() {
     let model = nurbs_display_model(false);
+    let surface = super::test_nurbs_surface();
+    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, 0.15, 0.2)
+        .unwrap()
+        .get();
+    // Three f64 basis lanes for both degree-two axes require 144 live bytes.
+    let bytes = 3 * (3 + 3) * std::mem::size_of::<f64>();
+    let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Degree two in both directions: three lanes of each three-value basis.
-    policy.limits.max_materialized_bytes = 3 * (3 + 3) * 8 - 1;
-    assert!(
-        matches!(assign(&mut model.clone(), &policy), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "project SLDPRT NURBS surface point")
-    );
-    policy.limits.max_materialized_bytes += 1;
+    policy.limits.max_materialized_bytes = u64::try_from(bytes - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        crate::brep::evaluation::nurbs_surface_parameter_near_point(&ctx, &surface, point, None)
+            .unwrap_err();
+    assert!(matches!(&error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "project SLDPRT NURBS surface point"));
+    policy.limits.max_materialized_bytes = u64::try_from(bytes).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(crate::brep::evaluation::nurbs_surface_parameter_near_point(
+        &ctx, &surface, point, None
+    )
+    .unwrap()
+    .is_some());
+    // The full route also holds index storage; its semantic assertions use the service ceiling.
+    let policy = DecodePolicy::service();
     let mut admitted = model;
     assert_eq!(
         assign(&mut admitted, &policy).unwrap(),

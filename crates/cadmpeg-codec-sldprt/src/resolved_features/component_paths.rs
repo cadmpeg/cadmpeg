@@ -325,7 +325,10 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         )?;
         ctx.sort_unstable_by_key(
             &mut objects,
-            |value| { let (left_index, (left_name, _)) = value; (left_name.offset,*left_index) },
+            |value| {
+                let (left_index, (left_name, _)) = value;
+                (left_name.offset, *left_index)
+            },
             Ord::cmp,
             "sort SLDPRT component path objects",
         )?;

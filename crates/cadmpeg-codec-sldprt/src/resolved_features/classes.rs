@@ -326,8 +326,8 @@ pub(crate) fn bind_history_classes(
     }
     ctx.sort_unstable_by(
         &mut native_startups,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "sort SLDPRT native startup classes",
     )?;
     native_startups.dedup();

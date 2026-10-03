@@ -322,7 +322,9 @@ struct PmDcFeatureLabelPayloadWire<T = String> {
     class_id: String,
 }
 
-impl<T: TryInto<NonBlankString>> TryFrom<PmDcFeatureLabelPayloadWire<T>> for PmDcFeatureLabelPayload {
+impl<T: TryInto<NonBlankString>> TryFrom<PmDcFeatureLabelPayloadWire<T>>
+    for PmDcFeatureLabelPayload
+{
     type Error = String;
     fn try_from(wire: PmDcFeatureLabelPayloadWire<T>) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -1296,8 +1298,8 @@ pub(crate) fn project(
     projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
     ctx.sort_unstable_by(
         &mut projected,
-            |value| &value.0.ordinal,
-            Ord::cmp,
+        |value| &value.0.ordinal,
+        Ord::cmp,
         "Inventor projected features sort",
     )?;
     ctx.charge_collection_items(
@@ -1878,7 +1880,14 @@ fn feature_result(
         ) {
             return Some(Err(error));
         }
-        let body = match cadmpeg_core::text::NonBlankString::for_decode(ctx, body.id(), "validate nonblank text") { Ok(value) => value?, Err(error) => return Some(Err(error.into())), };
+        let body = match cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            body.id(),
+            "validate nonblank text",
+        ) {
+            Ok(value) => value?,
+            Err(error) => return Some(Err(error.into())),
+        };
         bodies.push(body);
     }
     if bodies.is_empty() {

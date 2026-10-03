@@ -234,10 +234,17 @@ fn retained_join_uses_owned_and_borrowed_text_views_without_copying_views() {
     policy.limits.max_retained_bytes = 4;
     let parts = [String::from("A"), String::from("λ")];
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert_eq!(ctx.join_retained(&parts, "/", "join").expect("admission"), "A/λ");
+    assert_eq!(
+        ctx.join_retained(&parts, "/", "join").expect("admission"),
+        "A/λ"
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let borrowed = [&parts[0], &parts[1]];
-    assert_eq!(ctx.join_retained(&borrowed, "/", "join").expect("admission"), "A/λ");
+    assert_eq!(
+        ctx.join_retained(&borrowed, "/", "join")
+            .expect("admission"),
+        "A/λ"
+    );
 }
 
 #[test]
@@ -250,10 +257,18 @@ fn exact_text_growth_admits_only_added_bytes_and_old_capacity_moves() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut text = String::with_capacity(4);
         text.push_str("abcd");
-        let CodecError::ResourceLimit(first) = ctx.try_reserve_retained_text(&mut text, 2, "growth").expect_err("refusal") else { panic!("refusal") };
+        let CodecError::ResourceLimit(first) = ctx
+            .try_reserve_retained_text(&mut text, 2, "growth")
+            .expect_err("refusal")
+        else {
+            panic!("refusal")
+        };
         assert_eq!(text, "abcd");
         assert_eq!(text.capacity(), 4);
-        let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("refusal") };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused")
+        else {
+            panic!("refusal")
+        };
         assert_eq!(first, second);
     }
     let mut policy = DecodePolicy::service();
@@ -263,7 +278,8 @@ fn exact_text_growth_admits_only_added_bytes_and_old_capacity_moves() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut text = String::with_capacity(4);
     text.push_str("abcd");
-    ctx.try_reserve_retained_text(&mut text, 2, "growth").expect("admission");
+    ctx.try_reserve_retained_text(&mut text, 2, "growth")
+        .expect("admission");
     assert!(text.capacity() >= 6);
     assert_eq!(text, "abcd");
 }

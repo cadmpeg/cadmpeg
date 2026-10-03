@@ -304,13 +304,19 @@ pub(super) fn parse_standard_motif(
         let Some(mut anchor) = anchor else {
             continue;
         };
-        ctx.sort_unstable_by(&mut anchor,
+        ctx.sort_unstable_by(
+            &mut anchor,
             |value| value,
-            Ord::cmp, "catia_motif_anchor_sort")?;
+            Ord::cmp,
+            "catia_motif_anchor_sort",
+        )?;
         let mut points = *points;
-        ctx.sort_unstable_by(&mut points,
+        ctx.sort_unstable_by(
+            &mut points,
             |value| value,
-            Ord::cmp, "catia_motif_edge_points_sort")?;
+            Ord::cmp,
+            "catia_motif_edge_points_sort",
+        )?;
         if points != anchor {
             return Ok(None);
         }
@@ -481,9 +487,12 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             }
         }
         for pair in &mut filtered {
-            ctx.sort_unstable_by(pair,
-            |value| value,
-            Ord::cmp, "catia standard port pair sort")?;
+            ctx.sort_unstable_by(
+                pair,
+                |value| value,
+                Ord::cmp,
+                "catia standard port pair sort",
+            )?;
         }
         ctx.sort_unstable_by(
             &mut filtered,
@@ -2175,8 +2184,8 @@ pub(crate) fn boundary_cycles(
     }
     ctx.stable_sort_by(
         &mut cycles,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "catia_boundary_cycles_sort",
     )?;
     Ok((!cycles.is_empty()).then_some(cycles))
@@ -2251,8 +2260,8 @@ fn cover_cycle_by_rows(
     }
     ctx.stable_sort_by_key(
         &mut matches,
-            |value| value.0%length,
-            Ord::cmp,
+        |value| value.0 % length,
+        Ord::cmp,
         "catia_cover_cycle_rows_sort",
     )?;
     let mut corner_nodes = HashMap::new();

@@ -448,8 +448,8 @@ pub(super) fn attach(
     attach_active_configuration_feature_states(ctx, ir, annotations)?;
     ctx.stable_sort_by(
         &mut ir.model.features,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX features",
     )?;
     let namespace = ir.native.namespace_mut("nx");
@@ -1381,8 +1381,8 @@ fn resolve_rm_face_color_bindings(
     }
     ctx.stable_sort_by(
         &mut bindings,
-            |value| &value.face_id,
-            Ord::cmp,
+        |value| &value.face_id,
+        Ord::cmp,
         "sort NX RM face color bindings",
     )?;
     Ok(bindings)
@@ -1472,24 +1472,23 @@ fn attach_jpeg_preview_assets(
             .derived_for_decode(ctx, id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
-        ir.model.assets.push(
-            Asset::try_new(ctx, 
-                id,
-                Some(if ordinal == 0 {
-                    "preview.jpg".to_string()
-                } else {
-                    format!("preview-{ordinal}.jpg")
-                }),
-                Some("image/jpeg".to_string()),
-                AssetContent::Embedded {
-                    data: cadmpeg_ir::assets::AssetData::new(
-                        ctx.copy_retained(bytes, "retain NX JPEG preview asset")?,
-                    )
-                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
-                },
-                Some(native_ref.into_string()),
-            )?,
-        );
+        ir.model.assets.push(Asset::try_new(
+            ctx,
+            id,
+            Some(if ordinal == 0 {
+                "preview.jpg".to_string()
+            } else {
+                format!("preview-{ordinal}.jpg")
+            }),
+            Some("image/jpeg".to_string()),
+            AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(
+                    ctx.copy_retained(bytes, "retain NX JPEG preview asset")?,
+                )
+                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+            },
+            Some(native_ref.into_string()),
+        )?);
     }
     Ok(())
 }
@@ -1571,25 +1570,22 @@ fn attach_material_texture_assets(
             "NX material asset text",
         )?;
         ctx.reserve_vec(&mut assets, 1, "NX material asset records")?;
-        assets.push(
-            Asset::try_new(ctx, 
-                extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "NX material texture id is not an identity"
-                        ))
-                    })?,
-                Some(texture.name().to_owned()),
-                Some("image/tiff".to_string()),
-                AssetContent::Embedded {
-                    data: cadmpeg_ir::assets::AssetData::new(
-                        ctx.copy_retained(bytes, "retain NX TIFF material asset")?,
-                    )
-                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
-                },
-                Some(texture.id.clone()),
-            )?,
-        );
+        assets.push(Asset::try_new(
+            ctx,
+            extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("NX material texture id is not an identity"))
+                })?,
+            Some(texture.name().to_owned()),
+            Some("image/tiff".to_string()),
+            AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(
+                    ctx.copy_retained(bytes, "retain NX TIFF material asset")?,
+                )
+                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+            },
+            Some(texture.id.clone()),
+        )?);
     }
     let stream = StreamHandle::new_for_decode(
         ctx,
@@ -1888,8 +1884,8 @@ fn attach_initial_segment_bodies(
     sorted_bodies.extend(&ir.model.bodies);
     ctx.stable_sort_by(
         &mut sorted_bodies,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort NX retained-history bodies",
     )?;
 
@@ -5650,9 +5646,12 @@ fn attach_feature_operations(
                 .map_err(|_| {
                     CodecError::malformed("NX feature result body identity formatting failed")
                 })?;
-                let body = cadmpeg_core::text::NonBlankString::for_decode(ctx, body_text, "validate nonblank text")?.ok_or_else(|| {
-                    CodecError::malformed("NX feature result body identity is blank")
-                })?;
+                let body = cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    body_text,
+                    "validate nonblank text",
+                )?
+                .ok_or_else(|| CodecError::malformed("NX feature result body identity is blank"))?;
                 let mut bodies = Vec::new();
                 ctx.reserve_capacity(&mut bodies, 1, "allocate NX feature result bodies")?;
                 bodies.push(body);
@@ -5729,7 +5728,12 @@ fn attach_feature_operations(
                 value.push_str(WITNESS_VALUE);
                 ctx.insert_btree_map(
                     &mut initial_feature.source_properties,
-                    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
+                    cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        key,
+                        "validate nonblank text",
+                    )?
+                    .ok_or_else(|| {
                         CodecError::malformed("NX primary body closure witness key is blank")
                     })?,
                     value,
@@ -6012,8 +6016,9 @@ fn feature_result_group_members(
         .map_err(|_| {
             CodecError::InvalidInput("NX result member identity formatting failed".to_string())
         })?;
-        let identity = cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
-            .ok_or_else(|| CodecError::malformed("NX result member identity is blank"))?;
+        let identity =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
+                .ok_or_else(|| CodecError::malformed("NX result member identity is blank"))?;
         output.push(identity);
     }
     Ok(result)
@@ -6051,7 +6056,9 @@ fn native_result_body_identity(
     ctx.try_reserve_retained_text(&mut local, local_len, "NX result body identity")?;
     local.push_str(native);
     local.push_str(suffix);
-    let Some(local) = cadmpeg_core::text::NonBlankString::for_decode(ctx, local, "validate nonblank text")? else {
+    let Some(local) =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, local, "validate nonblank text")?
+    else {
         return Ok(None);
     };
     let mut native_ref = String::new();
@@ -6257,7 +6264,11 @@ fn attach_sketch_graph(
             let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
                 return Ok(None);
             };
-            let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(ctx, "nx-coordinate-pair", "validate nonblank text")?
+            let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                "nx-coordinate-pair",
+                "validate nonblank text",
+            )?
             else {
                 return Ok(None);
             };
@@ -6285,8 +6296,18 @@ fn attach_sketch_graph(
         )? {
             return Ok(None);
         }
-        ctx.stable_sort_by(&mut entities, |value| value.1.id(), Ord::cmp, "NX sketch entity order")?;
-        ctx.stable_sort_by(&mut entities, |value| &value.0, Ord::cmp, "NX sketch entity order")?;
+        ctx.stable_sort_by(
+            &mut entities,
+            |value| value.1.id(),
+            Ord::cmp,
+            "NX sketch entity order",
+        )?;
+        ctx.stable_sort_by(
+            &mut entities,
+            |value| &value.0,
+            Ord::cmp,
+            "NX sketch entity order",
+        )?;
         for (source_offset, entity) in &entities {
             let tag = match entity.geometry.definition() {
                 SketchGeometryDefinition::Native { native_kind }
@@ -6455,8 +6476,18 @@ fn attach_sketch_graph(
     )? {
         return Ok(None);
     }
-    ctx.stable_sort_by(&mut entities, |value| value.1.id(), Ord::cmp, "NX sketch entity order")?;
-        ctx.stable_sort_by(&mut entities, |value| &value.0, Ord::cmp, "NX sketch entity order")?;
+    ctx.stable_sort_by(
+        &mut entities,
+        |value| value.1.id(),
+        Ord::cmp,
+        "NX sketch entity order",
+    )?;
+    ctx.stable_sort_by(
+        &mut entities,
+        |value| &value.0,
+        Ord::cmp,
+        "NX sketch entity order",
+    )?;
     if entities.is_empty() {
         return Ok(None);
     }
@@ -6700,7 +6731,12 @@ fn native_fixed_point_entities(
         let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
             return Ok(None);
         };
-        let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(ctx, "nx-fixed-point", "validate nonblank text")? else {
+        let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            "nx-fixed-point",
+            "validate nonblank text",
+        )?
+        else {
             return Ok(None);
         };
         let native_ref = ctx.copy_retained_text(&point.id, "allocate NX sketch text")?;
@@ -7113,8 +7149,8 @@ fn attach_parasolid_topology_string_attributes(
     }
     ctx.stable_sort_by(
         &mut ir.model.attributes,
-            |value| value.id.as_str(),
-            Ord::cmp,
+        |value| value.id.as_str(),
+        Ord::cmp,
         "sort NX Parasolid string attributes",
     )?;
     Ok(())
@@ -8011,8 +8047,8 @@ fn attach_parasolid_topology_numeric_attributes(
     }
     ctx.stable_sort_by(
         &mut ir.model.attributes,
-            |value| value.id.as_str(),
-            Ord::cmp,
+        |value| value.id.as_str(),
+        Ord::cmp,
         "sort NX Parasolid numeric attributes",
     )?;
     Ok(())
@@ -8192,8 +8228,8 @@ fn attach_parasolid_topology_structured_attributes(
     }
     ctx.stable_sort_by(
         &mut ir.model.attributes,
-            |value| value.id.as_str(),
-            Ord::cmp,
+        |value| value.id.as_str(),
+        Ord::cmp,
         "sort NX Parasolid structured attributes",
     )?;
     Ok(())
@@ -8306,8 +8342,12 @@ fn text_semantic_annotation(
     let mut text_values = Vec::new();
     ctx.reserve_capacity(&mut text_values, 1, "allocate NX TEXT annotation text list")?;
     text_values.push(copy(text)?);
-    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy(FONT_KEY)?, "validate nonblank text")?
-        .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
+    let key = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        copy(FONT_KEY)?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
     let mut parameters = BTreeMap::new();
     ctx.insert_btree_map(
         &mut parameters,

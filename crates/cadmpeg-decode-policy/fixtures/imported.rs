@@ -75,7 +75,12 @@ pub fn imported_conversion(
     Ok(())
 }
 
-pub fn imported_key_proof(ctx: &cadmpeg_core::DecodeContext, values: &std::collections::BTreeMap<String, u8>, key: &String, other: &String) -> Result<(), ()> {
+pub fn imported_key_proof(
+    ctx: &cadmpeg_core::DecodeContext,
+    values: &std::collections::BTreeMap<String, u8>,
+    key: &String,
+    other: &String,
+) -> Result<(), ()> {
     let _paid = cadmpeg_core::admitted_lookup(ctx, values, key)?;
     let _wrong = cadmpeg_core::wrong_lookup(ctx, values, key, other)?; // finding: uncharged_decode_work
     Ok(())

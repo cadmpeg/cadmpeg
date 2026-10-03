@@ -602,7 +602,8 @@ fn source_image_copy_refuses_retained_limit() {
 fn unique_asset_append_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let asset = cadmpeg_ir::assets::Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
+    let asset = cadmpeg_ir::assets::Asset::try_new(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
         Some("one.png".into()),
         Some("image/png".into()),

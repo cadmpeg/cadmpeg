@@ -1844,7 +1844,12 @@ fn project_constraint(
             admit!(ctx.charge_collection_items(2, "collect Inventor circle center operands"));
             (
                 SketchConstraintDefinitionInput::Native {
-                    native_kind: admitted_value!(cadmpeg_core::text::NonBlankString::for_decode(ctx, "circle_center_alignment", "validate nonblank text").map_err(CodecError::from))?,
+                    native_kind: admitted_value!(cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        "circle_center_alignment",
+                        "validate nonblank text"
+                    )
+                    .map_err(CodecError::from))?,
                     native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),
@@ -2416,8 +2421,8 @@ fn build_profiles(
     }
     ctx.sort_unstable_by(
         &mut profiles,
-            |value| value,
-            |left, right| {
+        |value| value,
+        |left, right| {
             let key = |profile: &Vec<SketchEntityUse>| {
                 let first = profile
                     .iter()

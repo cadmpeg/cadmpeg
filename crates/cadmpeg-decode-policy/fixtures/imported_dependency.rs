@@ -104,16 +104,34 @@ pub mod decode {
     }
 }
 impl DecodeContext {
-    pub fn charge_key<T: decode::cost::DecodeCost>(&self, _key: &T, _count: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    pub fn charge_key<T: decode::cost::DecodeCost>(
+        &self,
+        _key: &T,
+        _count: u64,
+        _operation: &str,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
 }
-pub fn admitted_lookup<K: Ord + decode::cost::DecodeCost, V>(ctx: &DecodeContext, values: &std::collections::BTreeMap<K, V>, key: &K) -> Result<bool, ()> {
+pub fn admitted_lookup<K: Ord + decode::cost::DecodeCost, V>(
+    ctx: &DecodeContext,
+    values: &std::collections::BTreeMap<K, V>,
+    key: &K,
+) -> Result<bool, ()> {
     ctx.charge_key(key, ctx.tree_comparisons(values.len()), "lookup")?;
     Ok(values.contains_key(key))
 }
 impl DecodeContext {
-    pub fn tree_comparisons(&self, _count: usize) -> u64 { 1 }
+    pub fn tree_comparisons(&self, _count: usize) -> u64 {
+        1
+    }
 }
-pub fn wrong_lookup<K: Ord + decode::cost::DecodeCost, V>(ctx: &DecodeContext, values: &std::collections::BTreeMap<K, V>, key: &K, other: &K) -> Result<bool, ()> {
+pub fn wrong_lookup<K: Ord + decode::cost::DecodeCost, V>(
+    ctx: &DecodeContext,
+    values: &std::collections::BTreeMap<K, V>,
+    key: &K,
+    other: &K,
+) -> Result<bool, ()> {
     ctx.charge_key(other, ctx.tree_comparisons(values.len()), "lookup")?;
     Ok(values.contains_key(key))
 }

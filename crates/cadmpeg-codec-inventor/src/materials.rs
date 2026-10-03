@@ -70,8 +70,8 @@ pub(crate) fn project_catalog(
     }
     ctx.stable_sort_by(
         &mut duplicate_guids,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "Inventor duplicate material GUID sort",
     )?;
 
@@ -138,8 +138,18 @@ pub(crate) fn project_catalog(
                     }
                 }
             }
-            ctx.stable_sort_by(&mut connected, |value| &value.asset_guid, Ord::cmp, "Inventor appearance texture sort")?;
-        ctx.stable_sort_by(&mut connected, |value| &value.slot, Ord::cmp, "Inventor appearance texture sort")?;
+            ctx.stable_sort_by(
+                &mut connected,
+                |value| &value.asset_guid,
+                Ord::cmp,
+                "Inventor appearance texture sort",
+            )?;
+            ctx.stable_sort_by(
+                &mut connected,
+                |value| &value.slot,
+                Ord::cmp,
+                "Inventor appearance texture sort",
+            )?;
             let base_color = [
                 "generic_diffuse",
                 "opaque_albedo",

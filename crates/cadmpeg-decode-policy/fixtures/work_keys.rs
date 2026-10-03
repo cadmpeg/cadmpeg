@@ -7,10 +7,27 @@ pub mod decode {
 }
 pub struct DecodeContext;
 impl DecodeContext {
-    fn charge_key<T: decode::cost::DecodeCost + ?Sized>(&self, _key: &T, _count: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
-    fn tree_comparisons(&self, _length: usize) -> u64 { 1 }
+    fn charge_key<T: decode::cost::DecodeCost + ?Sized>(
+        &self,
+        _key: &T,
+        _count: u64,
+        _operation: &str,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
+    fn tree_comparisons(&self, _length: usize) -> u64 {
+        1
+    }
 }
-pub fn decode(ctx: &DecodeContext, hash: &std::collections::HashMap<Vec<String>, u8>, tree: &std::collections::BTreeMap<Vec<String>, u8>, other_tree: &std::collections::BTreeMap<Vec<String>, u8>, key: &Vec<String>, other: &Vec<String>, flag: bool) -> Result<(), ()> {
+pub fn decode(
+    ctx: &DecodeContext,
+    hash: &std::collections::HashMap<Vec<String>, u8>,
+    tree: &std::collections::BTreeMap<Vec<String>, u8>,
+    other_tree: &std::collections::BTreeMap<Vec<String>, u8>,
+    key: &Vec<String>,
+    other: &Vec<String>,
+    flag: bool,
+) -> Result<(), ()> {
     ctx.charge_key(key, 1, "hash")?;
     let _paid = hash.get(key);
     let _reuse = hash.get(key); // finding: uncharged_decode_work
@@ -21,7 +38,9 @@ pub fn decode(ctx: &DecodeContext, hash: &std::collections::HashMap<Vec<String>,
     let _tree = tree.get(key);
     ctx.charge_key(key, ctx.tree_comparisons(other_tree.len()), "wrong tree")?;
     let _wrong_tree = tree.get(key); // finding: uncharged_decode_work
-    if flag { ctx.charge_key(key, 1, "conditional")?; }
+    if flag {
+        ctx.charge_key(key, 1, "conditional")?;
+    }
     let _conditional = hash.get(key); // finding: uncharged_decode_work
     ctx.charge_key(key, 1, "first operand")?;
     ctx.charge_key(other, 1, "second operand")?;
@@ -32,20 +51,33 @@ pub fn decode(ctx: &DecodeContext, hash: &std::collections::HashMap<Vec<String>,
     Ok(())
 }
 impl DecodeContext {
-    fn admit_sort<T>(&self, _values: &[T], _operation: &str) -> Result<(), ()> { Ok(()) }
+    fn admit_sort<T>(&self, _values: &[T], _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
-pub fn sorts(ctx: &DecodeContext, values: &mut [u8], other: &mut [u8], flag: bool) -> Result<(), ()> {
+pub fn sorts(
+    ctx: &DecodeContext,
+    values: &mut [u8],
+    other: &mut [u8],
+    flag: bool,
+) -> Result<(), ()> {
     ctx.admit_sort(values, "sort")?;
     values.sort_unstable();
     values.sort_unstable(); // finding: uncharged_decode_work
     ctx.admit_sort(other, "other")?;
     values.sort_unstable(); // finding: uncharged_decode_work
-    if flag { ctx.admit_sort(values, "conditional")?; }
+    if flag {
+        ctx.admit_sort(values, "conditional")?;
+    }
     values.sort_unstable(); // finding: uncharged_decode_work
     Ok(())
 }
 
-pub fn distinct_windows(ctx: &DecodeContext, values: &[String], other: &[String]) -> Result<(), ()> {
+pub fn distinct_windows(
+    ctx: &DecodeContext,
+    values: &[String],
+    other: &[String],
+) -> Result<(), ()> {
     ctx.charge_key(&values[..1], 1, "prefix")?;
     ctx.charge_key(other, 1, "other")?;
     let _full = values == other; // finding: uncharged_decode_work
@@ -60,7 +92,9 @@ pub fn distinct_windows(ctx: &DecodeContext, values: &[String], other: &[String]
     Ok(())
 }
 impl DecodeContext {
-    fn admit_moves<T>(&self, _values: &[T], _moves: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    fn admit_moves<T>(&self, _values: &[T], _moves: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
 pub fn moves<T: Copy>(ctx: &DecodeContext, target: &mut [T], source: &[T]) -> Result<(), ()> {
     ctx.admit_moves(source, 1, "copy")?;
@@ -73,7 +107,12 @@ pub fn moves<T: Copy>(ctx: &DecodeContext, target: &mut [T], source: &[T]) -> Re
     Ok(())
 }
 
-pub fn rotations_and_overlap<T: Copy>(ctx: &DecodeContext, target: &mut [T], other: &[T], count: usize) -> Result<(), ()> {
+pub fn rotations_and_overlap<T: Copy>(
+    ctx: &DecodeContext,
+    target: &mut [T],
+    other: &[T],
+    count: usize,
+) -> Result<(), ()> {
     ctx.admit_moves(target, 3, "left")?;
     target.rotate_left(count);
     target.rotate_right(count); // finding: uncharged_decode_work
@@ -91,7 +130,12 @@ pub fn rotations_and_overlap<T: Copy>(ctx: &DecodeContext, target: &mut [T], oth
     Ok(())
 }
 
-pub fn replaced_child(ctx: &DecodeContext, values: &mut [String], other: &String, replacement: String) -> Result<(), ()> {
+pub fn replaced_child(
+    ctx: &DecodeContext,
+    values: &mut [String],
+    other: &String,
+    replacement: String,
+) -> Result<(), ()> {
     ctx.charge_key(&values[0], 1, "child before mutation")?;
     ctx.charge_key(other, 1, "other")?;
     values[0] = replacement;
@@ -102,7 +146,12 @@ pub fn replaced_child(ctx: &DecodeContext, values: &mut [String], other: &String
     Ok(())
 }
 
-pub fn replaced_field(ctx: &DecodeContext, values: &mut (String, String), other: &String, replacement: String) -> Result<(), ()> {
+pub fn replaced_field(
+    ctx: &DecodeContext,
+    values: &mut (String, String),
+    other: &String,
+    replacement: String,
+) -> Result<(), ()> {
     ctx.charge_key(&values.0, 1, "field before mutation")?;
     ctx.charge_key(other, 1, "other")?;
     values.0 = replacement;
@@ -110,7 +159,12 @@ pub fn replaced_field(ctx: &DecodeContext, values: &mut (String, String), other:
     Ok(())
 }
 
-pub fn destructured_keys(ctx: &DecodeContext, hash: &std::collections::HashMap<String, u8>, pair: (String, String), other: &String) -> Result<(), ()> {
+pub fn destructured_keys(
+    ctx: &DecodeContext,
+    hash: &std::collections::HashMap<String, u8>,
+    pair: (String, String),
+    other: &String,
+) -> Result<(), ()> {
     let (first, second) = pair;
     ctx.charge_key(&first, 1, "first key")?;
     let _wrong = hash.get(&second); // finding: uncharged_decode_work
@@ -118,16 +172,26 @@ pub fn destructured_keys(ctx: &DecodeContext, hash: &std::collections::HashMap<S
     ctx.charge_key(&first, 1, "first operand")?;
     ctx.charge_key(other, 1, "other operand")?;
     let _wrong = &second == other; // finding: uncharged_decode_work
-    let Some((key, _value)) = Some((second, 0_u8)) else { return Ok(()); };
+    let Some((key, _value)) = Some((second, 0_u8)) else {
+        return Ok(());
+    };
     ctx.charge_key(&key, 1, "matched key")?;
     let _paid = hash.get(&key);
     Ok(())
 }
 
 impl DecodeContext {
-    fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+    fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
 }
-pub fn loop_replaced_child(ctx: &DecodeContext, values: &mut [String], other: &String, mut replacement: String, count: usize) -> Result<(), ()> {
+pub fn loop_replaced_child(
+    ctx: &DecodeContext,
+    values: &mut [String],
+    other: &String,
+    mut replacement: String,
+    count: usize,
+) -> Result<(), ()> {
     ctx.charge_key(&values[0], 1, "child before loop")?;
     ctx.charge_key(other, 1, "other")?;
     for _index in 0..count {
@@ -141,7 +205,13 @@ pub fn loop_replaced_child(ctx: &DecodeContext, values: &mut [String], other: &S
     Ok(())
 }
 
-pub fn dropped_suffix(ctx: &DecodeContext, values: &mut Vec<String>, other: &mut Vec<String>, length: usize, wrong_length: usize) -> Result<(), ()> {
+pub fn dropped_suffix(
+    ctx: &DecodeContext,
+    values: &mut Vec<String>,
+    other: &mut Vec<String>,
+    length: usize,
+    wrong_length: usize,
+) -> Result<(), ()> {
     if let Some(removed) = values.get(length..) {
         ctx.charge_key(removed, 1, "suffix")?;
         values.truncate(length);
@@ -160,7 +230,13 @@ pub fn dropped_suffix(ctx: &DecodeContext, values: &mut Vec<String>, other: &mut
     Ok(())
 }
 
-pub fn stored_keys(ctx: &DecodeContext, hash: &mut std::collections::HashMap<String, u8>, tree: &mut std::collections::BTreeMap<String, u8>, key: &str, other: &str) -> Result<(), ()> {
+pub fn stored_keys(
+    ctx: &DecodeContext,
+    hash: &mut std::collections::HashMap<String, u8>,
+    tree: &mut std::collections::BTreeMap<String, u8>,
+    key: &str,
+    other: &str,
+) -> Result<(), ()> {
     ctx.charge_key(key, 1, "borrow")?;
     let _stored = hash.get_key_value(key);
     let _reused = hash.remove_entry(key); // finding: uncharged_decode_work
@@ -180,10 +256,32 @@ pub fn copy_fill<T: Copy>(ctx: &DecodeContext, values: &mut [T], value: T) -> Re
 }
 
 impl DecodeContext {
-    fn reserve_heap<T: Ord>(&self, _values: &mut std::collections::BinaryHeap<T>, _count: usize, _operation: &str) -> Result<(), ()> { Ok(()) }
-    fn admit_heap<T: Ord>(&self, _values: &std::collections::BinaryHeap<T>, _incoming: Option<&T>, _operation: &str) -> Result<(), ()> { Ok(()) }
+    fn reserve_heap<T: Ord>(
+        &self,
+        _values: &mut std::collections::BinaryHeap<T>,
+        _count: usize,
+        _operation: &str,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
+    fn admit_heap<T: Ord>(
+        &self,
+        _values: &std::collections::BinaryHeap<T>,
+        _incoming: Option<&T>,
+        _operation: &str,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
 }
-pub fn heap_sifts(ctx: &DecodeContext, heap: &mut std::collections::BinaryHeap<String>, other: &mut std::collections::BinaryHeap<String>, value: String, wrong: String, changed: String, flag: bool) -> Result<(), ()> {
+pub fn heap_sifts(
+    ctx: &DecodeContext,
+    heap: &mut std::collections::BinaryHeap<String>,
+    other: &mut std::collections::BinaryHeap<String>,
+    value: String,
+    wrong: String,
+    changed: String,
+    flag: bool,
+) -> Result<(), ()> {
     ctx.admit_heap(heap, None, "pop")?;
     let _paid = heap.pop();
     let _reused = heap.pop(); // finding: uncharged_decode_work
@@ -198,7 +296,9 @@ pub fn heap_sifts(ctx: &DecodeContext, heap: &mut std::collections::BinaryHeap<S
     ctx.reserve_heap(heap, 1, "slot")?;
     ctx.admit_heap(heap, None, "no incoming")?;
     heap.push(wrong); // finding: uncharged_decode_work
-    if flag { ctx.admit_heap(heap, None, "conditional")?; }
+    if flag {
+        ctx.admit_heap(heap, None, "conditional")?;
+    }
     let _conditional = heap.pop(); // finding: uncharged_decode_work
     let mut replacement = String::new();
     ctx.reserve_heap(heap, 1, "slot")?;

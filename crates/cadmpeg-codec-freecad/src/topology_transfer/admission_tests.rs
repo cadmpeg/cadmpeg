@@ -132,7 +132,8 @@ fn connected_component_comparison_refuses_at_work_limit() {
     let connected = std::collections::HashSet::from(["edge".to_owned()]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 1;
+    // Two assignment flags precede the two-step connectivity comparison.
+    policy.limits.max_work_units = 2 + 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(
         matches!(connected_components(&ctx, &[connected.clone(), connected]),

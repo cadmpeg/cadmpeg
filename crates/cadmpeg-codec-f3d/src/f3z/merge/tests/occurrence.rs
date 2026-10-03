@@ -507,17 +507,18 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         )
     })
     .expect("admitted configuration payload");
-    let visibility = BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire::<String> {
-        id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),
-        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-        stream: "Design/BulkStream.dat".into(),
-        byte_offset: 10,
-        asm_body_key_offset: 20,
-        asm_body_key: 3,
-        entity_suffix: 1,
-        visible: true,
-    })
-    .unwrap();
+    let visibility =
+        BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire::<String> {
+            id: "f3d:Design/BulkStream.dat:body-visibility#3".into(),
+            body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+            stream: "Design/BulkStream.dat".into(),
+            byte_offset: 10,
+            asm_body_key_offset: 20,
+            asm_body_key: 3,
+            entity_suffix: 1,
+            visible: true,
+        })
+        .unwrap();
     let mut component = Native::default();
     component
         .namespace_mut("f3d")

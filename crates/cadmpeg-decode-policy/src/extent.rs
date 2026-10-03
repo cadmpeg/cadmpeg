@@ -455,6 +455,27 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .first()
                     .map_or(Shape::Unknown, |operand| self.iteration(operand, seen));
                 if matches!(name.as_str(), "flatten" | "flat_map") {
+                    if name.as_str() == "flatten" && shape == Shape::Fixed {
+                        if let Some(operand) = operands.first() {
+                            if let ty::Adt(iterator, arguments) =
+                                self.expr_ty(operand).peel_refs().kind()
+                            {
+                                if types::standard(self.tcx, iterator.did())
+                                    && matches!(
+                                        self.tcx.item_name(iterator.did()).as_str(),
+                                        "Iter" | "IterMut" | "IntoIter"
+                                    )
+                                    && arguments.types().next().is_some_and(|element| {
+                                        matches!(element.peel_refs().kind(), ty::Adt(inner, _)
+                                            if types::standard(self.tcx, inner.did())
+                                                && self.tcx.item_name(inner.did()).as_str() == "Option")
+                                    })
+                                {
+                                    return Shape::Fixed;
+                                }
+                            }
+                        }
+                    }
                     return if shape == Shape::Fixed {
                         Shape::Unknown
                     } else {

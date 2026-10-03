@@ -635,7 +635,10 @@ fn close_parameter_graph(
         .map(|(index, parameter)| (&parameter.id, index))
         .collect::<HashMap<_, _>>();
     let mut remaining = ctx.alloc_filled(count, 0usize, "admit Inventor parameter indegrees")?;
-    let mut dependents = ctx.collect_indexed_vec(count, "admit Inventor parameter adjacency", |_| Ok(Vec::<usize>::new()))?;
+    let mut dependents =
+        ctx.collect_indexed_vec(count, "admit Inventor parameter adjacency", |_| {
+            Ok(Vec::<usize>::new())
+        })?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(edge_count),
         "admit Inventor parameter edges",
@@ -2436,14 +2439,22 @@ mod tests {
             native_ref: None,
         };
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 3;
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
+        // All complete identity costs and index growth precede the reverse-edge visit.
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "visit Inventor parameter edge",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty fixture view");
+                close_parameter_graph(&ctx, parameters.clone())
+            },
+        );
         assert!(matches!(
-            close_parameter_graph(&ctx, parameters),
-            Err(CodecError::ResourceLimit(limit))
+            error,
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "visit Inventor parameter edge"
         ));
@@ -2633,16 +2644,23 @@ mod tests {
             + 16
             + 31
             + 12 * std::mem::size_of::<u32>();
-        // The first rendered leaf is one byte, with four memo-map buckets.
-        let live = plan_bytes + 1 + 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
-        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
+        // Five rendered lengths total 213 bytes; their memo table has eight buckets.
+        // The sixth shared-add node needs 2*121+7 bytes, above every earlier replacement peak.
+        let live = plan_bytes
+            + (1 + 9 + 25 + 57 + 121)
+            + 8 * std::mem::size_of::<(u32, String)>()
+            + 8
+            + 31;
+        let next_length = 2 * 121 + 7;
+        policy.limits.max_materialized_bytes =
+            cadmpeg_core::decode::u64_from_index(live + next_length - 1);
         assert!(matches!(
             render_graph(&policy, kinds, 8),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::MaterializedBytes
                     && limit.operation == "render Inventor expression bytes"
                     && limit.used == cadmpeg_core::decode::u64_from_index(live)
-                    && limit.additional == cadmpeg_core::decode::u64_from_index("(x) + (x)".len())
+                    && limit.additional == cadmpeg_core::decode::u64_from_index(next_length)
         ));
     }
 
@@ -2718,7 +2736,8 @@ mod tests {
     #[test]
     fn expression_render_refuses_work_limit_before_text_allocation() {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
+        // One expression visit and two complete four-byte ancestor-key hashes precede rendering.
+        policy.limits.max_work_units = 1 + 2 * 4;
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),
             Err(CodecError::ResourceLimit(limit))

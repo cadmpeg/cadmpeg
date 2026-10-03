@@ -1582,7 +1582,9 @@ struct ConfigurationIdentitySet<'id, T> {
     match_operation: &'static str,
 }
 
-impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost> ConfigurationIdentitySet<'id, T> {
+impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>
+    ConfigurationIdentitySet<'id, T>
+{
     fn new(insert_operation: &'static str, match_operation: &'static str) -> Self {
         Self {
             ids: HashSet::new(),

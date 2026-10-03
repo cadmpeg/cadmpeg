@@ -508,8 +508,8 @@ pub(crate) fn decode_parameter_scopes(
     }
     ctx.stable_sort_by(
         &mut out[..],
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design parameter_scope 1",
     )?;
     out.dedup_by(|a, b| a.id == b.id);

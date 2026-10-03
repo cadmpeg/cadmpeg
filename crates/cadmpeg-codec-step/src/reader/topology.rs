@@ -2567,8 +2567,16 @@ struct RootKey {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for RootKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(self.root_kind, &self.shell_keys), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.root_kind, &self.shell_keys),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -2701,8 +2709,8 @@ fn root_key(
     }
     ctx.sort_unstable_by(
         &mut shell_keys,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "step_root_shell_keys_sort",
     )?;
     Ok(Some(RootKey {
@@ -4019,7 +4027,10 @@ fn connected_face_components(
     edge_vertices: &BTreeMap<String, (String, String)>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
-    let mut neighbors = ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| Ok(BTreeSet::new()))?;
+    let mut neighbors =
+        ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| {
+            Ok(BTreeSet::new())
+        })?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in face_ids.iter().enumerate() {
         ctx.insert_btree_map(
@@ -4349,8 +4360,13 @@ fn implicit_face_plane(
     }
     ctx.stable_sort_by_key(
         &mut points,
-            |value| (value.x, value.y, value.z,),
-            |left, right| left.0.total_cmp(&right.0).then_with(||left.1.total_cmp(&right.1)).then_with(||left.2.total_cmp(&right.2)),
+        |value| (value.x, value.y, value.z),
+        |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| left.2.total_cmp(&right.2))
+        },
         "step_implicit_face_plane_sort",
     )?;
     let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
@@ -4738,8 +4754,8 @@ fn pcurve_locus_witness(
     )?;
     ctx.stable_sort_by(
         &mut fractions,
-            |value| value,
-            f64::total_cmp,
+        |value| value,
+        f64::total_cmp,
         "step_pcurve_locus_fractions_sort",
     )?;
     fractions.dedup_by(|left, right| *left == *right);

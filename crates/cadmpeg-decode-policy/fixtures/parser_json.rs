@@ -12,15 +12,36 @@ pub struct TypedJsonAdmission<T, S> {
 }
 impl DecodeContext {
     pub fn json_parser_admission<'a>(&self, text: &'a str) -> Result<JsonParserAdmission<'a>, ()> {
-        Ok(JsonParserAdmission { text, reservation: ScopedReservation })
+        Ok(JsonParserAdmission {
+            text,
+            reservation: ScopedReservation,
+        })
     }
-    pub fn json_validation_admission<'a, T>(&self, text: &'a str) -> Result<TypedJsonAdmission<T, &'a str>, ()> {
-        Ok(TypedJsonAdmission { source: text, reservation: ScopedReservation, target: std::marker::PhantomData })
+    pub fn json_validation_admission<'a, T>(
+        &self,
+        text: &'a str,
+    ) -> Result<TypedJsonAdmission<T, &'a str>, ()> {
+        Ok(TypedJsonAdmission {
+            source: text,
+            reservation: ScopedReservation,
+            target: std::marker::PhantomData,
+        })
     }
-    pub fn json_conversion_admission<T>(&self, source: serde_json::Value) -> Result<TypedJsonAdmission<T, serde_json::Value>, ()> {
-        Ok(TypedJsonAdmission { source, reservation: ScopedReservation, target: std::marker::PhantomData })
+    pub fn json_conversion_admission<T>(
+        &self,
+        source: serde_json::Value,
+    ) -> Result<TypedJsonAdmission<T, serde_json::Value>, ()> {
+        Ok(TypedJsonAdmission {
+            source,
+            reservation: ScopedReservation,
+            target: std::marker::PhantomData,
+        })
     }
-    pub fn parse_json<T: serde::de::DeserializeOwned>(&self, text: &str, _operation: &str) -> Result<T, ()> {
+    pub fn parse_json<T: serde::de::DeserializeOwned>(
+        &self,
+        text: &str,
+        _operation: &str,
+    ) -> Result<T, ()> {
         serde_json::from_str(text).map_err(|_| ()) // finding: unproven_decode_charge
     }
 }
@@ -31,7 +52,9 @@ impl<'de> serde::Deserialize<'de> for PlainJson {
     }
 }
 #[derive(serde::Deserialize)]
-struct Record { items: Vec<String> }
+struct Record {
+    items: Vec<String>,
+}
 pub fn value_tree(ctx: &DecodeContext, text: &str) -> Result<(), ()> {
     let admission = ctx.json_parser_admission(text)?;
     drop(serde_json::from_str::<serde_json::Value>(admission.text));
@@ -72,7 +95,11 @@ pub fn wrong_conversion_target(ctx: &DecodeContext, source: serde_json::Value) -
     drop(serde_json::from_value::<Vec<Record>>(admission.source)); // finding: unproven_decode_charge
     Ok(())
 }
-pub fn wrong_conversion_phase(ctx: &DecodeContext, source: serde_json::Value, text: &str) -> Result<(), ()> {
+pub fn wrong_conversion_phase(
+    ctx: &DecodeContext,
+    source: serde_json::Value,
+    text: &str,
+) -> Result<(), ()> {
     let _admission = ctx.json_conversion_admission::<Record>(source)?;
     drop(serde_json::from_str::<Record>(text)); // finding: unproven_decode_charge
     Ok(())

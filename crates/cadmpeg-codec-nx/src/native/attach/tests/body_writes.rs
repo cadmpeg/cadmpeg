@@ -511,9 +511,30 @@ fn result_topology_uses_only_unique_current_group_members() {
         )
         .unwrap();
 
-        assert_eq!(result.faces.iter().map(|value| value.as_str()).collect::<Vec<_>>(), ["nx:s4:face#40"]);
-        assert_eq!(result.edges.iter().map(|value| value.as_str()).collect::<Vec<_>>(), ["nx:s4:edge#41"]);
-        assert_eq!(result.vertices.iter().map(|value| value.as_str()).collect::<Vec<_>>(), ["nx:s4:vertex#42"]);
+        assert_eq!(
+            result
+                .faces
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .collect::<Vec<_>>(),
+            ["nx:s4:face#40"]
+        );
+        assert_eq!(
+            result
+                .edges
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .collect::<Vec<_>>(),
+            ["nx:s4:edge#41"]
+        );
+        assert_eq!(
+            result
+                .vertices
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .collect::<Vec<_>>(),
+            ["nx:s4:vertex#42"]
+        );
 
         let duplicate_members = [
             group_member("face", GroupNodeFamily::Face, Some(40)),
@@ -554,7 +575,14 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
             &members,
         )
         .unwrap();
-        assert_eq!(from_image.faces.iter().map(|value| value.as_str()).collect::<Vec<_>>(), ["nx:s4:face#40"]);
+        assert_eq!(
+            from_image
+                .faces
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .collect::<Vec<_>>(),
+            ["nx:s4:face#40"]
+        );
         assert_eq!(from_direct.faces, from_image.faces);
 
         let conflict = direct_group_use(&["edge"]);
@@ -584,7 +612,14 @@ fn result_group_with_limit(
             let uses = [group_use(&["face"])];
             let result =
                 operation_body_write_result_group_members(ctx, "write", &uses, &[], &members)?;
-            assert_eq!(result.faces.iter().map(|value| value.as_str()).collect::<Vec<_>>(), ["nx:s4:face#40"]);
+            assert_eq!(
+                result
+                    .faces
+                    .iter()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    .collect::<Vec<_>>(),
+                ["nx:s4:face#40"]
+            );
             Ok(())
         },
     )

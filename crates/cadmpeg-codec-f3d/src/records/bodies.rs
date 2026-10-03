@@ -17,11 +17,20 @@ struct DesignBulkStreamPath(NonBlankString);
 impl DesignBulkStreamPath {
     fn try_new<T: AsRef<str> + TryInto<NonBlankString>>(text: T) -> Result<Self, String> {
         let value = text.as_ref();
-        let prefix = value.strip_suffix("/BulkStream.dat").ok_or("stream must name a containing Design BulkStream")?;
-        if prefix.is_empty() || value.chars().any(char::is_control) || prefix.split('/').any(|part| matches!(part, "" | "." | "..")) {
+        let prefix = value
+            .strip_suffix("/BulkStream.dat")
+            .ok_or("stream must name a containing Design BulkStream")?;
+        if prefix.is_empty()
+            || value.chars().any(char::is_control)
+            || prefix
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+        {
             return Err("stream must name a containing Design BulkStream".into());
         }
-        Ok(Self(text.try_into().map_err(|_| "stream must not be blank")?))
+        Ok(Self(
+            text.try_into().map_err(|_| "stream must not be blank")?,
+        ))
     }
 }
 
@@ -454,7 +463,9 @@ pub(crate) struct DesignBodyBindingWire<T = String> {
     pub(crate) body: Option<BodyId>,
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<DesignBodyBindingWire<T>> for DesignBodyBinding {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<DesignBodyBindingWire<T>>
+    for DesignBodyBinding
+{
     type Error = String;
     fn try_from(wire: DesignBodyBindingWire<T>) -> Result<Self, Self::Error> {
         let pair_count =

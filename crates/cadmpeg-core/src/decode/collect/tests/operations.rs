@@ -16,7 +16,9 @@ fn collection_growth_refuses_before_moving_existing_storage() {
             0 => {
                 let mut values = vec![1_u64, 2];
                 let capacity = values.capacity();
-                let error = ctx.reserve_vec(&mut values, capacity, "vector growth").expect_err("move refusal");
+                let error = ctx
+                    .reserve_vec(&mut values, capacity, "vector growth")
+                    .expect_err("move refusal");
                 assert_eq!(values, [1, 2]);
                 assert_eq!(values.capacity(), capacity);
                 error
@@ -24,14 +26,18 @@ fn collection_growth_refuses_before_moving_existing_storage() {
             1 => {
                 let mut text = String::from("ab");
                 let capacity = text.capacity();
-                let error = ctx.try_reserve_retained_text(&mut text, capacity, "text growth").expect_err("move refusal");
+                let error = ctx
+                    .try_reserve_retained_text(&mut text, capacity, "text growth")
+                    .expect_err("move refusal");
                 assert_eq!(text, "ab");
                 assert_eq!(text.capacity(), capacity);
                 error
             }
             _ => {
                 let mut values = std::collections::VecDeque::from([1_u64, 2]);
-                while values.len() < values.capacity() { values.push_back(2); }
+                while values.len() < values.capacity() {
+                    values.push_back(2);
+                }
                 let length = values.len();
                 let capacity = values.capacity();
                 let result = if kind == 2 {
@@ -46,11 +52,15 @@ fn collection_growth_refuses_before_moving_existing_storage() {
                 error
             }
         };
-        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.used, 0);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(1, "later"), Err(CodecError::ResourceLimit(later)) if later == limit));
+        assert!(
+            matches!(ctx.charge_work(1, "later"), Err(CodecError::ResourceLimit(later)) if later == limit)
+        );
     }
 }
 operation_case!(
@@ -519,10 +529,18 @@ fn collector_refusal_precedes_the_first_source_step() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let visited = std::cell::Cell::new(0);
     let source = [1].into_iter().inspect(|_| visited.set(visited.get() + 1));
-    let CodecError::ResourceLimit(first) = ctx.collect_vec(source, "collect").expect_err("refusal") else { panic!("refusal") };
+    let CodecError::ResourceLimit(first) = ctx.collect_vec(source, "collect").expect_err("refusal")
+    else {
+        panic!("refusal")
+    };
     assert_eq!(visited.get(), 0);
     let source = [1].into_iter().inspect(|_| visited.set(visited.get() + 1));
-    let CodecError::ResourceLimit(repeated) = ctx.collect_hash_set(source, "collect set").expect_err("refusal") else { panic!("refusal") };
+    let CodecError::ResourceLimit(repeated) = ctx
+        .collect_hash_set(source, "collect set")
+        .expect_err("refusal")
+    else {
+        panic!("refusal")
+    };
     assert_eq!(repeated, first);
     assert_eq!(visited.get(), 0);
 }
@@ -530,10 +548,20 @@ fn collector_refusal_precedes_the_first_source_step() {
 #[test]
 fn collector_counts_source_steps_and_the_end_probe() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    assert_eq!(ctx.collect_vec([1, 2], "collect").expect("admission"), [1, 2]);
-    assert!(ctx.collect_vec::<u8>([], "empty").expect("admission").is_empty());
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("refusal") };
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    assert_eq!(
+        ctx.collect_vec([1, 2], "collect").expect("admission"),
+        [1, 2]
+    );
+    assert!(ctx
+        .collect_vec::<u8>([], "empty")
+        .expect("admission")
+        .is_empty());
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe")
+    else {
+        panic!("refusal")
+    };
     // Two successful source steps and one end probe for each collection.
     assert_eq!(limit.used, 4);
 }
@@ -546,8 +574,12 @@ fn retained_byte_extension_refuses_before_copy() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut bytes = Vec::with_capacity(4);
     bytes.push(7);
-    let CodecError::ResourceLimit(original) = ctx.extend_retained_bytes(&mut bytes, &[1, 2], "byte copy")
-        .expect_err("copy work") else { panic!("resource refusal"); };
+    let CodecError::ResourceLimit(original) = ctx
+        .extend_retained_bytes(&mut bytes, &[1, 2], "byte copy")
+        .expect_err("copy work")
+    else {
+        panic!("resource refusal");
+    };
     assert_eq!(bytes, [7]);
     assert_eq!(original.operation, "byte copy");
     assert!(matches!(ctx.charge_work(1, "after refusal"),
@@ -557,24 +589,43 @@ fn retained_byte_extension_refuses_before_copy() {
 #[test]
 fn unzip_admits_each_pair_and_both_owned_result_vectors() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test operation succeeds");
     let text = String::from("owned");
     let pointer = text.as_ptr();
-    let (left, right) = ctx.unzip_vec([(text, 7_u8)], "unzip").unwrap();
+    let (left, right) = ctx
+        .unzip_vec([(text, 7_u8)], "unzip")
+        .expect("test operation succeeds");
     assert_eq!(left, ["owned"]);
     assert_eq!(right, [7]);
     assert_eq!(left[0].as_ptr(), pointer);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test operation succeeds");
     let mut calls = 0;
-    let source = [(1_u8, 2_u8)].into_iter().map(|pair| { calls += 1; pair });
-    let CodecError::ResourceLimit(first) = ctx.unzip_vec(source, "unzip refusal").unwrap_err() else { panic!("resource refusal") };
+    let source = [(1_u8, 2_u8)].into_iter().inspect(|_| {
+        calls += 1;
+    });
+    let CodecError::ResourceLimit(first) = ctx
+        .unzip_vec(source, "unzip refusal")
+        .expect_err("operation refuses")
+    else {
+        panic!("resource refusal")
+    };
     assert_eq!(calls, 0);
-    let CodecError::ResourceLimit(repeated) = ctx.unzip_vec([(3_u8, 4_u8)], "later unzip").unwrap_err() else { panic!("resource refusal") };
+    let CodecError::ResourceLimit(repeated) = ctx
+        .unzip_vec([(3_u8, 4_u8)], "later unzip")
+        .expect_err("operation refuses")
+    else {
+        panic!("resource refusal")
+    };
     assert_eq!(first, repeated);
     policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(ctx.unzip_vec([(1_u8, 2_u8)], "second slot"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1 && limit.additional == 1));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test operation succeeds");
+    assert!(
+        matches!(ctx.unzip_vec([(1_u8, 2_u8)], "second slot"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1 && limit.additional == 1)
+    );
 }

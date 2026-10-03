@@ -76,7 +76,11 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for Identity {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }
@@ -412,7 +416,11 @@ impl StaticIdentityKey {
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl cadmpeg_core::decode::cost::DecodeCost for IdentityKey {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
     }
 }

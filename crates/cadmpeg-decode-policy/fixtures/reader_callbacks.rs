@@ -2,7 +2,9 @@
 use std::io::{Read, Seek, SeekFrom};
 pub struct DecodeContext;
 impl DecodeContext {
-    fn charge_work(&self, _: u64, _: &str) -> Result<(), ()> { Ok(()) }
+    fn charge_work(&self, _: u64, _: &str) -> Result<(), ()> {
+        Ok(())
+    }
     fn read_input<R: Read + ?Sized>(&self, reader: &mut R, bytes: &mut [u8]) -> Result<(), ()> {
         self.charge_work(bytes.len() as u64, "read")?;
         drop(reader.read(bytes));
@@ -11,7 +13,11 @@ impl DecodeContext {
 }
 pub trait ReadSeek: Read + Seek {}
 impl<R: Read + Seek + ?Sized> ReadSeek for R {}
-pub fn root<R: ReadSeek + ?Sized>(ctx: &DecodeContext, reader: &mut R, bytes: &mut [u8]) -> Result<(), ()> {
+pub fn root<R: ReadSeek + ?Sized>(
+    ctx: &DecodeContext,
+    reader: &mut R,
+    bytes: &mut [u8],
+) -> Result<(), ()> {
     drop(reader.seek(SeekFrom::Start(0)));
     drop(reader.rewind());
     ctx.read_input(reader, bytes)
@@ -21,10 +27,14 @@ pub fn raw_extent<R: Read + ?Sized>(_ctx: &DecodeContext, reader: &mut R, bytes:
 }
 pub struct Checked;
 impl Read for Checked {
-    fn read(&mut self, _bytes: &mut [u8]) -> std::io::Result<usize> { Ok(0) }
+    fn read(&mut self, _bytes: &mut [u8]) -> std::io::Result<usize> {
+        Ok(0)
+    }
 }
 impl Seek for Checked {
-    fn seek(&mut self, _position: SeekFrom) -> std::io::Result<u64> { Ok(0) }
+    fn seek(&mut self, _position: SeekFrom) -> std::io::Result<u64> {
+        Ok(0)
+    }
 }
 pub struct Scanning;
 impl Read for Scanning {
@@ -33,12 +43,18 @@ impl Read for Scanning {
         Ok(copied.len())
     }
 }
-pub struct ScanningRewind { bytes: Vec<u8> }
+pub struct ScanningRewind {
+    bytes: Vec<u8>,
+}
 impl Read for ScanningRewind {
-    fn read(&mut self, _bytes: &mut [u8]) -> std::io::Result<usize> { Ok(0) }
+    fn read(&mut self, _bytes: &mut [u8]) -> std::io::Result<usize> {
+        Ok(0)
+    }
 }
 impl Seek for ScanningRewind {
-    fn seek(&mut self, _position: SeekFrom) -> std::io::Result<u64> { Ok(0) }
+    fn seek(&mut self, _position: SeekFrom) -> std::io::Result<u64> {
+        Ok(0)
+    }
     fn rewind(&mut self) -> std::io::Result<()> {
         let copied = self.bytes.to_vec(); // finding: uncharged_decode_allocation, uncharged_decode_work
         drop(copied);
@@ -47,9 +63,19 @@ impl Seek for ScanningRewind {
 }
 pub struct CustomBytes;
 impl AsRef<[u8]> for CustomBytes {
-    fn as_ref(&self) -> &[u8] { &[] }
+    fn as_ref(&self) -> &[u8] {
+        &[]
+    }
 }
-pub fn callers(vector: &Vec<u8>, ctx: &DecodeContext, file: &mut std::fs::File, bytes: &mut [u8], opaque: &mut dyn Read, opaque_seek: &mut dyn ReadSeek, scanning_rewind: &mut ScanningRewind) -> Result<(), ()> {
+pub fn callers(
+    vector: &Vec<u8>,
+    ctx: &DecodeContext,
+    file: &mut std::fs::File,
+    bytes: &mut [u8],
+    opaque: &mut dyn Read,
+    opaque_seek: &mut dyn ReadSeek,
+    scanning_rewind: &mut ScanningRewind,
+) -> Result<(), ()> {
     ctx.read_input(&mut std::io::Cursor::new(vector), bytes)?;
     root(ctx, &mut std::io::Cursor::new(vector), bytes)?;
     ctx.read_input(file, bytes)?;
