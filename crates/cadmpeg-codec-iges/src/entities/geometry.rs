@@ -1375,7 +1375,7 @@ pub(crate) struct SourceSequences {
 }
 
 impl SourceSequences {
-    fn insert<K: Ord>(
+    fn insert<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
         values: &mut BTreeMap<K, u32>,
         id: &K,
         sequence: u32,

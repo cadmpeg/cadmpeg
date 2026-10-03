@@ -183,7 +183,7 @@ impl CarrierIndex {
     }
 }
 
-fn merge_missing_map<K: Eq + Hash, V>(
+fn merge_missing_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     target: &mut HashMap<K, V>,
     source: HashMap<K, V>,

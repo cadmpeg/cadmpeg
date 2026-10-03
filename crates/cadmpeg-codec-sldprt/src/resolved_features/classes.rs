@@ -644,7 +644,7 @@ fn copy_class_text(
     ctx.format_retained(format_args!("{text}"), "bind SLDPRT history classes")
 }
 
-fn collect_class_map<K: Eq + std::hash::Hash, V>(
+fn collect_class_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     items: impl Iterator<Item = (K, V)>,
 ) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
@@ -656,7 +656,7 @@ fn collect_class_map<K: Eq + std::hash::Hash, V>(
     Ok(map)
 }
 
-fn collect_class_set<T: Eq + std::hash::Hash>(
+fn collect_class_set<T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     items: impl Iterator<Item = T>,
 ) -> Result<HashSet<T>, cadmpeg_core::CodecError> {

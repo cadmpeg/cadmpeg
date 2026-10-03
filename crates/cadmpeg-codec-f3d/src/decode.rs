@@ -6391,7 +6391,7 @@ pub(crate) fn resolve_face_appearance_bindings(
 
 /// Fill absent explicit topology colors from uniquely bound appearance assets.
 /// Native RGB/truecolor attributes remain authoritative on the same target.
-fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
+fn insert_appearance_color<'a, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     colors: &mut std::collections::HashMap<&'a K, Option<cadmpeg_ir::topology::Color>>,
     id: &'a K,

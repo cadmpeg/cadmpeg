@@ -98,7 +98,7 @@ fn clone_history_properties<K>(
     key: impl Fn(&DecodeContext<'_>, &K) -> Result<K, CodecError>,
 ) -> Result<BTreeMap<K, String>, CodecError>
 where
-    K: Ord,
+    K: Ord + cadmpeg_core::decode::cost::DecodeCost,
 {
     let mut copy = BTreeMap::new();
     for (name, value) in properties {

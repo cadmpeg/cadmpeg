@@ -19,7 +19,7 @@ pub trait DecodeCost {
 macro_rules! scalar_cost {
     ($($scalar:ty),+) => {$(
         impl DecodeCost for $scalar {
-            const FIXED_BYTES: Option<u64> = Some(std::mem::size_of::<Self>() as u64);
+            const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<Self>()));
             fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str)
                 -> Result<u64, CodecError> {
                 Ok(u64_from_index(std::mem::size_of::<Self>()))
@@ -28,6 +28,11 @@ macro_rules! scalar_cost {
     )+};
 }
 scalar_cost!((), bool, char, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
+
+scalar_cost!(std::num::NonZeroU8, std::num::NonZeroU16, std::num::NonZeroU32,
+    std::num::NonZeroU64, std::num::NonZeroU128, std::num::NonZeroUsize,
+    std::num::NonZeroI8, std::num::NonZeroI16, std::num::NonZeroI32,
+    std::num::NonZeroI64, std::num::NonZeroI128, std::num::NonZeroIsize);
 
 impl DecodeCost for str {
     fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
@@ -70,7 +75,7 @@ impl<T: DecodeCost> DecodeCost for Vec<T> {
 }
 impl<T: DecodeCost, const N: usize> DecodeCost for [T; N] {
     const FIXED_BYTES: Option<u64> = match T::FIXED_BYTES {
-        Some(bytes) => bytes.checked_mul(N as u64),
+        Some(bytes) => bytes.checked_mul(u64_from_index(N)),
         None => None,
     };
     fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
@@ -102,6 +107,40 @@ tuple_cost!(A:0, B:1, C:2);
 tuple_cost!(A:0, B:1, C:2, D:3);
 tuple_cost!(A:0, B:1, C:2, D:3, E:4);
 tuple_cost!(A:0, B:1, C:2, D:3, E:4, F:5);
+
+impl DecodeCost for serde_value::Value {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        let _depth = ctx.enter_nested(operation)?;
+        let bytes = match self {
+            Self::Bool(value) => value.decode_cost(ctx, operation)?,
+            Self::U8(value) => value.decode_cost(ctx, operation)?,
+            Self::U16(value) => value.decode_cost(ctx, operation)?,
+            Self::U32(value) => value.decode_cost(ctx, operation)?,
+            Self::U64(value) => value.decode_cost(ctx, operation)?,
+            Self::I8(value) => value.decode_cost(ctx, operation)?,
+            Self::I16(value) => value.decode_cost(ctx, operation)?,
+            Self::I32(value) => value.decode_cost(ctx, operation)?,
+            Self::I64(value) => value.decode_cost(ctx, operation)?,
+            Self::F32(value) => value.decode_cost(ctx, operation)?,
+            Self::F64(value) => value.decode_cost(ctx, operation)?,
+            Self::Char(value) => value.decode_cost(ctx, operation)?,
+            Self::String(value) => value.decode_cost(ctx, operation)?,
+            Self::Unit => 0,
+            Self::Option(value) => value.decode_cost(ctx, operation)?,
+            Self::Newtype(value) => value.decode_cost(ctx, operation)?,
+            Self::Seq(value) => value.decode_cost(ctx, operation)?,
+            Self::Bytes(value) => value.decode_cost(ctx, operation)?,
+            Self::Map(values) => {
+                let mut bytes = 0_u64;
+                for (key, value) in ctx.admit_iter(values, operation)? {
+                    bytes = ctx.cost_sum(bytes, (key, value).decode_cost(ctx, operation)?, operation)?;
+                }
+                bytes
+            }
+        };
+        ctx.cost_sum(u64_from_index(std::mem::size_of::<usize>()), bytes, operation)
+    }
+}
 
 impl DecodeContext<'_> {
     pub(crate) fn cost_sum(&self, left: u64, right: u64, operation: &'static str) -> Result<u64, CodecError> {

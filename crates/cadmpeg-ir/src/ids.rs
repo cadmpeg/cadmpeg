@@ -75,6 +75,12 @@ impl schemars::JsonSchema for Identity {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for Identity {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
+
 impl Identity {
     /// Copies an admitted identity within the decode budget.
     pub fn try_clone_for_decode(
@@ -404,6 +410,12 @@ impl StaticIdentityKey {
 /// check passed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
+
+impl cadmpeg_core::decode::cost::DecodeCost for IdentityKey {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
 
 impl IdentityKey {
     /// Copy owned key text under the decode budget; retain static borrowed text.
@@ -948,6 +960,13 @@ macro_rules! id_type {
         #[serde(transparent)]
         pub struct $name($crate::ids::Identity);
 
+        impl cadmpeg_core::decode::cost::DecodeCost for $name {
+            fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+            }
+        }
+
+
         impl serde::Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
@@ -1047,6 +1066,13 @@ macro_rules! local_id_type {
         )]
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
+
+        impl cadmpeg_core::decode::cost::DecodeCost for $name {
+            fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+            }
+        }
+
 
         #[cfg(feature = "schema")]
         impl schemars::JsonSchema for $name {

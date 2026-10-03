@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! One-table indexes that exclude every repeated key.
 
+use super::cost::DecodeCost;
 use super::{u64_from_index, DecodeContext, ScopedReservation};
 use crate::CodecError;
 use std::collections::HashMap;
@@ -10,17 +11,16 @@ impl DecodeContext<'_> {
     /// Builds a scoped table. Repeated keys become tombstones until the final
     /// in-place removal, so a third occurrence cannot restore a duplicate.
     /// Surviving values are Some; no second table is allocated.
-    pub fn unique_index<K: Eq + Hash, V>(
+    pub fn unique_index<K: Eq + Hash + DecodeCost, V>(
         &self,
         entries: impl IntoIterator<Item = (K, V)>,
-        key_work: impl Fn(&K) -> Result<u64, CodecError>,
         operation: &'static str,
     ) -> Result<(HashMap<K, Option<V>>, ScopedReservation<'_>), CodecError> {
         let mut table = HashMap::<K, Option<V>>::new();
         let mut storage = self.reserve_scoped(0, operation)?;
         for (key, value) in entries {
             self.charge_work(1, operation)?;
-            self.charge_work(key_work(&key)?, operation)?;
+            self.charge_key(&key, 1, operation)?;
             if let Some(previous) = table.get_mut(&key) {
                 *previous = None;
                 continue;
@@ -28,8 +28,8 @@ impl DecodeContext<'_> {
             self.charge_collection_items(1, operation)?;
             if table.len() == table.capacity() {
                 self.charge_work(u64_from_index(table.capacity()), operation)?;
-                for stored in table.keys() {
-                    self.charge_work(key_work(stored)?, operation)?;
+                for (stored, _) in self.admit_iter(&table, operation)? {
+                    self.charge_key(stored, 1, operation)?;
                 }
                 // A hash table reserves at most four buckets per requested
                 // entry, including load-factor rounding. Each bucket holds
@@ -56,7 +56,7 @@ impl DecodeContext<'_> {
                         .scoped_allocation_failed(u64_from_index(required), operation)
                 })?;
             }
-            self.charge_work(key_work(&key)?, operation)?;
+            self.charge_key(&key, 1, operation)?;
             // discarded-value: the key was absent before the admitted insertion.
             let _ = table.insert(key, Some(value));
         }
@@ -82,7 +82,6 @@ mod tests {
         let (table, storage) = ctx
             .unique_index(
                 [(1_u32, 2), (1, 3), (1, 4), (2, 5)],
-                |_| Ok(4),
                 "unique test",
             )
             .expect("two slots");
@@ -101,7 +100,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, _storage) = ctx
-            .unique_index([(7_u32, 7)], |_| Ok(4), "unique test")
+            .unique_index([(7_u32, 7)], "unique test")
             .expect("one table slot");
         assert_eq!(table.get(&7), Some(&Some(7)));
     }
@@ -123,7 +122,7 @@ mod tests {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
             assert!(
-                matches!(ctx.unique_index([("long key", 1)], |key| Ok(super::u64_from_index(key.len())), "unique test"),
+                matches!(ctx.unique_index([("long key", 1)], "unique test"),
                 Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
             );
         }

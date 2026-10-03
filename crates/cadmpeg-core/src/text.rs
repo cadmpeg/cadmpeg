@@ -75,6 +75,12 @@ impl JsonSchema for NonBlankString {
     }
 }
 
+impl crate::decode::cost::DecodeCost for NonBlankString {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        crate::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
+
 impl NonBlankString {
     /// Constructs a source string that is not blank.
     ///

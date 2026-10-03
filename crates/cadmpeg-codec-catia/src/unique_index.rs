@@ -9,7 +9,7 @@ pub(super) struct UniqueIndex<K, V> {
     entries: HashMap<K, Option<V>>,
 }
 
-impl<K: Eq + Hash, V> UniqueIndex<K, V> {
+impl<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V> UniqueIndex<K, V> {
     pub(super) fn new() -> Self {
         Self {
             entries: HashMap::new(),

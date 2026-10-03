@@ -500,6 +500,13 @@ pub(crate) enum DesignOperandOwner {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignOperandOwner {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl DesignOperandOwner {
     /// Return the construction-group record and member position, when grouped.
     pub(crate) const fn group(self) -> Option<(u32, u32)> {
@@ -563,6 +570,13 @@ pub(crate) enum AsmHistoricalEntityKind {
     Curve,
     /// Parametric-curve carrier slot.
     Pcurve,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for AsmHistoricalEntityKind {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
 }
 
 /// Mutable binding evidence for one fixed body-recipe reference.

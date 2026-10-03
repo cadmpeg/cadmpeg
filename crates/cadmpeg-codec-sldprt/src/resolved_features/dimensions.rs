@@ -2046,7 +2046,7 @@ fn collect_marker_circle_items<T>(
     Ok(result)
 }
 
-fn insert_marker_circle_key<T: Eq + std::hash::Hash>(
+fn insert_marker_circle_key<T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     keys: &mut HashSet<T>,
     key: T,

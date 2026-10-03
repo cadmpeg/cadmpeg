@@ -7426,7 +7426,7 @@ fn topology_attribute_name(
 }
 
 /// Records `value` as the sole value for `key`, or `None` once the key repeats.
-fn insert_sole<'a, K: Ord, V>(
+fn insert_sole<'a, K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     values: &mut BTreeMap<K, Option<&'a V>>,

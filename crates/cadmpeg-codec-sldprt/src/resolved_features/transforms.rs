@@ -1207,7 +1207,7 @@ fn insert_marker_identity<'a, K>(
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError>
 where
-    K: ?Sized + Eq + std::hash::Hash,
+    K: ?Sized + Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
 {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(identities.len()),

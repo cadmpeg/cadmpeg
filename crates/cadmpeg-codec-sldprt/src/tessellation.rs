@@ -79,7 +79,7 @@ impl FaceEvaluationTolerance {
 
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
-fn collect_index<K: Eq + Hash, V>(
+fn collect_index<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     items: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,

@@ -575,6 +575,13 @@ enum ReferenceRole {
     Surface,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ReferenceRole {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 /// A type-133 parameter restriction over a basis curve.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TrimmedCurve {

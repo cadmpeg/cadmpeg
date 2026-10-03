@@ -50,6 +50,12 @@ impl StorageBand {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SegmentToken(IdentityKey);
 
+impl cadmpeg_core::decode::cost::DecodeCost for SegmentToken {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
+
 /// Which of the two `RSe` streams a segment name introduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SegmentPrefix {

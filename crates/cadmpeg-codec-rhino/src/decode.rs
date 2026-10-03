@@ -6719,7 +6719,7 @@ fn region_shell_groups_without_records(
     })
 }
 
-fn push_group_face<K: Eq + std::hash::Hash>(
+fn push_group_face<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     groups: &mut HashMap<K, Vec<usize>>,
     key: K,

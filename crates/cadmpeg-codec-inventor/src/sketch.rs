@@ -1063,11 +1063,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor sketches", 0, u64::MAX))
-        },
         "index Inventor sketches",
     )?;
     let (raw_entities, _raw_entities_storage) = ctx.unique_index(
@@ -1082,13 +1077,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch entities", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch entities",
     )?;
     let (transforms, _transforms_storage) = ctx.unique_index(
@@ -1103,13 +1091,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch transforms", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch transforms",
     )?;
     let (directions, _directions_storage) = ctx.unique_index(
@@ -1124,13 +1105,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch directions", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch directions",
     )?;
     let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
@@ -1145,13 +1119,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor sketch constraints", 0, u64::MAX)
-                })
-        },
         "index Inventor sketch constraints",
     )?;
     let mut parameter_index = HashMap::new();

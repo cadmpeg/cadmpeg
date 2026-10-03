@@ -5212,7 +5212,7 @@ fn reserve_profile_locus_map_slot<K, V>(
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
 {
     ctx.charge_work(
         source_key_bytes
@@ -5244,7 +5244,7 @@ fn collect_profile_locus_map<K, V>(
     operation: &'static str,
 ) -> Result<HashMap<K, V>, cadmpeg_core::CodecError>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
 {
     let mut result = HashMap::new();
     let mut key_bytes = 0u64;
@@ -5269,7 +5269,7 @@ fn reserve_profile_locus_set_slot<K>(
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
 {
     ctx.charge_work(
         source_key_bytes
@@ -5375,7 +5375,7 @@ fn collect_profile_locus_set<K>(
     operation: &'static str,
 ) -> Result<HashSet<K>, cadmpeg_core::CodecError>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
 {
     let mut result = HashSet::new();
     let mut key_bytes = 0u64;

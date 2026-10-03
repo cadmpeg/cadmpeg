@@ -51,7 +51,7 @@ fn retained_format(
     Ok(result)
 }
 
-fn index_brep<'a, T, K: Eq + Hash, V>(
+fn index_brep<'a, T, K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &'a [T],
     mut entry: impl FnMut(&'a T) -> (K, V),

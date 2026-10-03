@@ -28,6 +28,13 @@ const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct HalfEdgeId(usize);
 
+impl cadmpeg_core::decode::cost::DecodeCost for HalfEdgeId {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 #[derive(Clone, Copy)]
 struct HalfEdge {
     next: HalfEdgeId,

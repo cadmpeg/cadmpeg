@@ -1122,13 +1122,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature properties", 0, u64::MAX)
-                })
-        },
         "index Inventor feature properties",
     )?;
     let (unique_parameters, _parameters_storage) = ctx.unique_index(
@@ -1143,13 +1136,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature parameters", 0, u64::MAX)
-                })
-        },
         "index Inventor feature parameters",
     )?;
     let (unique_sketches, _sketches_storage) = ctx.unique_index(
@@ -1164,13 +1150,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature sketches", 0, u64::MAX)
-                })
-        },
         "index Inventor feature sketches",
     )?;
     let (unique_directions, _directions_storage) = ctx.unique_index(
@@ -1185,13 +1164,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature directions", 0, u64::MAX)
-                })
-        },
         "index Inventor feature directions",
     )?;
     let (unique_transforms, _transforms_storage) = ctx.unique_index(
@@ -1206,13 +1178,6 @@ pub(crate) fn project(
                 record,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("index Inventor feature transforms", 0, u64::MAX)
-                })
-        },
         "index Inventor feature transforms",
     )?;
     let index = ProjectionIndex {
@@ -1279,11 +1244,6 @@ pub(crate) fn project(
                 label,
             )
         }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor feature labels", 0, u64::MAX))
-        },
         "index Inventor feature labels",
     )?;
     let mut projected = Vec::new();
