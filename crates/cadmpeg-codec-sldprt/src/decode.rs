@@ -3923,7 +3923,7 @@ fn add_solidworks_xml_metadata(
         }
         for (key, value) in &envelope.configuration_attributes {
             let name = copy_retained_string(ctx, key, "retain SLDPRT configuration key")?;
-            let name = cadmpeg_core::text::NonBlankString::new(name)
+            let name = cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
                 .ok_or_else(|| CodecError::Malformed("invalid SLDPRT configuration key".into()))?;
             let value = copy_retained_string(ctx, value, "retain SLDPRT configuration value")?;
             ctx.insert_btree_map(

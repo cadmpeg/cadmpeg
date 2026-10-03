@@ -350,7 +350,7 @@ pub(super) fn project_edge(
             | SolvedCurveGeometry::Nurbs(_),
         ))
         | None => None,
-        Some(other) => cadmpeg_core::text::NonBlankString::new(retained_curve_debug(ctx, other)?)
+        Some(other) => cadmpeg_core::text::NonBlankString::for_decode(ctx, retained_curve_debug(ctx, other)?, "validate nonblank text")?
             .map(SketchGeometry::native),
     };
     let projected = (|| match curve {

@@ -334,7 +334,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     parameter.record_index = 41;
     parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 parameter.source_kind().to_owned(),
                 Some(40),
                 parameter.family_discriminator(),
@@ -1355,7 +1355,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     parameter.record_index = 41;
     parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 parameter.source_kind().to_owned(),
                 Some(40),
                 parameter.family_discriminator(),

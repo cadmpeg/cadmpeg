@@ -3,10 +3,10 @@ use serde_json::json;
 
 #[test]
 fn subtransform_admission_requires_nonempty_programs_and_nonnegative_indices() {
-    assert!(InlineTSplineSubtransform::try_new("", None, "values").is_err());
-    assert!(InlineTSplineSubtransform::try_new("program", None, "").is_err());
-    assert!(InlineTSplineSubtransform::try_new(" ", None, "\n").is_err());
-    assert!(InlineTSplineSubtransform::try_new(" p ", None, " v\n").is_ok());
+    assert!(InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), "", None, "values").is_err());
+    assert!(InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), "program", None, "").is_err());
+    assert!(InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), " ", None, "\n").is_err());
+    assert!(InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), " p ", None, " v\n").is_ok());
     assert!(SubtypeTableIndex::try_new(-1).is_err());
     for index in [0, i64::MAX] {
         assert_eq!(SubtypeTableIndex::try_new(index).unwrap().get(), index);
@@ -45,7 +45,7 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
     use super::super::TSplineSurfaceConstruction;
 
     let inline = TSplineSubtransform::Inline(
-        InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
+        InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), "program", None, "values").unwrap(),
     );
     let admit = |ranges, subtransform| {
         TSplineSurfaceConstruction::try_new(
@@ -93,7 +93,7 @@ fn surface_admission_checks_its_revision_cache_form() {
         TSplineSurfaceConstruction,
     };
     let inline = TSplineSubtransform::Inline(
-        InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
+        InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), "program", None, "values").unwrap(),
     );
     let form = RevisionSurfaceForm {
         revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
@@ -147,7 +147,7 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
     use super::super::TSplineSurfaceConstruction;
 
     let inline = TSplineSubtransform::Inline(
-        InlineTSplineSubtransform::try_new("v 1 2", None, "e 3").unwrap(),
+        InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), "v 1 2", None, "e 3").unwrap(),
     );
     let construction = TSplineSurfaceConstruction::try_new(
         [[0.0, 1.0], [0.0, 1.0]],
@@ -184,7 +184,7 @@ fn a_tspline_construction_holds_its_admitted_discontinuities() {
     use crate::scalar::FiniteReal;
 
     let inline = TSplineSubtransform::Inline(
-        InlineTSplineSubtransform::try_new("v 1 2", None, "e 3").unwrap(),
+        InlineTSplineSubtransform::try_new(&cadmpeg_test_support::service_decode_context(), "v 1 2", None, "e 3").unwrap(),
     );
     let lanes = [vec![0.25], vec![], vec![0.5, 0.75], vec![], vec![], vec![]];
     let construction = TSplineSurfaceConstruction::try_new(

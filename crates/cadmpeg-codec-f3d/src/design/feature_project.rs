@@ -2122,7 +2122,7 @@ fn project_work_point_construction(
                     let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
                     let prefix =
                         crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
-                    match VertexSelection::historical(
+                    match VertexSelection::historical(ctx, 
                         crate::design::identity::feature_input_topology_id(
                             ctx,
                             &feature_id,
@@ -2138,7 +2138,7 @@ fn project_work_point_construction(
                             &recipe.recipe_id,
                             "f3d WorkPoint historical vertex recipe id",
                         )?,
-                    ) {
+                    )? {
                         Ok(selection) => selection,
                         Err(_) => VertexSelection::Unresolved,
                     }
@@ -2213,11 +2213,11 @@ fn project_work_plane(
         -> Result<Option<VertexSelection>, CodecError> {
             let Some(resolution) = recipe.resolution else { return Ok(None); };
             let native = ctx.copy_retained_text(&recipe.recipe_id, "f3d WorkPlane vertex recipe id")?;
-            let selection = match VertexSelection::historical(
+            let selection = match VertexSelection::historical(ctx, 
                     crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
                     crate::design::identity::history_input_vertex_id(ctx, &prefix, resolution.vertex_slot(), "f3d historical vertex identifier")?,
                     native,
-                ) {
+                )? {
                 Ok(selection) => selection,
                 Err(_) => VertexSelection::Unresolved,
             };
@@ -2314,10 +2314,10 @@ fn scope_properties(
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         ctx.insert_btree_map(
             &mut properties,
-            cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.format_retained(
                 format_args!("reference:{ordinal}"),
                 "f3d scope reference property key",
-            )?)
+            )?, "validate nonblank text")?
             .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
             ctx.format_retained(
                 format_args!("{record_index}"),
@@ -2364,7 +2364,7 @@ fn native_scope_definition(
     let mut properties = std::collections::BTreeMap::new();
     for (_, parameter) in parameters {
         let name = ctx.copy_retained_text(parameter.name(), "f3d native parameter name")?;
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")? else {
             return Err(cadmpeg_core::text::NamedEntryError::Blank {
                 record: ctx.copy_retained_text(&scope.id, "f3d native property error scope")?,
             }
@@ -6496,7 +6496,7 @@ pub(super) fn project_fixed_loft(
                 let id = ctx.copy_retained_text(&group.id, "f3d Loft section group id")?;
                 let section = if ordinal == point_ordinal {
                     LoftSection::Point(LoftPointSection::Native(or_none!(
-                        cadmpeg_core::text::NonBlankString::new(id)
+                        cadmpeg_core::text::NonBlankString::for_decode(ctx, id, "validate nonblank text")?
                     )))
                 } else {
                     LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
@@ -6665,7 +6665,7 @@ fn resolved_surface_patch_path(
                 Ok(edges) => PathRef::HistoricalEdges {
                     state,
                     edges,
-                    native: cadmpeg_core::text::NonBlankString::new(native)
+                    native: cadmpeg_core::text::NonBlankString::for_decode(ctx, native, "validate nonblank text")?
                         .ok_or_else(|| CodecError::malformed("surface patch path is blank"))?,
                 },
                 Err(_) => PathRef::Native(native),
@@ -8296,9 +8296,7 @@ pub(super) fn project_split(
                 }
                 FaceSelection::Historical { native, .. }
                 | FaceSelection::HistoricalPartial { native, .. } => {
-                    *native = or_none!(cadmpeg_core::text::NonBlankString::new(
-                        ctx.copy_retained_text(&tool.id, "f3d SplitBody historical face tool id")?
-                    ));
+                    *native = or_none!(cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&tool.id, "f3d SplitBody historical face tool id")?, "validate nonblank text")?);
                 }
                 _ => {}
             }

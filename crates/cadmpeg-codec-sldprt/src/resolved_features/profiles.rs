@@ -3286,17 +3286,17 @@ fn transform_sketch_block_geometry(
                 return Ok(None);
             };
             return Ok(SketchGeometry::from_parts(SketchGeometryDefinition::Text {
-                text: cadmpeg_core::text::NonBlankString::new(copy_profile_text(
+                text: cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_profile_text(
                     ctx,
                     text.as_str(),
                     OPERATION,
-                )?)
+                )?, "validate nonblank text")?
                 .ok_or_else(|| CodecError::malformed("blank decoded sketch text"))?,
-                font_family: cadmpeg_core::text::NonBlankString::new(copy_profile_text(
+                font_family: cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_profile_text(
                     ctx,
                     font_family.as_str(),
                     OPERATION,
-                )?)
+                )?, "validate nonblank text")?
                 .ok_or_else(|| CodecError::malformed("blank decoded sketch font"))?,
                 font_weight: *font_weight,
                 height: *height,
@@ -5254,8 +5254,8 @@ mod detached_legacy_sketch_tests {
                 text_id,
                 source_id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Text {
-                    text: cadmpeg_core::text::NonBlankString::new("label").unwrap(),
-                    font_family: cadmpeg_core::text::NonBlankString::new("font").unwrap(),
+                    text: cadmpeg_core::text::NonBlankString::try_from("label").unwrap(),
+                    font_family: cadmpeg_core::text::NonBlankString::try_from("font").unwrap(),
                     font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
                     height: Length::new(2.0).unwrap(),
                     width_factor: Some(1.5),

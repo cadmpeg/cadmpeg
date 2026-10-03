@@ -56,7 +56,7 @@ fn native_skamp_nonblank(
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, cadmpeg_core::CodecError> {
     let text = ctx.format_retained(format_args!("{value}"), operation)?;
-    cadmpeg_core::text::NonBlankString::new(text)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank native SKAMP field"))
 }
 
@@ -1668,7 +1668,7 @@ mod tests {
             direction: Point2::new(2.0, 0.0),
         });
         let native_line = with_target(SketchGeometryDefinition::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("reference_line")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("reference_line")
                 .expect("valid test fixture"),
         });
         let arc = with_target(SketchGeometryDefinition::Arc {

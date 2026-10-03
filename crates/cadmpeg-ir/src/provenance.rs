@@ -247,7 +247,7 @@ impl SourceObjectAssociation {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let text = |value: &str| ctx.copy_retained_text(value, operation);
-        let object_id = cadmpeg_core::text::NonBlankString::new(text(self.object_id.as_str())?)
+        let object_id = cadmpeg_core::text::NonBlankString::for_decode(ctx, text(self.object_id.as_str())?, "validate nonblank text")?
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("invalid decoded source object ID")
             })?;

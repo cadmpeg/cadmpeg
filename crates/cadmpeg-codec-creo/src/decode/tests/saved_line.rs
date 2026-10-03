@@ -709,7 +709,7 @@ fn saved_line_joins_through_order_table() {
         SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
             .expect("valid test fixture"),
         SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::new("solver_only_section_entity")
+            cadmpeg_core::text::NonBlankString::try_from("solver_only_section_entity")
                 .expect("nonempty source identity"),
         ),
     )]);
@@ -790,14 +790,14 @@ fn saved_line_joins_through_order_table() {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("line").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
             ),
         ),
         (
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
                 .expect("valid test fixture"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("point").expect("nonempty source identity"),
+                cadmpeg_core::text::NonBlankString::try_from("point").expect("nonempty source identity"),
             ),
         ),
     ]);

@@ -1841,16 +1841,10 @@ fn project_constraint(
         }
         PmDcSketchConstraintKind::CircleCenter { entity, center } => {
             let members = [resolve(entity)?, resolve(center)?];
-            admit!(ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("circle_center_alignment".len()),
-                "retain Inventor circle center kind"
-            ));
             admit!(ctx.charge_collection_items(2, "collect Inventor circle center operands"));
             (
                 SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new(
-                        "circle_center_alignment",
-                    )?,
+                    native_kind: admitted_value!(cadmpeg_core::text::NonBlankString::for_decode(ctx, "circle_center_alignment", "validate nonblank text").map_err(CodecError::from))?,
                     native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),

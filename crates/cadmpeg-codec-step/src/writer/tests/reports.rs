@@ -136,13 +136,13 @@ fn edgeless_doc() -> CadIr {
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.assets.push(
-        cadmpeg_ir::assets::Asset::try_new(
+        cadmpeg_ir::assets::Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
             cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
                 .expect("identity grammar"),
             Some("texture".into()),
             Some("image/png".into()),
             cadmpeg_ir::assets::AssetContent::External {
-                uri: cadmpeg_core::text::NonBlankString::new("urn:test:texture")
+                uri: cadmpeg_core::text::NonBlankString::try_from("urn:test:texture")
                     .expect("nonempty uri"),
             },
             None,
@@ -365,7 +365,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let texture = AssetId::mint("synthetic:test:asset#0").expect("identity grammar");
     ir.model.assets.push(
-        Asset::try_new(
+        Asset::try_new(&cadmpeg_test_support::service_decode_context(), 
             texture.clone(),
             None,
             Some("image/png".into()),
@@ -1305,7 +1305,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("object-0")
+        object_id: cadmpeg_core::text::NonBlankString::try_from("object-0")
             .expect("nonempty source identity"),
         name: None,
         color: None,

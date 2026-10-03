@@ -602,9 +602,9 @@ fn parse_document(
                 };
                 if data_by_name.contains_key(target) {
                     link.set_object(
-                        cadmpeg_core::text::NonBlankString::new(crate::native::native_id_charged(
+                        cadmpeg_core::text::NonBlankString::for_decode(ctx, crate::native::native_id_charged(
                             ctx, "object", target,
-                        )?)
+                        )?, "validate nonblank text")?
                         .ok_or_else(|| {
                             CodecError::malformed("link object identity must not be empty")
                         })?,
@@ -1144,12 +1144,12 @@ fn local_link(
     LinkTarget::optional_from_wire(LinkTargetWire {
         document: None,
         document_attribute: None,
-        object: Some(retained_attr(
+        object: Some(ctx.validate_nonblank_text(retained_attr(
             ctx,
             node,
             object_attribute,
             "FCStd link object",
-        )?),
+        )?, "validate object")?),
         subelements,
     })
     .map_err(CodecError::Malformed)
@@ -1225,9 +1225,9 @@ fn xlink(
         }
     };
     LinkTarget::optional_from_wire(LinkTargetWire {
-        document: file.filter(|file| !file.is_empty()),
+        document: (file.filter(|file| !file.is_empty())).map(|value| ctx.validate_nonblank_text(value, "validate document")).transpose()?,
         document_attribute: Some("file".to_owned()),
-        object: Some(retained_attr(ctx, node, "name", "FCStd link object")?),
+        object: Some(ctx.validate_nonblank_text(retained_attr(ctx, node, "name", "FCStd link object")?, "validate object")?),
         subelements,
     })
     .map_err(CodecError::Malformed)

@@ -37,7 +37,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
             format: CodecFormat::Sldprt,
-            object_id: cadmpeg_core::text::NonBlankString::new("carrier").unwrap(),
+            object_id: cadmpeg_core::text::NonBlankString::try_from("carrier").unwrap(),
             name: Some("Retained surface".into()),
             color: None,
             visible: Some(true),
@@ -857,11 +857,11 @@ fn profile_termination_operands() -> (
             .unwrap(),
         },
         LinearTermination::ToVertex {
-            vertex: VertexSelection::historical(
+            vertex: VertexSelection::historical(&cadmpeg_test_support::service_decode_context(), 
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
                 "historical vertex".into(),
-            )
+            ).unwrap()
             .unwrap(),
         },
         LinearTermination::ToVertex {

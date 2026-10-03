@@ -16,9 +16,9 @@ pub trait TextSource: sealed::Source {
 
     /// Transfer owned text or copy borrowed text through the caller budget.
     /// The caller admits any existing owned storage.
-    fn into_retained_text(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError>
+    fn into_retained_text(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, super::ResourceLimit>
     where Self: Sized {
-        ctx.copy_retained_text(self.as_text(), operation)
+        ctx.copy_retained_text_limit(self.as_text(), operation)
     }
 }
 
@@ -29,8 +29,8 @@ impl TextSource for str {
 impl sealed::Source for String {}
 impl TextSource for String {
     fn as_text(&self) -> &str { self.as_str() }
-    fn into_retained_text(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, CodecError> {
-        ctx.charge_work(0, operation)?;
+    fn into_retained_text(self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<String, super::ResourceLimit> {
+        ctx.charge_work_limit(0, operation)?;
         Ok(self)
     }
 }
@@ -55,6 +55,12 @@ text_scalars!(std::num::NonZeroU8, std::num::NonZeroU16, std::num::NonZeroU32,
     std::num::NonZeroI64, std::num::NonZeroI128, std::num::NonZeroIsize);
 
 impl DecodeContext<'_> {
+    /// Charge the complete text scan and retain its result with the exact input.
+    pub fn validate_nonblank_text<S: TextSource>(&self, source: S, operation: &'static str) -> Result<crate::text::NonBlankText<S>, super::ResourceLimit> {
+        let nonblank = self.admit_iter(source.as_text(), operation)?.any(|character| !character.is_whitespace());
+        Ok(crate::text::NonBlankText { source, nonblank })
+    }
+
     /// Admits input bytes before parsing and preserves the standard parse error.
     pub fn parse_text<T: TextScalar>(&self, text: &str, operation: &'static str)
         -> Result<Result<T, T::Err>, CodecError> {

@@ -247,7 +247,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
             id,
             sketch.try_clone_for_decode(ctx, "creo unresolved saved sketch identity")?,
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new(native_kind).ok_or_else(|| {
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, native_kind, "validate nonblank text")?.ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("saved native kind must not be empty")
                 })?,
             ),

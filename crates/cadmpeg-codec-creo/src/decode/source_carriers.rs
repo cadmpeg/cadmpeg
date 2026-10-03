@@ -702,8 +702,8 @@ mod tests {
     #[test]
     fn source_sketch_geometry_refuses_text_and_native_retained_limits() {
         let text = SketchGeometry::try_from(SketchGeometryDefinition::Text {
-            text: cadmpeg_core::text::NonBlankString::new("cadmpeg").expect("text"),
-            font_family: cadmpeg_core::text::NonBlankString::new("sans").expect("font"),
+            text: cadmpeg_core::text::NonBlankString::try_from("cadmpeg").expect("text"),
+            font_family: cadmpeg_core::text::NonBlankString::try_from("sans").expect("font"),
             font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
             height: cadmpeg_ir::scalar::Length::new(4.0).expect("height"),
             width_factor: None,
@@ -713,7 +713,7 @@ mod tests {
         })
         .expect("source text");
         let native = SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::new("native").expect("native kind"),
+            cadmpeg_core::text::NonBlankString::try_from("native").expect("native kind"),
         );
         let arena = DecodeArena::new();
         for (geometry, limit, operation) in [
@@ -747,7 +747,7 @@ mod tests {
     fn source_sketch_geometry_refuses_external_reference_copies() {
         let geometry = SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
             document: Some("doc".to_owned()),
-            object: cadmpeg_core::text::NonBlankString::new("part").expect("object"),
+            object: cadmpeg_core::text::NonBlankString::try_from("part").expect("object"),
             subelements: vec!["face".to_owned(), "edge".to_owned()],
         })
         .expect("external source geometry");

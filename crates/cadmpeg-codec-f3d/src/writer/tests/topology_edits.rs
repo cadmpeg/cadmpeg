@@ -77,7 +77,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
         });
     baseline.body_visibilities.push(
         crate::records::bodies::BodyVisibility::try_from(
-            crate::records::bodies::BodyVisibilityWire {
+            crate::records::bodies::BodyVisibilityWire::<String> {
                 id: "f3d:design:body-visibility#0".into(),
                 body,
                 stream: "Design1/BulkStream.dat".into(),

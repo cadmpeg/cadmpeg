@@ -1473,7 +1473,7 @@ fn attach_jpeg_preview_assets(
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
         ir.model.assets.push(
-            Asset::try_new(
+            Asset::try_new(ctx, 
                 id,
                 Some(if ordinal == 0 {
                     "preview.jpg".to_string()
@@ -1488,8 +1488,7 @@ fn attach_jpeg_preview_assets(
                     .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
                 },
                 Some(native_ref.into_string()),
-            )
-            .map_err(CodecError::Malformed)?,
+            )?,
         );
     }
     Ok(())
@@ -1573,7 +1572,7 @@ fn attach_material_texture_assets(
         )?;
         ctx.reserve_vec(&mut assets, 1, "NX material asset records")?;
         assets.push(
-            Asset::try_new(
+            Asset::try_new(ctx, 
                 extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -1589,8 +1588,7 @@ fn attach_material_texture_assets(
                     .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
                 },
                 Some(texture.id.clone()),
-            )
-            .map_err(CodecError::Malformed)?,
+            )?,
         );
     }
     let stream = StreamHandle::new_for_decode(
@@ -5652,7 +5650,7 @@ fn attach_feature_operations(
                 .map_err(|_| {
                     CodecError::malformed("NX feature result body identity formatting failed")
                 })?;
-                let body = cadmpeg_core::text::NonBlankString::new(body_text).ok_or_else(|| {
+                let body = cadmpeg_core::text::NonBlankString::for_decode(ctx, body_text, "validate nonblank text")?.ok_or_else(|| {
                     CodecError::malformed("NX feature result body identity is blank")
                 })?;
                 let mut bodies = Vec::new();
@@ -5731,7 +5729,7 @@ fn attach_feature_operations(
                 value.push_str(WITNESS_VALUE);
                 ctx.insert_btree_map(
                     &mut initial_feature.source_properties,
-                    cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+                    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
                         CodecError::malformed("NX primary body closure witness key is blank")
                     })?,
                     value,
@@ -6014,7 +6012,7 @@ fn feature_result_group_members(
         .map_err(|_| {
             CodecError::InvalidInput("NX result member identity formatting failed".to_string())
         })?;
-        let identity = cadmpeg_core::text::NonBlankString::new(text)
+        let identity = cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
             .ok_or_else(|| CodecError::malformed("NX result member identity is blank"))?;
         output.push(identity);
     }
@@ -6053,7 +6051,7 @@ fn native_result_body_identity(
     ctx.try_reserve_retained_text(&mut local, local_len, "NX result body identity")?;
     local.push_str(native);
     local.push_str(suffix);
-    let Some(local) = cadmpeg_core::text::NonBlankString::new(local) else {
+    let Some(local) = cadmpeg_core::text::NonBlankString::for_decode(ctx, local, "validate nonblank text")? else {
         return Ok(None);
     };
     let mut native_ref = String::new();
@@ -6259,11 +6257,7 @@ fn attach_sketch_graph(
             let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
                 return Ok(None);
             };
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("nx-coordinate-pair".len()),
-                "NX coordinate-pair sketch entity",
-            )?;
-            let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-coordinate-pair")
+            let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(ctx, "nx-coordinate-pair", "validate nonblank text")?
             else {
                 return Ok(None);
             };
@@ -6706,11 +6700,7 @@ fn native_fixed_point_entities(
         let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
             return Ok(None);
         };
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("nx-fixed-point".len()),
-            "NX fixed-point sketch entity",
-        )?;
-        let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-fixed-point") else {
+        let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(ctx, "nx-fixed-point", "validate nonblank text")? else {
             return Ok(None);
         };
         let native_ref = ctx.copy_retained_text(&point.id, "allocate NX sketch text")?;
@@ -8316,7 +8306,7 @@ fn text_semantic_annotation(
     let mut text_values = Vec::new();
     ctx.reserve_capacity(&mut text_values, 1, "allocate NX TEXT annotation text list")?;
     text_values.push(copy(text)?);
-    let key = cadmpeg_core::text::NonBlankString::new(copy(FONT_KEY)?)
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy(FONT_KEY)?, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
     let mut parameters = BTreeMap::new();
     ctx.insert_btree_map(

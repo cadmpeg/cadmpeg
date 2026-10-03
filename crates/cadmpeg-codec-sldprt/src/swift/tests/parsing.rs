@@ -297,11 +297,11 @@ fn parses_and_projects_semantic_graph() {
         position.targets,
         [
             PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("F20")
+                source_id: cadmpeg_core::text::NonBlankString::try_from("F20")
                     .expect("nonempty source identity")
             },
             PmiTarget::ShapeAspect {
-                source_id: cadmpeg_core::text::NonBlankString::new("F21")
+                source_id: cadmpeg_core::text::NonBlankString::try_from("F21")
                     .expect("nonempty source identity")
             }
         ]

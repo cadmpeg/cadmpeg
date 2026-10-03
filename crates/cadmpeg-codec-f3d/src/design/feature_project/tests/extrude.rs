@@ -596,7 +596,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         owned_along.record_index = 45;
         owned_along
             .try_set_source(
-                crate::records::parameters::DesignParameterSource::new(
+                crate::records::parameters::DesignParameterSource::new::<String>(
                     owned_along.source_kind().to_owned(),
                     Some(44),
                     owned_along.family_discriminator(),

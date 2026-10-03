@@ -165,15 +165,15 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
     profile.kind = "Sketch".into();
     profile.input_class = Some("moProfileFeature_c".into());
     profile.parameters.insert(
-        cadmpeg_core::text::NonBlankString::new("螺纹孔钻头直径").expect("named dimension"),
+        cadmpeg_core::text::NonBlankString::try_from("螺纹孔钻头直径").expect("named dimension"),
         "<MOD-DIAM>4.2".into(),
     );
     profile.parameters.insert(
-        cadmpeg_core::text::NonBlankString::new("螺纹孔钻头深度").expect("named dimension"),
+        cadmpeg_core::text::NonBlankString::try_from("螺纹孔钻头深度").expect("named dimension"),
         "10".into(),
     );
     profile.parameters.insert(
-        cadmpeg_core::text::NonBlankString::new("导头角度").expect("named dimension"),
+        cadmpeg_core::text::NonBlankString::try_from("导头角度").expect("named dimension"),
         "118°".into(),
     );
     profile.content.extend([

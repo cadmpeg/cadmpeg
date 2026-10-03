@@ -92,7 +92,7 @@ fn insert_source_attribute(
     value: String,
 ) -> Result<(), CodecError> {
     let key = ctx.format_retained(format_args!("{key}"), "iges source attribute key")?;
-    let key = NonBlankString::new(key)
+    let key = NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("IGES source attribute key is blank"))?;
     ctx.insert_btree_map(attributes, key, value, "iges source attributes")?;
     Ok(())

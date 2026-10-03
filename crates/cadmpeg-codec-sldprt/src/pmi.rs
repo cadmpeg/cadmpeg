@@ -297,11 +297,11 @@ pub(crate) fn enrich_history_parameters_with_features(
         if parameters.contains_key(name) {
             continue;
         }
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(copy_pmi_text(
+        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_pmi_text(
             ctx,
             name,
             "retain SLDPRT PMI history parameter name",
-        )?) else {
+        )?, "validate nonblank text")? else {
             continue;
         };
         ctx.insert_btree_map(

@@ -640,9 +640,7 @@ pub(in super::super) fn transfer_sketches(
                     sketch_id
                         .try_clone_for_decode(ctx, "creo solver-only entity sketch identity")?,
                     SketchGeometry::native(
-                        cadmpeg_core::text::NonBlankString::new(
-                            ctx.copy_retained_text(native_kind, "creo solver-only native kind")?,
-                        )
+                        cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(native_kind, "creo solver-only native kind")?, "validate nonblank text")?
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                         })?,

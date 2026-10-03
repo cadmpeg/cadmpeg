@@ -541,7 +541,7 @@ mod tests {
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
-        assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
+        assert!(cadmpeg_core::text::NonBlankString::try_from("").is_err());
     }
 
     #[test]

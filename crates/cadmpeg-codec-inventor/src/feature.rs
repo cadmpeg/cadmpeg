@@ -313,24 +313,24 @@ impl Serialize for PmDcFeatureLabelPayload {
 }
 
 #[derive(Serialize, Deserialize)]
-struct PmDcFeatureLabelPayloadWire {
+struct PmDcFeatureLabelPayloadWire<T = String> {
     save_version_major: u8,
     header: PmDcLinkedHeader,
     index: u32,
     participants: PmDcReferenceList,
-    name: String,
+    name: T,
     class_id: String,
 }
 
-impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
+impl<T: TryInto<NonBlankString>> TryFrom<PmDcFeatureLabelPayloadWire<T>> for PmDcFeatureLabelPayload {
     type Error = String;
-    fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: PmDcFeatureLabelPayloadWire<T>) -> Result<Self, Self::Error> {
         Ok(Self {
             save_version_major: wire.save_version_major,
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
-            name: NonBlankString::new(wire.name).ok_or("name must not be empty")?,
+            name: wire.name.try_into().ok().ok_or("name must not be empty")?,
             class_id: ClassId::try_from(wire.class_id)?,
         })
     }
@@ -1000,7 +1000,7 @@ fn parse_label(
         header,
         index,
         participants,
-        name,
+        name: ctx.validate_nonblank_text(name, "validate name")?,
         class_id,
     })
     .map_err(CodecError::malformed)
@@ -1878,7 +1878,8 @@ fn feature_result(
         ) {
             return Some(Err(error));
         }
-        bodies.push(cadmpeg_core::text::NonBlankString::new(body.id())?);
+        let body = match cadmpeg_core::text::NonBlankString::for_decode(ctx, body.id(), "validate nonblank text") { Ok(value) => value?, Err(error) => return Some(Err(error.into())), };
+        bodies.push(body);
     }
     if bodies.is_empty() {
         return None;
@@ -2673,7 +2674,7 @@ mod tests {
         participants: &[u32],
     ) -> PmDcFeatureLabel {
         Located::new(
-            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
+            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire::<String> {
                 save_version_major: 16,
                 header: PmDcLinkedHeader {
                     header_value: 0,
@@ -3925,7 +3926,7 @@ mod tests {
         }
         let reference =
             crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
-        let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
+        let label = PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire::<String> {
             save_version_major: 16,
             header: PmDcLinkedHeader {
                 header_value: 0,

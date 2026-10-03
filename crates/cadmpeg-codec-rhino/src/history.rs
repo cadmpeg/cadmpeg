@@ -841,7 +841,7 @@ fn admitted_named_properties(
 
     let mut kept = BTreeMap::new();
     for (name, value) in entries {
-        match cadmpeg_core::text::NonBlankString::new(name) {
+        match cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")? {
             Some(key) => {
                 ctx.admit_btree_entry(&kept, &key, "Rhino history named property entries")?;
                 match kept.entry(key) {

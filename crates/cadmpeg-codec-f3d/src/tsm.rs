@@ -1922,9 +1922,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
-                object_id: cadmpeg_core::text::NonBlankString::new(
-                    ctx.copy_retained_text(name, "retain T-spline source object ID")?,
-                )
+                object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(name, "retain T-spline source object ID")?, "validate nonblank text")?
                 .ok_or_else(|| malformed(ctx, name, "source object_id must not be empty"))?,
                 name: None,
                 color: None,

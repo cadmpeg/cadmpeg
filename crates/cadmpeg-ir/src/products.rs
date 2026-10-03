@@ -134,20 +134,20 @@ pub enum ExternalDocument {
 }
 
 impl ExternalDocument {
-    /// Constructs a path reference, or [`Self::Missing`] when the path is empty.
-    pub fn path(path: impl Into<String>) -> Self {
-        match NonBlankString::new(path) {
+    /// Construct a path reference, or Missing when the path is blank.
+    pub fn path(ctx: &cadmpeg_core::decode::DecodeContext<'_>, path: impl cadmpeg_core::decode::text::TextSource) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(match NonBlankString::for_decode(ctx, path, "validate external document path")? {
             Some(path) => Self::Path { path },
             None => Self::Missing {},
-        }
+        })
     }
 
-    /// Constructs a document-id reference, or [`Self::Missing`] when the id is empty.
-    pub fn document_id(document_id: impl Into<String>) -> Self {
-        match NonBlankString::new(document_id) {
+    /// Construct a document reference, or Missing when its identity is blank.
+    pub fn document_id(ctx: &cadmpeg_core::decode::DecodeContext<'_>, document_id: impl cadmpeg_core::decode::text::TextSource) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(match NonBlankString::for_decode(ctx, document_id, "validate external document identity")? {
             Some(document_id) => Self::DocumentId { document_id },
             None => Self::Missing {},
-        }
+        })
     }
 }
 
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn an_external_document_states_its_resolution_and_carries_one_identity() {
-        let path = ExternalDocument::path("parts/widget.FCStd");
+        let path = ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "parts/widget.FCStd").unwrap();
         let path_wire = serde_json::to_value(&path).unwrap();
         assert_eq!(
             path_wire,
@@ -566,7 +566,7 @@ mod tests {
             path
         );
 
-        let document_id = ExternalDocument::document_id("document-7");
+        let document_id = ExternalDocument::document_id(&cadmpeg_test_support::service_decode_context(), "document-7").unwrap();
         let document_id_wire = serde_json::to_value(&document_id).unwrap();
         assert_eq!(
             document_id_wire,
@@ -578,8 +578,8 @@ mod tests {
         );
 
         let missing = ExternalDocument::Missing {};
-        assert_eq!(ExternalDocument::path(""), missing);
-        assert_eq!(ExternalDocument::document_id(""), missing);
+        assert_eq!(ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "").unwrap(), missing);
+        assert_eq!(ExternalDocument::document_id(&cadmpeg_test_support::service_decode_context(), "").unwrap(), missing);
         let missing_wire = serde_json::to_value(&missing).unwrap();
         assert_eq!(missing_wire, serde_json::json!({"resolution": "missing"}));
         assert_eq!(
@@ -640,7 +640,7 @@ mod tests {
         );
 
         let external = JointOperand::external(
-            ExternalDocument::path("parts/widget.FCStd"),
+            ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "parts/widget.FCStd").unwrap(),
             "Body1",
             Vec::new(),
         );

@@ -212,8 +212,7 @@ fn emit_carrier_surface(
                         separator,
                         values,
                     } => TSplineSubtransform::Inline(
-                        InlineTSplineSubtransform::try_new(program, separator, values)
-                            .map_err(CodecError::malformed)?,
+                        InlineTSplineSubtransform::try_new(ctx, program, separator, values)?,
                     ),
                     EmbeddedTSplineSubtransform::Reference { index, resolved } => {
                         TSplineSubtransform::Resolved {

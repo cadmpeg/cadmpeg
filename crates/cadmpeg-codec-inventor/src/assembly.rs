@@ -1211,7 +1211,7 @@ mod tests {
         state: [u16; 2],
         document_id: &str,
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire {
+        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire::<String> {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),

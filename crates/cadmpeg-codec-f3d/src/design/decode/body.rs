@@ -1261,7 +1261,7 @@ pub(crate) fn decode_design_body_bindings(
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
-                        stream: ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?,
+                        stream: ctx.validate_nonblank_text(ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?, "validate stream")?,
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
@@ -2950,7 +2950,7 @@ mod tests {
             DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire,
         };
         const STREAM: &str = "Design/BulkStream.dat";
-        let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+        let binding = DesignBodyBinding::try_from(DesignBodyBindingWire::<String> {
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,

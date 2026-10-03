@@ -272,7 +272,7 @@ fn placed_nurbs_surface_basis_refuses_at_collection_limit() {
 fn placed_geometry_source_association_refuses_at_retained_limit() {
     let source = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("source").expect("nonblank source"),
+        object_id: cadmpeg_core::text::NonBlankString::try_from("source").expect("nonblank source"),
         name: None,
         color: None,
         visible: None,
@@ -797,7 +797,7 @@ fn empty_builder<'a, 'c, 'r>(
             triangulations: &[],
             roots: &[],
         },
-        cadmpeg_core::text::NonBlankString::new("Object".to_owned()).unwrap(),
+        cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
     )
 }
 
@@ -1034,7 +1034,7 @@ fn assert_standalone_polygon_refusal(
             triangulations: &[],
             roots: &[],
         },
-        cadmpeg_core::text::NonBlankString::new("Object".to_owned()).unwrap(),
+        cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
     )
     .unwrap();
     let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();

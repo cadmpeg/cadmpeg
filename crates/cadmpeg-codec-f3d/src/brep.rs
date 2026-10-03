@@ -941,9 +941,7 @@ fn persistent_subentity_tags(
         else {
             return Ok(Vec::new());
         };
-        let Some(token) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(token, "copy F3D persistent subentity token")?,
-        ) else {
+        let Some(token) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(token, "copy F3D persistent subentity token")?, "validate nonblank text")? else {
             return Ok(Vec::new());
         };
         if *reference_count < 0 {

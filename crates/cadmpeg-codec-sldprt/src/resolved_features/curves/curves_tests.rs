@@ -116,7 +116,7 @@ fn connected_arc_limit_entities() -> Vec<SketchEntity> {
             SketchEntityId::mint("synthetic:test:id#limit-arc").unwrap(),
             sketch,
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2").unwrap(),
+                cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2").unwrap(),
             ),
         )
         .with_native_ref(Some("arc".into()))
@@ -1285,7 +1285,7 @@ fn linked_semicircle_fixture() -> (Vec<u8>, [SketchInputEntity; 2], Vec<SketchEn
             SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:1")
+                cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:1")
                     .expect("nonempty source identity"),
             ),
         )
@@ -1513,7 +1513,7 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
         entity(
             "synthetic:test:id#fillet",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
             })
             .unwrap(),
@@ -1579,7 +1579,7 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
         entity(
             "synthetic:test:id#fillet",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
             })
             .unwrap(),
@@ -1639,7 +1639,7 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
         entity(
             "synthetic:test:id#arc",
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
             })
             .unwrap(),
@@ -1691,7 +1691,7 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
             SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
             })
             .unwrap(),
@@ -1770,7 +1770,7 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
             SketchEntityId::mint("synthetic:test:id#right-arc").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
             })
             .unwrap(),

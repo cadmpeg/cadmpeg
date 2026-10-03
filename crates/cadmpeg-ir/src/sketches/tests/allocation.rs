@@ -45,7 +45,7 @@ fn sketch_nurbs_copy_refuses_each_nested_collection() {
 
 #[test]
 fn sketch_native_copy_refuses_retained_text() {
-    let geometry = SketchGeometry::native(NonBlankString::new("native").expect("nonblank"));
+    let geometry = SketchGeometry::native(NonBlankString::try_from("native").expect("nonblank"));
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 5;
     let error = copy_with_policy(&geometry, &policy).expect_err("six bytes exceed five");
@@ -63,7 +63,7 @@ fn sketch_external_copy_refuses_nested_text_and_subelements() {
     let geometry =
         SketchGeometry::from_admitted_definition(SketchGeometryDefinition::ExternalReference {
             document: Some("doc".to_owned()),
-            object: NonBlankString::new("object").expect("nonblank"),
+            object: NonBlankString::try_from("object").expect("nonblank"),
             subelements: vec!["edge".to_owned()],
         });
     let mut policy = DecodePolicy::service();

@@ -305,7 +305,7 @@ pub(super) fn project_native_axis_helix(
         return Ok(None);
     };
     let axis_native_ref =
-        cadmpeg_core::text::NonBlankString::new(copy_reference_text(ctx, &feature.id)?);
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_reference_text(ctx, &feature.id)?, "validate nonblank text")?;
     Ok(axis_native_ref.map(|axis_native_ref| {
         FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
             axis_native_ref,
@@ -363,14 +363,14 @@ mod tests {
 
     fn parameter(feature: &mut crate::records::Feature, name: &str, value: &str) {
         feature.parameters.insert(
-            NonBlankString::new(name.to_owned()).expect("nonblank test parameter name"),
+            NonBlankString::try_from(name.to_owned()).expect("nonblank test parameter name"),
             value.to_owned(),
         );
     }
 
     fn property(feature: &mut crate::records::Feature, name: &str, value: &str) {
         feature.properties.insert(
-            NonBlankString::new(name.to_owned()).expect("nonblank test property name"),
+            NonBlankString::try_from(name.to_owned()).expect("nonblank test property name"),
             value.to_owned(),
         );
     }

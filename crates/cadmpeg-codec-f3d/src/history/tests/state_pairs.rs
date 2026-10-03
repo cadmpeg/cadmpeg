@@ -264,7 +264,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         crate::records::feature::scope::DesignFeatureKind::Sketch,
         200,
     );
-    let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+    let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
         id: format!("{stream}:design-body-binding#0"),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,

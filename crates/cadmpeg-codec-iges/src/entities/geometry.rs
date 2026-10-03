@@ -1537,7 +1537,7 @@ pub(super) fn source_object(
     let layer = render(format_args!("{}", entry.level), "iges source object layer")?;
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
-        object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
+        object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?.ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
         name,

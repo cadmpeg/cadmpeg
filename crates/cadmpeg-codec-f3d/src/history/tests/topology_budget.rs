@@ -76,7 +76,7 @@ fn tagged_brep() -> crate::brep::Brep {
             id: "native:tag".into(),
             target: AttributeTarget::Face(FaceId::mint("f3d:brep:entity#4").unwrap()),
             selector: 1,
-            token: cadmpeg_core::text::NonBlankString::new("tag").unwrap(),
+            token: cadmpeg_core::text::NonBlankString::try_from("tag").unwrap(),
             design_references: vec![2],
             ordinal: 0,
         }],

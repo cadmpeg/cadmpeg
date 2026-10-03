@@ -39,7 +39,7 @@ impl Identifier16 {
         if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err("identifier must contain 32 hexadecimal digits".to_owned());
         }
-        NonBlankString::new(value)
+        NonBlankString::from_ascii_leading(value)
             .map(Self)
             .ok_or_else(|| "identifier must contain 32 hexadecimal digits".to_owned())
     }
@@ -168,22 +168,22 @@ impl Serialize for UfrxRepresentationRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct UfrxRepresentationRecordWire {
+pub(crate) struct UfrxRepresentationRecordWire<T = String> {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<String>,
-    pub(crate) active_representation_kind: Option<String>,
+    pub(crate) active_representation: Option<T>,
+    pub(crate) active_representation_kind: Option<T>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: String,
+    pub(crate) active_model_state: T,
     pub(crate) active_model_state_state: [u16; 2],
 }
 
-impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxRepresentationRecordWire<T>> for UfrxRepresentationRecord {
     type Error = String;
-    fn try_from(wire: UfrxRepresentationRecordWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: UfrxRepresentationRecordWire<T>) -> Result<Self, Self::Error> {
         if let Some(issue) = representation_issue(
-            wire.active_representation.as_deref(),
-            wire.active_representation_kind.as_deref(),
-            &wire.active_model_state,
+            wire.active_representation.as_ref().map(AsRef::as_ref),
+            wire.active_representation_kind.as_ref().map(AsRef::as_ref),
+            wire.active_model_state.as_ref(),
         ) {
             return Err(issue.into());
         }
@@ -191,8 +191,8 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
             match (wire.active_representation, wire.active_representation_kind) {
                 (None, None) => None,
                 (Some(name), Some(kind)) => Some((
-                    NonBlankString::new(name).ok_or("active_representation must not be empty")?,
-                    NonBlankString::new(kind)
+                    name.try_into().ok().ok_or("active_representation must not be empty")?,
+                    kind.try_into().ok()
                         .ok_or("active_representation_kind must not be empty")?,
                 )),
                 _ => return Err(
@@ -204,7 +204,7 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
             prefix: wire.prefix,
             active_representation,
             secondary_active_lod_state: wire.secondary_active_lod_state,
-            active_model_state: NonBlankString::new(wire.active_model_state)
+            active_model_state: wire.active_model_state.try_into().ok()
                 .ok_or("active_model_state must not be empty")?,
             active_model_state_state: wire.active_model_state_state,
         })
@@ -241,11 +241,11 @@ impl Serialize for UfrxModelStateRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct UfrxModelStateRecordWire {
+pub(crate) struct UfrxModelStateRecordWire<T = String> {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) prefix: u8,
-    pub(crate) name: String,
+    pub(crate) name: T,
     pub(crate) state: [u16; 2],
     pub(crate) prefix_count: u32,
     pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
@@ -253,17 +253,17 @@ pub(crate) struct UfrxModelStateRecordWire {
     pub(crate) suffix_sha256: String,
 }
 
-impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxModelStateRecordWire<T>> for UfrxModelStateRecord {
     type Error = String;
-    fn try_from(wire: UfrxModelStateRecordWire) -> Result<Self, Self::Error> {
-        if let Some(issue) = model_state_issue(wire.suffix_len, &wire.name) {
+    fn try_from(wire: UfrxModelStateRecordWire<T>) -> Result<Self, Self::Error> {
+        if let Some(issue) = model_state_issue(wire.suffix_len, wire.name.as_ref()) {
             return Err(issue.into());
         }
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
             prefix: wire.prefix,
-            name: NonBlankString::new(wire.name).ok_or("name must not be empty")?,
+            name: wire.name.try_into().ok().ok_or("name must not be empty")?,
             state: wire.state,
             prefix_count: wire.prefix_count,
             parameters: wire.parameters,
@@ -608,10 +608,10 @@ impl Serialize for ExternalReferenceRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ExternalReferenceRecordWire {
+pub(crate) struct ExternalReferenceRecordWire<T = String> {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
-    pub(crate) path: String,
+    pub(crate) path: T,
     pub(crate) library_id: i32,
     pub(crate) library_name: String,
     pub(crate) display_name: String,
@@ -630,9 +630,9 @@ pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) flags: u32,
 }
 
-impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
+impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<ExternalReferenceRecordWire<T>> for ExternalReferenceRecord {
     type Error = String;
-    fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: ExternalReferenceRecordWire<T>) -> Result<Self, Self::Error> {
         let suffix = wire
             .id
             .strip_prefix("inventor:ufrx:external-reference#")
@@ -654,13 +654,13 @@ impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
             .filter(|value| !value.as_str().bytes().all(|byte| byte == b'0'))
             .map(NonzeroDocumentId::try_new)
             .transpose()?;
-        if let Some(issue) = external_reference_issue(&wire.path, document_id.is_some()) {
+        if let Some(issue) = external_reference_issue(wire.path.as_ref(), document_id.is_some()) {
             return Err(issue.into());
         }
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
-            identity: match NonBlankString::new(wire.path) {
+            identity: match wire.path.try_into().ok() {
                 Some(path) => ExternalReferenceIdentity::Path { path, document_id },
                 None => ExternalReferenceIdentity::DocumentId(
                     document_id.ok_or("path or a nonzero document_id is required")?,
@@ -1295,7 +1295,7 @@ mod tests {
             original_file_name: "part.ipt".into(),
             caption: "part".into(),
             representation: None,
-            model_states: vec![UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
+            model_states: vec![UfrxModelStateRecord::try_from(UfrxModelStateRecordWire::<String> {
                 id: "inventor:ufrx:model-state#0".into(),
                 ordinal: 0,
                 prefix: 0,

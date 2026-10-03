@@ -630,7 +630,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?.ok_or_else(
                         || {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -730,7 +730,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
+                    object_id: cadmpeg_core::text::NonBlankString::for_decode(ctx, object_id, "validate nonblank text")?.ok_or_else(
                         || {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",

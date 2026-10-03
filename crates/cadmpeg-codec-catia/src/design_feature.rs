@@ -481,9 +481,7 @@ fn assign_native_operation_parameter_values(
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
             continue;
         };
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(&parameter.name, "catia_feature_operation_parameter_name")?,
-        ) else {
+        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(ctx, ctx.copy_retained_text(&parameter.name, "catia_feature_operation_parameter_name")?, "validate nonblank text")? else {
             continue;
         };
         if !values_by_feature.contains_key(feature_id) {
@@ -543,7 +541,7 @@ fn assign_native_operation_parameter_values(
                         format_args!("catia_parameter_{name}"),
                         "catia_feature_source_parameter_key",
                     )?;
-                    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+                    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
                         CodecError::malformed("CATIA source parameter key is blank")
                     })?;
                     ctx.insert_btree_map(
@@ -1520,7 +1518,7 @@ fn property_prefix_args(
     args: std::fmt::Arguments<'_>,
 ) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
     let key = ctx.format_retained(args, "catia_feature_property_key")?;
-    cadmpeg_core::text::NonBlankString::new(key)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("CATIA feature property key is blank"))
 }
 

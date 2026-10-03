@@ -274,7 +274,7 @@ pub(crate) fn source_attributes(
             0,
             "FCStd source attribute records",
         )?;
-        let key = NonBlankString::new(ctx.copy_retained_text(key, "FCStd source attribute key")?)
+        let key = NonBlankString::for_decode(ctx, ctx.copy_retained_text(key, "FCStd source attribute key")?, "validate nonblank text")?
             .ok_or_else(|| CodecError::malformed("source attribute key is empty"))?;
         attributes.insert(key, value);
     }

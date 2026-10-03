@@ -442,7 +442,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("point")
                             .expect("nonempty source identity"),
                     })
                     .expect("valid test fixture"),
@@ -790,7 +790,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("point")
                             .expect("nonempty source identity"),
                     })
                     .expect("valid test fixture"),
@@ -868,7 +868,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
                     .expect("valid test fixture"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("line")
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from("line")
                         .expect("nonempty source identity"),
                 })
                 .expect("valid test fixture"),
@@ -899,7 +899,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("line")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("line")
                             .expect("nonempty source identity"),
                     })
                     .expect("valid test fixture"),

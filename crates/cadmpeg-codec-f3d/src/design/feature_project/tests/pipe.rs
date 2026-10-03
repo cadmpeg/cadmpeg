@@ -63,14 +63,14 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                      unit: Option<&str>,
                      evaluated_value: f64| {
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("f3d:test:pipe-parameter#{record_index}"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
                     .unwrap(),
                 record_index,
                 source_ordinal: record_index,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::new::<String>(
                     source_kind.into(),
                     Some(0),
                     None,

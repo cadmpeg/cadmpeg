@@ -33,7 +33,7 @@ fn parameter_binding_input() -> (
         expression: "12".into(),
         value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(12.0).expect("finite expression")),
         source_entry: "section".into(),
-        source_table: cadmpeg_core::text::NonBlankString::new("table").expect("source table"),
+        source_table: cadmpeg_core::text::NonBlankString::try_from("table").expect("source table"),
         source_offset: 900,
     };
     (input, reference, expression)

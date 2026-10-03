@@ -1327,7 +1327,7 @@ fn view_provider_graph() -> super::super::Graph {
         providers: vec![crate::native::GuiViewProviderRecord {
             id: "fcstd:gui:view-provider#Provider".into(),
             object: Some(
-                cadmpeg_core::text::NonBlankString::new("Object")
+                cadmpeg_core::text::NonBlankString::try_from("Object")
                     .expect("nonblank provider object"),
             ),
             name: "Provider".into(),

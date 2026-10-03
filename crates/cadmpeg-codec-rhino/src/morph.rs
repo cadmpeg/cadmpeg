@@ -526,7 +526,7 @@ fn insert_property(
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.format_retained(key, "Rhino morph property key")?;
-    let key = cadmpeg_core::text::NonBlankString::new(key)
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino morph key"))?;
     let value = ctx.format_retained(value, "Rhino morph property value")?;
     ctx.insert_btree_map(properties, key, value, "Rhino morph property entries")?;
@@ -838,7 +838,7 @@ pub(crate) fn project(
                 format_args!("captive_{index}_object"),
                 "Rhino morph property key",
             )?;
-            let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+            let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?.ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
             })?;
             ctx.insert_btree_map(&mut parameters, key, record, "Rhino morph property entries")?;

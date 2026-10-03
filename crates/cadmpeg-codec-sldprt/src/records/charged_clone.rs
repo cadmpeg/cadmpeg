@@ -116,7 +116,7 @@ fn copy_history_key(
     ctx: &DecodeContext<'_>,
     key: &NonBlankString,
 ) -> Result<NonBlankString, CodecError> {
-    NonBlankString::new(copy_history_text(ctx, key.as_str())?)
+    NonBlankString::for_decode(ctx, copy_history_text(ctx, key.as_str())?, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("blank admitted SLDPRT history key"))
 }
 

@@ -148,10 +148,10 @@ pub(super) fn copy_projected_feature_properties(
     let mut copied = BTreeMap::new();
     for (key, value) in properties {
         ctx.charge_work(1, operation)?;
-        let key = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
+        let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy_projected_feature_text(
             ctx,
             key.as_str(),
-        )?)
+        )?, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("blank SLDPRT projected feature property"))?;
         let value = copy_projected_feature_text(ctx, value)?;
         ctx.insert_btree_map(&mut copied, key, value, operation)?;
@@ -1520,7 +1520,7 @@ pub(crate) fn project_configurations_charged(
                     cadmpeg_core::decode::u64_from_index(key.as_str().len()),
                     OPERATION,
                 )?;
-                let key = cadmpeg_core::text::NonBlankString::new(copy(key.as_str())?)
+                let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, copy(key.as_str())?, "validate nonblank text")?
                     .ok_or_else(|| CodecError::malformed("blank SLDPRT configuration property"))?;
                 let value = copy(value)?;
                 ctx.insert_btree_map(&mut properties, key, value, OPERATION)?;
