@@ -485,12 +485,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .extents
                     .iter()
                     .flat_map(|term| &term.factors)
-                    .any(|term| {
-                        term == &key
-                            || (term.starts_with("keybytes:") || term.starts_with("treekeybytes:") || term.starts_with("sortbytes:") || term.starts_with("movebytes:")) && term.contains(&key)
-                            || term.starts_with(&format!("{key}."))
-                            || key.starts_with(&format!("{term}."))
-                    })
+                    .any(|term| factor_depends_on(term, &key))
             });
             self.flow.storage_parameters.retain(|parameter| {
                 parameter != &key && !parameter.starts_with(&format!("{key}."))
@@ -549,11 +544,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.tcx.item_name(definition).as_str(),
                     "try_reserve_exact" | "reserve_exact"
                 );
+            let admitted_growth = self.findings.admitted_growth_operations.contains(&expression.hir_id);
             let slots: Vec<_> = self
                 .flow
                 .storage_slots
                 .iter()
-                .filter(|credit| credit.reserved)
+                .filter(|credit| credit.reserved || admitted_growth)
                 .cloned()
                 .collect();
             for operand in operands {
@@ -564,7 +560,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     self.invalidate_target(operand);
                 }
             }
-            if reserved {
+            if reserved || admitted_growth {
                 for credit in slots {
                     if !self.flow.storage_slots.contains(&credit) {
                         self.flow.storage_slots.push(credit);
@@ -585,4 +581,11 @@ impl Flow {
             ..Self::default()
         }
     }
+}
+
+pub(crate) fn factor_depends_on(factor: &str, key: &str) -> bool {
+    factor == key
+        || matches!(factor.split_once(':').map(|(kind, _)| kind), Some("keybytes" | "treekeybytes" | "sortbytes" | "movebytes")) && factor.contains(key)
+        || factor.starts_with(&format!("{key}."))
+        || key.starts_with(&format!("{factor}."))
 }
