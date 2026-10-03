@@ -108,8 +108,10 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         for (offset, (candidate, text, _)) in self.values[low..].iter().enumerate() {
             ctx.charge_work(1, "search validation identity collision")?;
             if *candidate != hash { break; }
-            ctx.charge_work(u64_from_index(id.len()), "compare validation identity")?;
-            if *text == id { found = Some(low + offset); count += 1; }
+            if crate::ids::comparison::equal(ctx, text, id, "compare validation identity")? {
+                found = Some(low + offset);
+                count += 1;
+            }
         }
         Ok((hash, low, found, count))
     }
@@ -283,6 +285,46 @@ mod tests {
         assert_eq!(index.remove(id).unwrap(), Some(1));
         assert_eq!(index.remove(id).unwrap(), None);
         assert_eq!(index.len(), 0);
+    }
+
+    #[test]
+    fn borrowed_identity_lookup_admits_only_actual_collision_comparisons() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, u64_from_index};
+        use cadmpeg_core::CodecError;
+        let fixture = cadmpeg_test_support::service_decode_context();
+        for (stored, query, comparison_work, expected) in [
+            ("alpha", "longer", 1, None),
+            ("alpha", "blope", 2, None),
+            ("é", "ê", 3, None),
+            ("same", "same", 5, Some(&7)),
+            ("", "", 1, Some(&7)),
+        ] {
+            let mut index = super::BorrowedIdentities::build(&fixture, |add| add(stored, 7)).unwrap();
+            index.values[0].0 = crate::index::identity_hash(query);
+            // The hash visits the full query; the search visits one hash and
+            // one collision. Equality visits only its actual compared bytes.
+            let work = u64_from_index(query.len()) + 2 + comparison_work;
+            for allowance in 0..=work {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = allowance;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_recursion_depth = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = index.get(&ctx, query);
+                if allowance < work {
+                    let CodecError::ResourceLimit(original) = result.unwrap_err() else { panic!("lookup must refuse"); };
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert!(matches!(index.get(&ctx, ""), Err(CodecError::ResourceLimit(limit)) if limit == original));
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+                } else {
+                    assert_eq!(result.unwrap(), expected);
+                    ctx.finish_session().unwrap();
+                }
+            }
+        }
     }
 
 }

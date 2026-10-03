@@ -8,18 +8,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-/// Compare text in byte order, admitting only the bytes actually compared.
-fn compare(
-    ctx: &DecodeContext<'_>, first: &str, second: &str, operation: &'static str,
-) -> Result<Ordering, ResourceLimit> {
-    ctx.charge_work_limit(1, operation)?;
-    for (first, second) in first.as_bytes().iter().zip(second.as_bytes()) {
-        ctx.charge_work_limit(1, operation)?;
-        let order = first.cmp(second);
-        if order != Ordering::Equal { return Ok(order); }
-    }
-    Ok(first.len().cmp(&second.len()))
-}
+use crate::ids::comparison::compare;
 
 /// A cache key whose ordered callbacks charge its owning session.
 #[derive(Debug)]

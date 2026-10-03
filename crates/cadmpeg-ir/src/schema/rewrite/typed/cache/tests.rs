@@ -23,7 +23,7 @@ fn identity_cache_comparisons_admit_only_the_bytes_inspected() {
             policy.limits.max_recursion_depth = 0;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = super::compare(&ctx, first, second, "actual cache comparison");
+            let result = crate::ids::comparison::compare(&ctx, first, second, "actual cache comparison");
             if allowance < work {
                 let original = result.unwrap_err();
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
