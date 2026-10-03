@@ -4,6 +4,55 @@ use super::{context, operation_context};
 use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use crate::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
+
+#[test]
+fn collection_growth_refuses_before_moving_existing_storage() {
+    for kind in 0..4 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let error = match kind {
+            0 => {
+                let mut values = vec![1_u64, 2];
+                let capacity = values.capacity();
+                let error = ctx.reserve_vec(&mut values, capacity, "vector growth").expect_err("move refusal");
+                assert_eq!(values, [1, 2]);
+                assert_eq!(values.capacity(), capacity);
+                error
+            }
+            1 => {
+                let mut text = String::from("ab");
+                let capacity = text.capacity();
+                let error = ctx.try_reserve_retained_text(&mut text, capacity, "text growth").expect_err("move refusal");
+                assert_eq!(text, "ab");
+                assert_eq!(text.capacity(), capacity);
+                error
+            }
+            _ => {
+                let mut values = std::collections::VecDeque::from([1_u64, 2]);
+                while values.len() < values.capacity() { values.push_back(2); }
+                let length = values.len();
+                let capacity = values.capacity();
+                let result = if kind == 2 {
+                    ctx.push_back(&mut values, 3, "deque back growth")
+                } else {
+                    ctx.push_front(&mut values, 3, "deque front growth")
+                };
+                let error = result.expect_err("move refusal");
+                assert_eq!(values.len(), length);
+                assert_eq!(values.capacity(), capacity);
+                assert_eq!(values.front(), Some(&1));
+                error
+            }
+        };
+        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.used, 0);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(1, "later"), Err(CodecError::ResourceLimit(later)) if later == limit));
+    }
+}
 operation_case!(
     reserve_retained_vec_refuses_before_growth,
     reserve_retained_vec_succeeds_under_service_profile,

@@ -292,8 +292,12 @@ impl<'a> DecodeContext<'a> {
         };
         let bytes = u64_from_index(growth);
         self.charge_retained(bytes, operation)?;
-        Self::reserve_admitted_string(text, additional, operation)
-            .map_err(|_| self.budget.retained_allocation_failed(bytes, operation))
+        if growth != 0 {
+            self.charge_work(u64_from_index(text.capacity()), operation)?;
+        }
+        text.try_reserve_exact(additional).map_err(|_| {
+            self.budget.retained_allocation_failed(bytes, operation)
+        })
     }
 
     /// Copies source bytes as UTF-8 with replacement characters after charging

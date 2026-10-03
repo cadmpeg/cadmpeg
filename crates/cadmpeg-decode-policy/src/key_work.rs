@@ -9,9 +9,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
     // Complete-value receipts distinguish subwindows; length admission may dominate them.
     fn key_work_operand(&self, expression: &'tcx Expr<'tcx>) -> Option<String> {
         if let Some(initializer) = self.initializer(expression) {
-            return self.key_work_operand(initializer);
+            if self.expr_ty(expression) == self.expr_ty(initializer) {
+                if let Some(key) = self.key_work_operand(initializer) { return Some(key); }
+            }
         }
         match expression.kind {
+            ExprKind::Path(ref path) if matches!(self.typeck.qpath_res(path, expression.hir_id), rustc_hir::def::Res::Local(_)) => {
+                let rustc_hir::def::Res::Local(id) = self.typeck.qpath_res(path, expression.hir_id) else { return None; };
+                Some(format!("local:{id:?}"))
+            }
             ExprKind::AddrOf(_, _, value) | ExprKind::DropTemps(value) | ExprKind::Unary(_, value) => self.key_work_operand(value),
             ExprKind::Index(base, index, _) => {
                 let index = self.constant_count(index, &mut Vec::new()).map(|value| value.to_string())

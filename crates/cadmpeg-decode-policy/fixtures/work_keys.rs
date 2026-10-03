@@ -91,3 +91,17 @@ pub fn replaced_field(ctx: &DecodeContext, values: &mut (String, String), other:
     let _stale = &values.0 == other; // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn destructured_keys(ctx: &DecodeContext, hash: &std::collections::HashMap<String, u8>, pair: (String, String), other: &String) -> Result<(), ()> {
+    let (first, second) = pair;
+    ctx.charge_key(&first, 1, "first key")?;
+    let _wrong = hash.get(&second); // finding: uncharged_decode_work
+    let _paid = hash.get(&first);
+    ctx.charge_key(&first, 1, "first operand")?;
+    ctx.charge_key(other, 1, "other operand")?;
+    let _wrong = &second == other; // finding: uncharged_decode_work
+    let Some((key, _value)) = Some((second, 0_u8)) else { return Ok(()); };
+    ctx.charge_key(&key, 1, "matched key")?;
+    let _paid = hash.get(&key);
+    Ok(())
+}
