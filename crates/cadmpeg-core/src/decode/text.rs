@@ -6,6 +6,26 @@ use crate::CodecError;
 
 mod sealed {
     pub trait Scalar {}
+    pub trait Source {}
+}
+
+/// Text values whose borrowed view requires no scan, copy or allocation.
+pub trait TextSource: sealed::Source {
+    /// Returns the existing UTF-8 view.
+    fn as_text(&self) -> &str;
+}
+
+impl sealed::Source for str {}
+impl TextSource for str {
+    fn as_text(&self) -> &str { self }
+}
+impl sealed::Source for String {}
+impl TextSource for String {
+    fn as_text(&self) -> &str { self.as_str() }
+}
+impl<T: TextSource + ?Sized> sealed::Source for &T {}
+impl<T: TextSource + ?Sized> TextSource for &T {
+    fn as_text(&self) -> &str { T::as_text(*self) }
 }
 
 /// Standard scalar parsers that allocate no input-sized result storage.

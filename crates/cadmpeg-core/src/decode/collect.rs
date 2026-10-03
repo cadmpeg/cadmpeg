@@ -8,6 +8,7 @@ use std::hash::Hash;
 use crate::CodecError;
 
 use super::cost::DecodeCost;
+use super::text::TextSource;
 
 use super::{
     u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceLimit,
@@ -1562,17 +1563,16 @@ impl DecodeContext<'_> {
     }
 
     /// Joins retained text after measuring and charging the exact byte count.
-    pub fn join_retained<S: AsRef<str>>(
+    pub fn join_retained<S: TextSource>(
         &self,
         parts: &[S],
         separator: &str,
         operation: &'static str,
     ) -> Result<String, CodecError> {
         let mut count = 0_usize;
-        for part in parts {
-            self.charge_work(1, operation)?;
+        for part in self.admit_iter(parts, operation)? {
             count = count
-                .checked_add(part.as_ref().len())
+                .checked_add(part.as_text().len())
                 .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         }
         let gaps = if parts.is_empty() { 0 } else { parts.len() - 1 };
@@ -1581,19 +1581,12 @@ impl DecodeContext<'_> {
             .checked_mul(gaps)
             .and_then(|separators| count.checked_add(separators))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_retained(u64_from_index(count), operation)?;
-        let mut output = String::new();
-        output.try_reserve_exact(count).map_err(|_| {
-            self.allocation_failed(ResourceDimension::RetainedBytes, count, operation)
-        })?;
-        for (index, part) in parts.iter().enumerate() {
-            self.charge_work(1, operation)?;
-            self.charge_work(u64_from_index(part.as_ref().len()), operation)?;
+        let mut output = self.retained_string(count, operation)?;
+        for (index, part) in self.admit_iter(parts, operation)?.enumerate() {
             if index != 0 {
-                self.charge_work(u64_from_index(separator.len()), operation)?;
-                output.push_str(separator);
+                self.append_retained(&mut output, separator, operation)?;
             }
-            output.push_str(part.as_ref());
+            self.append_retained(&mut output, part.as_text(), operation)?;
         }
         Ok(output)
     }
