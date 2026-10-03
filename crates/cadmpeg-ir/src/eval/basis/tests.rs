@@ -245,3 +245,34 @@ fn finite_basis_inspection_preserves_refusals_and_stops_at_first_nonfinite() {
         assert_eq!(scratch.refused(), None);
     });
 }
+
+#[test]
+fn basis_leaf_boundaries_preserve_original_fused_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use crate::eval::decode::Scratch;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx.charge_work_limit(1, "original basis refusal").unwrap_err();
+    for (knots, degree, count, parameter) in [
+        (&[][..], usize::MAX, 0, 0.0),
+        (&[0.0, 1.0][..], 0, 1, 0.0),
+        (&[0.0, 1.0][..], 0, 1, 1.0),
+        (&[0.0, 0.0, 1.0, 1.0][..], 1, 2, 0.5),
+    ] {
+        assert_eq!(super::bspline_span(&ctx, knots, degree, count, parameter), Err(original));
+    }
+    for degree in [0, 1, usize::MAX] {
+        let mut values = [0.0; 2];
+        assert_eq!(super::fill_bspline_basis(&ctx, &[], degree, 0, 0.0, &mut values), Err(original));
+        assert_eq!(values, [0.0; 2]);
+    }
+    let scratch = Scratch::new(&ctx);
+    for values in [&[][..], &[1.0][..], &[0.25, 0.75][..], &[f64::NAN][..]] {
+        assert_eq!(super::all_finite(&scratch, values), None);
+        assert_eq!(scratch.refused(), Some(original));
+    }
+    drop(scratch);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}
