@@ -6040,10 +6040,8 @@ fn model_surface_point_inner(
     let mut procedural = None;
     for candidate in &ir.model.procedural_surfaces {
         admission.work(1, "model surface construction scan").map_err(EvaluationFailure::ResourceLimit)?;
-        let matches = match admission.context() {
-            Some(ctx) => crate::ids::comparison::equal(ctx, candidate.id.as_str(), construction.as_str(), "model surface construction identity").map_err(EvaluationFailure::ResourceLimit)?,
-            None => candidate.id == *construction,
-        };
+        let matches = crate::ids::comparison::equal(&admission, candidate.id.as_str(), construction.as_str(), "model surface construction identity")
+            .map_err(EvaluationFailure::ResourceLimit)?;
         if matches { procedural = Some(candidate); break; }
     }
     let procedural = procedural.ok_or(EvaluationFailure::NoValue)?;
