@@ -1085,7 +1085,7 @@ impl DecodeContext<'_> {
         self.reserve_hash_map_storage(values, count, operation)
     }
 
-    pub(super) fn reserve_hash_map_storage<K: Eq + Hash + DecodeCost, V>(
+    fn reserve_hash_map_storage<K: Eq + Hash + DecodeCost, V>(
         &self,
         values: &mut HashMap<K, V>,
         count: usize,
