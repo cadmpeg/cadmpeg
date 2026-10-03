@@ -136,7 +136,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         Some(output)
     }
 
-    fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Option<()> {
+    pub(super) fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Option<()> {
         let mut storage = self.storage.borrow_mut();
         if storage.is_none() {
             *storage = Some(self.admit(self.context.reserve_scoped_limit(0, operation))?);

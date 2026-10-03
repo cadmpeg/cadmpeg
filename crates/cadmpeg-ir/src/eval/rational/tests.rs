@@ -73,3 +73,113 @@ fn homogeneous_sum_admits_exact_replay_and_preserves_cancellation() {
         }
     }
 }
+
+fn weight_sum(weight: Option<crate::math::sum::ScaledValue>) -> Homogeneous {
+    Homogeneous { values: [None, None, None, weight], constant: [None; 3] }
+}
+
+#[test]
+fn homogeneous_weights_admit_actual_scans_and_copies() {
+    use crate::math::sum::scaled_finite;
+    let normal = [weight_sum(scaled_finite(1.0)), weight_sum(scaled_finite(2.0))];
+    let tiny = [weight_sum(scaled_finite(f64::from_bits(1))), weight_sum(scaled_finite(f64::from_bits(2)))];
+    let large = scaled_finite(f64::MAX).unwrap().doubled();
+    let overflow = [weight_sum(Some(large)); 2];
+    let impossible = [weight_sum(Some(large)), weight_sum(scaled_finite(f64::from_bits(1)))];
+    let cases = [
+        (&normal[..], 22, Some(vec![1.0, 2.0])),
+        (&tiny[..], 41, Some(vec![f64::MIN_POSITIVE, f64::MIN_POSITIVE * 2.0])),
+        (&overflow[..], 23, Some(vec![f64::MAX * 0.5; 2])),
+        (&impossible[..], 5, None),
+    ];
+    for (values, work, expected) in cases {
+        for allowance in 0..=work {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_materialized_bytes = 128;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 2;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let scratch = Scratch::new(&ctx);
+            let result = Homogeneous::weights(&scratch, values);
+            if allowance < work {
+                let original = result.unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(scratch.refused(), Some(original));
+                drop(scratch);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+            } else {
+                assert_eq!(result.unwrap(), expected);
+                drop(scratch);
+                drop(ctx.reserve_scoped_limit(128, "weight workspace released").unwrap());
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn homogeneous_weights_preserve_early_missing_and_empty_fuse() {
+    let missing = [weight_sum(None), weight_sum(crate::math::sum::scaled_finite(1.0))];
+    for (values, work, expected) in [(&missing[..], 1, None), (&[][..], 0, Some(Vec::<f64>::new()))] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = Scratch::new(&ctx);
+        assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
+        drop(scratch);
+        ctx.finish_session().unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let original = ctx.charge_work_limit(work + 1, "original empty weights refusal").unwrap_err();
+        let scratch = Scratch::new(&ctx);
+        assert_eq!(Homogeneous::weights(&scratch, &[]).unwrap_err(), original);
+        assert_eq!(scratch.refused(), Some(original));
+        drop(scratch);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+}
+
+#[test]
+fn homogeneous_weight_storage_is_scoped_and_slots_are_admitted_once() {
+    let values = [weight_sum(crate::math::sum::scaled_finite(1.0)); 2];
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 1,
+            _ => unreachable!(),
+        }
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = Scratch::new(&ctx);
+        let original = Homogeneous::weights(&scratch, &values).unwrap_err();
+        assert_eq!(original.dimension, dimension);
+        assert_eq!(original.operation, "IR homogeneous output weights");
+        assert_eq!(scratch.refused(), Some(original));
+        drop(scratch);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 128;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let scratch = Scratch::new(&ctx);
+    let weights = Homogeneous::weights(&scratch, &values).unwrap().unwrap();
+    assert_eq!(weights, [1.0; 2]);
+    let original = ctx.reserve_scoped_limit(128, "weights remain live").unwrap_err();
+    assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+    assert!(original.used > 0);
+    drop(weights);
+    drop(scratch);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}

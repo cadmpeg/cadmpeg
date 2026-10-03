@@ -3000,7 +3000,7 @@ pub fn nurbs_surface_isocurve(
         scratch::reserve_exact(&mut admitted_knots, knots.len(), "IR surface isoline knots")?;
         admitted_knots.extend_from_slice(knots);
         let weights = if rational {
-            let Some(weights) = Homogeneous::weights(&sums)? else {
+            let Some(weights) = Homogeneous::weights(&scratch, &sums)? else {
                 return Ok(None);
             };
             Some(weights)
