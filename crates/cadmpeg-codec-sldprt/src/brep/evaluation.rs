@@ -128,35 +128,6 @@ pub(super) fn charge_nurbs_isocurve_comparison(
     ctx.charge_work(work, OPERATION)
 }
 
-pub(super) fn admit_nurbs_isocurve<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    fixed_axis: cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis,
-) -> Result<ScopedReservation<'ctx>, CodecError> {
-    const OPERATION: &str = "evaluate SLDPRT NURBS isocurve";
-    let (degree, count) = match fixed_axis {
-        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U => {
-            (surface.u_degree(), surface.v_count())
-        }
-        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V => {
-            (surface.v_degree(), surface.u_count())
-        }
-    };
-    let support = u64::from(degree)
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let work = u64_from_index(count)
-        .checked_add(support)
-        .and_then(|count| count.checked_mul(support))
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_add(u64_from_index(surface.u_knots().len())))
-        .and_then(|work| work.checked_add(u64_from_index(surface.v_knots().len())))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
-    let bytes = cadmpeg_ir::eval::nurbs_surface_isocurve_scratch_bytes(surface, fixed_axis)?;
-    ctx.reserve_scoped(u64_from_index(bytes), OPERATION)
-}
-
 const SURFACE_SOLVER_LOCAL_WORK: u64 = 1_000_000;
 
 fn surface_solver_budget<'ctx>(

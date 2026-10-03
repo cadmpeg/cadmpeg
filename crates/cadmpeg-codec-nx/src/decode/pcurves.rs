@@ -2237,7 +2237,7 @@ fn exact_boundary_pcurve_with_index(
             SurfaceParameterAxis::V
         };
         for boundary in boundaries.iter().copied() {
-            if piecewise_linear_nurbs_surface_isocurve(nurbs, fixed_axis, boundary)?.is_some() {
+            if piecewise_linear_nurbs_surface_isocurve(geometry_budget.charges, nurbs, fixed_axis, boundary)?.is_some() {
                 has_linear_boundary = true;
                 break;
             }
@@ -2945,7 +2945,7 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                 } else {
                     return None;
                 };
-                let isocurve = match piecewise_linear_nurbs_surface_isocurve(surface, axis, fixed) {
+                let isocurve = match piecewise_linear_nurbs_surface_isocurve(geometry_budget.charges, surface, axis, fixed) {
                     Ok(Some(isocurve)) => isocurve,
                     Ok(None) => return None,
                     Err(limit) => return Some(Err(limit)),
@@ -3021,7 +3021,7 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                     } else {
                         return None;
                     };
-                let isocurve = match piecewise_linear_nurbs_surface_isocurve(
+                let isocurve = match piecewise_linear_nurbs_surface_isocurve(geometry_budget.charges,
                     nurbs,
                     fixed_axis,
                     fixed_parameter,
@@ -3067,20 +3067,23 @@ fn boundary_curve_affine_breaks_with_index<'a>(
 }
 
 fn piecewise_linear_nurbs_surface_isocurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
     fixed_parameter: f64,
 ) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(isocurve) = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter)? else {
+    let Some(isocurve) = nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_parameter)? else {
         return Ok(None);
     };
-    Ok((isocurve.degree() == 1
-        && !isocurve.weights().is_some_and(|weights| {
-            weights
-                .windows(2)
-                .any(|pair| pair[0].get().to_bits() != pair[1].get().to_bits())
-        }))
-    .then_some(isocurve))
+    if isocurve.degree() != 1 { return Ok(None); }
+    let poles = isocurve.pole_rows();
+    for index in 1..poles.count() {
+        ctx.charge_work_limit(1, "nx isocurve weight comparison")?;
+        if poles.weight_at(index - 1).map(f64::to_bits) != poles.weight_at(index).map(f64::to_bits) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(isocurve))
 }
 
 fn boundary_curve_speed_bound_with_index(
@@ -3189,7 +3192,7 @@ fn boundary_curve_speed_bound_with_index(
                 } else {
                     return Ok(None);
                 };
-            let Some(isocurve) = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)? else {
+            let Some(isocurve) = nurbs_surface_isocurve(geometry_budget.charges, nurbs, fixed_axis, fixed_parameter)? else {
                 return Ok(None);
             };
             let Some(bound) = nurbs_curve_speed_bound(geometry_budget.charges, &isocurve)? else {

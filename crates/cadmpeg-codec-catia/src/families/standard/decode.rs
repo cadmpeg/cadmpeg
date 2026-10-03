@@ -8918,6 +8918,7 @@ fn nurbs_shared_boundary_curves_match(
 }
 
 fn nurbs_surface_boundary_curves(
+    ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
 ) -> Result<Option<[NurbsCurve; 4]>, cadmpeg_core::decode::ResourceLimit> {
     let Some([[u_lower, u_upper], [v_lower, v_upper]]) = nurbs_surface_parameter_domain(surface)
@@ -8925,7 +8926,7 @@ fn nurbs_surface_boundary_curves(
         return Ok(None);
     };
     let curve =
-        |axis, parameter| cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter);
+        |axis, parameter| cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, axis, parameter);
     let Some(u_lower) = curve(
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         u_lower,
@@ -9002,10 +9003,10 @@ fn standard_shared_nurbs_boundary_pair_options(
     else {
         return Ok(None);
     };
-    let Some(left_boundaries) = nurbs_surface_boundary_curves(left)? else {
+    let Some(left_boundaries) = nurbs_surface_boundary_curves(ctx, left)? else {
         return Ok(None);
     };
-    let Some(right_boundaries) = nurbs_surface_boundary_curves(right)? else {
+    let Some(right_boundaries) = nurbs_surface_boundary_curves(ctx, right)? else {
         return Ok(None);
     };
     let mut shared = [false; 4];

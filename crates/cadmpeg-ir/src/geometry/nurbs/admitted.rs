@@ -10,7 +10,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 // Resource refusals stay outside the geometry refusal result.
-pub(in crate::geometry) enum ConstructionError {
+pub(crate) enum ConstructionError {
     Resource(CodecError),
     Geometry(NurbsError),
 }

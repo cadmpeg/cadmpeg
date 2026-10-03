@@ -159,6 +159,25 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         }
     }
 
+    /// Copy retained output through the selected allocation and work policy.
+    pub(super) fn retained_copy<T: Copy>(&self, source: &[T], operation: &'static str) -> Option<Vec<T>> {
+        self.work(0, operation)?;
+        let mut values = Vec::new();
+        match self.admission {
+            EvaluationAdmission::Decode(context) => self.admit(
+                context.reserve_retained_vec_limit(&mut values, source.len(), operation),
+            )?,
+            EvaluationAdmission::Standard => self.admit(
+                crate::geometry::nurbs::scratch::reserve_exact(&mut values, source.len(), operation),
+            )?,
+        }
+        for value in source {
+            self.work(std::mem::size_of::<T>(), operation)?;
+            values.push(*value);
+        }
+        Some(values)
+    }
+
     pub(super) fn work(&self, count: usize, operation: &'static str) -> Option<()> {
         if self.refusal.borrow().is_some() {
             return None;

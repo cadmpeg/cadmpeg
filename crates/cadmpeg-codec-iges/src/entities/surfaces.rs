@@ -1136,12 +1136,12 @@ fn surface_boundary_is_closed(
     resolution: f64,
 ) -> Result<Option<bool>, CodecError> {
     let Some(first) =
-        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])?
+        cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_range[0])?
     else {
         return Ok(None);
     };
     let Some(second) =
-        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])?
+        cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_range[1])?
     else {
         return Ok(None);
     };

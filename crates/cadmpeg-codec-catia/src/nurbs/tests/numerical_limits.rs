@@ -319,7 +319,7 @@ fn isocurve_is_invariant_under_common_weight_scale() {
                 [Point3::new(2.0, 0.5, 0.0), Point3::new(4.0, 0.5, 0.0)],
             ),
         ] {
-            let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &surface,
                 if fix_u {
                     cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U
@@ -347,7 +347,7 @@ fn isocurve_preserves_weight_ratios_between_output_poles() {
             ],
             vec![vec![scale, 2.0 * scale], vec![2.0 * scale, 4.0 * scale]],
         );
-        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -369,7 +369,7 @@ fn isocurve_keeps_finite_maximum_coordinates() {
         vec![vec![Point3::new(f64::MAX, 0.0, 0.0); 2]; 2],
         vec![vec![1e200; 2]; 2],
     );
-    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &surface,
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.5,

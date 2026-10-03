@@ -847,7 +847,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
         (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
         (IsolineDirection::ConstantV, 1.25, [0.0, 0.6, 1.0]),
     ] {
-        let curve = nurbs_surface_isoline(&surface, direction, at)
+        let curve = nurbs_surface_isoline(crate::eval::admission::EvaluationAdmission::Standard, &surface, direction, at)
             .expect("resource allocation did not fail")
             .expect("isoline");
         for sample in samples {
@@ -1887,7 +1887,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
         (SurfaceParameterAxis::U, 0.25),
         (SurfaceParameterAxis::V, 0.75),
     ] {
-        let isocurve = nurbs_surface_isocurve(&surface, axis, fixed)
+        let isocurve = nurbs_surface_isocurve(crate::eval::admission::EvaluationAdmission::Standard, &surface, axis, fixed)
             .expect("resource allocation did not fail")
             .expect("exact isocurve");
         let geometry = SolvedCurveGeometry::Nurbs(isocurve);
@@ -1959,3 +1959,5 @@ mod analytic_ranges;
 mod surface_inversion;
 
 mod offset_frames;
+
+mod isocurves;

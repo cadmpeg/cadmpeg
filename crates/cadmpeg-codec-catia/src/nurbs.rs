@@ -1347,7 +1347,7 @@ mod tests {
             false,
         ).expect("fixture constructor admission")
         .unwrap();
-        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             tiny * 0.5,
@@ -1385,7 +1385,7 @@ mod tests {
             ).expect("fixture constructor admission")
             .unwrap()
         };
-        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(
+        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
             &surface(
                 vec![
                     Point3::new(f64::MAX, 0.0, 0.0),
