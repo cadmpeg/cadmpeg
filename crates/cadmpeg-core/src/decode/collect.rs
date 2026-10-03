@@ -1073,6 +1073,7 @@ impl DecodeContext<'_> {
         };
         let old = self.hash_storage_bytes::<T>(capacity, operation)?;
         let bytes = self.hash_storage_bytes::<T>(required.max(minimum), operation)? - old;
+        self.charge_work_limit(u64_from_index(old), operation)?;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
         let overlap = self.reserve_scoped_limit(u64_from_index(old), operation)?;
         Ok((bytes, overlap))
