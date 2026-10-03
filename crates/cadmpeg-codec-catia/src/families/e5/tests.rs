@@ -139,32 +139,30 @@ fn e5_circle_plane_and_edge_results_refuse_before_growth() {
 #[test]
 fn e5_carrier_id_creation_refuses_retained_limit() {
     let file = e5_catpart();
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..16_384 {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match CatiaCodec.decode(
-            &mut Cursor::new(&file),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
-                limit,
-            ))) => {
-                refused.insert(limit.operation);
-            }
-            Ok(_) => break,
-            Err(error) => panic!("unexpected E5 decode refusal: {error}"),
-        }
-    }
+    // Admit preceding backing-node growth, then refuse each identity one byte below need.
     for operation in [
         "catia_e5_payload_id",
         "catia_e5_surface_id",
         "catia_e5_free_vertex_id",
     ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                CatiaCodec.decode(
+                    &mut Cursor::new(&file),
+                    &DecodeOptions { policy, ..DecodeOptions::default() },
+                ).map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected E5 decode refusal: {other}"),
+                })
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == operation));
     }
 }
 
