@@ -165,13 +165,22 @@ fn nurbs_isocurve_refuses_collection_limit_before_evaluator_allocates() {
         false,
     ).expect("fixture constructor admission")
     .expect("valid bilinear surface");
-    let refused = crate::test_support::with_collection_limit(9, |ctx| {
+    let refused = crate::test_support::with_collection_limit(7, |ctx| {
         super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
     });
-    assert!(matches!(
-        refused,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.used == 7 && limit.additional == 1));
+    // Two raw positions, four retained knots and two output poles use eight
+    // slots. Polynomial output does not keep a homogeneous-sum lane.
+    for cap in [8, 9] {
+        let curve = crate::test_support::with_collection_limit(cap, |ctx| {
+            super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
+        }).expect("exact polynomial slots").expect("bilinear isocurve");
+        assert_eq!(curve.control_points(), [Point3::new(0.5, 0.0, 0.0), Point3::new(0.5, 1.0, 0.0)]);
+        assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+        assert!(curve.weights().is_none());
+    }
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
     })

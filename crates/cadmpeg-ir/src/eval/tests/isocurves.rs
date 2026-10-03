@@ -49,11 +49,12 @@ fn isocurve_returns_original_refusals_in_every_used_dimension() {
 fn isocurve_admits_actual_copies_and_constructor_visits_once() {
     for rational in [false, true] {
         let surface = surface(rational);
-        // Each of two poles visits once, copies its point and homogeneous sum.
+        // Each of two poles visits once and copies its point. Rational
+        // output also copies its homogeneous sums and derives weights.
         // Four knots copy eight bytes each, two output poles are converted,
         // and four knot-finiteness visits and three adjacent comparisons.
-        let work = 2 * (1 + std::mem::size_of::<Point3>() + std::mem::size_of::<super::super::rational::Homogeneous>()) + 32 + 2 + 7
-            + if rational { 22 + 2 } else { 0 };
+        let work = 2 * (1 + std::mem::size_of::<Point3>()) + 32 + 2 + 7
+            + if rational { 2 * std::mem::size_of::<super::super::rational::Homogeneous>() + 22 + 2 } else { 0 };
         for allowance in 0..=work {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::try_from(allowance).unwrap();
@@ -84,7 +85,7 @@ fn isocurve_retains_only_the_output_and_releases_its_scoped_lanes() {
         // The retained knot copy reserves four values. The exact-size output
         // constructor reserves two poles, with no retained temporary lanes.
         let retained = 4 * std::mem::size_of::<f64>() + 2 * pole_size;
-        let slots = if rational { 14 } else { 10 };
+        let slots = if rational { 14 } else { 8 };
         for short_retained in [false, true] {
             for short_slots in [false, true] {
                 let mut policy = DecodePolicy::service();
@@ -110,6 +111,37 @@ fn isocurve_retains_only_the_output_and_releases_its_scoped_lanes() {
                     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn polynomial_isocurve_needs_only_its_position_scratch() {
+    let surface = surface(false);
+    let point_bytes = 2 * std::mem::size_of::<Point3>();
+    for short in [true, false] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::try_from(point_bytes - usize::from(short)).unwrap();
+        policy.limits.max_retained_bytes = 80;
+        policy.limits.max_collection_items = 8;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = nurbs_surface_isocurve(&ctx, &surface, SurfaceParameterAxis::U, 0.5);
+        if short {
+            let original = result.unwrap_err();
+            assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(original.operation, "IR surface isoline controls");
+            assert_eq!(original.used, 0);
+            assert_eq!(original.additional, u64::try_from(point_bytes).unwrap());
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+        } else {
+            let curve = result.unwrap().unwrap();
+            assert_eq!(curve.control_points(), [Point3::new(0.5, 0.0, 0.0), Point3::new(0.5, 1.0, 0.0)]);
+            assert!(curve.weights().is_none());
+            let storage = ctx.reserve_scoped_limit(u64::try_from(point_bytes).unwrap(), "polynomial positions released").unwrap();
+            drop(storage);
+            ctx.finish_session().unwrap();
         }
     }
 }
