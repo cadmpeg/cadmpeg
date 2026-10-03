@@ -122,3 +122,15 @@ pub fn optional_repeat(ctx: &DecodeContext, bytes: &[u8], branch: Option<u8>) ->
     for _byte in bytes {} // finding: uncharged_decode_work
     Ok(())
 }
+
+fn returned_slice(bytes: &[u8]) -> &[u8] { bytes }
+
+pub fn returned_operand(ctx: &DecodeContext, bytes: &[u8], other: &[u8]) -> Result<(), ()> {
+    let value = returned_slice(bytes);
+    let different = returned_slice(other);
+    ctx.charge_work(value.len() as u64, "returned operand")?;
+    let _different = different.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work
+    let _first = value.iter().fold(0usize, |count, _| count + 1);
+    let _second = value.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work
+    Ok(())
+}

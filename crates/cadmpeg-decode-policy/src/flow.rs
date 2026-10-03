@@ -451,7 +451,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         seen.push(expression.hir_id);
         if let Some(init) = self.initializer(expression) {
-            return self.dominated_keys(init, seen);
+            let keys = self.dominated_keys(init, seen);
+            if !keys.is_empty() { return keys; }
         }
         if let Some((definition, operands)) = self.call(expression) {
             if types::standard(self.tcx, definition)
