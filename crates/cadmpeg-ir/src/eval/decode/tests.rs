@@ -597,3 +597,99 @@ fn scratch_completion_observes_refusals_from_other_context_operations() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
     }
 }
+
+#[test]
+fn standard_evaluation_shares_scratch_and_basis_algorithms() {
+    use crate::eval::admission::EvaluationAdmission;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    struct Counted(Rc<Cell<usize>>);
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            self.0.set(self.0.get() + 1);
+            Self(Rc::clone(&self.0))
+        }
+    }
+    let scratch = super::Scratch::new(EvaluationAdmission::Standard);
+    let clones = Rc::new(Cell::new(0));
+    let values = scratch.filled(3, Counted(Rc::clone(&clones)), "standard fill", "standard clone").unwrap();
+    assert_eq!(values.len(), 3);
+    assert_eq!(clones.get(), 3);
+    let reads = Cell::new(0);
+    assert!(scratch.collect((0..3).map(|index| {
+        reads.set(reads.get() + 1);
+        (index != 1).then_some(index)
+    }), "standard collect", "standard read").is_none());
+    assert_eq!(reads.get(), 2);
+    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let span = crate::eval::basis::bspline_span(scratch.admission, &knots, 2, 3, 0.5).unwrap().unwrap();
+    assert_eq!(span, 2);
+    assert_eq!(&*crate::eval::basis::bspline_basis(&scratch, &knots, 2, span, 0.5).unwrap(), &[0.25, 0.5, 0.25]);
+    assert_eq!(crate::eval::basis::bspline_basis_derivative(&scratch, &knots, 2, span, 0.5).unwrap(), [-1.0, 0.0, 1.0]);
+    assert_eq!(scratch.work(usize::MAX, "standard work"), Some(()));
+    assert_eq!(scratch.finish(7), Ok(7));
+}
+
+#[test]
+fn standard_evaluation_preserves_allocation_refusal() {
+    use crate::eval::admission::EvaluationAdmission;
+    use cadmpeg_core::decode::ResourceFailure;
+    let scratch = super::Scratch::new(EvaluationAdmission::Standard);
+    let mut values = vec![7_u8];
+    assert_eq!(scratch.reserve(&mut values, usize::MAX, "standard allocation"), None);
+    assert_eq!(values, [7]);
+    let original = scratch.refused().unwrap();
+    assert_eq!(original.reason, ResourceFailure::AllocationFailed);
+    assert_eq!(original.operation, "standard allocation");
+    assert_eq!(scratch.work(0, "after allocation refusal"), None);
+    assert_eq!(scratch.finish(7), Err(original));
+}
+
+#[test]
+fn standard_evaluation_depth_is_explicit_and_releases_frames() {
+    use crate::eval::admission::EvaluationAdmission;
+    let scratch = super::Scratch::new(EvaluationAdmission::Standard);
+    let first = scratch.enter().unwrap();
+    let second = scratch.enter().unwrap();
+    assert_eq!(scratch.independent_depth.get(), 2);
+    drop(first);
+    assert_eq!(scratch.independent_depth.get(), 1);
+    drop(second);
+    assert_eq!(scratch.independent_depth.get(), 0);
+    let mut guards = Vec::new();
+    for _ in 0..256 { guards.push(scratch.enter().unwrap()); }
+    assert!(scratch.enter().is_none());
+    let original = scratch.refused().unwrap();
+    assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(original.limit, 256);
+    assert_eq!(original.used, 256);
+    assert_eq!(original.additional, 1);
+    assert_eq!(original.operation, "independent geometry evaluation nesting");
+    while let Some(guard) = guards.pop() { drop(guard); }
+    drop(guards);
+    assert_eq!(scratch.independent_depth.get(), 0);
+    assert_eq!(scratch.finish(7), Err(original));
+}
+
+#[test]
+fn evaluation_scratch_depth_is_shared_across_caller_contexts() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let first = super::Scratch::new(&ctx);
+    let second = super::Scratch::new(&ctx);
+    let frame = first.enter().unwrap();
+    assert!(second.enter().is_none());
+    let original = second.refused().unwrap();
+    assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(original.limit, 1);
+    assert_eq!(original.used, 1);
+    assert_eq!(original.additional, 1);
+    assert_eq!(original.operation, "geometry evaluation nesting");
+    assert_eq!(first.refused(), Some(original));
+    drop(frame);
+    assert_eq!(first.finish(7), Err(original));
+    assert_eq!(second.finish(7), Err(original));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}
