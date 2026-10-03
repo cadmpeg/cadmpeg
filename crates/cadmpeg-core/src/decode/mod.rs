@@ -8,6 +8,8 @@ mod arena;
 mod budget;
 pub mod collect;
 mod context;
+pub mod cost;
+pub mod compare;
 mod deflate;
 mod error;
 mod input;
