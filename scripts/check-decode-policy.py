@@ -88,6 +88,7 @@ class DecodeGraph:
         self.edges = {}
         self.addresses = {}
         self.pointer_calls = []
+        self.symbolic_pointer_calls = []
         self.trait_calls = []
         self.symbolic_calls = []
         self.method_impls = {}
@@ -122,6 +123,8 @@ class DecodeGraph:
                 self.addresses.setdefault(signature_pattern(fields[1]), set()).add(fields[2])
             elif len(fields) == 3 and tag == "decode_pointer_call":
                 self.pointer_calls.append((fields[1], signature_pattern(fields[2])))
+            elif len(fields) == 3 and tag == "decode_symbolic_pointer_call":
+                self.symbolic_pointer_calls.append((fields[1], signature_pattern(fields[2])))
             elif len(fields) == 4 and tag == "decode_trait_call":
                 self.trait_calls.append((fields[1], fields[2], signature_pattern(fields[3])))
             elif len(fields) == 4 and tag == "decode_symbolic_call":
@@ -158,7 +161,9 @@ class DecodeGraph:
                             edges.setdefault(call, set()).add((target, "trait-object call"))
                         if caller in symbolic:
                             symbolic.add(target)
-            for caller, signature in self.pointer_calls:
+            pointer_calls = [(caller, signature) for caller, signature in self.pointer_calls if caller in reached]
+            pointer_calls.extend((caller, signature) for caller, signature in self.symbolic_pointer_calls if caller in symbolic)
+            for caller, signature in pointer_calls:
                 if caller in reached:
                     targets = {target for candidate, bodies in self.addresses.items() if compatible(signature, candidate) for target in bodies}
                     reached.update(targets)

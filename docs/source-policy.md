@@ -159,9 +159,11 @@ calls through local and dependency MIR before body selection. Their targets are
 attached to the originating caller. Unconstrained generic decode roots carry
 symbolic type arguments through helper chains and reach each possible checked
 trait implementation. Concrete encoder instances do not activate those symbolic
-edges. An unresolved indirect call retains
+edges. Generic pointer calls in private helpers and closures use concrete
+MIR signatures; their symbolic signatures activate only under symbolic
+reachability. An unresolved indirect call retains
 `unproven_decode_charge`. A function-pointer call reaches address-taken
-functions and closures with the same signature after lifetime erasure, including
+functions and noncapturing closures with the same signature after lifetime erasure, including
 argument types, result type, safety and ABI. Type and const parameters use
 consistent substitutions across the signature. Function addresses retain their
 resolved implementation and their coerced pointer signatures. A virtual method
