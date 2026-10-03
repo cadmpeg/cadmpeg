@@ -21,9 +21,10 @@ impl<T: Work> Object for Wrapper<T> {
 }
 fn store_objects() {
     let _object: Box<dyn Object> = Box::new(Wrapper(Inner));
+    let captured = 7;
     let _closure: Box<dyn Fn(&[u8])> = Box::new(|bytes| {
         for byte in bytes { // finding: uncharged_decode_work
-            std::hint::black_box(byte);
+            std::hint::black_box((byte, captured));
         }
     });
 }

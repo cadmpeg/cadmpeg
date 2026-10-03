@@ -40,6 +40,7 @@ pub(crate) struct Graph {
     nodes: BTreeMap<String, String>,
     addresses: BTreeSet<(Pattern, String)>,
     pointer_calls: BTreeSet<(String, Pattern)>,
+    symbolic_pointer_calls: BTreeSet<(String, Pattern)>,
     trait_calls: BTreeSet<(String, String, Pattern)>,
     symbolic_calls: BTreeSet<(String, String, Pattern)>,
     method_impls: BTreeSet<(String, Pattern, String)>,
@@ -87,6 +88,9 @@ impl Graph {
         }
         for (caller, signature) in &self.pointer_calls {
             println!("decode_pointer_call\t{caller}\t{}", signature.wire());
+        }
+        for (caller, signature) in &self.symbolic_pointer_calls {
+            println!("decode_symbolic_pointer_call\t{caller}\t{}", signature.wire());
         }
         for (caller, method, signature) in &self.trait_calls {
             println!("decode_trait_call\t{caller}\t{method}\t{}", signature.wire());
@@ -154,8 +158,8 @@ impl Graph {
                     }
                 }
             }
-            for (caller, signature) in &self.pointer_calls {
-                if reached.contains(caller) {
+            for (caller, signature, deferred) in self.pointer_calls.iter().map(|(caller, signature)| (caller, signature, false)).chain(self.symbolic_pointer_calls.iter().map(|(caller, signature)| (caller, signature, true))) {
+                if if deferred { symbolic.contains(caller) } else { reached.contains(caller) } {
                     for (candidate, target) in &self.addresses {
                         if signature.compatible(candidate) {
                             added |= reached.insert(target.clone());
@@ -183,9 +187,6 @@ impl Graph {
                     for (candidate, candidate_signature, target) in &self.method_impls {
                         if candidate == method && signature.compatible(candidate_signature) {
                             added |= reached.insert(target.clone());
-                            if self.symbolic_candidates.contains(target) {
-                                added |= symbolic.insert(target.clone());
-                            }
                             added |= symbolic.insert(target.clone());
                         }
                     }
@@ -445,7 +446,12 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
             let value = self.analysis.expr_ty(callee);
             if matches!(value.peel_refs().kind(), ty::FnPtr(..)) {
                 if let Some(signature) = indirect::signature(self.analysis.tcx, self.analysis.typing_env(), value) {
-                    self.graph.pointer_calls.insert((self.caller.clone(), signature));
+                    let deferred = value.has_non_region_param() && !root(self.analysis.tcx, self.analysis.typing_owner);
+                    if deferred {
+                        self.graph.symbolic_pointer_calls.insert((self.caller.clone(), signature));
+                    } else {
+                        self.graph.pointer_calls.insert((self.caller.clone(), signature));
+                    }
                 }
             }
         }

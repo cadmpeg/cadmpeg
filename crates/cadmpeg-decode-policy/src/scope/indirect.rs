@@ -42,16 +42,14 @@ pub(super) fn method_signature<'tcx>(
     let receiver = tcx.opt_associated_item(method).is_some_and(|item| item.is_method());
     let parent_count = tcx.generics_of(method).parent_count;
     let trait_args = if tcx.trait_of_assoc(method).is_some() {
-        Some(tcx.mk_args(&arguments[..parent_count]))
+        tcx.mk_args(&arguments[..parent_count])
     } else {
-        Some(tcx.impl_trait_ref(tcx.parent(method)).instantiate(tcx, arguments).skip_norm_wip().args)
+        tcx.impl_trait_ref(tcx.parent(method)).instantiate(tcx, arguments).skip_norm_wip().args
     };
     let mut children = vec![pattern::function(tcx, tcx.erase_and_anonymize_regions(signature), usize::from(receiver))];
-    if let Some(args) = trait_args {
-        let args = tcx.try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(args)).unwrap_or(args);
-        // Self is selected by the implementation; the remaining trait arguments constrain dispatch.
-        children.extend(pattern::arguments(tcx, tcx.mk_args(&args[1..])));
-    }
+    let trait_args = tcx.try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(trait_args)).unwrap_or(trait_args);
+    // Self is selected by the implementation; the remaining trait arguments constrain dispatch.
+    children.extend(pattern::arguments(tcx, tcx.mk_args(&trait_args[1..])));
     children.extend(pattern::arguments(tcx, tcx.mk_args(&arguments[parent_count..])));
     Pattern::Rigid("method".into(), children)
 }
@@ -82,7 +80,7 @@ pub(super) fn address<'tcx>(
                 _ => return,
             }
         }
-        ty::Closure(id, _) if types::checked(tcx, *id) => key(tcx, *id),
+        ty::Closure(id, args) if types::checked(tcx, *id) && args.as_closure().upvar_tys().is_empty() => key(tcx, *id),
         _ => return,
     };
     if value.has_non_region_param() {

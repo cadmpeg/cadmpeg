@@ -52,6 +52,7 @@ fn different(left: u8, right: u16) -> u8 {
 }
 pub fn pointer<T: Copy>(ctx: &DecodeContext, callback: fn(T, T) -> T, value: T) -> T {
     let _ctx = ctx;
+    let _repeat = repeat(callback, value);
     callback(value, value) // finding: unproven_decode_charge
 }
 trait Object<T> { fn read(&self, bytes: &[u8]); }
@@ -93,4 +94,9 @@ impl<T: Work> Deferred for Loose<T> {
 pub fn deferred(ctx: &DecodeContext, object: &dyn Deferred, bytes: &[u8]) {
     let _ctx = ctx;
     object.read(bytes); // finding: unproven_decode_charge
+}
+
+fn repeat<T: Copy>(callback: fn(T, T) -> T, value: T) -> T {
+    let invoke = || callback(value, value); // finding: unproven_decode_charge
+    invoke()
 }
