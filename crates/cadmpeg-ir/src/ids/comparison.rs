@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 /// Compare text in byte order, admitting only the bytes actually compared.
-pub(crate) fn compare(
+pub fn compare(
     ctx: &DecodeContext<'_>, first: &str, second: &str, operation: &'static str,
 ) -> Result<Ordering, ResourceLimit> {
     ctx.charge_work_limit(1, operation)?;
@@ -25,7 +25,7 @@ fn compare_bytes(
 }
 
 /// Test text equality, admitting the length gate before byte comparisons.
-pub(crate) fn equal(
+pub fn equal(
     ctx: &DecodeContext<'_>, first: &str, second: &str, operation: &'static str,
 ) -> Result<bool, ResourceLimit> {
     ctx.charge_work_limit(1, operation)?;

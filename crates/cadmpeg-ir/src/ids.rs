@@ -10,7 +10,7 @@
 //! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
-pub(crate) mod comparison;
+pub mod comparison;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;

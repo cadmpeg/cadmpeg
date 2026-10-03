@@ -39,7 +39,7 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut empty_storage = ctx.reserve_scoped_limit(0, "empty replacement index").unwrap();
-    let empty = std::collections::BTreeMap::new();
+    let empty = std::collections::BTreeMap::<String, String>::new();
     let empty_index = super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index").unwrap();
     assert_eq!(empty_index.get(&ctx, "absent", "empty replacement lookup").unwrap(), None);
     let original = ctx.charge_work_limit(1, "original empty replacement refusal").unwrap_err();
@@ -89,4 +89,24 @@ fn replacement_index_admits_storage_and_preserves_byte_order() {
     drop(storage);
     drop(ctx.reserve_scoped_limit(4096, "replacement storage released").unwrap());
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn replacement_index_checks_exposed_key_order_and_duplicates() {
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    struct TextKey(u8, String);
+    impl AsRef<str> for TextKey {
+        fn as_ref(&self) -> &str { &self.1 }
+    }
+    for texts in [["later", "earlier"], ["same", "same"]] {
+        let replacements = std::collections::BTreeMap::from([
+            (TextKey(0, texts[0].to_owned()), "first".to_owned()),
+            (TextKey(1, texts[1].to_owned()), "second".to_owned()),
+        ]);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut storage = ctx.reserve_scoped_limit(0, "replacement order").unwrap();
+        assert!(matches!(super::ReplacementIndex::build(&ctx, &replacements, &mut storage, "replacement order"), Err(CodecError::Malformed(message)) if message == "text replacements must have unique keys in byte order"));
+        drop(storage);
+        ctx.finish_session().unwrap();
+    }
 }

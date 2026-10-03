@@ -16,6 +16,7 @@ use cadmpeg_ir::ids::{FaceId, RegionId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use super::graph_ops::{collect_brep_references, insert_brep_adjacency};
+use super::graph_ops::ordered::Key;
 mod structural_budget;
 
 fn with_limits<T>(
@@ -455,9 +456,9 @@ fn brep_retention_rebuild_refuses_materialized_limit() {
 
 #[test]
 fn brep_adjacency_reference_refuses_retained_limit() {
-    let owned = BTreeSet::from(["f3d:brep:entity#1".to_owned()]);
     let value = serde_value::Value::String("f3d:brep:entity#1".to_owned());
     let error = with_limits(u64::MAX, 0, |ctx| {
+        let owned = BTreeSet::from([Key::owned(ctx, "f3d:brep:entity#1".to_owned())]);
         collect_brep_references(ctx, &value, &owned, &mut BTreeSet::new()).unwrap_err()
     });
     assert!(
@@ -479,8 +480,8 @@ fn brep_adjacency_index_refuses_collection_limit() {
 
 #[test]
 fn brep_adjacent_ids_refuse_collection_limit() {
-    let mut adjacency = BTreeMap::from([("source".to_owned(), BTreeSet::new())]);
     let error = with_limits(0, u64::MAX, |ctx| {
+        let mut adjacency = BTreeMap::from([(Key::owned(ctx, "source".to_owned()), BTreeSet::new())]);
         insert_brep_adjacency(ctx, &mut adjacency, "source", "target").unwrap_err()
     });
     assert!(

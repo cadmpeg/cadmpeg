@@ -71,7 +71,8 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     }
 
     /// Also rewrite ordinary text that exactly names an owned source identity.
-    pub fn with_text_replacements(mut self, replacements: &'ctx BTreeMap<String, String>) -> Result<Self, CodecError> {
+    /// Source keys must expose unique text in byte order.
+    pub fn with_text_replacements<K: AsRef<str> + Ord>(mut self, replacements: &'ctx BTreeMap<K, String>) -> Result<Self, CodecError> {
         self.text_index = Some(ReplacementIndex::build(self.context, replacements, &mut self.storage, self.operation)?);
         Ok(self)
     }
