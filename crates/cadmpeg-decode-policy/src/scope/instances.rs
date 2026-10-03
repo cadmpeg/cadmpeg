@@ -27,7 +27,7 @@ pub(super) fn enqueue<'tcx>(
     let (depth, kind) = route;
     let id = instance.def_id();
     if !types::checked(tcx, id)
-        || types::serialization_body(tcx, id)
+        || types::serde_body(tcx, id)
         || matches!(instance.def, ty::InstanceKind::Virtual(..))
     {
         return;

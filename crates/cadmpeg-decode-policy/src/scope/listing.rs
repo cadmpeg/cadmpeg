@@ -41,7 +41,7 @@ pub(super) fn body(tcx: TyCtxt<'_>, owner: LocalDefId) -> Option<Body> {
         })
         .unwrap_or(path);
     let eligible = crate::production(tcx, owner.to_def_id());
-    let reason = if types::serialization_body(tcx, owner.to_def_id()) {
+    let reason = if types::serde_body(tcx, owner.to_def_id()) {
         "serialization-only"
     } else if !eligible {
         "test-only"

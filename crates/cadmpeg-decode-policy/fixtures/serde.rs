@@ -7,9 +7,9 @@ pub struct Owned {
 }
 pub fn parse(_ctx: &DecodeContext, text: &str) {
     Local(text).serialize();
-    let _record = serde_json::from_str::<Owned>(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _record = serde_json::from_str::<Owned>(text); // finding: unproven_decode_charge
     let mut deserializer = serde_json::Deserializer::from_str(text);
-    let _record = Owned::deserialize(&mut deserializer); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _record = Owned::deserialize(&mut deserializer); // finding: unproven_decode_charge
 }
 
 trait Serialize {
@@ -57,4 +57,22 @@ impl serde::Serialize for WriteText<'_> {
 }
 pub fn serialization_only<S: serde::Serializer>(text: &str, serializer: S) {
     let _record = serde::Serialize::serialize(&WriteText(text), serializer);
+}
+
+struct Custom;
+impl<'de> Deserialize<'de> for Custom {
+    fn deserialize<D: serde::Deserializer<'de>>(_parser: D) -> Result<Self, D::Error> {
+        let input = String::new();
+        for byte in input.as_bytes() {
+            std::hint::black_box(byte);
+        }
+        Err(serde::de::Error::custom("fixed"))
+    }
+}
+#[derive(Deserialize)]
+struct ContainsCustom {
+    values: Vec<Custom>,
+}
+pub fn custom_decode(_ctx: &DecodeContext, text: &str) {
+    let _value = serde_json::from_str::<ContainsCustom>(text); // finding: unproven_decode_charge
 }
