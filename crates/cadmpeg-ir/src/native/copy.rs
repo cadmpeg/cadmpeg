@@ -5,7 +5,10 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde_json::{Map, Value};
 
-pub(super) fn fields(ctx: &DecodeContext<'_>, source: &Map<String, Value>) -> Result<Map<String, Value>, CodecError> {
+pub(super) fn fields(
+    ctx: &DecodeContext<'_>,
+    source: &Map<String, Value>,
+) -> Result<Map<String, Value>, CodecError> {
     let _depth = ctx.enter_nested("copy native field object")?;
     ctx.charge_work(1, "copy native field object")?;
     let mut copied = Map::new();
@@ -17,11 +20,25 @@ pub(super) fn fields(ctx: &DecodeContext<'_>, source: &Map<String, Value>) -> Re
     Ok(copied)
 }
 
-pub(super) fn insert(ctx: &DecodeContext<'_>, fields: &mut Map<String, Value>, key: String, value: Value) -> Result<(), CodecError> {
-    let work = key.len().checked_add(1)
-        .and_then(|bytes| fields.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+pub(super) fn insert(
+    ctx: &DecodeContext<'_>,
+    fields: &mut Map<String, Value>,
+    key: String,
+    value: Value,
+) -> Result<(), CodecError> {
+    let work = key
+        .len()
+        .checked_add(1)
+        .and_then(|bytes| {
+            fields
+                .len()
+                .checked_add(1)
+                .and_then(|count| bytes.checked_mul(count))
+        })
         .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(work, "insert copied native field")?;
     ctx.admit_retained_btree_record::<String, Value>(0, "insert copied native field")?;
     fields.insert(key, value);
@@ -29,14 +46,22 @@ pub(super) fn insert(ctx: &DecodeContext<'_>, fields: &mut Map<String, Value>, k
 }
 
 fn copy_value(ctx: &DecodeContext<'_>, source: &Value) -> Result<Value, CodecError> {
-    let _depth = ctx.enter_nested("copy native field value")?;
     ctx.charge_work(1, "copy native field value")?;
     Ok(match source {
         Value::Null => Value::Null,
         Value::Bool(value) => Value::Bool(*value),
         Value::Number(value) => Value::Number(value.clone()),
-        Value::String(value) => Value::String(ctx.copy_retained_text(value, "copy native field text")?),
-        Value::Array(values) => Value::Array(ctx.try_collect_retained_with(values, "copy native field sequence", |value| copy_value(ctx, value))?),
+        Value::String(value) => {
+            Value::String(ctx.copy_retained_text(value, "copy native field text")?)
+        }
+        Value::Array(values) => {
+            let _depth = ctx.enter_nested("copy native field sequence")?;
+            Value::Array(ctx.try_collect_retained_with(
+                values,
+                "copy native field sequence",
+                |value| copy_value(ctx, value),
+            )?)
+        }
         Value::Object(values) => Value::Object(fields(ctx, values)?),
     })
 }

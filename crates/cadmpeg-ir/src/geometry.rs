@@ -3335,7 +3335,9 @@ impl RollingBallJetStations {
         Self::from_raw(
             degree,
             stations,
-            |count, operation| ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation),
+            |count, operation| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
+            },
             |count| ctx.retained_vec(count, "rolling-ball jet stations"),
         )
     }
@@ -3344,7 +3346,12 @@ impl RollingBallJetStations {
         degree: u32,
         stations: Vec<RollingBallJetStation>,
         mut work: impl FnMut(usize, &'static str) -> Result<(), E>,
-        allocate: impl FnOnce(usize) -> Result<Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>, E>,
+        allocate: impl FnOnce(
+            usize,
+        ) -> Result<
+            Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+            E,
+        >,
     ) -> Result<Result<Self, &'static str>, E> {
         if let Err(error) = Self::admit_controls(&mut work, degree, &stations, |row| row.knot)? {
             return Ok(Err(error));
@@ -3380,7 +3387,14 @@ impl RollingBallJetStations {
         stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        if let Err(error) = Self::admit_controls(&mut |count, operation| ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation), degree, &stations, |row| row.knot.get())? {
+        if let Err(error) = Self::admit_controls(
+            &mut |count, operation| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
+            },
+            degree,
+            &stations,
+            |row| row.knot.get(),
+        )? {
             return Ok(Err(error));
         }
         for station in &stations {
@@ -3468,10 +3482,13 @@ impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
             |_, _| Ok::<(), RollingBallJetError>(()),
             |count| {
                 let mut values = Vec::new();
-                values.try_reserve_exact(count).map_err(|error| RollingBallJetError::Admission(error.to_string()))?;
+                values
+                    .try_reserve_exact(count)
+                    .map_err(|error| RollingBallJetError::Admission(error.to_string()))?;
                 Ok(values)
             },
-        )?.map_err(RollingBallJetError::Invalid)
+        )?
+        .map_err(RollingBallJetError::Invalid)
     }
 }
 

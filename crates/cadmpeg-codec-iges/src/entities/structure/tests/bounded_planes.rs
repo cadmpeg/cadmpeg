@@ -89,7 +89,8 @@ fn bounded_plane_identity_copies_refuse_before_retaining_text() {
 
 #[test]
 fn plane_nurbs_boundary_points_refuse_collection_limit() {
-    let nurbs = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let nurbs = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
         vec![
@@ -101,7 +102,8 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
         ],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -359,7 +361,7 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
         .unwrap(),
         self_intersect: Some(false),
     };
-    let index = ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

@@ -207,8 +207,13 @@ pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
             let identity = self.identity();
             ctx.charge_work(1, "typed reference owner comparison")?;
             if identity.len() == target.len() {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity.len()), "typed reference owner comparison")?;
-                if identity == target { return Ok(()); }
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(identity.len()),
+                    "typed reference owner comparison",
+                )?;
+                if identity == target {
+                    return Ok(());
+                }
             }
             visitor(target)
         })

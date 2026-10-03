@@ -27,7 +27,8 @@ fn test_surface(
     weights: Option<Vec<f64>>,
     u_periodic: bool,
 ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
-    cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, u_knots, u_periodic),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -35,7 +36,8 @@ fn test_surface(
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -46,13 +48,15 @@ fn test_pcurve(
     weights: Option<Vec<f64>>,
 ) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             control_points,
             weights,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -90,13 +94,15 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         ir.model.curves.push(Curve {
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
                     vec![Point3::new(2.0, 2.0, 0.0), Point3::new(2.0, 2.0, 1.0)],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .expect("finite wide spine"),
             )),
             source_object: None,
@@ -137,7 +143,8 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             ),
             None,
         ));
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(
@@ -172,9 +179,16 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         false,
     );
     let expected = Point2::new(0.37, 0.61);
-    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, expected.u, expected.v).unwrap();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
 
-    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
+        &cadmpeg_test_support::service_decode_context(),
         &surface,
         point.get(),
         None,
@@ -186,7 +200,8 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 
-    let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
+    let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
+        &cadmpeg_test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(f64::NAN, 0.5)),
@@ -251,9 +266,21 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         .unwrap();
         assert_eq!(lanes[0].len(), chart.len());
         for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
-            let first_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), &first, lanes[0][ordinal].u, lanes[0][ordinal].v)
+            let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &first,
+                lanes[0][ordinal].u,
+                lanes[0][ordinal].v,
+            )
             .unwrap();
-            let second_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), &second, lanes[1][ordinal].u, lanes[1][ordinal].v)
+            let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &second,
+                lanes[1][ordinal].u,
+                lanes[1][ordinal].v,
+            )
             .unwrap();
             assert!((first_point.x - second_point.x).abs() < 1.0e-10);
             assert!((first_point.y - second_point.y).abs() < 1.0e-10);
@@ -322,9 +349,21 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         )
         .unwrap();
         for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
-            let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), &cylinder, cylinder_uv.u, cylinder_uv.v)
+            let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cylinder,
+                cylinder_uv.u,
+                cylinder_uv.v,
+            )
             .unwrap();
-            let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), &section_plane, plane_uv.u, plane_uv.v)
+            let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &section_plane,
+                plane_uv.u,
+                plane_uv.v,
+            )
             .unwrap();
             assert!((cylinder_point.x - plane_point.x).abs() < 1.0e-8);
             assert!((cylinder_point.y - plane_point.y).abs() < 1.0e-8);
@@ -426,9 +465,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             },
         ]);
         let nurbs_chart = [3.8, 3.9, 4.1, 4.2].map(|u| {
-            cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &periodic_geometry, u, 0.5)
-                .unwrap()
-                .get()
+            cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &periodic_geometry,
+                u,
+                0.5,
+            )
+            .unwrap()
+            .get()
         });
         let nurbs_lanes = continue_surface_intersection_parameters(
             geometry_ctx,
@@ -571,9 +615,15 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         ));
     }
 
-    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let model_index =
+        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     assert_eq!(
-        crate::decode::offset::surface_parameter_periods_with_index(&model_index, &surfaces[0], &cadmpeg_test_support::service_decode_context()).unwrap(),
+        crate::decode::offset::surface_parameter_periods_with_index(
+            &model_index,
+            &surfaces[0],
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .unwrap(),
         [None, None]
     );
 }
@@ -601,9 +651,16 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         false,
     );
     let expected = Point2::new(0.125, 0.3);
-    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, expected.u, expected.v).unwrap();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
 
-    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
+        &cadmpeg_test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(0.875, 0.3)),
@@ -633,9 +690,16 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         false,
     );
     let expected = Point2::new(0.5001, 0.3);
-    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, expected.u, expected.v).unwrap();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
 
-    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
+        &cadmpeg_test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(0.50011, 0.3)),
@@ -660,7 +724,8 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 0.5, 1.0, 1.0],
                     vec![
@@ -670,7 +735,8 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
                     ],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -779,13 +845,15 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         let PcurveGeometry::Nurbs { nurbs } = &mut rational_folded else {
             unreachable!("folded test pcurve is NURBS");
         };
-        *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs.pole_rows().raw_points(),
             Some(vec![1.0; 3]),
             nurbs.periodic(),
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap();
         assert_eq!(
             closest_pcurve_parameters(
@@ -1147,7 +1215,8 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 source_object: None,
             },
         ]);
-        let _attached = ir.model.add_procedural_surface(None, 
+        let _attached = ir.model.add_procedural_surface(
+            None,
             &support_offset,
             ProceduralSurface::new(
                 support_offset_construction.clone(),
@@ -1208,7 +1277,8 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
         );
-        let _attached = ir.model.add_procedural_curve(None, 
+        let _attached = ir.model.add_procedural_curve(
+            None,
             &spine,
             ProceduralCurve::new(
                 spine_procedural,
@@ -1243,7 +1313,8 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         let parameter = 0.35;
         let expected = Point2::new(parameter, 0.0);
         let point = Point3::new(0.0, 0.0, parameter);
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(
@@ -1291,9 +1362,13 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             .unwrap(),
         ));
         let parameter = 1.2;
-        let mut point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, parameter)
-            .unwrap()
-            .get();
+        let mut point = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            parameter,
+        )
+        .unwrap()
+        .get();
         point.y += 3.0;
         ir.model.curves.push(Curve {
             id: ellipse.clone(),

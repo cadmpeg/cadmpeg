@@ -38,18 +38,26 @@ fn cage_edits_roll_back_when_a_vertex_rejects_its_position() {
     let moved = FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap();
     assert!(FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0)).is_none());
     assert!(cage
-        .edit_vertices(|vertices| {
-            vertices[0].set_point(moved);
-            Err(SubdError::EditRefused(
-                "the second vertex rejects its position".into(),
-            ))
-        }, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+        .edit_vertices(
+            |vertices| {
+                vertices[0].set_point(moved);
+                Err(SubdError::EditRefused(
+                    "the second vertex rejects its position".into(),
+                ))
+            },
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("fixture SubD admission")
         .is_err());
     assert_eq!(cage, original);
-    cage.edit_vertices(|vertices| {
-        vertices[0].set_point(moved);
-        Ok(())
-    }, &cadmpeg_test_support::service_decode_context()).expect("fixture SubD admission")
+    cage.edit_vertices(
+        |vertices| {
+            vertices[0].set_point(moved);
+            Ok(())
+        },
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("fixture SubD admission")
     .unwrap();
     assert_eq!(cage.vertices[0].point(), Point3::new(2.0, 3.0, 4.0));
 }

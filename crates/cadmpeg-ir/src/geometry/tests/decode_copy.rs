@@ -116,14 +116,16 @@ surface_copy_limit_test!(
 #[test]
 fn nurbs_curve_copy_refuses_knot_limit() {
     let geometry = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::new(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             NurbsPoles3::Polynomial {
                 points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             },
             false,
-        ).expect("fixture final NURBS admission")
+        )
+        .expect("fixture final NURBS admission")
         .expect("valid NURBS"),
     );
     let arena = DecodeArena::new();
@@ -147,7 +149,9 @@ fn polygonal_surface_copy_refuses_vertex_limit() {
             ],
             vec![[0, 1, 2]],
             0.0,
-         &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polygonal construction admission")
         .expect("valid polygon"),
     );
     let arena = DecodeArena::new();
@@ -167,14 +171,16 @@ fn nurbs_surface_copy_refuses_inner_row_limit() {
         [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
     ];
     let geometry = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(&cadmpeg_test_support::service_decode_context(), 
+        NurbsSurface::new(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsPoleGrid::Polynomial {
                 rows: points.map(Vec::from).into(),
             },
             false,
-        ).expect("fixture final NURBS admission")
+        )
+        .expect("fixture final NURBS admission")
         .expect("valid NURBS surface"),
     );
     let arena = DecodeArena::new();
@@ -191,14 +197,16 @@ fn nurbs_surface_copy_refuses_inner_row_limit() {
 #[test]
 fn pcurve_nurbs_copy_refuses_pole_limit() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: PcurveNurbs::new(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             PcurveNurbsPoles::Polynomial {
                 points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             },
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("valid pcurve NURBS"),
     };
     let arena = DecodeArena::new();
@@ -234,14 +242,16 @@ fn pcurve_carrier_copy_refuses_collection_limit() {
 
 #[test]
 fn pcurve_coordinate_scale_uses_no_collection_items() {
-    let nurbs = PcurveNurbs::new(&cadmpeg_test_support::service_decode_context(), 
+    let nurbs = PcurveNurbs::new(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         PcurveNurbsPoles::Polynomial {
             points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         },
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .expect("valid pcurve NURBS");
     let mut geometry = PcurveGeometry::Nurbs { nurbs };
     let arena = DecodeArena::new();
@@ -263,13 +273,15 @@ fn pcurve_coordinate_scale_uses_no_collection_items() {
 
 #[test]
 fn solved_nurbs_copy_admits_knots_and_poles() {
-    let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("test setup");
     let geometry = SolvedCurveGeometry::Nurbs(curve);
     for (cap, operation) in [
@@ -305,8 +317,15 @@ fn solved_polyline_copy_admits_sample_lane() {
         ])
         .expect("test setup"),
     };
-    let geometry =
-        SolvedCurveGeometry::Polyline(PolylineCurve::new(samples, 0.0, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").expect("test setup"));
+    let geometry = SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(
+            samples,
+            0.0,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polyline construction admission")
+        .expect("test setup"),
+    );
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
@@ -355,7 +374,9 @@ fn polygonal_support_copy_admits_vertices_and_triangles() {
         ],
         vec![[0, 1, 2]],
         0.0,
-     &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polygonal construction admission")
     .expect("test setup");
     for (cap, operation) in [
         (0, "iges copied support polygon vertices"),

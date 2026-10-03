@@ -110,7 +110,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let second_line_id =
         SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
     let spline = SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -121,7 +122,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             ],
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     );
     let first_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -200,13 +202,15 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let diagonal = ProfileEntity::new(
         &ctx,
         SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         ),
         false,
@@ -252,8 +256,18 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             nurbs.pole_rows().weights(),
             Some(vec![1.0, 0.75, 0.75, 1.0])
         );
-        let first = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 2.0).expect("spline start");
-        let last = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 5.0).expect("spline end");
+        let first = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            2.0,
+        )
+        .expect("spline start");
+        let last = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            5.0,
+        )
+        .expect("spline end");
         assert!((first.u - start[0]).abs() < 1.0e-12);
         assert!((first.v - start[1]).abs() < 1.0e-12);
         assert!((last.u - end[0]).abs() < 1.0e-12);
@@ -1861,7 +1875,11 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(outputs, &cadmpeg_test_support::service_decode_context()).expect("distinct output fixture"),
+            cadmpeg_ir::features::DistinctMembers::try_from(
+                outputs,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("distinct output fixture"),
         ),
         native_ref: None,
     };
@@ -1881,8 +1899,11 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     assert!(!preceding_features_establish_body(&ir));
 
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")], &cadmpeg_test_support::service_decode_context())
-            .expect("distinct output fixture"),
+        cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("distinct output fixture"),
     );
     assert!(preceding_features_establish_body(&ir));
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{PatternForm};
+use super::PatternForm;
 
 rewrite_scalar!(PatternForm);
 

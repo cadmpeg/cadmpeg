@@ -278,7 +278,11 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
                 vec![SpatialSketchEntityUse {
                     entity: arc_id,
                     reversed: false,
-                }], &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+                }],
+                &cadmpeg_test_support::service_decode_context(),
+                "spatial profile uniqueness",
+            )
+            .expect("fixture collection admission")
             .unwrap(),
         ],
         native_ref: None,

@@ -87,20 +87,28 @@ struct FiniteGuard<'ctx> {
 }
 
 impl<'ctx> FiniteGuard<'ctx> {
-    fn admit<T, E: serde::ser::Error>(&self, result: Result<T, cadmpeg_core::CodecError>) -> Result<T, E> {
+    fn admit<T, E: serde::ser::Error>(
+        &self,
+        result: Result<T, cadmpeg_core::CodecError>,
+    ) -> Result<T, E> {
         result.map_err(|error| {
             if let cadmpeg_core::CodecError::ResourceLimit(limit) = error {
                 let mut refusal = self.resource.borrow_mut();
-                if refusal.is_none() { *refusal = Some(limit); }
+                if refusal.is_none() {
+                    *refusal = Some(limit);
+                }
             }
             E::custom("canonical JSON resource admission refused")
         })
     }
 
     fn enter<E: serde::ser::Error>(&self) -> Result<Option<DepthGuard<'_>>, E> {
-        let Some(ctx) = self.ctx else { return Ok(None); };
+        let Some(ctx) = self.ctx else {
+            return Ok(None);
+        };
         self.admit(ctx.charge_work(1, "walk document digest"))?;
-        self.admit(ctx.enter_nested("walk document digest")).map(Some)
+        self.admit(ctx.enter_nested("walk document digest"))
+            .map(Some)
     }
 
     fn text<E: serde::ser::Error>(&self, bytes: usize) -> Result<(), E> {
@@ -112,7 +120,11 @@ impl<'ctx> FiniteGuard<'ctx> {
 
     /// Returns a guard that has refused nothing.
     fn new(ctx: Option<&'ctx DecodeContext<'ctx>>) -> Self {
-        Self { refused: Cell::new(None), ctx, resource: RefCell::new(None) }
+        Self {
+            refused: Cell::new(None),
+            ctx,
+            resource: RefCell::new(None),
+        }
     }
 
     /// Returns the refused float, if this walk refused one.
@@ -162,8 +174,18 @@ struct FiniteCompound<'guard, C> {
 }
 
 impl<'guard, C> FiniteCompound<'guard, C> {
-    fn new(inner: C, guard: &'guard FiniteGuard<'guard>, depth: Option<DepthGuard<'guard>>, variant_depth: Option<DepthGuard<'guard>>) -> Self {
-        Self { inner, guard, _depth: depth, _variant_depth: variant_depth }
+    fn new(
+        inner: C,
+        guard: &'guard FiniteGuard<'guard>,
+        depth: Option<DepthGuard<'guard>>,
+        variant_depth: Option<DepthGuard<'guard>>,
+    ) -> Self {
+        Self {
+            inner,
+            guard,
+            _depth: depth,
+            _variant_depth: variant_depth,
+        }
     }
 
     fn wrap<'value, T: ?Sized>(&self, value: &'value T) -> FiniteValue<'guard, 'value, T> {
@@ -411,8 +433,12 @@ impl<'guard, S: Serializer> Serializer for FiniteSerializer<'guard, S> {
     fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         if let Some(ctx) = self.guard.ctx {
-            let mut storage = self.guard.admit(ctx.reserve_scoped(0, "format document digest text"))?;
-            let text = self.guard.admit(storage.with_storage(|| ctx.format_retained(format_args!("{value}"), "format document digest text")))?;
+            let mut storage = self
+                .guard
+                .admit(ctx.reserve_scoped(0, "format document digest text"))?;
+            let text = self.guard.admit(storage.with_storage(|| {
+                ctx.format_retained(format_args!("{value}"), "format document digest text")
+            }))?;
             self.guard.text::<S::Error>(text.len())?;
             let result = self.inner.serialize_str(&text);
             drop(text);

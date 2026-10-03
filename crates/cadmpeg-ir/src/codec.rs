@@ -220,7 +220,12 @@ impl DecodeResult {
     ///
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
-    fn new(decoded: Decoded, format: FormatId, container_only: bool, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+    fn new(
+        decoded: Decoded,
+        format: FormatId,
+        container_only: bool,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             body,
@@ -228,10 +233,16 @@ impl DecodeResult {
         } = decoded;
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
-                FormatIdentity::Classified { dialects } => FormatIdentity::classified(dialects.try_clone_for_decode(ctx, "decode result classification")?),
-                FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(ctx.copy_retained_text(format, "decode result classification")?),
+                FormatIdentity::Classified { dialects } => FormatIdentity::classified(
+                    dialects.try_clone_for_decode(ctx, "decode result classification")?,
+                ),
+                FormatIdentity::Unclassified { format } => FormatIdentity::unclassified(
+                    ctx.copy_retained_text(format, "decode result classification")?,
+                ),
             },
-            None => FormatIdentity::unclassified(ctx.copy_retained_text(format.as_str(), "decode result classification")?),
+            None => FormatIdentity::unclassified(
+                ctx.copy_retained_text(format.as_str(), "decode result classification")?,
+            ),
         };
         ir.finalize(ctx)?;
         Ok(Self {
@@ -433,21 +444,30 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let decoded = self.decode_impl(&ctx, root);
         let decoded = match decoded {
             Ok(decoded) => decoded,
-            Err(error) => { ctx.finish_session()?; return Err(error.into()); }
+            Err(error) => {
+                ctx.finish_session()?;
+                return Err(error.into());
+            }
         };
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, &ctx)?;
         if result.report().format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(ctx.format_retained(format_args!(
-                "codec {:?} decoded a {:?} document",
-                C::FORMAT.as_str(),
-                result.report().format()
-            ), "decode format refusal")?)
+            return Err(CodecError::WrongFormat(ctx.format_retained(
+                format_args!(
+                    "codec {:?} decoded a {:?} document",
+                    C::FORMAT.as_str(),
+                    result.report().format()
+                ),
+                "decode format refusal",
+            )?)
             .into());
         }
         crate::validate::evaluation_cycles::admit_evaluation_cycles(&ctx, result.ir())?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(result.report().losses.len()), "decode strict loss scan")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(result.report().losses.len()),
+                    "decode strict loss scan",
+                )?;
                 result
                     .report()
                     .losses
@@ -459,7 +479,10 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             };
         if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DecodeReport>()), "decode strict rejection report")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DecodeReport>()),
+                "decode strict rejection report",
+            )?;
             let rejection = StrictDecodeRejection::new(report, loss_index);
             ctx.finish_session()?;
             return Err(DecodeFailure::StrictRejected { rejection });

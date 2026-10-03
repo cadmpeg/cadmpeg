@@ -1882,8 +1882,10 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
-        match knots_strictly_increasing(&knot_values, |count| ctx.charge_work(count, "IR strict knot order")) {
-            Ok(true) => {},
+        match knots_strictly_increasing(&knot_values, |count| {
+            ctx.charge_work(count, "IR strict knot order")
+        }) {
+            Ok(true) => {}
             Ok(false) => return None,
             Err(error) => return Some(Err(error)),
         }
@@ -4917,25 +4919,27 @@ fn lift_pcurve_endpoints(
     endpoints: [[f64; 2]; 2],
 ) -> Result<Option<[FinitePoint3; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if let B5Surface::Nurbs(surface) = surface {
-        let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-                ctx,
-                surface,
-                endpoints[0][0],
-                endpoints[0][1],
-            ))?,
-        )?
+        let Some(start) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    ctx,
+                    surface,
+                    endpoints[0][0],
+                    endpoints[0][1],
+                ),
+            )?)?
         else {
             return Ok(None);
         };
-        let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
-                ctx,
-                surface,
-                endpoints[1][0],
-                endpoints[1][1],
-            ))?,
-        )?
+        let Some(end) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    ctx,
+                    surface,
+                    endpoints[1][0],
+                    endpoints[1][1],
+                ),
+            )?)?
         else {
             return Ok(None);
         };

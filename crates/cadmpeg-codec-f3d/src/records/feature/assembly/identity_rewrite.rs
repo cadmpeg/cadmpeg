@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands, DesignAssemblyLegacySelection, DesignAssemblyLimitKind, DesignAssemblyLimits, DesignAssemblyOperandFrame, DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier, DesignAssemblySolvedFrame, DesignQualifiedAssemblyOperand};
+use super::{
+    DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyAxialOperandTarget,
+    DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands,
+    DesignAssemblyLegacySelection, DesignAssemblyLimitKind, DesignAssemblyLimits,
+    DesignAssemblyOperandFrame, DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
+    DesignAssemblyOperandQualifier, DesignAssemblySolvedFrame, DesignQualifiedAssemblyOperand,
+};
 
 rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form}; native assembly_fields);
 rewrite_native_enum!(DesignAssemblyAlignmentForm, []; {
@@ -33,24 +39,63 @@ rewrite_native_enum!(DesignAssemblyOperandQualifier, []; {
 rewrite_native_record!(DesignAssemblySolvedFrame, []; {reference_record_index, reference_offset, record_byte_offset, class_tag, transform, transform_offset});
 rewrite_native_record!(DesignQualifiedAssemblyOperand, []; {frame, qualifier});
 
-fn assembly_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
-    cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(ctx, value, "legacy_operand_carriers", map, |owner: &DesignAssemblyAlignment| match owner.form.as_ref() {
-        Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, .. }) => Some(carriers),
-        _ => None,
-    })
+fn assembly_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &mut serde_json::Value,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
+        ctx,
+        value,
+        "legacy_operand_carriers",
+        map,
+        |owner: &DesignAssemblyAlignment| match owner.form.as_ref() {
+            Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, .. }) => Some(carriers),
+            _ => None,
+        },
+    )
 }
 
-fn legacy_operand_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
-    let serde_json::Value::Array(operands) = value else { return Ok(()); };
+fn legacy_operand_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &mut serde_json::Value,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let serde_json::Value::Array(operands) = value else {
+        return Ok(());
+    };
     for operand in operands.iter_mut() {
         ctx.charge_work(1, "walk native legacy operand")?;
-        cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(ctx, operand, "selection", map, |owner: &DesignAssemblyLegacyOperands| Some(&owner.point.selection))?;
+        cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
+            ctx,
+            operand,
+            "selection",
+            map,
+            |owner: &DesignAssemblyLegacyOperands| Some(&owner.point.selection),
+        )?;
     }
     if let Some(point) = operands.first_mut() {
         let fields = point.as_object().map_or(0, serde_json::Map::len);
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(fields).checked_mul(12).ok_or_else(|| ctx.refuse_codec_limit("find native legacy construction", u64::MAX - 1, u64::MAX))?, "find native legacy construction")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(fields)
+                .checked_mul(12)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "find native legacy construction",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+            "find native legacy construction",
+        )?;
         if let Some(construction) = point.get_mut("construction") {
-            cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(ctx, construction, "value", map, |owner: &DesignAssemblyLegacyOperands| Some(&owner.point.construction))?;
+            cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
+                ctx,
+                construction,
+                "value",
+                map,
+                |owner: &DesignAssemblyLegacyOperands| Some(&owner.point.construction),
+            )?;
         }
     }
     Ok(())

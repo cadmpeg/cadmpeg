@@ -42,48 +42,77 @@ fn collect_law_curves<'a, R, V, P>(
     Ok(())
 }
 
-pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeContext<'_>, view: crate::native::view::NativeView<'_>, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn check_carrier_reachability(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    view: crate::native::view::NativeView<'_>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let ir = view.ir;
     let mut surfaces = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut curves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut pcurves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut points = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     for face in &ir.model.faces {
-        ctx.charge_work(1, "carrier reference scan")?; surfaces.insert_unique(face.surface.as_str(), ())?; }
+        ctx.charge_work(1, "carrier reference scan")?;
+        surfaces.insert_unique(face.surface.as_str(), ())?;
+    }
     for edge in &ir.model.edges {
         ctx.charge_work(1, "carrier reference scan")?;
-        if let Some(curve) = edge.curve() { curves.insert_unique(curve.as_str(), ())?; }
+        if let Some(curve) = edge.curve() {
+            curves.insert_unique(curve.as_str(), ())?;
+        }
     }
     for coedge in &ir.model.coedges {
         ctx.charge_work(1, "carrier reference scan")?;
-        if let Some(use_) = &coedge.use_curve { curves.insert_unique(use_.curve.as_str(), ())?; }
+        if let Some(use_) = &coedge.use_curve {
+            curves.insert_unique(use_.curve.as_str(), ())?;
+        }
         for use_ in &coedge.pcurves {
-            ctx.charge_work(1, "carrier reference scan")?; pcurves.insert_unique(use_.pcurve.as_str(), ())?; }
+            ctx.charge_work(1, "carrier reference scan")?;
+            pcurves.insert_unique(use_.pcurve.as_str(), ())?;
+        }
     }
     for surface in &ir.model.surfaces {
         ctx.charge_work(1, "carrier reference scan")?;
-        if surface.source_object.is_some() { surfaces.insert_unique(surface.id.as_str(), ())?; }
+        if surface.source_object.is_some() {
+            surfaces.insert_unique(surface.id.as_str(), ())?;
+        }
     }
     for curve in &ir.model.curves {
         ctx.charge_work(1, "carrier reference scan")?;
-        if curve.source_object.is_some() { curves.insert_unique(curve.id.as_str(), ())?; }
+        if curve.source_object.is_some() {
+            curves.insert_unique(curve.id.as_str(), ())?;
+        }
     }
     for loop_ in &ir.model.loops {
         ctx.charge_work(1, "carrier reference scan")?;
         for use_ in loop_.vertex_pcurves() {
-            ctx.charge_work(1, "carrier reference scan")?; pcurves.insert_unique(use_.pcurve.as_str(), ())?; }
+            ctx.charge_work(1, "carrier reference scan")?;
+            pcurves.insert_unique(use_.pcurve.as_str(), ())?;
+        }
     }
     for surface in &ir.model.procedural_surfaces {
         ctx.charge_work(1, "carrier reference scan")?;
-        if let ProceduralSurfaceDefinition::CurveBounded { boundary_pcurves, .. } = surface.definition() {
-            pcurves.extend_unique(boundary_pcurves.iter().map(super::super::ids::PcurveId::as_str))?;
+        if let ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves, ..
+        } = surface.definition()
+        {
+            pcurves.extend_unique(
+                boundary_pcurves
+                    .iter()
+                    .map(super::super::ids::PcurveId::as_str),
+            )?;
         }
     }
     for vertex in &ir.model.vertices {
-        ctx.charge_work(1, "carrier reference scan")?; points.insert_unique(vertex.point.as_str(), ())?; }
+        ctx.charge_work(1, "carrier reference scan")?;
+        points.insert_unique(vertex.point.as_str(), ())?;
+    }
     for point in &ir.model.points {
         ctx.charge_work(1, "carrier reference scan")?;
-        if point.source_object.is_some() { points.insert_unique(point.id.as_str(), ())?; }
+        if point.source_object.is_some() {
+            points.insert_unique(point.id.as_str(), ())?;
+        }
     }
     let surface_owners = BorrowedIdentities::build(ctx, |add| {
         for surface in &ir.model.surfaces {
@@ -118,7 +147,10 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
             _ => {}
         }
     }
-    ctx.charge_work(u64_from_index(ir.model.presentation_layers.len()), "carrier presentation layer scan")?;
+    ctx.charge_work(
+        u64_from_index(ir.model.presentation_layers.len()),
+        "carrier presentation layer scan",
+    )?;
     for item in ir
         .model
         .presentation_layers
@@ -142,7 +174,10 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
 
     for procedural in &ir.model.procedural_surfaces {
         ctx.charge_work(1, "carrier reference scan")?;
-        if let Some(surface) = surface_owners.get_unique(ctx, procedural.id.as_str())?.copied() {
+        if let Some(surface) = surface_owners
+            .get_unique(ctx, procedural.id.as_str())?
+            .copied()
+        {
             surfaces.insert_unique(surface.as_str(), ())?;
         }
         match procedural.definition() {
@@ -220,7 +255,12 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
                         }
                     }
                 }
-                for scale in construction.scales.as_slice().iter().chain(extra_scales.into_iter().flatten()) {
+                for scale in construction
+                    .scales
+                    .as_slice()
+                    .iter()
+                    .chain(extra_scales.into_iter().flatten())
+                {
                     ctx.charge_work(1, "carrier reference scan")?;
                     curves.insert_unique(scale.path.as_str(), ())?;
                     curves.extend_unique(
@@ -266,7 +306,12 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
                     }
                 }
                 curves.insert_unique(construction.tail_curve.as_str(), ())?;
-                for scale in construction.scales.as_slice().iter().chain(extra_scales.into_iter().flatten()) {
+                for scale in construction
+                    .scales
+                    .as_slice()
+                    .iter()
+                    .chain(extra_scales.into_iter().flatten())
+                {
                     ctx.charge_work(1, "carrier reference scan")?;
                     curves.insert_unique(scale.path.as_str(), ())?;
                     curves.extend_unique(
@@ -322,7 +367,10 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
-                ctx.charge_work(u64_from_index(construction.sections.len()), "carrier net section scan")?;
+                ctx.charge_work(
+                    u64_from_index(construction.sections.len()),
+                    "carrier net section scan",
+                )?;
                 for entry in construction
                     .sections
                     .iter()
@@ -399,7 +447,10 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
                 )?;
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
-                ctx.charge_work(u64_from_index(construction.entries().len()), "carrier revision profile entry scan")?;
+                ctx.charge_work(
+                    u64_from_index(construction.entries().len()),
+                    "carrier revision profile entry scan",
+                )?;
                 for member in construction.base_profile().iter().chain(
                     construction
                         .entries()
@@ -501,9 +552,7 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
                         }
                         crate::geometry::SweepSurfaceLayout::ExplicitFormula {
                             formula, ..
-                        } => {
-                            std::slice::from_ref(formula)
-                        }
+                        } => std::slice::from_ref(formula),
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
                         } => {
@@ -633,7 +682,10 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
     }
     for procedural in &ir.model.procedural_curves {
         ctx.charge_work(1, "carrier reference scan")?;
-        if let Some(curve) = curve_owners.get_unique(ctx, procedural.id.as_str())?.copied() {
+        if let Some(curve) = curve_owners
+            .get_unique(ctx, procedural.id.as_str())?
+            .copied()
+        {
             curves.insert_unique(curve.as_str(), ())?;
         }
         match procedural.definition() {
@@ -681,7 +733,8 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
             } => {
                 let supports = intersection.supports();
 
-                surfaces.extend_unique(supports.iter().map(super::super::ids::SurfaceId::as_str))?;
+                surfaces
+                    .extend_unique(supports.iter().map(super::super::ids::SurfaceId::as_str))?;
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) => {
                 let context = definition_payload.context();
@@ -837,24 +890,32 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
     }
     // NativeLinks reports malformed link fields. Read each source link here so
     // one malformed record cannot erase reachability from the other records.
-    view.visit(|work| ctx.charge_work(u64_from_index(work), "carrier native arena scan"), |_, arena, records| {
-        ctx.charge_work(u64_from_index(arena.len()), "carrier native arena comparison")?;
-        if arena == "unknowns" {
-            for record in records.records() {
-                ctx.charge_work(1, "carrier reference scan")?;
-                for link in record.links(ctx)? {
-                    let link = link?;
-                    surfaces.insert_unique(link, ())?;
-                    curves.insert_unique(link, ())?;
+    view.visit(
+        |work| ctx.charge_work(u64_from_index(work), "carrier native arena scan"),
+        |_, arena, records| {
+            ctx.charge_work(
+                u64_from_index(arena.len()),
+                "carrier native arena comparison",
+            )?;
+            if arena == "unknowns" {
+                for record in records.records() {
+                    ctx.charge_work(1, "carrier reference scan")?;
+                    for link in record.links(ctx)? {
+                        let link = link?;
+                        surfaces.insert_unique(link, ())?;
+                        curves.insert_unique(link, ())?;
+                    }
                 }
             }
-        }
-        Ok(())
-    })?;
+            Ok(())
+        },
+    )?;
     let composite_segments = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
             ctx.charge_work(1, "carrier reference scan")?;
-            if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) = &curve.geometry {
+            if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+                &curve.geometry
+            {
                 add(curve.id.as_str(), segments)?;
             }
         }
@@ -864,18 +925,26 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
     let mut reachable_curves = Vec::new();
     for curve in curves.identities() {
         ctx.charge_work(1, "carrier reference scan")?;
-        queue_storage.with_storage(|| ctx.push_retained_vec(&mut reachable_curves, curve, "carrier traversal slots"))?;
+        queue_storage.with_storage(|| {
+            ctx.push_retained_vec(&mut reachable_curves, curve, "carrier traversal slots")
+        })?;
     }
     let mut next = 0;
     while let Some(curve) = reachable_curves.get(next).copied() {
         ctx.charge_work(1, "carrier traversal pop")?;
         next += 1;
         if let Some(segments) = composite_segments.get(ctx, curve)? {
-            for segment in segments.iter() {
+            for segment in *segments {
                 ctx.charge_work(1, "carrier reference scan")?;
                 let identity = segment.curve.as_str();
                 if curves.insert_unique(identity, ())? {
-                    queue_storage.with_storage(|| ctx.push_retained_vec(&mut reachable_curves, identity, "carrier traversal slots"))?;
+                    queue_storage.with_storage(|| {
+                        ctx.push_retained_vec(
+                            &mut reachable_curves,
+                            identity,
+                            "carrier traversal slots",
+                        )
+                    })?;
                 }
             }
         }
@@ -886,8 +955,14 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
                 ctx.charge_work(1, "carrier orphan row")?;
                 let id = entity.id.as_str();
                 if !$reachable.contains(ctx, id)? {
-                    super::record_finding(ctx, findings, Check::CarrierReachability, Severity::Error,
-                        Some(id), format_args!("orphan {} carrier", $kind))?;
+                    super::record_finding(
+                        ctx,
+                        findings,
+                        Check::CarrierReachability,
+                        Severity::Error,
+                        Some(id),
+                        format_args!("orphan {} carrier", $kind),
+                    )?;
                 }
             }
         };
@@ -900,9 +975,15 @@ pub(super) fn check_carrier_reachability(ctx: &cadmpeg_core::decode::DecodeConte
     Ok(())
 }
 
-pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn check_parameter_domains(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let curves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
+        for curve in &ir.model.curves {
+            add(curve.id.as_str(), &curve.geometry)?;
+        }
         Ok(())
     })?;
     for edge in &ir.model.edges {
@@ -971,11 +1052,20 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
             }
         }
         if !valid {
-            super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(edge.id.as_str()), format_args!("edge parameter range is outside its canonical carrier domain"))?;
+            super::record_finding(
+                ctx,
+                findings,
+                Check::ParameterDomain,
+                Severity::Error,
+                Some(edge.id.as_str()),
+                format_args!("edge parameter range is outside its canonical carrier domain"),
+            )?;
         }
     }
     let pcurves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for pcurve in &ir.model.pcurves { add(pcurve.id.as_str(), &pcurve.geometry)?; }
+        for pcurve in &ir.model.pcurves {
+            add(pcurve.id.as_str(), &pcurve.geometry)?;
+        }
         Ok(())
     })?;
     for coedge in &ir.model.coedges {
@@ -992,7 +1082,14 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
                     });
             }
             if !valid {
-                super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(coedge.id.as_str()), format_args!("coedge use-curve range is outside its carrier domain"))?;
+                super::record_finding(
+                    ctx,
+                    findings,
+                    Check::ParameterDomain,
+                    Severity::Error,
+                    Some(coedge.id.as_str()),
+                    format_args!("coedge use-curve range is outside its carrier domain"),
+                )?;
             }
         }
         for use_ in &coedge.pcurves {
@@ -1021,7 +1118,14 @@ pub(super) fn check_parameter_domains(ctx: &cadmpeg_core::decode::DecodeContext<
                 }
             }
             if !valid {
-                super::record_finding(ctx, findings, Check::ParameterDomain, Severity::Error, Some(coedge.id.as_str()), format_args!("coedge pcurve range is outside its carrier domain"))?;
+                super::record_finding(
+                    ctx,
+                    findings,
+                    Check::ParameterDomain,
+                    Severity::Error,
+                    Some(coedge.id.as_str()),
+                    format_args!("coedge pcurve range is outside its carrier domain"),
+                )?;
             }
         }
     }
@@ -1053,7 +1157,10 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 ///
 /// The match is exhaustive, so a new pcurve variant states its answer here.
 /// Each carrier visit enters the caller session and admits its work.
-fn pcurve_requires_bounded_domain(ctx: &cadmpeg_core::decode::DecodeContext<'_>, geometry: &PcurveGeometry) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+fn pcurve_requires_bounded_domain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &PcurveGeometry,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let _depth = ctx.enter_nested_limit("pcurve bounded domain nesting")?;
     ctx.charge_work_limit(1, "pcurve bounded domain visit")?;
     Ok(match geometry {

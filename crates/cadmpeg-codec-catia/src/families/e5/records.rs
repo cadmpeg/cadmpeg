@@ -90,13 +90,9 @@ impl E5RollingBallJet {
         let stations =
             ctx.copy_retained_slice(&self.stations, "catia_e5_rolling_ball_definition_stations")?;
         Ok(
-            cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
-                Self::DEGREE,
-                stations,
-                ctx,
-            )?
-            .ok()
-            .map(ProceduralSurfaceDefinition::RollingBallJet),
+            cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations, ctx)?
+                .ok()
+                .map(ProceduralSurfaceDefinition::RollingBallJet),
         )
     }
 }
@@ -851,7 +847,8 @@ fn e5_nurbs_surface(
     };
     crate::nurbs::note_refusal(
         ctx,
-        NurbsSurface::new(ctx, 
+        NurbsSurface::new(
+            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
                 cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, u_knots)?

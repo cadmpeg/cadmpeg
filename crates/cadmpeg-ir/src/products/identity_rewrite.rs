@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{AssemblyJoint, CopyOnChange, CopyOnChangePolicy, ExternalDocument, JointConnector, JointLimitRange, JointLimits, JointOperand, JointOperands, LinkState, Occurrence, OccurrenceParent, OperandContainer, PairedJointKind, ProductDefinition, ProductDefinitionKind, PrototypeReference};
+use super::{
+    AssemblyJoint, CopyOnChange, CopyOnChangePolicy, ExternalDocument, JointConnector,
+    JointLimitRange, JointLimits, JointOperand, JointOperands, LinkState, Occurrence,
+    OccurrenceParent, OperandContainer, PairedJointKind, ProductDefinition, ProductDefinitionKind,
+    PrototypeReference,
+};
 
 rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, native_ref});
 rewrite_record!(CopyOnChange, []; {policy, source, group, touched});

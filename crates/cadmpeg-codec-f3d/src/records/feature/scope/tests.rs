@@ -286,7 +286,11 @@ fn a_flattened_scope_reader_names_the_null_key_it_refuses() {
 
 #[test]
 fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
-    use crate::records::feature::work_geometry::{DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule, DesignWorkPointRuleForm, DesignVertexRecipe, DesignWorkPlaneConstruction};
+    use crate::records::feature::work_geometry::{
+        DesignVertexRecipe, DesignWorkPlaneConstruction, DesignWorkPointConstruction,
+        DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
+        DesignWorkPointRuleForm,
+    };
     let reference = serde_json::json!({
         "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
         "design_reference": 1, "design_reference_offset": 3,
@@ -300,40 +304,115 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         "recipe_prefix_bytes": "AP8=", "recipe_references": [reference],
         "recipe_program_offset": 43, "recipe_program": [0], "next_record_index": 7, "next_byte_offset": 50
     })).unwrap();
-    let plane = DesignWorkPlaneConstruction::try_new(21, Box::new([recipe.clone(), recipe.clone(), recipe.clone()])).unwrap();
-    let plane_scope = super::DesignParameterScope::empty("f3d:design:scope#plane", super::DesignScopePayload::WorkPlane(Some(super::DesignWorkPlaneTransform {
-        work_plane_transform: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]].try_into().unwrap(),
-        work_plane_transform_offset: 0, reference: None, work_plane_construction: Some(plane),
-    })), 1);
-    let input = DesignWorkPointInput::try_new(2, 12, Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe { recipe }))).unwrap();
+    let plane = DesignWorkPlaneConstruction::try_new(
+        21,
+        Box::new([recipe.clone(), recipe.clone(), recipe.clone()]),
+    )
+    .unwrap();
+    let plane_scope = super::DesignParameterScope::empty(
+        "f3d:design:scope#plane",
+        super::DesignScopePayload::WorkPlane(Some(super::DesignWorkPlaneTransform {
+            work_plane_transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+            work_plane_transform_offset: 0,
+            reference: None,
+            work_plane_construction: Some(plane),
+        })),
+        1,
+    );
+    let input = DesignWorkPointInput::try_new(
+        2,
+        12,
+        Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+            recipe,
+        })),
+    )
+    .unwrap();
     let rule = DesignWorkPointRule::try_from(DesignWorkPointRuleForm::Vertex { input }).unwrap();
-    let mut scope = super::DesignParameterScope::empty("f3d:design:scope#1", super::DesignScopePayload::WorkPoint(None), 1);
+    let mut scope = super::DesignParameterScope::empty(
+        "f3d:design:scope#1",
+        super::DesignScopePayload::WorkPoint(None),
+        1,
+    );
     if let super::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
         *slot = Some(DesignWorkPointConstruction {
-            point_record_index: 21, point_record_byte_offset: 0,
-            position: crate::test_support::reals([4.0, 3.0, 0.0]), position_offset: 0, rule, reference_type_offset: 0,
+            point_record_index: 21,
+            point_record_byte_offset: 0,
+            position: crate::test_support::reals([4.0, 3.0, 0.0]),
+            position_offset: 0,
+            rule,
+            reference_type_offset: 0,
         });
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut native = cadmpeg_ir::native::NativeNamespace::default();
-    native.set_arena(&ctx, "design_parameter_scopes", std::slice::from_ref(&scope)).unwrap();
+    native
+        .set_arena(
+            &ctx,
+            "design_parameter_scopes",
+            std::slice::from_ref(&scope),
+        )
+        .unwrap();
     let record = &native.arenas()["design_parameter_scopes"][0];
-    let remap = |id: &str| ctx.format_retained(format_args!("f3d:occurrence:{}", id.strip_prefix("f3d:model:").unwrap()), "test native identity");
-    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed walk", scope.clone(), remap).unwrap();
-    let mut expected = serde_json::to_value(expected).unwrap().as_object().unwrap().clone();
+    let remap = |id: &str| {
+        ctx.format_retained(
+            format_args!("f3d:occurrence:{}", id.strip_prefix("f3d:model:").unwrap()),
+            "test native identity",
+        )
+    };
+    let expected =
+        cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed walk", scope.clone(), remap)
+            .unwrap();
+    let mut expected = serde_json::to_value(expected)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
     expected.remove("id");
-    let fields = record.rewrite_fields::<super::DesignParameterScope, _>(&ctx, remap).unwrap();
+    let fields = record
+        .rewrite_fields::<super::DesignParameterScope, _>(&ctx, remap)
+        .unwrap();
     assert_eq!(fields, expected);
-    assert_eq!(fields["work_point_construction"]["rule"]["input"]["carrier"]["recipe"]["recipe_references"][0]["token"], "f3d:model:face#one");
-    native.set_arena(&ctx, "design_parameter_scopes", std::slice::from_ref(&plane_scope)).unwrap();
+    assert_eq!(
+        fields["work_point_construction"]["rule"]["input"]["carrier"]["recipe"]
+            ["recipe_references"][0]["token"],
+        "f3d:model:face#one"
+    );
+    native
+        .set_arena(
+            &ctx,
+            "design_parameter_scopes",
+            std::slice::from_ref(&plane_scope),
+        )
+        .unwrap();
     let record = &native.arenas()["design_parameter_scopes"][0];
-    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed plane walk", plane_scope, remap).unwrap();
-    let mut expected = serde_json::to_value(expected).unwrap().as_object().unwrap().clone();
+    let expected =
+        cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed plane walk", plane_scope, remap)
+            .unwrap();
+    let mut expected = serde_json::to_value(expected)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
     expected.remove("id");
-    let fields = record.rewrite_fields::<super::DesignParameterScope, _>(&ctx, remap).unwrap();
+    let fields = record
+        .rewrite_fields::<super::DesignParameterScope, _>(&ctx, remap)
+        .unwrap();
     assert_eq!(fields, expected);
-    for input in fields["work_plane_construction"]["inputs"].as_array().unwrap() {
-        assert_eq!(input["recipe_references"][0]["candidate_faces"][0], "f3d:occurrence:face#one");
+    for input in fields["work_plane_construction"]["inputs"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(
+            input["recipe_references"][0]["candidate_faces"][0],
+            "f3d:occurrence:face#one"
+        );
         assert_eq!(input["recipe_references"][0]["token"], "f3d:model:face#one");
     }
     ctx.finish_session().unwrap();

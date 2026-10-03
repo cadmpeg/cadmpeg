@@ -1606,13 +1606,15 @@ mod tests {
     fn rejects_nurbs_unit_overflow_without_committing_nonfinite_poles() {
         let curve_id = cadmpeg_ir::ids::CurveId::mint("test:model:entity#overflow-curve")
             .expect("identity grammar");
-        let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("finite NURBS fixture");
         let mut ir = CadIr::empty();
         let error = crate::decode::with_test_decode_ctx(|ctx| {

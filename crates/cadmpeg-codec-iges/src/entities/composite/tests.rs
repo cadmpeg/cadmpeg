@@ -528,7 +528,16 @@ fn test_nurbs(
     control_points: Vec<Point3>,
     weights: Option<Vec<f64>>,
 ) -> NurbsCurve {
-    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), degree, knots, control_points, weights, false).expect("fixture constructor admission").expect("valid test NURBS")
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        degree,
+        knots,
+        control_points,
+        weights,
+        false,
+    )
+    .expect("fixture constructor admission")
+    .expect("valid test NURBS")
 }
 
 #[test]
@@ -1575,12 +1584,20 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
             Some(vec![1.0, 3.0]),
         );
-        let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 0.25)
-            .expect("valid rational linear NURBS evaluates before degree elevation");
+        let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            0.25,
+        )
+        .expect("valid rational linear NURBS evaluates before degree elevation");
         elevate_nurbs_to_degree(decode_ctx, &mut curve, [0.0, 1.0], 2, None)
             .expect("elevation lanes pair");
-        let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 0.25)
-            .expect("valid rational quadratic NURBS evaluates after degree elevation");
+        let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            0.25,
+        )
+        .expect("valid rational quadratic NURBS evaluates after degree elevation");
         assert!(before.distance(after.get()) <= 1.0e-12);
         assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
         assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 3.0]));

@@ -25,10 +25,10 @@ use crate::records::{
     feature::scope::DesignParameterScope,
     references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
     sketch_geometry::{
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
-        SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
-        SketchSurface, SketchSurfaceGeometry, SketchText, SketchTextAlignment, SketchTextLayout,
-        SketchGeometryError,
+        SketchCurveGeometry, SketchCurveIdentity, SketchGeometryError, SketchPoint,
+        SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+        SketchPointRecordForm, SketchSurface, SketchSurfaceGeometry, SketchText,
+        SketchTextAlignment, SketchTextLayout,
     },
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
@@ -4523,7 +4523,11 @@ fn admit_source_sketch_nurbs(
         return Ok(None);
     };
     match crate::records::sketch_geometry::SketchNurbsGeometry::from_checked_parts(
-        RecordAdmission::Charged(ctx), degree, fit_tolerance_mm, knots, poles,
+        RecordAdmission::Charged(ctx),
+        degree,
+        fit_tolerance_mm,
+        knots,
+        poles,
     ) {
         Ok(geometry) => Ok(Some(geometry)),
         Err(SketchGeometryError::Invalid(_)) => Ok(None),

@@ -11,9 +11,7 @@ use cadmpeg_ir::geometry::nurbs::NurbsError;
 use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPole2};
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
-    sampled::{
-PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
-    },
+    sampled::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex},
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -1150,7 +1148,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                                 .copy_slice(triangles, "FreeCAD polygonal surface triangles")?,
                             triangulation.deflection,
                             *deflection_scale,
-                         self.ctx)?
+                            self.ctx,
+                        )?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
                     source_object: Some(self.source_association()?),
@@ -1343,23 +1342,19 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 id: loop_id.try_clone_for_decode(self.ctx, "FreeCAD loop record identity")?,
                 face: face_id.try_clone_for_decode(self.ctx, "FreeCAD loop face identity")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(
-                        self.ctx,
-                        coedge_ids,
-                        Vec::new(),
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .map_err(|error| {
-                        crate::resource::malformed_charged(
-                            self.ctx,
-                            format_args!(
-                                "FCStd face {} loop {} has invalid ring: {error}",
-                                face_id,
-                                loop_index + 1,
-                            ),
-                            "FreeCAD face ring diagnostic",
-                        )
-                    })?,
+                    cadmpeg_ir::topology::LoopRing::new(self.ctx, coedge_ids, Vec::new())
+                        .map_err(cadmpeg_core::CodecError::from)?
+                        .map_err(|error| {
+                            crate::resource::malformed_charged(
+                                self.ctx,
+                                format_args!(
+                                    "FCStd face {} loop {} has invalid ring: {error}",
+                                    face_id,
+                                    loop_index + 1,
+                                ),
+                                "FreeCAD face ring diagnostic",
+                            )
+                        })?,
                 ),
             });
             self.bind_topology(
@@ -2341,7 +2336,8 @@ pub(crate) fn pcurve_geometry(
             let mut knots = ctx.collection_vec(nurbs.knots.len(), "FreeCAD pcurve knots")?;
             knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
             Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(ctx, 
+                nurbs: PcurveNurbs::new(
+                    ctx,
                     nurbs.degree,
                     cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, knots)??,
                     poles,
@@ -2457,15 +2453,16 @@ fn place_polyline_samples(
     transform: Transform,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    samples.edit_admitted_points(|point| {
-        match transform.apply_point(point.get()) {
+    samples.edit_admitted_points(
+        |point| match transform.apply_point(point.get()) {
             Some(point) => Ok(point),
             None => Err(CodecError::Malformed(ctx.copy_retained_text(
                 "placed polyline sample contains a non-finite coordinate",
                 "FreeCAD polyline placement refusal",
             )?)),
-        }
-    }, ctx)??;
+        },
+        ctx,
+    )??;
     Ok(())
 }
 

@@ -1140,7 +1140,7 @@ fn local() {
         self.assertEqual(self.findings("uncharged_decode_sort"), [])
 
     def test_ir_decode_paths_without_context_are_rejected(self) -> None:
-        for path in ("document.rs", "hash.rs", "eval.rs", "codec.rs", "native/mod.rs",
+        for path in ("document.rs", "hash.rs", "eval.rs", "eval/sweep_law.rs", "codec.rs", "native/mod.rs",
                      "math/planar.rs", "validate/topology.rs"):
             with self.subTest(path=path):
                 self.write(f"crates/cadmpeg-ir/src/{path}", "fn order() { values.sort(); }")

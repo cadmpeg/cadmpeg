@@ -847,8 +847,14 @@ impl CanonMap<'_> {
     fn insert<T: Serialize + ?Sized>(&mut self, key: String, value: &T) -> Result<(), Error> {
         let depth = self.depth;
         let key_bytes = key.len();
-        let work = key_bytes.checked_add(1)
-            .and_then(|bytes| self.entries.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
+        let work = key_bytes
+            .checked_add(1)
+            .and_then(|bytes| {
+                self.entries
+                    .len()
+                    .checked_add(1)
+                    .and_then(|count| bytes.checked_mul(count))
+            })
             .and_then(|units| u64::try_from(units).ok())
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
         self.ctx.charge_work(work, WORK)?;
@@ -860,7 +866,8 @@ impl CanonMap<'_> {
                         error.within(self.ctx, || copy_text(self.ctx, entry.key()).map(Step::Key))
                     })?
                     .into_value();
-                self.ctx.admit_retained_btree_record::<String, Value>(0, STORAGE)?;
+                self.ctx
+                    .admit_retained_btree_record::<String, Value>(0, STORAGE)?;
                 entry.insert(value);
                 Ok(())
             }

@@ -188,8 +188,13 @@ fn selected_edge_ir() -> (CadIr, EdgeId) {
         id: loop_id.clone(),
         face: face_id,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
-                .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                vec![coedge_id.clone()],
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     ir.model.coedges.push(Coedge {
@@ -332,8 +337,10 @@ fn generated_edge_body_refuses_before_merge_row() {
     });
     let edges = [GeneratedEdgeRef::new(
         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50").expect("identity grammar"),
-        "curve#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-    ).expect("selection reference admission")
+        "curve#7".to_string(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection reference admission")
     .expect("valid generated edge")];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -378,11 +385,15 @@ fn generated_input_body_refuses_before_merge_row() {
                     vec![GeneratedFaceRef::new(
                         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                             .expect("identity grammar"),
-                        "surface#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-                    ).expect("selection reference admission")
+                        "surface#7".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
                     .expect("valid generated face")],
-                    "creo:test:face#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-                ).expect("selection reference admission")
+                    "creo:test:face#7".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("selection reference admission")
                 .expect("valid face selection"),
                 thickness: None,
                 side: None,
@@ -723,11 +734,15 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
                     vec![GeneratedFaceRef::new(
                         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                             .expect("identity grammar"),
-                        "surface#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-                    ).expect("selection reference admission")
+                        "surface#7".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
                     .expect("valid test fixture")],
-                    "creo:generated-face#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-                ).expect("selection reference admission")
+                    "creo:generated-face#7".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("selection reference admission")
                 .expect("valid test fixture"),
                 thickness: None,
                 side: None,
@@ -827,11 +842,15 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
                     vec![GeneratedFaceRef::new(
                         cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
                             .expect("identity grammar"),
-                        "surface#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-                    ).expect("selection reference admission")
+                        "surface#7".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("selection reference admission")
                     .expect("valid test fixture")],
-                    "creo:generated-face#7".to_string(), &cadmpeg_test_support::service_decode_context(),
-                ).expect("selection reference admission")
+                    "creo:generated-face#7".to_string(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("selection reference admission")
                 .expect("valid test fixture"),
                 thickness: None,
                 side: None,
@@ -954,8 +973,13 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
-                .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                vec![coedge_id.clone()],
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     ir.model.coedges.push(Coedge {
@@ -983,8 +1007,13 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         face: FaceId::mint("test:model:entity#creo:ambiguous:face".to_string())
             .expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
-                .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                vec![coedge_id.clone()],
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     assert!(

@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignBaseFlangeOperation, DesignBendPosition, DesignEdgeFlangeEdge, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeSelection, DesignEdgeFlangeShape, DesignEdgeFlangeWidthParameterSource, DesignFlangeEdgeWidth, DesignHemOperation, DesignHemParameterOwners, DesignRecipeGroupIndex, DesignSheetMetalHeightDatum};
+use super::{
+    DesignBaseFlangeOperation, DesignBendPosition, DesignEdgeFlangeEdge,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeSelection,
+    DesignEdgeFlangeShape, DesignEdgeFlangeWidthParameterSource, DesignFlangeEdgeWidth,
+    DesignHemOperation, DesignHemParameterOwners, DesignRecipeGroupIndex,
+    DesignSheetMetalHeightDatum,
+};
 
 rewrite_native_record!(DesignBaseFlangeOperation, []; {thickness, thickness_offset, profile_group_record_index, profile_record_index, thickness_record_index, settings_record_index});
 rewrite_native_scalar!(DesignBendPosition);

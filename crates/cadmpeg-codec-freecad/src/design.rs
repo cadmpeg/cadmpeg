@@ -496,11 +496,7 @@ pub(crate) fn transfer(
             dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
-        dependency_members.append(
-            ctx,
-            dependencies,
-            "fcstd distinct feature dependencies",
-        )?;
+        dependency_members.append(ctx, dependencies, "fcstd distinct feature dependencies")?;
         ctx.reserve_vec(&mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
@@ -2101,7 +2097,8 @@ fn sketch_nurbs(
         return Ok(None);
     };
     Ok(Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(ctx, 
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+            ctx,
             lanes.degree,
             lanes.knots,
             lanes.control_points,
@@ -4335,7 +4332,12 @@ fn endpoint_candidates(
             }
         }
     }
-    ctx.sort_unstable_by(&mut matches, Ord::cmp, |_| 0, "FCStd profile candidate order")?;
+    ctx.sort_unstable_by(
+        &mut matches,
+        Ord::cmp,
+        |_| 0,
+        "FCStd profile candidate order",
+    )?;
     Ok(matches)
 }
 
@@ -6016,7 +6018,7 @@ fn section_shape_definition(
         BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
     let tool =
         BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
-    cadmpeg_ir::features::SectionOperands::new(base, tool, ctx,)?
+    cadmpeg_ir::features::SectionOperands::new(base, tool, ctx)?
         .ok()
         .map(|operands| -> Result<_, CodecError> {
             Ok(FeatureDefinition::Operation(
@@ -6702,7 +6704,8 @@ fn boolean_definition(
             )?),
         )
     };
-    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx,)?.ok() else {
+    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?.ok()
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(

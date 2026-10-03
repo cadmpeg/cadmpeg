@@ -27,18 +27,21 @@ use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
-        .insert(Surface {
-            id: SurfaceId::mint(id).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        }, &cadmpeg_test_support::service_decode_context())
+        .insert(
+            Surface {
+                id: SurfaceId::mint(id).expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
         .expect("insert surface into draft");
     draft
 }
@@ -61,20 +64,20 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 
     let mut rejected_root = surface_draft(rejected_id);
     rejected_root
-        .insert(Vertex {
-            id: "step:data:vertex#rejected"
-                .try_into()
-                .expect("valid identity"),
-            point: "step:data:point#missing"
-                .try_into()
-                .expect("valid identity"),
-            tolerance: None,
-        }, &ctx)
+        .insert(
+            Vertex {
+                id: "step:data:vertex#rejected"
+                    .try_into()
+                    .expect("valid identity"),
+                point: "step:data:point#missing"
+                    .try_into()
+                    .expect("valid identity"),
+                tolerance: None,
+            },
+            &ctx,
+        )
         .expect("insert invalid root reference");
-    assert!(session
-        .commit_model(rejected_root)
-        .unwrap()
-        .is_err());
+    assert!(session.commit_model(rejected_root).unwrap().is_err());
 
     let mut later_root = surface_draft(rejected_id);
     drop_committed_surfaces(&mut later_root, &mut session, &ctx).unwrap();
@@ -119,8 +122,9 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         .unwrap(),
     );
 
-    let fit = pcurve_declared_endpoint_fit(&cadmpeg_test_support::service_decode_context(), 
-        &ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex),
+    let fit = pcurve_declared_endpoint_fit(
+        &cadmpeg_test_support::service_decode_context(),
+        &ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
         &surface_id,
         &pcurve,
         [
@@ -170,9 +174,14 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         .unwrap(),
     );
     let exact_parameter = std::f64::consts::PI;
-    let exact_uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, exact_parameter).expect("witness pcurve is evaluable");
+    let exact_uv = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve,
+        exact_parameter,
+    )
+    .expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
-    let index = ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) =
@@ -184,7 +193,12 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         .expect("resource allocation did not fail")
         .expect("bounded search returns an evaluated witness");
     assert!(bounded.0 > cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
-    let exact = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, exact_parameter).expect("exact point remains evaluable");
+    let exact = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve,
+        exact_parameter,
+    )
+    .expect("exact point remains evaluable");
     assert!(Point3::new(exact.u, exact.v, 0.0).distance(target) <= f64::EPSILON);
 }
 
@@ -275,12 +289,23 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
             _ => None,
         })
         .expect("3D circle carrier");
-    let index = ModelIndex::new(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     let point_set_residual = |fraction: f64| {
         let parameter = parameter_range[0].mul_add(1.0 - fraction, parameter_range[1] * fraction);
-        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter).expect("evaluate pcurve");
-        let mapped = model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, uv.u, uv.v)
-            .expect("map pcurve through plane");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            parameter,
+        )
+        .expect("evaluate pcurve");
+        let mapped = model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            uv.u,
+            uv.v,
+        )
+        .expect("map pcurve through plane");
         (mapped.distance(curve_center) - curve_radius).abs()
     };
 

@@ -168,8 +168,10 @@ fn decode_and_validate_compact_delete_body_selection() {
                 };
                 *bodies = cadmpeg_ir::features::BodySelection::local(
                     vec!["287".into(), "115".into()],
-                    "sldprt:feature-input:body-ids:287,115".into(), &cadmpeg_test_support::service_decode_context(),
-                ).expect("body selection admission")
+                    "sldprt:feature-input:body-ids:287,115".into(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("body selection admission")
                 .unwrap();
                 *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
             });

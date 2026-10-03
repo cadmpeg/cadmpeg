@@ -26,9 +26,23 @@ fn parameter_real_admission_preserves_finite_signed_wire_values() {
 fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
     let first = ParameterId::mint("test:test:parameter#first").unwrap();
     let second = ParameterId::mint("test:test:parameter#second").unwrap();
-    assert!(DistinctMembers::try_from(vec![first.clone(), first.clone()], &cadmpeg_test_support::service_decode_context()).is_err());
-    let mut dependencies = DistinctMembers::try_from(vec![second.clone(), first.clone()], &cadmpeg_test_support::service_decode_context()).unwrap();
-    assert!(!dependencies.insert(&cadmpeg_test_support::service_decode_context(), first.clone(), "insert fixture member").expect("member insertion admission"));
+    assert!(DistinctMembers::try_from(
+        vec![first.clone(), first.clone()],
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .is_err());
+    let mut dependencies = DistinctMembers::try_from(
+        vec![second.clone(), first.clone()],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .unwrap();
+    assert!(!dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            first.clone(),
+            "insert fixture member"
+        )
+        .expect("member insertion admission"));
     assert_eq!(dependencies.as_slice(), &[second.clone(), first.clone()]);
     dependencies.retain(|id| id == &first);
     assert_eq!(dependencies.as_slice(), std::slice::from_ref(&first));
@@ -75,7 +89,13 @@ fn distinct_constructor_preserves_collection_refusal_in_the_caller_session() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let member = ParameterId::mint("test:model:parameter#member").unwrap();
-    let Err(crate::features::FeatureCollectionError::Resource(limit)) = DistinctMembers::try_from(vec![member], &ctx) else { panic!("member slot must be refused"); };
+    let Err(crate::features::FeatureCollectionError::Resource(limit)) =
+        DistinctMembers::try_from(vec![member], &ctx)
+    else {
+        panic!("member slot must be refused");
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
 }

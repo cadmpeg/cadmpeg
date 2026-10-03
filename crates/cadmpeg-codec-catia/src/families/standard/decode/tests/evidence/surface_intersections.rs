@@ -518,7 +518,10 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                         },
                     },
                 })
-                .collect(), &cadmpeg_test_support::service_decode_context()).expect("fixture rolling-ball admission")
+                .collect(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture rolling-ball admission")
         .expect("valid RollingBallJetStations fixture"),
     );
     let native = StandardEdgeSupport {
@@ -703,7 +706,8 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                     None,
                 )
             }));
-        standard_spline_line(&cadmpeg_test_support::service_decode_context(), 
+        standard_spline_line(
+            &cadmpeg_test_support::service_decode_context(),
             &ir,
             &[(
                 SurfaceId::mint("catia:test:surface#surface".to_string())

@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{CirclePcurve, EllipsePcurve, HarmonicPcurve, HyperbolaPcurve, HyperbolicPcurve, LinePcurve, OffsetPcurve, ParabolaPcurve, Pcurve, PcurveGeneralForm, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles, PlacedPcurve, PolarHarmonicPcurve, PolarNurbsPole, PolarNurbsPoles, PolarPcurveNurbs, SphericalGreatCirclePcurve, TrimmedPcurve, WeightedPolarNurbsPole, WeightedPole2};
+use super::{
+    CirclePcurve, EllipsePcurve, HarmonicPcurve, HyperbolaPcurve, HyperbolicPcurve, LinePcurve,
+    OffsetPcurve, ParabolaPcurve, Pcurve, PcurveGeneralForm, PcurveGeometry, PcurveInlineForm,
+    PcurveMetadata, PcurveNurbs, PcurveNurbsPoles, PlacedPcurve, PolarHarmonicPcurve,
+    PolarNurbsPole, PolarNurbsPoles, PolarPcurveNurbs, SphericalGreatCirclePcurve, TrimmedPcurve,
+    WeightedPolarNurbsPole, WeightedPole2,
+};
 
 rewrite_scalar!(CirclePcurve);
 rewrite_scalar!(EllipsePcurve);

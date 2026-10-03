@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use super::{
-    persistent_design_links,
-    persistent_subentity_tags, Brep,
-};
+use super::graph_ops::AdjacencyRow;
+use super::graph_ops::{collect_brep_references, insert_brep_adjacency};
+use super::{persistent_design_links, persistent_subentity_tags, Brep};
 use crate::records::recipes::CreationTimestamp;
 use crate::records::sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink};
 use cadmpeg_asm::brep::annotations::AnnotationRecord;
@@ -14,9 +13,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::{FaceId, RegionId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use super::graph_ops::{collect_brep_references, insert_brep_adjacency};
-use super::graph_ops::ordered::Key;
+use std::collections::{HashMap, HashSet};
 mod structural_budget;
 
 fn with_limits<T>(
@@ -458,8 +455,8 @@ fn brep_retention_rebuild_refuses_materialized_limit() {
 fn brep_adjacency_reference_refuses_retained_limit() {
     let value = serde_value::Value::String("f3d:brep:entity#1".to_owned());
     let error = with_limits(u64::MAX, 0, |ctx| {
-        let owned = BTreeSet::from([Key::owned(ctx, "f3d:brep:entity#1".to_owned())]);
-        collect_brep_references(ctx, &value, &owned, &mut BTreeSet::new()).unwrap_err()
+        let owned = vec!["f3d:brep:entity#1".to_owned()];
+        collect_brep_references(ctx, &value, &owned, &mut Vec::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -470,7 +467,7 @@ fn brep_adjacency_reference_refuses_retained_limit() {
 #[test]
 fn brep_adjacency_index_refuses_collection_limit() {
     let error = with_limits(0, u64::MAX, |ctx| {
-        insert_brep_adjacency(ctx, &mut BTreeMap::new(), "source", "target").unwrap_err()
+        insert_brep_adjacency(ctx, &mut Vec::new(), "source", "target").unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -481,7 +478,10 @@ fn brep_adjacency_index_refuses_collection_limit() {
 #[test]
 fn brep_adjacent_ids_refuse_collection_limit() {
     let error = with_limits(0, u64::MAX, |ctx| {
-        let mut adjacency = BTreeMap::from([(Key::owned(ctx, "source".to_owned()), BTreeSet::new())]);
+        let mut adjacency = vec![AdjacencyRow {
+            source: "source".to_owned(),
+            targets: Vec::new(),
+        }];
         insert_brep_adjacency(ctx, &mut adjacency, "source", "target").unwrap_err()
     });
     assert!(

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Registry-driven validation of every typed entity reference.
 
+use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
-use super::record_finding;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -86,11 +86,14 @@ mod tests {
         ir.model.tessellations.push(tessellation);
         let mut findings = Vec::new();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let index = ModelIndex::new(&ir, crate::index::StandardIndex);
+        let index = ModelIndex::build(&ir, crate::index::StandardIndex);
         let identities = super::BorrowedIdentities::build(&ctx, |add| {
-            for id in index.identities(&ctx) { add(id?, ())?; }
+            for id in index.identities(&ctx) {
+                add(id?, ())?;
+            }
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
         assert!(findings.iter().any(|finding| {
             finding.check == Check::ReferentialIntegrity
@@ -107,12 +110,17 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         ir.model.vertices.push(crate::topology::Vertex {
             id: "test:model:vertex#owner".try_into().unwrap(),
-            point: "test:model:point#missing".try_into().unwrap(), tolerance: None,
+            point: "test:model:point#missing".try_into().unwrap(),
+            tolerance: None,
         });
         let source = cadmpeg_test_support::service_decode_context();
         let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth,
-            ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RecursionDepth,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::RetainedBytes,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -124,10 +132,16 @@ mod tests {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut findings = Vec::new();
-            let Err(CodecError::ResourceLimit(limit)) = check_typed_references(&ctx, &ir, &identities, &mut findings) else { panic!("typed reference validation must refuse"); };
+            let Err(CodecError::ResourceLimit(limit)) =
+                check_typed_references(&ctx, &ir, &identities, &mut findings)
+            else {
+                panic!("typed reference validation must refuse");
+            };
             assert_eq!(limit.dimension, dimension);
             assert!(findings.is_empty());
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
     }
 
@@ -137,12 +151,19 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         let target = "test:model:body#missing";
         let owner = "test:model:product#owner";
-        ir.model.product_definitions.push(crate::products::ProductDefinition {
-            id: owner.try_into().unwrap(), kind: crate::products::ProductDefinitionKind::Part,
-            source_name: Some("test:model:name#plain".into()), label: None,
-            description: None, part_number: None, bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()], native_ref: None,
-        });
+        ir.model
+            .product_definitions
+            .push(crate::products::ProductDefinition {
+                id: owner.try_into().unwrap(),
+                kind: crate::products::ProductDefinitionKind::Part,
+                source_name: Some("test:model:name#plain".into()),
+                label: None,
+                description: None,
+                part_number: None,
+                bom_properties: std::collections::BTreeMap::new(),
+                bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
+                native_ref: None,
+            });
         let source = cadmpeg_test_support::service_decode_context();
         let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
         let arena = DecodeArena::new();
@@ -155,10 +176,12 @@ mod tests {
         assert_eq!(findings[0].check, Check::ReferentialIntegrity);
         assert_eq!(findings[0].severity, Severity::Error);
         assert_eq!(findings[0].entity.as_deref(), Some(owner));
-        assert_eq!(findings[0].message, format!("unresolved typed reference {target}"));
+        assert_eq!(
+            findings[0].message,
+            format!("unresolved typed reference {target}")
+        );
         check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
         ctx.finish_session().unwrap();
     }
-
 }

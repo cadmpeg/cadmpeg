@@ -252,14 +252,13 @@ impl Brep {
                             pcurves: qualified_pcurve_uses(ctx, &vertex_use.pcurves, &tail)?,
                         });
                     }
-                    *ring =
-                        cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
-                            .map_err(cadmpeg_core::CodecError::from)?
-                            .map_err(|error| {
-                                cadmpeg_core::CodecError::malformed(format_args!(
-                                    "qualified loop ring is invalid: {error}"
-                                ))
-                            })?;
+                    *ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
+                        .map_err(cadmpeg_core::CodecError::from)?
+                        .map_err(|error| {
+                            cadmpeg_core::CodecError::malformed(format_args!(
+                                "qualified loop ring is invalid: {error}"
+                            ))
+                        })?;
                 }
             }
         }
@@ -2848,11 +2847,7 @@ fn decode_graph(
                         Some(tag),
                     )?;
                     if let Some(exactness) = exactness {
-                        annotations.exactness(
-                            ctx,
-                            id_surf(f.bridge_attr).as_str(),
-                            exactness,
-                        )?;
+                        annotations.exactness(ctx, id_surf(f.bridge_attr).as_str(), exactness)?;
                     }
                     admit_brep_entity(ctx)?;
                     ctx.reserve_vec(&mut out.surfaces, 1, "collect Parasolid swept surfaces")?;
@@ -3001,13 +2996,7 @@ fn decode_graph(
                     (0, "synthetic_grouping", Exactness::Derived),
                     |(offset, tag)| (offset, tag, Exactness::ByteExact),
                 );
-                annotations.note(
-                    ctx,
-                    id,
-                    &source_stream,
-                    u64_from_index(offset),
-                    Some(tag),
-                )?;
+                annotations.note(ctx, id, &source_stream, u64_from_index(offset), Some(tag))?;
                 annotations.exactness(ctx, id, exactness)?;
                 Ok(())
             };
@@ -3313,9 +3302,25 @@ fn decode_graph(
         "index retained Parasolid entities",
     )?;
     let mut keep = |id: &str| {
-        let work = retained_ids.len().checked_add(1).and_then(|count| id.len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
-            .ok_or_else(|| ctx.refuse_codec_limit("Parasolid annotation identity lookup", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "Parasolid annotation identity lookup")?;
+        let work = retained_ids
+            .len()
+            .checked_add(1)
+            .and_then(|count| {
+                id.len()
+                    .checked_add(1)
+                    .and_then(|bytes| count.checked_mul(bytes))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "Parasolid annotation identity lookup",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "Parasolid annotation identity lookup",
+        )?;
         Ok(retained_ids.contains(id))
     };
     out.annotations.retain_provenance(ctx, &mut keep)?;
@@ -3438,12 +3443,7 @@ fn annotate_surface_frame(
         ctx.charge_work(1, "scan Parasolid surface frame annotations")?;
         match geometry {
             SolvedSurfaceGeometry::Plane(_) => {
-                annotations.field_exactness(
-                    ctx,
-                    id,
-                    "geometry.u_axis",
-                    Exactness::Derived,
-                )?;
+                annotations.field_exactness(ctx, id, "geometry.u_axis", Exactness::Derived)?;
                 break;
             }
             SolvedSurfaceGeometry::Cylinder(_)
@@ -3458,12 +3458,7 @@ fn annotate_surface_frame(
                 break;
             }
             SolvedSurfaceGeometry::Sphere(_) => {
-                annotations.field_exactness(
-                    ctx,
-                    id,
-                    "geometry.axis",
-                    Exactness::Derived,
-                )?;
+                annotations.field_exactness(ctx, id, "geometry.axis", Exactness::Derived)?;
                 annotations.field_exactness(
                     ctx,
                     id,
@@ -4036,7 +4031,8 @@ fn derive_cylindrical_pcurves(
                 } else {
                     None
                 };
-                let polar = match PolarPcurveNurbs::from_checked_lanes(ctx, 
+                let polar = match PolarPcurveNurbs::from_checked_lanes(
+                    ctx,
                     nurbs.degree(),
                     knots,
                     poles,
@@ -4856,9 +4852,10 @@ fn derive_spherical_pcurves(
             std::f64::consts::PI,
             -std::f64::consts::FRAC_PI_2,
         ] {
-            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, parameter))?,
-            )?
+            let Some(uv) =
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, parameter),
+                )?)?
             else {
                 fits = false;
                 break;
@@ -6195,16 +6192,14 @@ fn clamp_nurbs_curve_to_domain(
     else {
         return Ok(None);
     };
-    Ok(Some(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
-            curve.degree(),
-            segment_knots,
-            control_points,
-            weights,
-            false,
-        )??,
-    ))
+    Ok(Some(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        ctx,
+        curve.degree(),
+        segment_knots,
+        control_points,
+        weights,
+        false,
+    )??))
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
@@ -7197,13 +7192,7 @@ fn synthesize_cylinder_seams(
             seam_a.as_str(),
             seam_b.as_str(),
         ] {
-            annotations.note(
-                ctx,
-                id,
-                source_stream,
-                0,
-                Some("derived_periodic_seam"),
-            )?;
+            annotations.note(ctx, id, source_stream, 0, Some("derived_periodic_seam"))?;
             annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
@@ -7694,13 +7683,7 @@ fn synthesize_sphere_seams(
                     })
                 }?;
                 for id in [point_id.as_str(), vertex_id.as_str()] {
-                    annotations.note(
-                        ctx,
-                        id,
-                        source_stream,
-                        0,
-                        Some("derived_sphere_seam"),
-                    )?;
+                    annotations.note(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
                     annotations.exactness(ctx, id, Exactness::Derived)?;
                 }
                 admit_brep_entity(ctx)?;
@@ -7967,13 +7950,15 @@ mod tests {
         control_points: Vec<cadmpeg_ir::math::Point3>,
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             control_points,
             weights,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid test NURBS curve")
     }
 
@@ -7989,7 +7974,8 @@ mod tests {
         control_points: &[cadmpeg_ir::math::Point3],
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -8005,7 +7991,8 @@ mod tests {
                 }),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid test NURBS surface")
     }
 
@@ -8282,12 +8269,22 @@ mod tests {
                 .unwrap(),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 3.0)
-                .expect("cylinder start")
-                .get(),
-            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 2.0)
-                .expect("cylinder end")
-                .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.0,
+                3.0,
+            )
+            .expect("cylinder start")
+            .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.5,
+                2.0,
+            )
+            .expect("cylinder end")
+            .get(),
         ];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
@@ -8372,12 +8369,22 @@ mod tests {
                 .expect("valid cylinder"),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 3.0)
-                .expect("start")
-                .get(),
-            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.5, 2.0)
-                .expect("end")
-                .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.0,
+                3.0,
+            )
+            .expect("start")
+            .get(),
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &surface,
+                0.5,
+                2.0,
+            )
+            .expect("end")
+            .get(),
         ];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
@@ -8442,9 +8449,14 @@ mod tests {
             ));
         let model_points = [(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)]
             .map(|(u, v)| {
-                cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
-                    .expect("cylinder point")
-                    .get()
+                cadmpeg_ir::eval::decode::surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &surface,
+                    u,
+                    v,
+                )
+                .expect("cylinder point")
+                .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
@@ -8510,9 +8522,14 @@ mod tests {
         let expected = [(3.0, 3.0), (3.2, 3.2), (3.4, 3.4)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
-                    .expect("torus point")
-                    .get()
+                cadmpeg_ir::eval::decode::surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &surface,
+                    u,
+                    v,
+                )
+                .expect("torus point")
+                .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
@@ -8565,9 +8582,14 @@ mod tests {
         let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &nurbs, u, v)
-                    .expect("surface point")
-                    .get()
+                cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &nurbs,
+                    u,
+                    v,
+                )
+                .expect("surface point")
+                .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
@@ -8767,11 +8789,13 @@ mod tests {
             id: LoopId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
             face: FaceId::mint(format!("test:model:entity#{face}")).expect("identity grammar"),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::topology::LoopRing::new(
+                    &cadmpeg_test_support::service_decode_context(),
                     vec![CoedgeId::mint(format!("test:model:entity#{coedge}"))
                         .expect("identity grammar")],
                     Vec::new(),
-                ).expect("fixture ring admission")
+                )
+                .expect("fixture ring admission")
                 .expect("valid loop ring"),
             ),
         };
@@ -9214,7 +9238,8 @@ mod tests {
         let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped segment");
-        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(&ctx,
+        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9277,7 +9302,8 @@ mod tests {
         let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped quadratic segment");
-        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(&ctx,
+        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9337,7 +9363,8 @@ mod tests {
         let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped rational segment");
-        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(&ctx,
+        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9613,8 +9640,13 @@ mod tests {
                 id: loop_id.clone(),
                 face: FaceId::mint("test:model:entity#face").expect("identity grammar"),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), vec![coedge_id.clone()], Vec::new()).expect("fixture ring admission")
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(
+                        &cadmpeg_test_support::service_decode_context(),
+                        vec![coedge_id.clone()],
+                        Vec::new(),
+                    )
+                    .expect("fixture ring admission")
+                    .expect("valid loop ring"),
                 ),
             }],
             coedges: vec![Coedge {
@@ -9667,8 +9699,12 @@ mod tests {
             ..Default::default()
         };
         let mut annotations = AnnotationBuilder::new();
-        let source_stream =
-            cadmpeg_ir::annotations::StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("test"), "fixture stream handle").unwrap();
+        let source_stream = cadmpeg_ir::annotations::StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("test"),
+            "fixture stream handle",
+        )
+        .unwrap();
         super::derive_cylindrical_pcurves(&ctx, &mut brep, &mut annotations, &source_stream)
             .expect("cylindrical pcurve derivation");
 

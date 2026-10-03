@@ -90,10 +90,12 @@ fn edgeless_doc() -> CadIr {
         id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
                 Vec::new(),
-            ).expect("fixture ring admission")
+            )
+            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -1424,7 +1426,9 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
             ],
             vec![[0, 1, 2]],
             0.1,
-         &cadmpeg_test_support::service_decode_context()).expect("polygonal construction admission")
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polygonal construction admission")
         .expect("valid polygonal surface"),
     ));
     let report = write_step(
@@ -1775,7 +1779,8 @@ fn degenerate_torus_report(
     ));
     let owner = ir.model.surfaces[0].id.clone();
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(
+            None,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1787,7 +1792,8 @@ fn degenerate_torus_report(
                 },
                 None,
             ),
-        ).unwrap()
+        )
+        .unwrap()
         .expect("a torus carrier admits a degenerate torus construction");
 
     let mut buf = Vec::new();
@@ -1842,7 +1848,8 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
     // A compound construction has no STEP record, so its solved cache is the
     // candidate STEP carrier.
     ir.model
-        .add_procedural_surface(None, 
+        .add_procedural_surface(
+            None,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1858,7 +1865,8 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
                 ),
                 None,
             ),
-        ).unwrap()
+        )
+        .unwrap()
         .expect("a cone carrier admits a compound construction");
 
     let error = StepCodec::default()
@@ -1893,7 +1901,10 @@ fn procedural_construction_reduction_is_reported() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
     );
-    ir.model.add_procedural_curve(None, &owner, procedural).unwrap().unwrap();
+    ir.model
+        .add_procedural_curve(None, &owner, procedural)
+        .unwrap()
+        .unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1920,7 +1931,8 @@ fn source_native_record_reduction_is_reported() {
         )
         .expect("valid native identity")],
     );
-    ir.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let mut buf = Vec::new();
     let report = write_step(

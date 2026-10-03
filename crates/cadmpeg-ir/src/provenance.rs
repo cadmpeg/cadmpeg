@@ -352,9 +352,10 @@ impl StreamName {
         suffix: impl fmt::Display,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(std::borrow::Cow::Owned(
-            ctx.format_retained(format_args!("{}{}", self.0, suffix), operation)?,
-        )))
+        Ok(Self(std::borrow::Cow::Owned(ctx.format_retained(
+            format_args!("{}{}", self.0, suffix),
+            operation,
+        )?)))
     }
 }
 
@@ -765,16 +766,32 @@ mod tests {
     fn stream_name_composition_keeps_the_admitted_prefix() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let prefix = crate::stream_name!("codec:");
-        assert_eq!(prefix.clone().with_suffix(&ctx, "", "stream suffix").unwrap().as_str(), "codec:");
-        assert_eq!(prefix.with_suffix(&ctx, 7, "stream suffix").unwrap().as_str(), "codec:7");
+        assert_eq!(
+            prefix
+                .clone()
+                .with_suffix(&ctx, "", "stream suffix")
+                .unwrap()
+                .as_str(),
+            "codec:"
+        );
+        assert_eq!(
+            prefix
+                .with_suffix(&ctx, 7, "stream suffix")
+                .unwrap()
+                .as_str(),
+            "codec:7"
+        );
     }
 
     #[test]
     fn stream_suffix_preserves_the_original_storage_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::WorkUnits,
-            ResourceDimension::MaterializedBytes] {
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::WorkUnits,
+            ResourceDimension::MaterializedBytes,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -786,12 +803,19 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let create = || crate::stream_name!("codec:").with_suffix(&ctx, 7, "stream suffix");
             let result = if dimension == ResourceDimension::MaterializedBytes {
-                ctx.with_scoped_storage("temporary stream name", create).map(|_| ())
-            } else { create().map(|_| ()) };
-            let Err(CodecError::ResourceLimit(limit)) = result else { panic!("suffix must refuse"); };
+                ctx.with_scoped_storage("temporary stream name", create)
+                    .map(|_| ())
+            } else {
+                create().map(|_| ())
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("suffix must refuse");
+            };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, "stream suffix");
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
     }
 
@@ -803,7 +827,9 @@ mod tests {
         policy.limits.max_collection_items = 0;
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let name = crate::stream_name!("codec:").with_suffix(&ctx, 7, "stream suffix").unwrap();
+        let name = crate::stream_name!("codec:")
+            .with_suffix(&ctx, 7, "stream suffix")
+            .unwrap();
         assert_eq!(name.as_str(), "codec:7");
         ctx.finish_session().unwrap();
     }

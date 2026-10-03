@@ -78,7 +78,8 @@ fn try_lossless_round_trip(
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(produced), &DecodeOptions::default())
         .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
     let d = cadmpeg_ir::diff::diff(original, round_trip.ir());
     assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
@@ -214,20 +215,34 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .iter()
             .find(|surface| construction_owns_surface(round_trip.ir(), procedural, &surface.id))
             .expect("round-trip revolution surface");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
-        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, 1.0, 0.7)
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source_index,
+            &source_surface.id,
+            1.0,
+            0.7,
+        )
         .expect("source line revolution evaluates")
         .get();
-        let round_point =
-            cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, 1.0, 0.7)
-                .expect("round-trip line revolution evaluates")
-                .get();
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &round_index,
+            &round_surface.id,
+            1.0,
+            0.7,
+        )
+        .expect("round-trip line revolution evaluates")
+        .get();
         assert!(
             source_point.distance(round_point) < EPS_LINE_REVOLUTION_ROUND_TRIP,
             "{version:?}"
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -327,19 +342,34 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                 construction_owns_surface(round_trip.ir(), round_procedural, &surface.id)
             })
             .expect("round-trip extrusion surface");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
-        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_carrier_end * 0.5, 0.25)
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source_index,
+            &source_surface.id,
+            source_carrier_end * 0.5,
+            0.25,
+        )
         .expect("source line extrusion evaluates")
         .get();
-        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_carrier_end * 0.5, 0.25)
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &round_index,
+            &round_surface.id,
+            round_carrier_end * 0.5,
+            0.25,
+        )
         .expect("round-trip line extrusion evaluates")
         .get();
         assert!(
             source_point.distance(round_point) < EPS_LINE_EXTRUSION_ROUND_TRIP,
             "{version:?}"
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -464,7 +494,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -528,7 +559,8 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -649,15 +681,29 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 _ => None,
             })
             .expect("round-trip extrusion interval");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         for fraction in [0.25, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
-            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_parameter, 1.0)
+            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &source_index,
+                &source_surface.id,
+                source_parameter,
+                1.0,
+            )
             .expect("source extrusion evaluates")
             .get();
-            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_parameter, 1.0)
+            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &round_index,
+                &round_surface.id,
+                round_parameter,
+                1.0,
+            )
             .expect("round-trip extrusion evaluates")
             .get();
             assert!(
@@ -674,7 +720,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -772,15 +819,29 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                 _ => None,
             })
             .expect("round-trip placed extrusion interval");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+        let source_index =
+            cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index =
+            cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         for fraction in [0.25, 0.5, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
-            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_parameter, 1.0)
+            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &source_index,
+                &source_surface.id,
+                source_parameter,
+                1.0,
+            )
             .expect("source placed extrusion evaluates")
             .get();
-            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_parameter, 1.0)
+            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &round_index,
+                &round_surface.id,
+                round_parameter,
+                1.0,
+            )
             .expect("round-trip placed extrusion evaluates")
             .get();
             assert!(
@@ -797,7 +858,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -855,7 +917,8 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             "{version:?}: {:#?}",
             round_trip.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{version:?}: {:#?}",
@@ -942,8 +1005,10 @@ fn assert_type120_round_trip(version: IgesVersion) {
             round_trip.report().losses
         );
     };
-    let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
-    let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
+    let source_index =
+        cadmpeg_ir::index::ModelIndex::build(original.ir(), cadmpeg_ir::index::StandardIndex);
+    let round_index =
+        cadmpeg_ir::index::ModelIndex::build(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
     let source_range = surface_construction(original.ir(), &source_surface.id)
         .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload
@@ -963,10 +1028,22 @@ fn assert_type120_round_trip(version: IgesVersion) {
     for (fraction, angle) in [(0.25, 0.0), (0.75, 0.7)] {
         let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
         let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
-        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_parameter, angle)
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &source_index,
+            &source_surface.id,
+            source_parameter,
+            angle,
+        )
         .expect("source revolution evaluates")
         .get();
-        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &round_index, &round_surface.id, round_parameter, angle)
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &round_index,
+            &round_surface.id,
+            round_parameter,
+            angle,
+        )
         .expect("round-trip revolution evaluates")
         .get();
         assert!(

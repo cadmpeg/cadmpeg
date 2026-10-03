@@ -985,7 +985,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
                 });
                 if let Some((pcurve, parameter)) = midpoint_input {
                     if let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter))?,
+                        cadmpeg_ir::eval::decode::outer_refusal(
+                            cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter),
+                        )?,
                     )? {
                         support.model_midpoint =
                             zero_entity_surface_point(ctx, &carrier_geometry, [uv.u, uv.v])?;
@@ -1675,7 +1677,17 @@ fn zero_entity_support_pcurve(
         };
         let nurbs = match crate::nurbs::note_refusal(
             ctx,
-            match PcurveNurbs::from_checked_lanes(ctx, degree, knots, control_points, weights, false) { Ok(result) => result, Err(error) => return Some(Err(error)) },
+            match PcurveNurbs::from_checked_lanes(
+                ctx,
+                degree,
+                knots,
+                control_points,
+                weights,
+                false,
+            ) {
+                Ok(result) => result,
+                Err(error) => return Some(Err(error)),
+            },
             refusal,
             format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
         ) {
@@ -1771,7 +1783,8 @@ pub(super) fn zero_entity_neutral_pcurve(
         .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
     crate::nurbs::note_refusal(
         ctx,
-        PcurveNurbs::from_checked_lanes(ctx, 
+        PcurveNurbs::from_checked_lanes(
+            ctx,
             nurbs.degree(),
             knots,
             control_points,
@@ -2103,7 +2116,14 @@ fn zero_entity_lift_pcurve(
         .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::from_checked_lanes(ctx, nurbs.degree(), knots, points, weights, nurbs.periodic())?,
+        NurbsCurve::from_checked_lanes(
+            ctx,
+            nurbs.degree(),
+            knots,
+            points,
+            weights,
+            nurbs.periodic(),
+        )?,
         refusal,
         format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
     )
@@ -2275,9 +2295,9 @@ fn zero_entity_surface_point(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v))?,
-            );
+            return cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v),
+            )?);
         }
         _ => return Ok(None),
     };
@@ -2871,8 +2891,16 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).expect("fixture pcurve construction admission")
-                .unwrap(),
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                points,
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
         }
     }
 
@@ -3391,7 +3419,6 @@ mod tests {
 
     #[test]
     fn negative_cone_latitude_radius_flips_the_circle_reference_direction() {
-        
         use cadmpeg_ir::math::Vector3;
 
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
@@ -3421,7 +3448,12 @@ mod tests {
         )
         .expect("cone latitude");
         for index in 0..2 {
-            let curve_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameters[index].get()).expect("circle point");
+            let curve_point = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                parameters[index].get(),
+            )
+            .expect("circle point");
             let surface_point = crate::test_support::with_service_context(|ctx| {
                 zero_entity_surface_point(ctx, &surface, endpoints[index])
             })
@@ -3499,7 +3531,7 @@ mod tests {
         let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
             panic!("isocurve basis must refuse the collection limit");
         };
-        assert_eq!(error.operation, "catia_zero_isocurve_basis");
+        assert_eq!(error.operation, "IR B-spline basis");
     }
 
     #[test]

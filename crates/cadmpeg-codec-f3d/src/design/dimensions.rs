@@ -6909,7 +6909,12 @@ pub(super) fn point_lies_on_sketch_geometry(
         }
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
-        let lanes = PcurveEvaluatorLanes::new(ctx, curve.pole_rows(), "f3d nurbs evaluator poles", "f3d nurbs evaluator weights")?;
+        let lanes = PcurveEvaluatorLanes::new(
+            ctx,
+            curve.pole_rows(),
+            "f3d nurbs evaluator poles",
+            "f3d nurbs evaluator weights",
+        )?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             ctx,
             curve.degree(),
@@ -7158,7 +7163,9 @@ fn exact_counted_offset(
                 &source.geometry,
                 &result.geometry,
                 linear_tolerance,
-            ).map_err(CodecError::from)).map(cadmpeg_ir::scalar::FiniteReal::get)?,
+            )
+            .map_err(CodecError::from))
+            .map(cadmpeg_ir::scalar::FiniteReal::get)?,
         };
         if distance.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_OFFSET_E9 {
             return None;

@@ -8,9 +8,7 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_asm::brep::{
-    decode_with_header, decode_with_purpose, AsmBrep, DecodePurpose,
-};
+use cadmpeg_asm::brep::{decode_with_header, decode_with_purpose, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};

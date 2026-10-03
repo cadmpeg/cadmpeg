@@ -332,7 +332,11 @@ fn build_result(
     for record in annotation_records {
         let stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("sat:").with_suffix(ctx, &record.stream, "compose annotation stream name")?,
+            cadmpeg_ir::stream_name!("sat:").with_suffix(
+                ctx,
+                &record.stream,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
         annotations.note(

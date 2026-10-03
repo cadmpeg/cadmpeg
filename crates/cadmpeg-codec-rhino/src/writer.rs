@@ -1163,9 +1163,8 @@ fn generated_projected_brep_c2_curve(
     use cadmpeg_ir::topology::Sense;
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
     let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &writer_arena, &writer_policy,
-    )?;
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
 
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
@@ -1189,16 +1188,19 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .try_map_control_points(|_, point| {
-                    let mut point = point.get();
-                    let uv = plane_uv(point, origin, u_axis, v_axis);
-                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                }, &writer_ctx)?
+                .try_map_control_points(
+                    |_, point| {
+                        let mut point = point.get();
+                        let uv = plane_uv(point, origin, u_axis, v_axis);
+                        point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
+                    },
+                    &writer_ctx,
+                )?
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
@@ -1229,9 +1231,8 @@ fn canonicalize_native_curve_knots(
     // Native-canonical writer checks state an independent construction policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
     let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &writer_arena, &writer_policy,
-    )?;
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
@@ -1239,7 +1240,9 @@ fn canonicalize_native_curve_knots(
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, &stored, order, count)
         .map_err(|error| match error {
-            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => CodecError::ResourceLimit(limit),
+            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
+                CodecError::ResourceLimit(limit)
+            }
             error => CodecError::NotImplemented(format!("curve {id}: {error}")),
         })?;
     curve
@@ -1338,7 +1341,6 @@ fn validate_nurbs_trim(
     sense: cadmpeg_ir::topology::Sense,
     explicit: &WritablePcurve<'_>,
 ) -> Result<(), CodecError> {
-    
     use cadmpeg_ir::topology::Sense;
 
     let u_count = surface.u_count();
@@ -1420,7 +1422,11 @@ fn validate_nurbs_trim(
                 .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
             let parameter = sample.get();
             // A non-finite pcurve point is refused by the domain test.
-            let uv = match cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter) {
+            let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                parameter,
+            ) {
                 Ok(uv) => uv.get(),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1436,7 +1442,12 @@ fn validate_nurbs_trim(
                 )));
             }
             // A non-finite surface point is measured as a finite one is.
-            let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v) {
+            let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                surface,
+                uv.u,
+                uv.v,
+            ) {
                 Ok(point) => point.get(),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1917,9 +1928,8 @@ fn check_knot_roundtrip(
     // Native-canonical writer checks state an independent construction policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
     let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-    let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &writer_arena, &writer_policy,
-    )?;
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
         return Err(CodecError::NotImplemented(format!(
@@ -1928,7 +1938,9 @@ fn check_knot_roundtrip(
     }
     let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, stored, order, count)
         .map_err(|error| match error {
-            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => CodecError::ResourceLimit(limit),
+            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
+                CodecError::ResourceLimit(limit)
+            }
             error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
         })?;
     let periodic = crate::surfaces::periodic_knots(&writer_ctx, stored, order, count)?;

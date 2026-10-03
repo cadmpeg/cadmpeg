@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{CounterdrillDiameters, HoleBottom, HoleForm, HoleKind, HoleProfileFilter, HoleThreadDepth, PartialPair, ThreadHand};
+use super::{
+    CounterdrillDiameters, HoleBottom, HoleForm, HoleKind, HoleProfileFilter, HoleThreadDepth,
+    PartialPair, ThreadHand,
+};
 
 rewrite_scalar!(CounterdrillDiameters);
 rewrite_scalar!(HoleBottom);

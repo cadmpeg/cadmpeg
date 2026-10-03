@@ -346,7 +346,9 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
         cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
             .unwrap(),
@@ -384,7 +386,9 @@ fn generated_source_less_writes_general_face_wire_body() {
         .expect("generated mixed body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -427,7 +431,9 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         .expect("generated free-vertex body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let renamed = free
         .ir()
         .to_canonical_json()
@@ -536,7 +542,9 @@ fn generated_source_less_writes_wire_body_topology() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     update_f3d_native(&mut source_less, |native| {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
@@ -597,7 +605,9 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         .expect("generated free-vertex body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     update_f3d_native(&mut source_less, |native| {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
@@ -656,7 +666,9 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
         .expect("generated free-vertex body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let free_json = free
         .ir()
         .to_canonical_json()
@@ -718,7 +730,9 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -789,7 +803,9 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -836,7 +852,9 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")
@@ -895,7 +913,9 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .expect("generated wire body decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical wire JSON")

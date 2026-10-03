@@ -31,13 +31,15 @@ fn raw_curve_constructor_refuses_pairing_and_admission() {
         );
     }
     let points = vec![Point3::new(0.0, 0.0, 0.0); 2];
-    let expected = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let expected = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         points.clone(),
         Some(vec![1.0; 2]),
         false,
-    ).expect("fixture constructor admission");
+    )
+    .expect("fixture constructor admission");
     assert_eq!(
         with_limit(4, |ctx| NurbsCurve::from_lanes(
             ctx,
@@ -80,7 +82,8 @@ fn raw_surface_constructor_refuses_each_nested_collection() {
             matches!(with_limit(cap, make), Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
         );
     }
-    let expected = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let expected = NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -88,7 +91,8 @@ fn raw_surface_constructor_refuses_each_nested_collection() {
             Some(vec![vec![1.0; 2]; 2]),
         ),
         false,
-    ).expect("fixture constructor admission");
+    )
+    .expect("fixture constructor admission");
     assert_eq!(with_limit(12, make).expect("exact cap"), expected);
 }
 
@@ -132,13 +136,15 @@ fn raw_constructor_refusal_text_is_admitted_and_keeps_order() {
             None,
         ),
     ] {
-        let expected = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let expected = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots.clone(),
             points.clone(),
             weights.clone(),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect_err("invalid lanes")
         .to_string();
         let arena = DecodeArena::new();
@@ -199,10 +205,9 @@ fn admitted_curve_constructor_keeps_polynomial_pole_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let points = vec![crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(); 2];
     let address = points.as_ptr();
-    let curve =
-        NurbsCurve::from_lanes(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
-            .unwrap()
-            .unwrap();
+    let curve = NurbsCurve::from_lanes(&ctx, 1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
+        .unwrap()
+        .unwrap();
     let super::super::NurbsPoles3::Polynomial { points } = curve.into_parts().2 else {
         panic!("polynomial poles");
     };

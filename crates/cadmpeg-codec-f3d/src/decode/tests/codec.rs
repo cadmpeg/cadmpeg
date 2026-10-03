@@ -252,13 +252,15 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     };
     let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].z = 4.5;
-    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     *cache = SolvedCurveGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();

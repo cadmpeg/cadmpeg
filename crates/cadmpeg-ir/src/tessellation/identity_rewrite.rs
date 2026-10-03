@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{ChannelAddressing, ShadedTriangle, ShadedVertex, Strip, Strips, Tessellation, TessellationChannel, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup};
+use super::{
+    ChannelAddressing, ShadedTriangle, ShadedVertex, Strip, Strips, Tessellation,
+    TessellationChannel, TessellationMesh, TessellationTextureAssignment,
+    TessellationTriangleGroup,
+};
 
 rewrite_enum!(ChannelAddressing, []; {
     Vertex {},

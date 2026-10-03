@@ -314,7 +314,8 @@ pub(super) fn project_edge(
                 Some(weights)
             }
         };
-        return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(ctx, 
+        return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+            ctx,
             nurbs.degree(),
             knots,
             projected,

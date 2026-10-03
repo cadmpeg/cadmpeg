@@ -400,7 +400,11 @@ fn patch_asm_geometry(
                 let mut native_curve = edit.curve.clone();
                 let writer_arena = cadmpeg_core::decode::DecodeArena::new();
                 let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
-                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+                let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &writer_arena,
+                    &writer_policy,
+                )?;
                 native_curve.reverse_parameterization(&writer_ctx)?;
                 asm_edits.patch_nurbs_curve(
                     bytes,

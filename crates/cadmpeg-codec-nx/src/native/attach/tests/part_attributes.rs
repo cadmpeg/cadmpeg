@@ -14,7 +14,12 @@ fn attach_one_attribute(configure: impl FnOnce(&mut DecodePolicy)) -> Result<Cad
         |ctx| {
             let mut ir = CadIr::empty();
             let mut annotations = AnnotationBuilder::new();
-            let stream = StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::stream_name!("nx:container"), "fixture stream handle").unwrap();
+            let stream = StreamHandle::new(
+                &cadmpeg_test_support::service_decode_context(),
+                cadmpeg_ir::stream_name!("nx:container"),
+                "fixture stream handle",
+            )
+            .unwrap();
             super::super::attach_part_attributes(
                 ctx,
                 &mut ir,

@@ -13,11 +13,8 @@ impl BodySelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = NativeSelections::new(
-            bodies,
-            ctx,
-            "validate distinct decoded native selections",
-        )?;
+        let bodies =
+            NativeSelections::new(bodies, ctx, "validate distinct decoded native selections")?;
         ctx.charge_work_limit(
             cadmpeg_core::decode::u64_from_index(native.len()),
             "validate local selection reference",
@@ -29,7 +26,6 @@ impl BodySelection {
             })
         }))
     }
-
 
     /// Admit selection members with the decode context.
     pub fn historical(
@@ -67,14 +63,11 @@ impl BodySelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        let bodies = match SelectionMembers::new(
-            bodies,
-            ctx,
-            "validate BodySelection generated members",
-        )? {
-            Ok(members) => members,
-            Err(error) => return Ok(Err(error)),
-        };
+        let bodies =
+            match SelectionMembers::new(bodies, ctx, "validate BodySelection generated members")? {
+                Ok(members) => members,
+                Err(error) => return Ok(Err(error)),
+            };
         ctx.charge_work_limit(
             cadmpeg_core::decode::u64_from_index(native.len()),
             "validate selection native reference",

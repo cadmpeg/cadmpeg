@@ -8,8 +8,16 @@ use serde_value::Value;
 pub(super) fn projection_items(value: &impl Serialize) -> u64 {
     fn slots(value: &Value) -> u64 {
         match value {
-            Value::Map(fields) => u64_from_index(fields.len()) + fields.iter().map(|(key, value)| slots(key) + slots(value)).sum::<u64>(),
-            Value::Seq(values) => u64_from_index(values.len()) + values.iter().map(slots).sum::<u64>(),
+            Value::Map(fields) => {
+                u64_from_index(fields.len())
+                    + fields
+                        .iter()
+                        .map(|(key, value)| slots(key) + slots(value))
+                        .sum::<u64>()
+            }
+            Value::Seq(values) => {
+                u64_from_index(values.len()) + values.iter().map(slots).sum::<u64>()
+            }
             Value::Option(Some(value)) | Value::Newtype(value) => 1 + slots(value),
             _ => 0,
         }

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignAxis, DesignCircularPatternAxis, DesignCircularPatternConstruction, DesignPatternAxisWrapper, DesignPatternComponentInstance, DesignPatternInstance, DesignPlane, DesignRectangularPatternConstruction, DesignRectangularPatternInstances};
+use super::{
+    DesignAxis, DesignCircularPatternAxis, DesignCircularPatternConstruction,
+    DesignPatternAxisWrapper, DesignPatternComponentInstance, DesignPatternInstance, DesignPlane,
+    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+};
 
 rewrite_native_scalar!(DesignAxis);
 rewrite_native_enum!(DesignCircularPatternAxis, []; {

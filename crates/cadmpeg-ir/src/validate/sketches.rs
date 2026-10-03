@@ -2,9 +2,10 @@
 //! Focused validation checks for sketches.
 
 use super::record_finding;
-use super::scratch::Scratch;
 use super::scans::{all, find_map};
+use super::scratch::Scratch;
 use crate::document::CadIr;
+use crate::index::identities::BorrowedIdentities;
 use crate::report::check::{Check, Finding};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchEntityKindRestriction,
@@ -12,7 +13,6 @@ use crate::sketches::{
     SpatialSketchConstraintDefinitionInput as SpatialConstraint, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
-use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -79,12 +79,20 @@ fn spatial_oriented_endpoints(
             let start = curve.knots()[cadmpeg_core::decode::index_from_u32(curve.degree())];
             let end = curve.knots()[curve.pole_count()];
             let Some(start_point) =
-                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Decode(ctx), curve, start))?
+                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(
+                    crate::eval::admission::EvaluationAdmission::Decode(ctx),
+                    curve,
+                    start,
+                ))?
             else {
                 return Ok(None);
             };
             let Some(end_point) =
-                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Decode(ctx), curve, end))?
+                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(
+                    crate::eval::admission::EvaluationAdmission::Decode(ctx),
+                    curve,
+                    end,
+                ))?
             else {
                 return Ok(None);
             };
@@ -252,8 +260,10 @@ fn sketch_curve_offset_matches(
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
-            && (source_center.u - result_center.u).abs() <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
-            && (source_center.v - result_center.v).abs() <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
+            && (source_center.u - result_center.u).abs()
+                <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
+            && (source_center.v - result_center.v).abs()
+                <= EPS_SKETCH_VALIDATION_GEOMETRY * scale
             && (source_sweep.signum() * (source_radius.get() - result_radius.get()) - expected)
                 .abs()
                 <= EPS_SKETCH_VALIDATION_GEOMETRY * scale);
@@ -448,7 +458,9 @@ fn spatial_parallel_line_span_distance(
 }
 
 fn spatial_length_parameter_matches(
-    ctx: &DecodeContext<'_>, measured: Option<f64>, parameter: &crate::features::ParameterId,
+    ctx: &DecodeContext<'_>,
+    measured: Option<f64>,
+    parameter: &crate::features::ParameterId,
     parameter_values: &BorrowedIdentities<'_, '_, &Option<crate::features::ParameterValue>>,
 ) -> Result<bool, CodecError> {
     let expected = match parameter_values.get(ctx, parameter.as_str())? {
@@ -466,8 +478,15 @@ fn same_spatial_owner(
     owner: Option<&crate::sketches::SpatialSketchId>,
     expected: &crate::sketches::SpatialSketchId,
 ) -> Result<bool, CodecError> {
-    let Some(owner) = owner else { return Ok(false); };
-    equality::text_equal(ctx, owner.as_str(), expected.as_str(), "compare spatial sketch owner")
+    let Some(owner) = owner else {
+        return Ok(false);
+    };
+    equality::text_equal(
+        ctx,
+        owner.as_str(),
+        expected.as_str(),
+        "compare spatial sketch owner",
+    )
 }
 
 pub(super) fn check_sketches(
@@ -476,7 +495,9 @@ pub(super) fn check_sketches(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = BorrowedIdentities::build(ctx, |add| {
-        for entity in &ir.model.sketch_entities { add(entity.id().as_str(), &entity.geometry)?; }
+        for entity in &ir.model.sketch_entities {
+            add(entity.id().as_str(), &entity.geometry)?;
+        }
         Ok(())
     })?;
     for sketch in &ir.model.sketches {
@@ -488,18 +509,27 @@ pub(super) fn check_sketches(
             ctx.charge_work(1, "sketch profile scan")?;
             for adjacent in profile.windows(2) {
                 ctx.charge_work(1, "sketch profile adjacency scan")?;
-                let Some(left) = geometry.get(ctx, adjacent[0].entity.as_str())?
+                let Some(left) = geometry
+                    .get(ctx, adjacent[0].entity.as_str())?
                     .and_then(|geometry| oriented_endpoints(geometry, adjacent[0].reversed))
                 else {
                     continue;
                 };
-                let Some(right) = geometry.get(ctx, adjacent[1].entity.as_str())?
+                let Some(right) = geometry
+                    .get(ctx, adjacent[1].entity.as_str())?
                     .and_then(|geometry| oriented_endpoints(geometry, adjacent[1].reversed))
                 else {
                     continue;
                 };
                 if distance2(left.1, right.0) > ir.tolerances.linear.get() {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(sketch.id.as_str()), format_args!("{}", "sketch profile has disconnected consecutive entities"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(sketch.id.as_str()),
+                        format_args!("{}", "sketch profile has disconnected consecutive entities"),
+                    )?;
                 }
             }
         }
@@ -523,17 +553,44 @@ pub(super) fn check_sketches(
             ctx.charge_work(1, "sketch profile scan")?;
             for use_ in profile.boundary() {
                 ctx.charge_work(1, "spatial profile member scan")?;
-                if !same_spatial_owner(ctx, spatial_geometry.get(ctx, use_.entity.as_str())?.map(|(owner, _)| *owner), &sketch.id)? {
-                    record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(sketch.id.as_str()), format_args!("{}", "spatial sketch profile entity does not belong to its sketch"))?;
+                if !same_spatial_owner(
+                    ctx,
+                    spatial_geometry
+                        .get(ctx, use_.entity.as_str())?
+                        .map(|(owner, _)| *owner),
+                    &sketch.id,
+                )? {
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        Some(sketch.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "spatial sketch profile entity does not belong to its sketch"
+                        ),
+                    )?;
                 }
             }
             if profile.boundary().len() == 1 {
                 if !matches!(
-                    spatial_geometry.get(ctx, profile.boundary()[0].entity.as_str())?
+                    spatial_geometry
+                        .get(ctx, profile.boundary()[0].entity.as_str())?
                         .map(|(sketch, geometry)| (sketch, geometry.definition())),
                     Some((_, SpatialSketchGeometryDefinition::Circle { .. }))
                 ) {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(sketch.id.as_str()), format_args!("{}", "single-entity spatial sketch profile is not a full circle"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(sketch.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "single-entity spatial sketch profile is not a full circle"
+                        ),
+                    )?;
                 }
             } else {
                 for index in 0..profile.boundary().len() {
@@ -541,7 +598,9 @@ pub(super) fn check_sketches(
                     let left = &profile.boundary()[index];
                     let right = &profile.boundary()[(index + 1) % profile.boundary().len()];
                     let left_endpoints = match spatial_geometry.get(ctx, left.entity.as_str())? {
-                        Some((_, geometry)) => spatial_oriented_endpoints(ctx, geometry, left.reversed)?,
+                        Some((_, geometry)) => {
+                            spatial_oriented_endpoints(ctx, geometry, left.reversed)?
+                        }
                         None => None,
                     };
                     let right_endpoints = match spatial_geometry.get(ctx, right.entity.as_str())? {
@@ -557,7 +616,17 @@ pub(super) fn check_sketches(
                             .hypot(left.1.z - right.0.z)
                             > ir.tolerances.linear.get()
                     }) {
-                        record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(sketch.id.as_str()), format_args!("{}", "spatial sketch profile has disconnected consecutive entities"))?;
+                        record_finding(
+                            ctx,
+                            findings,
+                            Check::GeometricConsistency,
+                            crate::report::Severity::Error,
+                            Some(sketch.id.as_str()),
+                            format_args!(
+                                "{}",
+                                "spatial sketch profile has disconnected consecutive entities"
+                            ),
+                        )?;
                     }
                 }
             }
@@ -567,36 +636,71 @@ pub(super) fn check_sketches(
         ctx.charge_work(1, "spatial sketch entity scan")?;
         let id = entity.id().as_str();
         if !spatial_sketches.contains(ctx, entity.sketch.as_str())? {
-            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(id), format_args!("{}", "spatial sketch entity references a missing spatial sketch"))?;
+            record_finding(
+                ctx,
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                Some(id),
+                format_args!(
+                    "{}",
+                    "spatial sketch entity references a missing spatial sketch"
+                ),
+            )?;
         }
         if let SpatialSketchGeometryDefinition::NurbsSurface { surface } =
             entity.geometry.definition()
         {
             if surface.u_degree() == 0 || surface.v_degree() == 0 {
-                record_finding(ctx, findings, Check::ParameterDomain, crate::report::Severity::Error, Some(id), format_args!("{}", "invalid spatial sketch NURBS surface"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ParameterDomain,
+                    crate::report::Severity::Error,
+                    Some(id),
+                    format_args!("{}", "invalid spatial sketch NURBS surface"),
+                )?;
             }
         }
     }
 
     let parameter_values = BorrowedIdentities::build(ctx, |add| {
-        for parameter in &ir.model.parameters { add(parameter.id.as_str(), &parameter.value)?; }
+        for parameter in &ir.model.parameters {
+            add(parameter.id.as_str(), &parameter.value)?;
+        }
         Ok(())
     })?;
     for constraint in &ir.model.spatial_sketch_constraints {
         ctx.charge_work(1, "spatial constraint scan")?;
         if !spatial_sketches.contains(ctx, constraint.sketch.as_str())? {
-            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial constraint references a missing spatial sketch"))?;
+            record_finding(
+                ctx,
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                Some(constraint.id.as_str()),
+                format_args!(
+                    "{}",
+                    "spatial constraint references a missing spatial sketch"
+                ),
+            )?;
         }
         let mut entities = Scratch::new(ctx)?;
         match constraint.definition.kind() {
             SpatialConstraint::Native { .. } => {}
             SpatialConstraint::SplineGroup { entities: members }
-            | SpatialConstraint::RepeatedLineLength { entities: members, .. } => entities.extend(members)?,
+            | SpatialConstraint::RepeatedLineLength {
+                entities: members, ..
+            } => entities.extend(members)?,
             SpatialConstraint::Coincident { first, second }
             | SpatialConstraint::Tangent { first, second }
             | SpatialConstraint::PointDistance { first, second, .. }
-            | SpatialConstraint::ParallelLineDistance { first, second, .. } => entities.extend([first, second])?,
-            SpatialConstraint::PointLineDistance { point, line, .. } => entities.extend([point, line])?,
+            | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
+                entities.extend([first, second])?;
+            }
+            SpatialConstraint::PointLineDistance { point, line, .. } => {
+                entities.extend([point, line])?;
+            }
             SpatialConstraint::LineLength { entity, .. }
             | SpatialConstraint::ParallelToDirection { entity, .. } => entities.push(entity)?,
             SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => {
@@ -605,32 +709,69 @@ pub(super) fn check_sketches(
                     entities.extend([&pair.first, &pair.second])?;
                 }
             }
-            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => entities.extend(first.iter().chain(second))?,
-            SpatialConstraint::Offset { sources, results, .. } => entities.extend(sources.iter().chain(results))?,
-            SpatialConstraint::Symmetric { first, second, axis } => entities.extend([first, second, axis])?,
+            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
+                entities.extend(first.iter().chain(second))?;
+            }
+            SpatialConstraint::Offset {
+                sources, results, ..
+            } => entities.extend(sources.iter().chain(results))?,
+            SpatialConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => entities.extend([first, second, axis])?,
             SpatialConstraint::Midpoint { point, entity } => entities.extend([point, entity])?,
-            SpatialConstraint::PointOnSurface { point, surface } => entities.extend([point, surface])?,
+            SpatialConstraint::PointOnSurface { point, surface } => {
+                entities.extend([point, surface])?;
+            }
         }
         for &entity in entities.iter() {
             ctx.charge_work(1, "spatial constraint member scan")?;
-            if !same_spatial_owner(ctx, spatial_geometry.get(ctx, entity.as_str())?.map(|(owner, _)| *owner), &constraint.sketch)? {
-                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial constraint member does not belong to its sketch"))?;
+            if !same_spatial_owner(
+                ctx,
+                spatial_geometry
+                    .get(ctx, entity.as_str())?
+                    .map(|(owner, _)| *owner),
+                &constraint.sketch,
+            )? {
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!(
+                        "{}",
+                        "spatial constraint member does not belong to its sketch"
+                    ),
+                )?;
             }
         }
         match constraint.definition.kind() {
             SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
                 if !matches!(
-                    spatial_geometry.get(ctx, first.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, first.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(ctx, second.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, second.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) =>
             {
-                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial coincidence requires two points"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!("{}", "spatial coincidence requires two points"),
+                )?;
             }
             SpatialConstraint::Symmetric {
                 first,
@@ -638,11 +779,17 @@ pub(super) fn check_sketches(
                 axis,
             } => {
                 let solved = match (
-                    spatial_geometry.get(ctx, first.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, first.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
-                    spatial_geometry.get(ctx, second.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, second.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
-                    spatial_geometry.get(ctx, axis.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, axis.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                 ) {
                     (
@@ -663,33 +810,60 @@ pub(super) fn check_sketches(
             }
             SpatialConstraint::Midpoint { point, entity }
                 if !matches!(
-                    spatial_geometry.get(ctx, point.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, point.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, entity.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Line { .. })
                 ) =>
             {
-                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial midpoint requires a point and line"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!("{}", "spatial midpoint requires a point and line"),
+                )?;
             }
             SpatialConstraint::PointOnSurface { point, surface }
                 if !matches!(
-                    spatial_geometry.get(ctx, point.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, point.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(ctx, surface.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, surface.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::NurbsSurface { .. })
                 ) =>
             {
-                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial point-on-surface requires a point and surface"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!(
+                        "{}",
+                        "spatial point-on-surface requires a point and surface"
+                    ),
+                )?;
             }
             SpatialConstraint::Tangent { first, second }
                 if !matches!(
-                    spatial_geometry.get(ctx, first.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, first.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(
                         SpatialSketchGeometryDefinition::Line { .. }
@@ -698,7 +872,9 @@ pub(super) fn check_sketches(
                             | SpatialSketchGeometryDefinition::Nurbs { .. }
                     )
                 ) || !matches!(
-                    spatial_geometry.get(ctx, second.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, second.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(
                         SpatialSketchGeometryDefinition::Line { .. }
@@ -708,15 +884,28 @@ pub(super) fn check_sketches(
                     )
                 ) =>
             {
-                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial tangent requires two curves"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!("{}", "spatial tangent requires two curves"),
+                )?;
             }
             SpatialConstraint::ParallelLineDistance {
                 first,
                 second,
                 parameter,
             } => {
-                let measured = match spatial_geometry.get(ctx, first.as_str())? .map(|(_, geometry)| geometry) {
-                    Some(first) => spatial_geometry.get(ctx, second.as_str())? .map(|(_, geometry)| geometry).and_then(|second| spatial_parallel_line_distance(first, second)),
+                let measured = match spatial_geometry
+                    .get(ctx, first.as_str())?
+                    .map(|(_, geometry)| geometry)
+                {
+                    Some(first) => spatial_geometry
+                        .get(ctx, second.as_str())?
+                        .map(|(_, geometry)| geometry)
+                        .and_then(|second| spatial_parallel_line_distance(first, second)),
                     None => None,
                 };
                 let expected = match parameter_values.get(ctx, parameter.as_str())? {
@@ -736,8 +925,14 @@ pub(super) fn check_sketches(
             }
             SpatialConstraint::RepeatedParallelLineDistance { pairs, parameter } => {
                 let matches = all(ctx, pairs, |pair| {
-                    let measured = match spatial_geometry.get(ctx, pair.first.as_str())? .map(|(_, geometry)| geometry) {
-                        Some(first) => spatial_geometry.get(ctx, pair.second.as_str())? .map(|(_, geometry)| geometry).and_then(|second| spatial_parallel_line_distance(first, second)),
+                    let measured = match spatial_geometry
+                        .get(ctx, pair.first.as_str())?
+                        .map(|(_, geometry)| geometry)
+                    {
+                        Some(first) => spatial_geometry
+                            .get(ctx, pair.second.as_str())?
+                            .map(|(_, geometry)| geometry)
+                            .and_then(|second| spatial_parallel_line_distance(first, second)),
                         None => None,
                     };
                     spatial_length_parameter_matches(ctx, measured, parameter, &parameter_values)
@@ -752,9 +947,13 @@ pub(super) fn check_sketches(
                 parameter,
             } => {
                 let measured = match (
-                    spatial_geometry.get(ctx, first.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, first.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
-                    spatial_geometry.get(ctx, second.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, second.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                 ) {
                     (
@@ -784,19 +983,39 @@ pub(super) fn check_sketches(
                 parameter,
             } => {
                 if !matches!(
-                    spatial_geometry.get(ctx, point.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, point.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) || !matches!(
-                    spatial_geometry.get(ctx, line.as_str())? .map(|(_, geometry)| geometry)
+                    spatial_geometry
+                        .get(ctx, line.as_str())?
+                        .map(|(_, geometry)| geometry)
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Line { .. })
                 ) {
-                    record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial point-line distance requires a point and line"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "spatial point-line distance requires a point and line"
+                        ),
+                    )?;
                     continue;
                 }
-                let measured = match spatial_geometry.get(ctx, point.as_str())? .map(|(_, geometry)| geometry) {
-                    Some(point) => spatial_geometry.get(ctx, line.as_str())? .map(|(_, geometry)| geometry).and_then(|line| spatial_point_line_distance(point, line)),
+                let measured = match spatial_geometry
+                    .get(ctx, point.as_str())?
+                    .map(|(_, geometry)| geometry)
+                {
+                    Some(point) => spatial_geometry
+                        .get(ctx, line.as_str())?
+                        .map(|(_, geometry)| geometry)
+                        .and_then(|line| spatial_point_line_distance(point, line)),
                     None => None,
                 };
                 if !spatial_length_parameter_matches(ctx, measured, parameter, &parameter_values)? {
@@ -804,10 +1023,22 @@ pub(super) fn check_sketches(
                 }
             }
             SpatialConstraint::LineLength { entity, parameter } => {
-                let measured = spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry)
+                let measured = spatial_geometry
+                    .get(ctx, entity.as_str())?
+                    .map(|(_, geometry)| geometry)
                     .and_then(|geometry| spatial_line_length(geometry));
                 if !spatial_length_parameter_matches(ctx, measured, parameter, &parameter_values)? {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial line length requires a line matching its length parameter"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "spatial line length requires a line matching its length parameter"
+                        ),
+                    )?;
                 }
             }
             SpatialConstraint::RepeatedLineLength {
@@ -818,13 +1049,25 @@ pub(super) fn check_sketches(
                 let mut complete = true;
                 for entity in entities {
                     ctx.charge_work(1, "spatial repeated length scan")?;
-                    let Some(length) = spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry).and_then(|geometry| spatial_line_length(geometry)) else {
+                    let Some(length) = spatial_geometry
+                        .get(ctx, entity.as_str())?
+                        .map(|(_, geometry)| geometry)
+                        .and_then(|geometry| spatial_line_length(geometry))
+                    else {
                         complete = false;
                         break;
                     };
                     measured.push(length)?;
                 }
-                let matches = complete && all(ctx, measured.iter(), |measured| spatial_length_parameter_matches(ctx, Some(*measured), parameter, &parameter_values))?;
+                let matches = complete
+                    && all(ctx, measured.iter(), |measured| {
+                        spatial_length_parameter_matches(
+                            ctx,
+                            Some(*measured),
+                            parameter,
+                            &parameter_values,
+                        )
+                    })?;
                 if !matches {
                     record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "repeated spatial line length requires distinct lines matching one length parameter"))?;
                 }
@@ -834,25 +1077,50 @@ pub(super) fn check_sketches(
                 second,
                 parameter,
             } => {
-                let first_geometry = Scratch::filter_map(ctx, first, |entity| Ok(spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry).copied()))?;
-                let second_geometry = Scratch::filter_map(ctx, second, |entity| Ok(spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry).copied()))?;
+                let first_geometry = Scratch::filter_map(ctx, first, |entity| {
+                    Ok(spatial_geometry
+                        .get(ctx, entity.as_str())?
+                        .map(|(_, geometry)| geometry)
+                        .copied())
+                })?;
+                let second_geometry = Scratch::filter_map(ctx, second, |entity| {
+                    Ok(spatial_geometry
+                        .get(ctx, entity.as_str())?
+                        .map(|(_, geometry)| geometry)
+                        .copied())
+                })?;
                 let tolerance = ir.tolerances.linear.get();
                 let first_collinear = match first_geometry.first() {
-                    Some(reference) => all(ctx, first_geometry.iter(), |candidate| Ok(spatial_parallel_line_distance(reference, candidate).is_some_and(|distance| distance <= tolerance)))?,
+                    Some(reference) => all(ctx, first_geometry.iter(), |candidate| {
+                        Ok(spatial_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance))
+                    })?,
                     None => false,
                 };
                 let second_collinear = match second_geometry.first() {
-                    Some(reference) => all(ctx, second_geometry.iter(), |candidate| Ok(spatial_parallel_line_distance(reference, candidate).is_some_and(|distance| distance <= tolerance)))?,
+                    Some(reference) => all(ctx, second_geometry.iter(), |candidate| {
+                        Ok(spatial_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance))
+                    })?,
                     None => false,
                 };
                 let measured = find_map(ctx, first_geometry.iter(), |first| {
-                    find_map(ctx, second_geometry.iter(), |second| Ok(spatial_parallel_line_span_distance(first, second, tolerance)))
+                    find_map(ctx, second_geometry.iter(), |second| {
+                        Ok(spatial_parallel_line_span_distance(
+                            first, second, tolerance,
+                        ))
+                    })
                 })?;
                 let matches = first_geometry.len() == first.len()
                     && second_geometry.len() == second.len()
                     && first_collinear
                     && second_collinear
-                    && spatial_length_parameter_matches(ctx, measured, parameter, &parameter_values)?;
+                    && spatial_length_parameter_matches(
+                        ctx,
+                        measured,
+                        parameter,
+                        &parameter_values,
+                    )?;
                 if !matches {
                     record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial parallel-line-set distance requires collinear carriers with overlapping spans separated by its length parameter"))?;
                 }
@@ -865,9 +1133,18 @@ pub(super) fn check_sketches(
                 ..
             } => {
                 let curves_match = all(ctx, sources.iter().chain(results), |entity| {
-                    Ok(spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry).is_some_and(|geometry| matches!(geometry.definition(),
-                        SpatialSketchGeometryDefinition::Line { .. } | SpatialSketchGeometryDefinition::Circle { .. }
-                        | SpatialSketchGeometryDefinition::Arc { .. } | SpatialSketchGeometryDefinition::Nurbs { .. })))
+                    Ok(spatial_geometry
+                        .get(ctx, entity.as_str())?
+                        .map(|(_, geometry)| geometry)
+                        .is_some_and(|geometry| {
+                            matches!(
+                                geometry.definition(),
+                                SpatialSketchGeometryDefinition::Line { .. }
+                                    | SpatialSketchGeometryDefinition::Circle { .. }
+                                    | SpatialSketchGeometryDefinition::Arc { .. }
+                                    | SpatialSketchGeometryDefinition::Nurbs { .. }
+                            )
+                        }))
                 })?;
                 let parameter_matches = match parameter {
                     None => true,
@@ -886,17 +1163,43 @@ pub(super) fn check_sketches(
                     },
                 };
                 if !curves_match {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial offset source and result members must be curves"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "spatial offset source and result members must be curves"
+                        ),
+                    )?;
                 }
                 if !parameter_matches {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial offset distance does not match its parameter"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!("{}", "spatial offset distance does not match its parameter"),
+                    )?;
                 }
             }
             SpatialConstraint::ParallelToDirection { entity, direction } => {
-                let Some(SpatialSketchGeometryDefinition::Line { start, end }) = spatial_geometry.get(ctx, entity.as_str())? .map(|(_, geometry)| geometry)
+                let Some(SpatialSketchGeometryDefinition::Line { start, end }) = spatial_geometry
+                    .get(ctx, entity.as_str())?
+                    .map(|(_, geometry)| geometry)
                     .map(|geometry| geometry.definition())
                 else {
-                    record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial directional constraint requires a line"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!("{}", "spatial directional constraint requires a line"),
+                    )?;
                     continue;
                 };
                 let line =
@@ -912,7 +1215,17 @@ pub(super) fn check_sketches(
                     || line_norm <= EPS_SKETCHES_CHECK_SKETCHES_E12
                     || cross.norm() > EPS_SKETCHES_CHECK_SKETCHES_E9 * line_norm
                 {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial line is not parallel to its constraint direction"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "spatial line is not parallel to its constraint direction"
+                        ),
+                    )?;
                 }
             }
             SpatialConstraint::Coincident { .. }
@@ -928,15 +1241,21 @@ pub(super) fn check_sketches(
         let valid = match constraint.definition.kind() {
             Constraint::TextFrame { text, frame } => {
                 matches!(
-                    geometry.get(ctx, text.as_str())?.map(|geometry| geometry.definition()),
+                    geometry
+                        .get(ctx, text.as_str())?
+                        .map(|geometry| geometry.definition()),
                     Some(SketchGeometryDefinition::Text { .. })
                 ) && all(ctx, frame, |entity| {
-                    Ok(geometry.get(ctx, entity.as_str())?.is_some_and(|geometry| !matches!(geometry.definition(), SketchGeometryDefinition::Text { .. })))
+                    Ok(geometry.get(ctx, entity.as_str())?.is_some_and(|geometry| {
+                        !matches!(geometry.definition(), SketchGeometryDefinition::Text { .. })
+                    }))
                 })?
             }
             Constraint::TextPath { text, path, .. } => {
                 matches!(
-                    geometry.get(ctx, text.as_str())?.map(|geometry| geometry.definition()),
+                    geometry
+                        .get(ctx, text.as_str())?
+                        .map(|geometry| geometry.definition()),
                     Some(SketchGeometryDefinition::Text { .. })
                 ) && geometry.get(ctx, path.as_str())?.is_some_and(|geometry| {
                     !matches!(
@@ -947,11 +1266,16 @@ pub(super) fn check_sketches(
                 })
             }
             Constraint::EqualDistance { first, second } => {
-                let measured_distance = |pair: &SketchDistancePair| -> Result<Option<f64>, CodecError> {
-                    let Some(first) = sketch_locus_point(ctx, &pair.first, &geometry)? else { return Ok(None); };
-                    let Some(second) = sketch_locus_point(ctx, &pair.second, &geometry)? else { return Ok(None); };
-                    Ok(Some(distance2(first, second)))
-                };
+                let measured_distance =
+                    |pair: &SketchDistancePair| -> Result<Option<f64>, CodecError> {
+                        let Some(first) = sketch_locus_point(ctx, &pair.first, &geometry)? else {
+                            return Ok(None);
+                        };
+                        let Some(second) = sketch_locus_point(ctx, &pair.second, &geometry)? else {
+                            return Ok(None);
+                        };
+                        Ok(Some(distance2(first, second)))
+                    };
                 measured_distance(first)?
                     .zip(measured_distance(second)?)
                     .is_none_or(|(first, second)| {
@@ -969,8 +1293,8 @@ pub(super) fn check_sketches(
                 distance,
                 parameter,
             } => {
-                let measured_points =
-                    sketch_locus_point(ctx, first, &geometry)?.zip(sketch_locus_point(ctx, second, &geometry)?);
+                let measured_points = sketch_locus_point(ctx, first, &geometry)?
+                    .zip(sketch_locus_point(ctx, second, &geometry)?);
                 let distance_matches =
                     measured_points.as_ref().is_none_or(|(first, second)| {
                         let measured = distance2(*first, *second);
@@ -979,16 +1303,20 @@ pub(super) fn check_sketches(
                                 EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.get())),
                             )
                     });
-                let parameter_matches = match parameter.as_ref() {
-                    None => true,
-                    Some(parameter) => match parameter_values.get(ctx, parameter.as_str())? {
-                        Some(Some(crate::features::ParameterValue::Length(value))) => {
-                            let expected = value.get().abs();
-                            (expected - distance.get()).abs() <= ir.tolerances.linear.get().max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.get())))
-                        }
-                        _ => false,
-                    },
-                };
+                let parameter_matches =
+                    match parameter.as_ref() {
+                        None => true,
+                        Some(parameter) => match parameter_values.get(ctx, parameter.as_str())? {
+                            Some(Some(crate::features::ParameterValue::Length(value))) => {
+                                let expected = value.get().abs();
+                                (expected - distance.get()).abs()
+                                    <= ir.tolerances.linear.get().max(
+                                        EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.get())),
+                                    )
+                            }
+                            _ => false,
+                        },
+                    };
                 distance_matches && parameter_matches
             }
             Constraint::PointCoordinateValues { point, values } => {
@@ -1033,8 +1361,8 @@ pub(super) fn check_sketches(
                 angle,
                 distance_parameter,
             } => {
-                let measured_points =
-                    sketch_locus_point(ctx, first, &geometry)?.zip(sketch_locus_point(ctx, second, &geometry)?);
+                let measured_points = sketch_locus_point(ctx, first, &geometry)?
+                    .zip(sketch_locus_point(ctx, second, &geometry)?);
                 let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
                     let measured = distance2(*first, *second);
                     (measured - distance.get()).abs()
@@ -1056,7 +1384,12 @@ pub(super) fn check_sketches(
                     Some(parameter) => match parameter_values.get(ctx, parameter.as_str())? {
                         Some(Some(crate::features::ParameterValue::Length(value))) => {
                             let expected = value.get().abs();
-                            (expected - distance.get()).abs() <= ir.tolerances.linear.get().max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.get())))
+                            (expected - distance.get()).abs()
+                                <= ir
+                                    .tolerances
+                                    .linear
+                                    .get()
+                                    .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.get())))
                         }
                         _ => false,
                     },
@@ -1064,33 +1397,59 @@ pub(super) fn check_sketches(
                 distance_matches && angle_matches && parameter_matches
             }
             Constraint::RepeatedLength { entities, .. } => {
-                let lengths = Scratch::filter_map(ctx, entities, |entity| Ok(match geometry.get(ctx, entity.as_str())?.map(|geometry| geometry.definition()) {
-                    Some(SketchGeometryDefinition::Line { start, end }) => Some((end.u - start.u).hypot(end.v - start.v)),
-                    _ => None,
-                }))?;
-                lengths.len() == entities.len() && all(ctx, lengths[1..].iter(), |length| Ok(
-                    (length - lengths[0]).abs() <= ir.tolerances.linear.get().max(EPS_SKETCHES_CHECK_SKETCHES_E9 * (1.0 + length.abs().max(lengths[0].abs())))
-                ))?
-
+                let lengths = Scratch::filter_map(ctx, entities, |entity| {
+                    Ok(
+                        match geometry
+                            .get(ctx, entity.as_str())?
+                            .map(|geometry| geometry.definition())
+                        {
+                            Some(SketchGeometryDefinition::Line { start, end }) => {
+                                Some((end.u - start.u).hypot(end.v - start.v))
+                            }
+                            _ => None,
+                        },
+                    )
+                })?;
+                lengths.len() == entities.len()
+                    && all(ctx, lengths[1..].iter(), |length| {
+                        Ok((length - lengths[0]).abs()
+                            <= ir.tolerances.linear.get().max(
+                                EPS_SKETCHES_CHECK_SKETCHES_E9
+                                    * (1.0 + length.abs().max(lengths[0].abs())),
+                            ))
+                    })?
             }
             Constraint::ParallelLineSetDistance {
                 first,
                 second,
                 parameter,
             } => {
-                let first_geometry = Scratch::filter_map(ctx, first, |entity| Ok(geometry.get(ctx, entity.as_str())?.copied()))?;
-                let second_geometry = Scratch::filter_map(ctx, second, |entity| Ok(geometry.get(ctx, entity.as_str())?.copied()))?;
+                let first_geometry = Scratch::filter_map(ctx, first, |entity| {
+                    Ok(geometry.get(ctx, entity.as_str())?.copied())
+                })?;
+                let second_geometry = Scratch::filter_map(ctx, second, |entity| {
+                    Ok(geometry.get(ctx, entity.as_str())?.copied())
+                })?;
                 let tolerance = ir.tolerances.linear.get();
                 let first_collinear = match first_geometry.first() {
-                    Some(reference) => all(ctx, first_geometry.iter(), |candidate| Ok(planar_parallel_line_distance(reference, candidate).is_some_and(|distance| distance.get() <= tolerance)))?,
+                    Some(reference) => all(ctx, first_geometry.iter(), |candidate| {
+                        Ok(planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance.get() <= tolerance))
+                    })?,
                     None => false,
                 };
                 let second_collinear = match second_geometry.first() {
-                    Some(reference) => all(ctx, second_geometry.iter(), |candidate| Ok(planar_parallel_line_distance(reference, candidate).is_some_and(|distance| distance.get() <= tolerance)))?,
+                    Some(reference) => all(ctx, second_geometry.iter(), |candidate| {
+                        Ok(planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance.get() <= tolerance))
+                    })?,
                     None => false,
                 };
                 let measured = find_map(ctx, first_geometry.iter(), |first| {
-                    find_map(ctx, second_geometry.iter(), |second| Ok(planar_parallel_line_span_distance(first, second, tolerance).map(crate::scalar::FiniteReal::get)))
+                    find_map(ctx, second_geometry.iter(), |second| {
+                        Ok(planar_parallel_line_span_distance(first, second, tolerance)
+                            .map(crate::scalar::FiniteReal::get))
+                    })
                 })?;
                 let expected = match parameter_values.get(ctx, parameter.as_str())? {
                     Some(Some(crate::features::ParameterValue::Length(length))) => {
@@ -1114,14 +1473,28 @@ pub(super) fn check_sketches(
             }
             Constraint::RepeatedRadius { entities, .. }
             | Constraint::RepeatedDiameter { entities, .. } => {
-                let radii = Scratch::filter_map(ctx, entities, |entity| Ok(match geometry.get(ctx, entity.as_str())?.map(|geometry| geometry.definition()) {
-                    Some(SketchGeometryDefinition::Circle { radius, .. } | SketchGeometryDefinition::Arc { radius, .. }) => Some(radius.get()),
-                    _ => None,
-                }))?;
-                radii.len() == entities.len() && all(ctx, radii[1..].iter(), |radius| Ok(
-                    (radius - radii[0]).abs() <= ir.tolerances.linear.get().max(EPS_SKETCHES_CHECK_SKETCHES_E9 * (1.0 + radius.abs().max(radii[0].abs())))
-                ))?
-
+                let radii = Scratch::filter_map(ctx, entities, |entity| {
+                    Ok(
+                        match geometry
+                            .get(ctx, entity.as_str())?
+                            .map(|geometry| geometry.definition())
+                        {
+                            Some(
+                                SketchGeometryDefinition::Circle { radius, .. }
+                                | SketchGeometryDefinition::Arc { radius, .. },
+                            ) => Some(radius.get()),
+                            _ => None,
+                        },
+                    )
+                })?;
+                radii.len() == entities.len()
+                    && all(ctx, radii[1..].iter(), |radius| {
+                        Ok((radius - radii[0]).abs()
+                            <= ir.tolerances.linear.get().max(
+                                EPS_SKETCHES_CHECK_SKETCHES_E9
+                                    * (1.0 + radius.abs().max(radii[0].abs())),
+                            ))
+                    })?
             }
             Constraint::Disabled {}
             | Constraint::Coincident { .. }
@@ -1171,7 +1544,14 @@ pub(super) fn check_sketches(
             | Constraint::Native { .. } => true,
         };
         if !valid {
-            record_finding(ctx, findings, Check::Counts, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "invalid sketch constraint arity"))?;
+            record_finding(
+                ctx,
+                findings,
+                Check::Counts,
+                crate::report::Severity::Error,
+                Some(constraint.id.as_str()),
+                format_args!("{}", "invalid sketch constraint arity"),
+            )?;
         }
         if let Constraint::PointOnObject { point: _, entity } = constraint.definition.kind() {
             if geometry.get(ctx, entity.as_str())?.is_some_and(|geometry| {
@@ -1180,13 +1560,27 @@ pub(super) fn check_sketches(
                     SketchGeometryDefinition::Point { .. }
                 )
             }) {
-                record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "point-on-object support is itself a point"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::GeometricConsistency,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!("{}", "point-on-object support is itself a point"),
+                )?;
             }
         }
         if let Some(message) =
             constraint_entity_kind_refusal(ctx, constraint.definition.kind(), &geometry)?
         {
-            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", message))?;
+            record_finding(
+                ctx,
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                Some(constraint.id.as_str()),
+                format_args!("{message}"),
+            )?;
         }
         for locus in constraint_loci(ctx, constraint.definition.kind())? {
             ctx.charge_work(1, "sketch constraint locus scan")?;
@@ -1210,7 +1604,17 @@ pub(super) fn check_sketches(
                 ),
             };
             if !valid {
-                record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "sketch constraint locus is incompatible with its entity"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::GeometricConsistency,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!(
+                        "{}",
+                        "sketch constraint locus is incompatible with its entity"
+                    ),
+                )?;
             }
         }
         if let Constraint::Offset {
@@ -1219,27 +1623,61 @@ pub(super) fn check_sketches(
         {
             for pair in pairs {
                 ctx.charge_work(1, "sketch constraint pair scan")?;
-                let valid = match geometry.get(ctx, pair.source.as_str())?
-                    .zip(geometry.get(ctx, pair.result.as_str())?) {
+                let valid = match geometry
+                    .get(ctx, pair.source.as_str())?
+                    .zip(geometry.get(ctx, pair.result.as_str())?)
+                {
                     Some((source, result)) => {
-                        let expected = if pair.source_reversed { -distance.get() } else { distance.get() };
-                        sketch_curve_offset_matches(ctx, source, result, expected, ir.tolerances.linear.get())?
+                        let expected = if pair.source_reversed {
+                            -distance.get()
+                        } else {
+                            distance.get()
+                        };
+                        sketch_curve_offset_matches(
+                            ctx,
+                            source,
+                            result,
+                            expected,
+                            ir.tolerances.linear.get(),
+                        )?
                     }
                     None => true,
                 };
                 if !valid {
-                    record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "sketch offset pair does not match its oriented distance"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::GeometricConsistency,
+                        crate::report::Severity::Error,
+                        Some(constraint.id.as_str()),
+                        format_args!(
+                            "{}",
+                            "sketch offset pair does not match its oriented distance"
+                        ),
+                    )?;
                 }
             }
         }
         if let Constraint::ProjectedCopy { source, result } = constraint.definition.kind() {
-            let valid = match geometry.get(ctx, source.as_str())?
-                .zip(geometry.get(ctx, result.as_str())?) {
+            let valid = match geometry
+                .get(ctx, source.as_str())?
+                .zip(geometry.get(ctx, result.as_str())?)
+            {
                 Some((source, result)) => equality::geometry_equal(ctx, source, result)?,
                 None => true,
             };
             if !valid {
-                record_finding(ctx, findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "projected-copy entities do not have identical geometry"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::GeometricConsistency,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!(
+                        "{}",
+                        "projected-copy entities do not have identical geometry"
+                    ),
+                )?;
             }
         }
     }
@@ -1250,16 +1688,29 @@ pub(super) fn check_sketches(
 /// the constraint does not admit. An absent entity is a referential finding of
 /// its own.
 fn constraint_entity_kind_refusal(
-    ctx: &DecodeContext<'_>, definition: &Constraint,
+    ctx: &DecodeContext<'_>,
+    definition: &Constraint,
     geometry: &BorrowedIdentities<'_, '_, &SketchGeometry>,
 ) -> Result<Option<&'static str>, CodecError> {
-    let Some((entity, restriction)) = definition.entity_kind_restriction() else { return Ok(None); };
-    let Some(geometry) = geometry.get(ctx, entity.as_str())? else { return Ok(None); };
-    if restriction.admits(geometry.definition()) { return Ok(None); }
+    let Some((entity, restriction)) = definition.entity_kind_restriction() else {
+        return Ok(None);
+    };
+    let Some(geometry) = geometry.get(ctx, entity.as_str())? else {
+        return Ok(None);
+    };
+    if restriction.admits(geometry.definition()) {
+        return Ok(None);
+    }
     Ok(Some(match restriction {
-        SketchEntityKindRestriction::BoundedCurve => "sketch midpoint constraint references an entity that is not a bounded curve",
-        SketchEntityKindRestriction::CircularArc => "sketch arc-angle constraint references an entity that is not a circular arc",
-        SketchEntityKindRestriction::BoundedEllipse => "sketch ellipse-angle constraint references an entity that is not a bounded ellipse",
+        SketchEntityKindRestriction::BoundedCurve => {
+            "sketch midpoint constraint references an entity that is not a bounded curve"
+        }
+        SketchEntityKindRestriction::CircularArc => {
+            "sketch arc-angle constraint references an entity that is not a circular arc"
+        }
+        SketchEntityKindRestriction::BoundedEllipse => {
+            "sketch ellipse-angle constraint references an entity that is not a bounded ellipse"
+        }
     }))
 }
 
@@ -1413,7 +1864,10 @@ fn oriented_endpoints(
         ),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let points = curve.pole_rows();
-            (points.point_at(0)?.get(), points.point_at(points.count().checked_sub(1)?)?.get())
+            (
+                points.point_at(0)?.get(),
+                points.point_at(points.count().checked_sub(1)?)?.get(),
+            )
         }
         _ => return None,
     };
@@ -1458,14 +1912,18 @@ fn sketch_locus_point(
     locus: &SketchLocus,
     geometry: &BorrowedIdentities<'_, '_, &SketchGeometry>,
 ) -> Result<Option<crate::math::Point2>, CodecError> {
-    let Some(entity_geometry) = geometry.get(ctx, locus_entity(locus).as_str())? else { return Ok(None); };
+    let Some(entity_geometry) = geometry.get(ctx, locus_entity(locus).as_str())? else {
+        return Ok(None);
+    };
     Ok(match locus {
         SketchLocus::Entity(_) => match entity_geometry.definition() {
             SketchGeometryDefinition::Point { position } => Some(position.get()),
             _ => None,
         },
         SketchLocus::Start(_) | SketchLocus::End(_) => {
-            let Some((start, end)) = oriented_endpoints(entity_geometry, false) else { return Ok(None); };
+            let Some((start, end)) = oriented_endpoints(entity_geometry, false) else {
+                return Ok(None);
+            };
             Some(if matches!(locus, SketchLocus::Start(_)) {
                 start
             } else {
@@ -1483,7 +1941,12 @@ fn sketch_locus_point(
     })
 }
 
-fn constraint_loci<'ctx, 'definition>(ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>, definition: &'definition Constraint) -> Result<Scratch<'ctx, &'definition SketchLocus>, cadmpeg_core::CodecError> {
+fn constraint_loci<'ctx, 'definition>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &'definition Constraint,
+) -> Result<Scratch<'ctx, &'definition SketchLocus>, cadmpeg_core::CodecError> {
+    use crate::sketches::SketchDistanceMeasurement;
+
     let mut loci = Scratch::new(ctx)?;
     match definition {
         Constraint::CoincidentLoci { loci: members } => loci.extend(members)?,
@@ -1497,21 +1960,28 @@ fn constraint_loci<'ctx, 'definition>(ctx: &'ctx cadmpeg_core::decode::DecodeCon
         | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => loci.extend([first, second])?,
-        Constraint::EqualDistance { first, second } => loci.extend([&first.first, &first.second, &second.first, &second.second])?,
+        Constraint::EqualDistance { first, second } => {
+            loci.extend([&first.first, &first.second, &second.first, &second.second])?;
+        }
         Constraint::RepeatedDistance { measurements, .. } => {
             for measurement in measurements {
                 ctx.charge_work(1, "sketch distance measurement scan")?;
-                use crate::sketches::SketchDistanceMeasurement as Measurement;
                 let (first, second) = match measurement {
-                    Measurement::Distance { first, second }
-                    | Measurement::Horizontal { first, second }
-                    | Measurement::Vertical { first, second } => (first, second),
+                    SketchDistanceMeasurement::Distance { first, second }
+                    | SketchDistanceMeasurement::Horizontal { first, second }
+                    | SketchDistanceMeasurement::Vertical { first, second } => (first, second),
                 };
                 loci.extend([first, second])?;
             }
         }
-        Constraint::SnellsLaw { incident, refracted, .. } => loci.extend([incident, refracted])?,
-        Constraint::Group { elements } | Constraint::Text { elements, .. } => loci.extend(elements)?,
+        Constraint::SnellsLaw {
+            incident,
+            refracted,
+            ..
+        } => loci.extend([incident, refracted])?,
+        Constraint::Group { elements } | Constraint::Text { elements, .. } => {
+            loci.extend(elements)?;
+        }
         _ => {}
     }
     Ok(loci)

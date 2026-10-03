@@ -405,8 +405,7 @@ fn rescope_fidelity(
             "retain F3Z provenance stream",
         )?)
         .map_err(CodecError::malformed)?;
-        let stream =
-            StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
+        let stream = StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
         builder.note(
             ctx,
             &id,
@@ -538,13 +537,21 @@ struct OccurrenceScope<'r, 'a> {
 impl EntityRewrite for OccurrenceScope<'_, '_> {
     type Error = CodecError;
 
-    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
-        cadmpeg_ir::schema::rewrite::identities(self.ctx, "rewrite F3Z model identity", entity, |id: &str| {
-            match rescope_charged(self.ctx, id, self.occurrence)? {
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, CodecError> {
+        cadmpeg_ir::schema::rewrite::identities(
+            self.ctx,
+            "rewrite F3Z model identity",
+            entity,
+            |id: &str| match rescope_charged(self.ctx, id, self.occurrence)? {
                 Some(rewritten) => Ok(rewritten),
-                None => self.ctx.copy_retained_text(id, "copy F3Z unchanged identity"),
-            }
-        })
+                None => self
+                    .ctx
+                    .copy_retained_text(id, "copy F3Z unchanged identity"),
+            },
+        )
     }
 }
 

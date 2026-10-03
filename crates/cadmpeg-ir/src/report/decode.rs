@@ -268,7 +268,10 @@ impl TransferLedger {
     /// Verifies every produced target against a finalized model index.
     pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
         for entry in &self.entries {
-            if let Some(target) = entry.target().filter(|target| !index.contains(target, crate::index::StandardIndex)) {
+            if let Some(target) = entry
+                .target()
+                .filter(|target| !index.contains(target, crate::index::StandardIndex))
+            {
                 return Err(format!(
                     "transfer source {:?} targets unresolved identity {:?}",
                     entry.source, target
@@ -426,7 +429,8 @@ impl Coverage {
             *value = count;
             return Ok(());
         }
-        ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
+        ctx.admit_retained_btree_record::<String, usize>(0, "decode coverage nodes")?;
+        self.entries.insert(name, count);
         Ok(())
     }
 

@@ -1098,8 +1098,8 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selection =
-        |record_index| crate::records::feature::assembly::DesignAssemblyLegacySelection {
+    let selection = |record_index| {
+        crate::records::feature::assembly::DesignAssemblyLegacySelection {
             record_index,
             byte_offset: 400,
             class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
@@ -1125,7 +1125,8 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
                 "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
             })).unwrap()],
             next_byte_offset: 600,
-        };
+        }
+    };
     let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
         crate::records::feature::assembly::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -1185,21 +1186,42 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
     };
 
     let alignment = super::DesignAssemblyAlignment::try_new(
-        0.0, [0.0; 3], Vec::new(), Some(super::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
-            carriers, solved_frame, limits: None, frames_field_present: true,
+        0.0,
+        [0.0; 3],
+        Vec::new(),
+        Some(super::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+            carriers,
+            solved_frame,
+            limits: None,
+            frames_field_present: true,
         }),
-    ).unwrap();
+    )
+    .unwrap();
     let mut value = serde_json::to_value(&alignment).unwrap();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let remap = |id: &str| ctx.format_retained(format_args!("f3d:occurrence:{}", id.strip_prefix("f3d:model:").unwrap()), "test native identity");
-    let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed alignment", alignment, remap).unwrap();
+    let remap = |id: &str| {
+        ctx.format_retained(
+            format_args!("f3d:occurrence:{}", id.strip_prefix("f3d:model:").unwrap()),
+            "test native identity",
+        )
+    };
+    let expected =
+        cadmpeg_ir::schema::rewrite::identities(&ctx, "test typed alignment", alignment, remap)
+            .unwrap();
     let mut identities = IdentityMap::new(&ctx, "test native alignment", remap).unwrap();
-    super::DesignAssemblyAlignment::rewrite_native_value(&ctx, &mut value, &mut identities).unwrap();
+    super::DesignAssemblyAlignment::rewrite_native_value(&ctx, &mut value, &mut identities)
+        .unwrap();
     identities.finish(&ctx).unwrap();
     assert_eq!(value, serde_json::to_value(expected).unwrap());
     for operand in value["legacy_operand_carriers"].as_array().unwrap() {
-        assert_eq!(operand["selection"]["recipe_references"][0]["candidate_faces"][0], "f3d:occurrence:face#one");
-        assert_eq!(operand["selection"]["recipe_references"][0]["token"], "f3d:model:face#one");
+        assert_eq!(
+            operand["selection"]["recipe_references"][0]["candidate_faces"][0],
+            "f3d:occurrence:face#one"
+        );
+        assert_eq!(
+            operand["selection"]["recipe_references"][0]["token"],
+            "f3d:model:face#one"
+        );
     }
     drop(identities);
     ctx.finish_session().unwrap();

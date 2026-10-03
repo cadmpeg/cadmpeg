@@ -29,8 +29,13 @@ fn identity_text_equality_admits_length_and_only_actual_byte_comparisons() {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.operation, "actual text equality");
                 assert_eq!(original.additional, 1);
-                assert_eq!(super::equal(&ctx, "", "different length", "fused text equality").unwrap_err(), original);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+                assert_eq!(
+                    super::equal(&ctx, "", "different length", "fused text equality").unwrap_err(),
+                    original
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+                );
             } else {
                 assert_eq!(result.unwrap(), expected);
                 ctx.finish_session().unwrap();
@@ -62,7 +67,9 @@ fn identity_cache_comparisons_admit_only_the_bytes_inspected() {
                 let original = result.unwrap_err();
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.operation, "actual cache comparison");
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+                );
             } else {
                 assert_eq!(result.unwrap(), expected);
                 ctx.finish_session().unwrap();
@@ -70,4 +77,3 @@ fn identity_cache_comparisons_admit_only_the_bytes_inspected() {
         }
     }
 }
-

@@ -18,10 +18,18 @@ impl Serialize for Members<'_> {
             CopyOnChange { state: &'a CopyOnChange },
         }
         let mut sequence = serializer.serialize_seq(None)?;
-        for subelement in &self.0.linked_subelements { sequence.serialize_element(&Member::LinkedSubelement { subelement })?; }
-        if let Some(component) = &self.0.element_component { sequence.serialize_element(&Member::ElementComponent { component })?; }
-        if let Some(claim) = self.0.claim_child { sequence.serialize_element(&Member::ClaimChild { claim })?; }
-        if let Some(state) = &self.0.copy_on_change { sequence.serialize_element(&Member::CopyOnChange { state })?; }
+        for subelement in &self.0.linked_subelements {
+            sequence.serialize_element(&Member::LinkedSubelement { subelement })?;
+        }
+        if let Some(component) = &self.0.element_component {
+            sequence.serialize_element(&Member::ElementComponent { component })?;
+        }
+        if let Some(claim) = self.0.claim_child {
+            sequence.serialize_element(&Member::ClaimChild { claim })?;
+        }
+        if let Some(state) = &self.0.copy_on_change {
+            sequence.serialize_element(&Member::CopyOnChange { state })?;
+        }
         sequence.end()
     }
 }
@@ -29,7 +37,12 @@ impl Serialize for Members<'_> {
 impl Serialize for LinkState {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Wire<'a> { members: Members<'a> }
-        Wire { members: Members(self) }.serialize(serializer)
+        struct Wire<'a> {
+            members: Members<'a>,
+        }
+        Wire {
+            members: Members(self),
+        }
+        .serialize(serializer)
     }
 }

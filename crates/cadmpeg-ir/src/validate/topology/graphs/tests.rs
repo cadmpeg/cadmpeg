@@ -1,13 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::document::CadIr;
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use crate::document::CadIr;
-use crate::report::{check::{Check, Finding}, Severity};
 
-fn refuses(ir: &CadIr, check: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>) {
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+fn refuses(
+    ir: &CadIr,
+    check: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
+) {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -19,10 +29,14 @@ fn refuses(ir: &CadIr, check: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Findi
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = check(&ctx, ir, &mut findings) else { panic!("topology graph must refuse"); };
+        let Err(CodecError::ResourceLimit(limit)) = check(&ctx, ir, &mut findings) else {
+            panic!("topology graph must refuse");
+        };
         assert_eq!(limit.dimension, dimension);
         assert!(findings.is_empty());
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
 
@@ -60,7 +74,10 @@ fn topology_graph_validation_releases_scopes_without_retaining_identities() {
     super::check_wire_topology(&ctx, &ir, &mut findings).unwrap();
     super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
     assert!(findings.is_empty());
-    drop(ctx.reserve_scoped(32768, "topology graph scopes released").unwrap());
+    drop(
+        ctx.reserve_scoped(32768, "topology graph scopes released")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -68,7 +85,14 @@ fn topology_graph_validation_releases_scopes_without_retaining_identities() {
 fn radial_ring_crossing_keeps_error_order_and_owner() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let owner = ir.model.coedges[0].id.clone();
-    let other = ir.model.coedges.iter().find(|coedge| coedge.edge != ir.model.coedges[0].edge).unwrap().id.clone();
+    let other = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge != ir.model.coedges[0].edge)
+        .unwrap()
+        .id
+        .clone();
     ir.model.coedges[0].radial_next = other;
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();

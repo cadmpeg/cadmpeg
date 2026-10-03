@@ -390,9 +390,16 @@ fn nurbs_curve_copy_refuses_at_caller_limit() {
         FiniteReal::ONE,
     ];
     let points = vec![FinitePoint3::ZERO, FinitePoint3::ZERO];
-    let nurbs =
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots, points, None, false).expect("fixture pole pairing admission")
-            .expect("valid curve lanes");
+    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        knots,
+        points,
+        None,
+        false,
+    )
+    .expect("fixture pole pairing admission")
+    .expect("valid curve lanes");
     let result = with_collection_limit(&[], 5, |ctx| {
         nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")
     });
@@ -410,12 +417,14 @@ fn nurbs_surface_copy_refuses_at_caller_limit() {
         FiniteReal::ONE,
     ];
     let axis = || NurbsSurfaceAxis::new(1, knots.clone(), false);
-    let nurbs = NurbsSurface::from_finite_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let nurbs = NurbsSurface::from_finite_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         axis(),
         axis(),
         NurbsSurfaceLanes::new(vec![vec![FinitePoint3::ZERO; 2]; 2], None),
         false,
-    ).expect("fixture pole pairing admission")
+    )
+    .expect("fixture pole pairing admission")
     .expect("valid surface lanes");
     let result = with_collection_limit(&[], 13, |ctx| {
         nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")
@@ -793,10 +802,20 @@ fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
         assert_eq!(poles.len(), 14);
         assert_eq!(poles[12], poles[0]);
         assert_eq!(poles[13], poles[1]);
-        let start = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &normalized, 0.0, 0.5)
-            .expect("periodic start point");
-        let end = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &normalized, 1.0, 0.5)
-            .expect("periodic end point");
+        let start = cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &normalized,
+            0.0,
+            0.5,
+        )
+        .expect("periodic start point");
+        let end = cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &normalized,
+            1.0,
+            0.5,
+        )
+        .expect("periodic end point");
         assert!((start.x - end.x).abs() <= 1.0e-12);
         assert!((start.y - end.y).abs() <= 1.0e-12);
         assert!((start.z - end.z).abs() <= 1.0e-12);

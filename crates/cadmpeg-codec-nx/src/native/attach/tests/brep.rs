@@ -49,7 +49,12 @@ fn nx_body_writing_brep_retains_unresolved_family() {
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
     assert_eq!(
-        body_writing_unresolved_feature_definition(&cadmpeg_test_support::service_decode_context(), "BREP", &source_properties).expect("body-writing projection admission"),
+        body_writing_unresolved_feature_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            "BREP",
+            &source_properties
+        )
+        .expect("body-writing projection admission"),
         Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Brep
         }))
@@ -59,7 +64,12 @@ fn nx_body_writing_brep_retains_unresolved_family() {
 #[test]
 fn nx_non_body_writing_brep_remains_native_for_result_review() {
     assert_eq!(
-        body_writing_unresolved_feature_definition(&cadmpeg_test_support::service_decode_context(), "BREP", &BTreeMap::new()).expect("body-writing projection admission"),
+        body_writing_unresolved_feature_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            "BREP",
+            &BTreeMap::new()
+        )
+        .expect("body-writing projection admission"),
         None
     );
 }

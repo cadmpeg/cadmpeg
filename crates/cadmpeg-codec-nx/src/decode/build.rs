@@ -1020,11 +1020,7 @@ pub(super) fn try_decode_geometry(
             if charted.is_some() || uncharted.is_some() {
                 annotations.derived(ctx, procedural_id.as_str(), "definition")?;
             } else {
-                annotations.exactness(
-                    ctx,
-                    procedural_id.as_str(),
-                    Exactness::Unknown,
-                )?;
+                annotations.exactness(ctx, procedural_id.as_str(), Exactness::Unknown)?;
             }
             let definition = if let Some(charted) = charted {
                 let support_uv = if let Some(lanes) = intersection_support_uv.get(&construction.xmt)
@@ -1849,9 +1845,21 @@ fn retain_live_annotations(
         )?;
     }
     let mut keep = |id: &str| {
-        let work = ids.len().checked_add(1).and_then(|count| id.len().checked_add(1).and_then(|bytes| count.checked_mul(bytes)))
-            .ok_or_else(|| ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "nx annotation identity lookup")?;
+        let work = ids
+            .len()
+            .checked_add(1)
+            .and_then(|count| {
+                id.len()
+                    .checked_add(1)
+                    .and_then(|bytes| count.checked_mul(bytes))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "nx annotation identity lookup",
+        )?;
         Ok(ids.contains(id))
     };
     annotations.retain_provenance(ctx, &mut keep)?;

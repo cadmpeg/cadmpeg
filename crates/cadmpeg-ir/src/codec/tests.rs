@@ -30,7 +30,13 @@ fn decoded(ir: CadIr) -> Decoded {
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(decoded(ir), FormatId::new("test"), false, &cadmpeg_test_support::service_decode_context()).expect("result construction is admitted")
+    DecodeResult::new(
+        decoded(ir),
+        FormatId::new("test"),
+        false,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("result construction is admitted")
 }
 
 struct RejectFloorCodec;
@@ -294,7 +300,13 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = None;
 
-    let result = DecodeResult::new(decoded(ir), FormatId::new("test"), false, &cadmpeg_test_support::service_decode_context()).expect("result construction is admitted");
+    let result = DecodeResult::new(
+        decoded(ir),
+        FormatId::new("test"),
+        false,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("result construction is admitted");
 
     assert_eq!(result.report().format(), "test");
     assert!(result.report().dialects().is_none());
@@ -317,7 +329,10 @@ fn a_decode_result_keeps_the_body_it_was_given() {
             source_fidelity: SourceFidelity::default(),
         },
         FormatId::new("test"),
-        true, &cadmpeg_test_support::service_decode_context()).expect("result construction is admitted");
+        true,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("result construction is admitted");
 
     assert!(result.report().container_only());
     assert_eq!(result.report().notes, ["kept"]);
@@ -338,7 +353,13 @@ fn wrapper_stamps_request_scope_for_each_backend_transfer() {
         for container_only in [false, true] {
             let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
             decoded.body.transfer = transfer;
-            let result = DecodeResult::new(decoded, FormatId::new("test"), container_only, &cadmpeg_test_support::service_decode_context()).expect("result construction is admitted");
+            let result = DecodeResult::new(
+                decoded,
+                FormatId::new("test"),
+                container_only,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("result construction is admitted");
             assert_eq!(result.report().container_only(), container_only);
             assert_eq!(
                 result.report().geometry_transferred(),
@@ -355,10 +376,17 @@ fn decode_result_refuses_classification_storage_in_the_live_session() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = DecodeResult::new(decoded(CadIr::empty()), FormatId::new("test"), false, &ctx);
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("classification storage must refuse"); };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("classification storage must refuse");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
     assert_eq!(limit.operation, "decode result classification");
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -370,8 +398,15 @@ fn decode_result_refuses_model_sort_work_in_the_live_session() {
     policy.limits.max_work_units = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = DecodeResult::new(decoded(ir), FormatId::new("test"), false, &ctx);
-    let Err(CodecError::ResourceLimit(limit)) = result else { panic!("model sort work must refuse"); };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("model sort work must refuse");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.operation, "finalize model arena");
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }

@@ -33,7 +33,13 @@ fn planar_rechart_recovers_a_foreign_consolidated_chart() {
         .expect("an isometric stored chart recharts onto the target plane");
     for (site, locus) in stored.iter().zip(&loci) {
         let [u, v] = chart.point(*site);
-        let lifted = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, u, v).expect("plane evaluates");
+        let lifted = cadmpeg_ir::eval::decode::surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &target,
+            u,
+            v,
+        )
+        .expect("plane evaluates");
         assert!(
             (lifted.x - locus.x)
                 .hypot(lifted.y - locus.y)
@@ -46,7 +52,13 @@ fn planar_rechart_recovers_a_foreign_consolidated_chart() {
     // target's own, which lands far from the definition loci.
     let naive = ConsolidatedCarrierChart::Identity;
     let [u, v] = naive.point(stored[0]);
-    let lifted = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, u, v).expect("plane evaluates");
+    let lifted = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &target,
+        u,
+        v,
+    )
+    .expect("plane evaluates");
     assert!(
         (lifted.x - loci[0].x)
             .hypot(lifted.y - loci[0].y)
@@ -92,9 +104,14 @@ fn planar_rechart_declines_a_chart_that_is_not_an_isometry() {
     let collinear_loci = collinear_sites
         .iter()
         .map(|[u, v]| {
-            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, *u, *v)
-                .expect("plane")
-                .get()
+            cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &target,
+                *u,
+                *v,
+            )
+            .expect("plane")
+            .get()
         })
         .collect::<Vec<_>>();
     assert!(solve_planar_chart_rechart(&collinear_sites, &collinear_loci, &target).is_none());
@@ -106,7 +123,8 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
     let endpoints = [*loci.first().expect("sites"), *loci.last().expect("sites")];
     let range = [0.0, 1.0];
     let line_through = |first: [f64; 2], last: [f64; 2]| PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![range[0], range[0], range[1], range[1]],
             vec![
@@ -115,7 +133,8 @@ fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
             ],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("valid endpoint witness pcurve"),
     };
     let chart = solve_planar_chart_rechart(&stored, &loci, &target).expect("isometry");

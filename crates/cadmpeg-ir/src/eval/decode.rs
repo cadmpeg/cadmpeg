@@ -3,9 +3,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceLimit, ScopedReservation,
-};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 
 use super::admission::{EvaluationAdmission, EvaluationDepthGuard};
 use super::{CurveDerivative, EvaluationFailure};
@@ -75,9 +73,16 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
 
     /// The resource refusal recorded by an allocation, charge or evaluation.
     pub(super) fn refused(&self) -> Option<ResourceLimit> {
-        if let Some(limit) = *self.refusal.borrow() { return Some(limit); }
-        let original = self.admission.work(0, "observe geometry evaluation refusal").err();
-        if let Some(limit) = original { *self.refusal.borrow_mut() = Some(limit); }
+        if let Some(limit) = *self.refusal.borrow() {
+            return Some(limit);
+        }
+        let original = self
+            .admission
+            .work(0, "observe geometry evaluation refusal")
+            .err();
+        if let Some(limit) = original {
+            *self.refusal.borrow_mut() = Some(limit);
+        }
         original
     }
 
@@ -135,14 +140,21 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         let mut output = Vec::new();
         while values.size_hint() != (0, Some(0)) {
             self.work(1, work_operation)?;
-            let Some(value) = values.next() else { break; };
+            let Some(value) = values.next() else {
+                break;
+            };
             self.reserve(&mut output, 1, operation)?;
             output.push(value?);
         }
         Some(output)
     }
 
-    pub(super) fn reserve<T>(&self, values: &mut Vec<T>, count: usize, operation: &'static str) -> Option<()> {
+    pub(super) fn reserve<T>(
+        &self,
+        values: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Option<()> {
         self.work(0, operation)?;
         match self.admission.context() {
             Some(context) => {
@@ -153,23 +165,30 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
                 let reservation = storage.as_mut()?;
                 self.admit(context.reserve_scoped_vec_limit(reservation, values, count, operation))
             }
-            None => self.admit(
-                crate::geometry::nurbs::scratch::reserve_exact(values, count, operation),
-            ),
+            None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
+                values, count, operation,
+            )),
         }
     }
 
     /// Create exact temporary backing with its reservation held by the caller.
-    pub(super) fn temporary_vec<T>(&self, count: usize, operation: &'static str)
-        -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
+    pub(super) fn temporary_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
         self.work(0, operation)?;
         let mut values = Vec::new();
         let storage = match self.admission.context() {
-            Some(context) => Some(self.admit(
-                context.reserve_temporary_vec(&mut values, count, operation),
-            )?),
+            Some(context) => {
+                Some(self.admit(context.reserve_temporary_vec(&mut values, count, operation))?)
+            }
             None => {
-                self.admit(crate::geometry::nurbs::scratch::reserve_exact(&mut values, count, operation))?;
+                self.admit(crate::geometry::nurbs::scratch::reserve_exact(
+                    &mut values,
+                    count,
+                    operation,
+                ))?;
                 None
             }
         };
@@ -177,16 +196,24 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     }
 
     /// Copy retained output through the selected allocation and work policy.
-    pub(super) fn retained_copy<T: Copy>(&self, source: &[T], operation: &'static str) -> Option<Vec<T>> {
+    pub(super) fn retained_copy<T: Copy>(
+        &self,
+        source: &[T],
+        operation: &'static str,
+    ) -> Option<Vec<T>> {
         self.work(0, operation)?;
         let mut values = Vec::new();
         match self.admission.context() {
-            Some(context) => self.admit(
-                context.reserve_retained_vec_limit(&mut values, source.len(), operation),
-            )?,
-            None => self.admit(
-                crate::geometry::nurbs::scratch::reserve_exact(&mut values, source.len(), operation),
-            )?,
+            Some(context) => self.admit(context.reserve_retained_vec_limit(
+                &mut values,
+                source.len(),
+                operation,
+            ))?,
+            None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
+                &mut values,
+                source.len(),
+                operation,
+            ))?,
         }
         for value in source {
             self.work(std::mem::size_of::<T>(), operation)?;
@@ -199,18 +226,14 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         if self.refusal.borrow().is_some() {
             return None;
         }
-        self.admit(
-            self.admission.work(u64_from_index(count), operation),
-        )
+        self.admit(self.admission.work(u64_from_index(count), operation))
     }
 
     pub(super) fn enter(&self) -> Option<EvaluationDepthGuard<'_>> {
         if self.refusal.borrow().is_some() {
             return None;
         }
-        self.admit(
-            self.admission.enter(&self.independent_depth),
-        )
+        self.admit(self.admission.enter(&self.independent_depth))
     }
 
     pub(super) fn finish<T>(self, value: T) -> Result<T, ResourceLimit> {
@@ -441,7 +464,8 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 degree,
                 self.curve.pole_count(),
                 parameter.get(),
-            ).map_err(EvaluationFailure::ResourceLimit)?
+            )
+            .map_err(EvaluationFailure::ResourceLimit)?
             .ok_or(EvaluationFailure::NoValue)?;
             let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
             super::basis::fill_bspline_basis(
@@ -530,9 +554,13 @@ pub fn nurbs_surface_point<'ctx, 'arena: 'ctx>(
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let scratch = Scratch::new(admission);
-    let result = scratch.admission.independent_cost(super::nurbs_surface_evaluation_cost(surface)).and_then(|()| super::nurbs_surface_local(&scratch, surface, u, v)).map(|local| {
-        let [point_x, point_y, point_z] = local.point;
-        FinitePoint3::from_coordinates(point_x, point_y, point_z)
-    });
+    let result = scratch
+        .admission
+        .independent_cost(super::nurbs_surface_evaluation_cost(surface))
+        .and_then(|()| super::nurbs_surface_local(&scratch, surface, u, v))
+        .map(|local| {
+            let [point_x, point_y, point_z] = local.point;
+            FinitePoint3::from_coordinates(point_x, point_y, point_z)
+        });
     scratch.settle(result)
 }

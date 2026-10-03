@@ -228,12 +228,8 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     };
     let stations = ctx.copy_retained_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
-            jet.degree(),
-            stations,
-            ctx,
-        )?
-        .map_err(CodecError::malformed)?,
+        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations, ctx)?
+            .map_err(CodecError::malformed)?,
     ))
 }
 
@@ -247,12 +243,14 @@ mod carrier_resource_tests {
     #[test]
     fn nurbs_surface_carrier_refuses_collection_limit_below_copy_need() {
         let surface = B5Surface::Nurbs(
-            NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .expect("valid bilinear surface"),
         );
         let refused =
@@ -1287,13 +1285,15 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
 
-        let profile = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let profile = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid revolution profile");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1321,13 +1321,15 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
 
-        let profile = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let profile = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid revolution profile");
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             revolve_nurbs(
@@ -1387,13 +1389,15 @@ mod tests {
             ),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .expect("valid support pcurve"),
         };
         let extrusion = ResolvedExtrusionSurface {

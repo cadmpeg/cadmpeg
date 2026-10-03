@@ -500,11 +500,7 @@ pub(crate) fn bind_configuration_suppressed_features(
                 for dependency in &feature.dependencies {
                     let copied = dependency
                         .try_clone_for_decode(ctx, "f3d configuration suppressed dependency id")?;
-                    dependencies.insert(
-                        ctx,
-                        copied,
-                        "f3d configuration suppressed dependency",
-                    )?;
+                    dependencies.insert(ctx, copied, "f3d configuration suppressed dependency")?;
                 }
                 Ok((
                     id,
@@ -1033,7 +1029,12 @@ mod tests {
         let (mut configurations, mut feature) = suppression_limit_fixture();
         feature
             .dependencies
-            .insert(&cadmpeg_test_support::service_decode_context(), FeatureId::mint("f3d:model:feature#seed").unwrap(), "insert fixture member").expect("member insertion admission");
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                FeatureId::mint("f3d:model:feature#seed").unwrap(),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
@@ -1056,7 +1057,12 @@ mod tests {
         let feature_id_bytes = feature.id.as_str().len();
         feature
             .dependencies
-            .insert(&cadmpeg_test_support::service_decode_context(), FeatureId::mint("f3d:model:feature#seed").unwrap(), "insert fixture member").expect("member insertion admission");
+            .insert(
+                &cadmpeg_test_support::service_decode_context(),
+                FeatureId::mint("f3d:model:feature#seed").unwrap(),
+                "insert fixture member",
+            )
+            .expect("member insertion admission");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(feature_id_bytes).unwrap();

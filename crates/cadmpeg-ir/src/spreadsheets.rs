@@ -375,7 +375,6 @@ fn column_index(value: &str) -> Option<u32> {
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     #[test]

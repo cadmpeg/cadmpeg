@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignDraftOperation, DesignMoveForm, DesignMoveOperation, DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation};
+use super::{
+    DesignDraftOperation, DesignMoveForm, DesignMoveOperation, DesignOffsetFacesOperation,
+    DesignShellOperation, DesignThickenOperation,
+};
 
 rewrite_native_record!(DesignDraftOperation, []; {angle, angle_record_index, angle_offset, opposite_angle_record_index, opposite_angle_offset});
 rewrite_native_scalar!(DesignMoveForm);

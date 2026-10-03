@@ -29,7 +29,8 @@ fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(),
+    ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
@@ -93,7 +94,8 @@ fn orphan_carrier_is_flagged() {
     let mut orphan = ir.model.curves[0].clone();
     orphan.id = CurveId::mint("test:model:entity#zz:orphan").expect("valid identity");
     ir.model.curves.push(orphan);
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::CarrierReachability));
@@ -106,14 +108,18 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     carrier.id = CurveId::mint("test:model:curve#native-only").unwrap();
     let carrier_id = carrier.id.as_str().to_owned();
     ir.model.curves.push(carrier);
-    ir.model.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    ir.model
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let mut wire = serde_json::to_value(&ir).unwrap();
     wire["native"] = serde_json::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},
         {"id": "test:source:unknown#malformed", "links": [null]}
     ]}});
     let parsed = crate::CadIr::from_json(&wire.to_string()).unwrap();
-    let findings = validate_neutral(&parsed, Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = validate_neutral(&parsed, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings
         .iter()
         .any(|finding| finding.check == Check::NativeLinks
@@ -128,7 +134,8 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
 
     wire["native"]["test"]["unknowns"][0]["links"] = serde_json::json!([]);
     let orphan = crate::CadIr::from_json(&wire.to_string()).unwrap();
-    assert!(validate_neutral(&orphan, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&orphan, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::CarrierReachability
@@ -156,7 +163,8 @@ fn periodic_curve_parameter_domain_is_checked() {
     ir.model.edges[0].carrier =
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.0, 7.0]))
             .unwrap();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -166,7 +174,8 @@ fn periodic_curve_parameter_domain_is_checked() {
         Some([-std::f64::consts::PI, std::f64::consts::PI]),
     )
     .unwrap();
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -182,18 +191,21 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
         .find(|curve| curve.id == curve_id)
         .unwrap()
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        crate::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, f64::MAX, f64::MAX],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             true,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap(),
     ));
     ir.model.edges[0].carrier =
         crate::topology::EdgeCarrier::new(Some(curve_id), Some([-f64::MAX, f64::MAX])).unwrap();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -201,7 +213,8 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
 
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -210,7 +223,8 @@ fn nurbs_pcurve_leaf() -> PcurveGeometry {
             ],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -230,8 +244,10 @@ fn placed_pcurve(placements: usize) -> Result<PcurveGeometry, &'static str> {
 fn pcurve_bounded_domain_requirement_stops_at_the_admitted_nesting_depth() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    policy.limits.max_recursion_depth =
+        cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
     assert!(super::pcurve_requires_bounded_domain(&ctx, &accepted).unwrap());
 
@@ -288,7 +304,8 @@ fn cube_with_one_coedge_pcurve(
 }
 
 fn coedge_pcurve_range_reported(ir: &crate::document::CadIr) -> bool {
-    validate_neutral(ir, Vec::new()).expect("resource allocation did not fail")
+    validate_neutral(ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
@@ -326,7 +343,8 @@ fn a_coedge_range_outside_an_offset_pcurve_basis_domain_is_out_of_domain() {
 /// `nurbs_pcurve_parameter_domain` answers `None`.
 fn undomained_nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 0.0, 0.0],
             vec![
@@ -335,7 +353,8 @@ fn undomained_nurbs_pcurve_leaf() -> PcurveGeometry {
             ],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -430,12 +449,17 @@ fn pcurve_requires_bounded_domain_preserves_session_depth_and_work_refusals() {
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);
         assert_eq!(limit.additional, 1);
-        assert_eq!(limit.operation, match dimension {
-            ResourceDimension::RecursionDepth => "pcurve bounded domain nesting",
-            _ => "pcurve bounded domain visit",
-        });
+        assert_eq!(
+            limit.operation,
+            match dimension {
+                ResourceDimension::RecursionDepth => "pcurve bounded domain nesting",
+                _ => "pcurve bounded domain visit",
+            }
+        );
         drop(guard);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
 
@@ -446,8 +470,11 @@ fn parameter_domain_indexes_preserve_resource_refusals_and_release_storage() {
     let mut ir = unit_cube().unwrap();
     ir.model.edges.clear();
     ir.model.coedges.clear();
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -458,10 +485,16 @@ fn parameter_domain_indexes_preserve_resource_refusals_and_release_storage() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = super::check_parameter_domains(&ctx, &ir, &mut findings) else { panic!("domain index must refuse"); };
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::check_parameter_domains(&ctx, &ir, &mut findings)
+        else {
+            panic!("domain index must refuse");
+        };
         assert_eq!(limit.dimension, dimension);
         assert!(findings.is_empty());
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -477,15 +510,21 @@ fn parameter_domain_indexes_preserve_resource_refusals_and_release_storage() {
 
 #[test]
 fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
+    use crate::geometry::LawExpression;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use crate::geometry::LawExpression;
-    let expression: LawExpression = LawExpression::Algebraic { operator: "outer".into(), operands: vec![
-        LawExpression::Algebraic { operator: "inner".into(), operands: vec![LawExpression::Null {}] },
-    ] };
+    let expression: LawExpression = LawExpression::Algebraic {
+        operator: "outer".into(),
+        operands: vec![LawExpression::Algebraic {
+            operator: "inner".into(),
+            operands: vec![LawExpression::Null {}],
+        }],
+    };
     for (dimension, cap, active) in [
-        (ResourceDimension::RecursionDepth, 0, false), (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 2, true), (ResourceDimension::WorkUnits, 0, false),
+        (ResourceDimension::RecursionDepth, 0, false),
+        (ResourceDimension::RecursionDepth, 2, false),
+        (ResourceDimension::RecursionDepth, 2, true),
+        (ResourceDimension::WorkUnits, 0, false),
         (ResourceDimension::WorkUnits, 2, false),
     ] {
         let arena = DecodeArena::new();
@@ -497,14 +536,31 @@ fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut index = super::BorrowedIdentities::build(&ctx, |_| Ok(())).unwrap();
-        let caller = if active { Some(ctx.enter_nested("carrier law caller").unwrap()) } else { None };
-        let Err(CodecError::ResourceLimit(limit)) = super::collect_law_curves(&expression, &mut index, &ctx) else { panic!("law walk must refuse"); };
+        let caller = if active {
+            Some(ctx.enter_nested("carrier law caller").unwrap())
+        } else {
+            None
+        };
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::collect_law_curves(&expression, &mut index, &ctx)
+        else {
+            panic!("law walk must refuse");
+        };
         assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, if dimension == ResourceDimension::RecursionDepth { "carrier law nesting" } else { "carrier law visit" });
+        assert_eq!(
+            limit.operation,
+            if dimension == ResourceDimension::RecursionDepth {
+                "carrier law nesting"
+            } else {
+                "carrier law visit"
+            }
+        );
         assert!(index.identities().next().is_none());
         drop(caller);
         drop(index);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
 
@@ -517,8 +573,12 @@ fn carrier_reachability_preserves_index_scan_and_finding_refusals() {
     orphan.id = "test:model:curve#orphan".try_into().unwrap();
     orphan.source_object = None;
     ir.model.curves.push(orphan);
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -530,17 +590,25 @@ fn carrier_reachability_preserves_index_scan_and_finding_refusals() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = super::check_carrier_reachability(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings) else { panic!("carrier check must refuse"); };
+        let Err(CodecError::ResourceLimit(limit)) = super::check_carrier_reachability(
+            &ctx,
+            crate::native::view::NativeView::new(&ir, None),
+            &mut findings,
+        ) else {
+            panic!("carrier check must refuse");
+        };
         assert_eq!(limit.dimension, dimension);
         assert!(findings.is_empty());
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
 
 #[test]
 fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = unit_cube().unwrap();
     let root = ir.model.curves[0].id.clone();
     let mut first = ir.model.curves[0].clone();
@@ -548,15 +616,28 @@ fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
     first.source_object = None;
     let mut second = first.clone();
     second.id = "test:model:curve#second".try_into().unwrap();
-    let segment = |curve| CompositeCurveSegment { curve, same_sense: true, transition: CompositeCurveTransition::Discontinuous };
+    let segment = |curve| CompositeCurveSegment {
+        curve,
+        same_sense: true,
+        transition: CompositeCurveTransition::Discontinuous,
+    };
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-        segments: vec![segment(first.id.clone()), segment(first.id.clone()), segment(second.id.clone())].try_into().unwrap(), self_intersect: None,
+        segments: vec![
+            segment(first.id.clone()),
+            segment(first.id.clone()),
+            segment(second.id.clone()),
+        ]
+        .try_into()
+        .unwrap(),
+        self_intersect: None,
     });
     first.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-        segments: vec![segment(root)].try_into().unwrap(), self_intersect: None,
+        segments: vec![segment(root)].try_into().unwrap(),
+        self_intersect: None,
     });
     second.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-        segments: vec![segment(first.id.clone())].try_into().unwrap(), self_intersect: None,
+        segments: vec![segment(first.id.clone())].try_into().unwrap(),
+        self_intersect: None,
     });
     ir.model.curves.extend([first, second]);
     let arena = DecodeArena::new();
@@ -565,9 +646,17 @@ fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
     policy.limits.max_materialized_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
-    super::check_carrier_reachability(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings).unwrap();
+    super::check_carrier_reachability(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &mut findings,
+    )
+    .unwrap();
     assert!(findings.is_empty());
-    drop(ctx.reserve_scoped(4096, "carrier indexes and queue released").unwrap());
+    drop(
+        ctx.reserve_scoped(4096, "carrier indexes and queue released")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -583,7 +672,9 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     curve.source_object = None;
     ir.model.curves.push(curve);
     ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
-        id: "test:model:pcurve#orphan".try_into().unwrap(), geometry: line_pcurve_leaf(), metadata: Default::default(),
+        id: "test:model:pcurve#orphan".try_into().unwrap(),
+        geometry: line_pcurve_leaf(),
+        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
     });
     let mut point = ir.model.points[0].clone();
     point.id = "test:model:point#orphan".try_into().unwrap();
@@ -591,12 +682,20 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     ir.model.points.push(point);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_carrier_reachability(&ctx, crate::native::view::NativeView::new(&ir, None), &mut findings).unwrap();
+    super::check_carrier_reachability(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &mut findings,
+    )
+    .unwrap();
     assert_eq!(findings.len(), 4);
     for (finding, kind) in findings.iter().zip(["surface", "curve", "pcurve", "point"]) {
         assert_eq!(finding.check, Check::CarrierReachability);
         assert_eq!(finding.severity, crate::report::Severity::Error);
-        assert_eq!(finding.entity.as_deref(), Some(format!("test:model:{kind}#orphan").as_str()));
+        assert_eq!(
+            finding.entity.as_deref(),
+            Some(format!("test:model:{kind}#orphan").as_str())
+        );
         assert_eq!(finding.message, format!("orphan {kind} carrier"));
     }
 }

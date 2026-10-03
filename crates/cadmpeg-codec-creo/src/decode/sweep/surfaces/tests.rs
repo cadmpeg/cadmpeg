@@ -71,13 +71,15 @@ fn revolved_nurbs_surface_refuses_each_collection_boundary() {
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let directrix = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let directrix = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("valid directrix");
     let axis = RevolutionAxis {
         origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite origin"),

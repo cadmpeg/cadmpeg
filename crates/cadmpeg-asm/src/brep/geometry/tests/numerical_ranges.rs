@@ -45,7 +45,8 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
     .map(|[x, y]| Point3::new(radius * x, radius * y, z))
     .collect::<Vec<_>>();
     points[1].x += distortion;
-    NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0., 0., 0., 1., 1., 2., 2., 3., 3., 4., 4., 4.],
         points,
@@ -61,7 +62,8 @@ fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
                 .collect(),
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 #[test]
@@ -126,8 +128,16 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
     use cadmpeg_ir::math::Point2;
     let points = vec![Point2::new(0., 0.), Point2::new(1., 0.)];
     for d in [1., 1e-16] {
-        let c =
-            PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![0., 0., d, d], points.clone(), None, false).expect("fixture pcurve construction admission").unwrap();
+        let c = PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0., 0., d, d],
+            points.clone(),
+            None,
+            false,
+        )
+        .expect("fixture pcurve construction admission")
+        .unwrap();
         let edge = Record {
             index: 1,
             name: "edge".into(),
@@ -152,7 +162,16 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
             Some(vec![[0., d]])
         );
     }
-    let c = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, vec![-1., 0., 1., 2.], points, None, false).expect("fixture pcurve construction admission").unwrap();
+    let c = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![-1., 0., 1., 2.],
+        points,
+        None,
+        false,
+    )
+    .expect("fixture pcurve construction admission")
+    .unwrap();
     assert_eq!(
         super::super::pcurve_ranges_on_domain(&c, None),
         Some(vec![[0., 1.]])

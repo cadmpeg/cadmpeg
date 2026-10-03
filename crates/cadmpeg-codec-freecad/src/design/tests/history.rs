@@ -307,7 +307,11 @@ fn transfers_ordered_body_membership_and_active_tip() {
                     .expect("identity grammar"),
             );
             edit::replace(children, |previous| {
-                cadmpeg_ir::features::TreeChildren::new(previous.to_vec(), active, &cadmpeg_test_support::service_decode_context())
+                cadmpeg_ir::features::TreeChildren::new(
+                    previous.to_vec(),
+                    active,
+                    &cadmpeg_test_support::service_decode_context(),
+                )
             })
         }
         .is_err());

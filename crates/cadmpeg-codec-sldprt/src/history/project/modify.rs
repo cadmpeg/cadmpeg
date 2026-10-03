@@ -92,7 +92,12 @@ pub(super) fn project_fillet(
                 valid = false;
                 break;
             };
-            ctx.reserve_scoped_vec(&mut point_storage, &mut points, 1, "collect SLDPRT variable fillet radii")?;
+            ctx.reserve_scoped_vec(
+                &mut point_storage,
+                &mut points,
+                1,
+                "collect SLDPRT variable fillet radii",
+            )?;
             points.push((index, point));
         }
         ctx.sort_unstable_by(
@@ -114,7 +119,10 @@ pub(super) fn project_fillet(
                 points.len(),
                 "collect SLDPRT variable fillet controls",
             )?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(points.len()), "collect SLDPRT variable fillet controls")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(points.len()),
+                "collect SLDPRT variable fillet controls",
+            )?;
             radii.extend(points.into_iter().map(|(_, point)| point));
             cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
         } else {
@@ -304,7 +312,8 @@ pub(super) fn project_combine(
         property_text(ctx, feature, "Target")?
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         property_text(ctx, feature, "Tools")?
-            .map_or(BodySelection::Unresolved, BodySelection::Native), ctx,
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
+        ctx,
     )?
     .ok();
     Ok(operands.map(|operands| {
@@ -415,7 +424,8 @@ pub(super) fn project_replace_face(
     };
     Ok(cadmpeg_ir::features::ReplaceFaceOperands::new(
         FaceSelection::Native(faces),
-        FaceSelection::Native(replacement), ctx,
+        FaceSelection::Native(replacement),
+        ctx,
     )?
     .ok()
     .map(|operands| FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })))

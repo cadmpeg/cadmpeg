@@ -466,10 +466,12 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut references = Vec::new();
-        value.visit_identity_references(&ctx, &mut |id| {
-            references.push(id.to_owned());
-            Ok(())
-        }).unwrap();
+        value
+            .visit_identity_references(&ctx, &mut |id| {
+                references.push(id.to_owned());
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(references, ["f3d:model:body#1"]);
         ctx.finish_session().unwrap();
     }

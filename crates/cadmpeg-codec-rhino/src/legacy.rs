@@ -825,7 +825,8 @@ fn legacy_spline(
             ));
         }
     }
-    NurbsCurve::from_checked_lanes(ctx, 
+    NurbsCurve::from_checked_lanes(
+        ctx,
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
@@ -1614,7 +1615,8 @@ fn legacy_surface(
         admit_v1_values::<Vec<NonZeroReal>>(ctx, counts[0], "Rhino V1 surface weight rows")?;
         admit_v1_values::<NonZeroReal>(ctx, pole_count, "Rhino V1 surface weight grid")?;
     }
-    NurbsSurface::from_checked_lanes(ctx, 
+    NurbsSurface::from_checked_lanes(
+        ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(orders[0] - 1)
                 .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
@@ -1896,7 +1898,12 @@ fn append_legacy_brep(
         values
     };
     group_roots.extend_from_slice(&roots);
-    ctx.sort_unstable_by(&mut group_roots, Ord::cmp, |_| 0, "Rhino V1 Brep unique roots sort")?;
+    ctx.sort_unstable_by(
+        &mut group_roots,
+        Ord::cmp,
+        |_| 0,
+        "Rhino V1 Brep unique roots sort",
+    )?;
     group_roots.dedup();
     admit_v1_temporary_items::<(usize, NurbsCurve)>(
         ctx,
@@ -2370,7 +2377,7 @@ fn append_legacy_brep(
                 model.pcurves.push(Pcurve {
                     id: pcurve_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     geometry: PcurveGeometry::Nurbs {
-                        nurbs: PcurveNurbs::from_checked_lanes(ctx, 
+                        nurbs: PcurveNurbs::from_checked_lanes(ctx,
                             trim.pcurve.degree(),
                             pcurve_knots,
                             pcurve_points,
@@ -2542,9 +2549,7 @@ fn append_legacy_brep(
         color: None,
         visible: None,
     });
-    draft
-        .commit_model(ir, ctx)?
-        .map_err(CodecError::malformed)
+    draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
 
 fn legacy_trim(
@@ -3968,14 +3973,16 @@ mod tests {
         );
         policy.limits.max_collection_items = 22;
         let exact_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (exact_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &data, &exact_arena, &policy,
-        ).expect("V1 surface input admitted");
+        let (exact_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &exact_arena, &policy)
+                .expect("V1 surface input admitted");
         let exact = super::legacy_surface(
             &exact_ctx, &data, surface.body(), super::MillimeterScale::IDENTITY,
         ).expect("four stored knots, eight expanded knots, four flat poles, two rows and four grid poles");
         assert_eq!(exact.pole_grid().u_count(), 2);
-        exact_ctx.finish_session().expect("construction does not allocate admitted rows again");
+        exact_ctx
+            .finish_session()
+            .expect("construction does not allocate admitted rows again");
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
         let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &data,

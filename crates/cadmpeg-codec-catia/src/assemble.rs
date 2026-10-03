@@ -414,12 +414,9 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         return Ok(None);
     }
     let Some(surface_midpoint) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
-            ctx,
-            surface,
-            midpoint_uv.u,
-            midpoint_uv.v,
-        ))?)?
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::surface_point(ctx, surface, midpoint_uv.u, midpoint_uv.v),
+        )?)?
     else {
         return Ok(None);
     };
@@ -1038,7 +1035,8 @@ pub(crate) fn rational_pcurve_arc(
     {
         return Ok(None);
     }
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        ctx,
         2,
         knots,
         control_points,
@@ -1075,7 +1073,8 @@ pub(crate) fn quintic_jet_pcurve(
             .into_iter()
             .map(|point| Point2::new(point[0], point[1])),
     );
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(ctx, 
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        ctx,
         degree,
         full_knots,
         control_points,
@@ -1561,28 +1560,43 @@ mod route_tests {
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
-        assert!(
-            neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut valid, &[]).expect("resource allocation did not fail")
-        );
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut valid,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
 
         let mut invalid =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
-        assert!(!neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut invalid, &[])
-            .expect("resource allocation did not fail"));
+        assert!(!neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut invalid,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     /// Phase 5 freeze: shared builders must match the CATIA admission gate.
     #[test]
     fn phase5_freeze_shared_admissibility_fixtures() {
         let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
-        assert!(neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut accepted, &[])
-            .expect("resource allocation did not fail"));
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut accepted,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
         let mut rejected =
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
-        assert!(!neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut rejected, &[])
-            .expect("resource allocation did not fail"));
+        assert!(!neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut rejected,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     /// Decimal object-id keys reach the gate in native traversal order, in which
@@ -1615,7 +1629,12 @@ mod route_tests {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
-        neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &[]).expect("resource allocation did not fail");
+        neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[],
+        )
+        .expect("resource allocation did not fail");
 
         assert_eq!(
             ir.model
@@ -1652,7 +1671,8 @@ mod route_tests {
             source_object: None,
         });
         ir.model
-            .add_procedural_curve(None, 
+            .add_procedural_curve(
+                None,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("catia:test:procedural-curve#0")
@@ -1663,7 +1683,8 @@ mod route_tests {
                         cache: None,
                     },
                 ),
-            ).unwrap()
+            )
+            .unwrap()
             .unwrap();
         let unknowns = [UnknownRecord::retained(
             record_id,
@@ -1672,8 +1693,12 @@ mod route_tests {
             Vec::new(),
         )];
 
-        assert!(neutral_model_is_admissible(&cadmpeg_test_support::service_decode_context(), &mut ir, &unknowns)
-            .expect("resource allocation did not fail"));
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &unknowns
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -1703,7 +1728,8 @@ mod route_tests {
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model
-            .add_procedural_curve(None, 
+            .add_procedural_curve(
+                None,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
@@ -1719,10 +1745,12 @@ mod route_tests {
                         cache: None,
                     },
                 ),
-            ).unwrap()
+            )
+            .expect("procedural curve admission")
             .expect("attach construction to its fixture carrier");
         ir.model
-            .add_procedural_surface(None, 
+            .add_procedural_surface(
+                None,
                 &surface_id,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint(
@@ -1738,10 +1766,12 @@ mod route_tests {
                     },
                     None,
                 ),
-            ).unwrap()
+            )
+            .expect("procedural surface admission")
             .expect("attach construction to its fixture carrier");
         ir.model
-            .add_procedural_surface(None, 
+            .add_procedural_surface(
+                None,
                 &offset_id,
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     surface_id,
@@ -1765,7 +1795,8 @@ mod route_tests {
                     )
                 })
                 .expect("valid ProceduralSurface fixture"),
-            ).unwrap()
+            )
+            .expect("offset surface admission")
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 

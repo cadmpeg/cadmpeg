@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use serde_value::Value;
-use std::collections::BTreeSet;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+use serde_value::Value;
 
 #[test]
 fn brep_value_walks_preserve_work_refusals() {
@@ -16,17 +15,22 @@ fn brep_value_walks_preserve_work_refusals() {
             let value = Value::Seq(vec![Value::U32(1), Value::U32(2)]);
             let error = match operation {
                 "walk F3D BREP owned IDs" => {
-                    super::super::graph_ops::collect_owned_ids(ctx, &value, &mut BTreeSet::new())
+                    super::super::graph_ops::collect_owned_ids(ctx, &value, &mut Vec::new())
                 }
                 "identity rewrite scalar" => {
-                    let mut map = IdentityMap::new(ctx, operation, |source: &str| ctx.copy_retained_text(source, operation)).unwrap();
-                    vec![1_u32, 2_u32].rewrite_identities(ctx, &mut map).map(|_| ())
+                    let mut map = IdentityMap::new(ctx, operation, |source: &str| {
+                        ctx.copy_retained_text(source, operation)
+                    })
+                    .unwrap();
+                    vec![1_u32, 2_u32]
+                        .rewrite_identities(ctx, &mut map)
+                        .map(|_| ())
                 }
                 _ => super::super::graph_ops::collect_brep_references(
                     ctx,
                     &value,
-                    &BTreeSet::new(),
-                    &mut BTreeSet::new(),
+                    &[],
+                    &mut Vec::new(),
                 ),
             }
             .unwrap_err();

@@ -42,13 +42,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         })
         .unwrap(),
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
-            curve: cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            curve: cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(70.0, -5.0, 3.0), Point3::new(74.0, -2.0, 6.0)],
                 None,
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap()
             .try_into()
             .unwrap(),
@@ -90,7 +92,11 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
                 entity: entity.id().clone(),
                 reversed: false,
             })
-            .collect(), &cadmpeg_test_support::service_decode_context(), "spatial profile uniqueness").expect("fixture collection admission")
+            .collect(),
+        &cadmpeg_test_support::service_decode_context(),
+        "spatial profile uniqueness",
+    )
+    .expect("fixture collection admission")
     .unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),

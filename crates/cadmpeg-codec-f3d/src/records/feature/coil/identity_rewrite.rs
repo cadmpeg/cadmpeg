@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignCoilExtent, DesignCoilPlacement, DesignCoilScope, DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCoilTransform};
+use super::{
+    DesignCoilExtent, DesignCoilPlacement, DesignCoilScope, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignCoilSelection, DesignCoilTransform,
+};
 
 rewrite_native_scalar!(DesignCoilExtent);
 rewrite_native_record!(DesignCoilPlacement, []; {selection_record_index, selection_record_byte_offset, selection_class_tag, selection, transform_record_index, transform_record_byte_offset, transform_class_tag, explicit_transform});

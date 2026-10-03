@@ -1,27 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product graph and placement validation.
 
+use super::orders::Orders;
+use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use crate::index::identities::BorrowedIdentities;
-use super::orders::Orders;
 
 use super::record_finding;
 use crate::document::CadIr;
 use crate::products::{OccurrenceParent, OperandContainer, PrototypeReference};
 use crate::report::check::{Check, Finding};
 
-pub(super) fn check_products(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+pub(super) fn check_products(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let definitions = BorrowedIdentities::build(ctx, |add| {
-        for definition in &ir.model.product_definitions { add(definition.id.as_str(), ())?; }
+        for definition in &ir.model.product_definitions {
+            add(definition.id.as_str(), ())?;
+        }
         Ok(())
     })?;
     let occurrences = BorrowedIdentities::build(ctx, |add| {
-        for occurrence in &ir.model.occurrences { add(occurrence.id.as_str(), ())?; }
+        for occurrence in &ir.model.occurrences {
+            add(occurrence.id.as_str(), ())?;
+        }
         Ok(())
     })?;
     let bodies = BorrowedIdentities::build(ctx, |add| {
-        for body in &ir.model.bodies { add(body.id.as_str(), ())?; }
+        for body in &ir.model.bodies {
+            add(body.id.as_str(), ())?;
+        }
         Ok(())
     })?;
     for definition in &ir.model.product_definitions {
@@ -29,25 +39,44 @@ pub(super) fn check_products(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut
         for body in &definition.bodies {
             ctx.charge_work(1, "product body reference")?;
             if !bodies.contains(ctx, body.as_str())? {
-                record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(definition.id.as_str()), format_args!("invalid product body reference"))?;
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(definition.id.as_str()),
+                    format_args!("invalid product body reference"),
+                )?;
                 break;
             }
         }
     }
     if !crate::products::assembly_graph::validate(ctx, &ir.model.occurrences)? {
-        record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some("model:assembly"), format_args!("invalid occurrence parent graph"))?;
+        record_finding(
+            ctx,
+            findings,
+            Check::ReferentialIntegrity,
+            crate::report::Severity::Error,
+            Some("model:assembly"),
+            format_args!("invalid occurrence parent graph"),
+        )?;
     }
     let mut root_ordinals = Orders::new(ctx)?;
-    let mut sibling_ordinals: BorrowedIdentities<'_, '_, Orders<'_, '_>> = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut sibling_ordinals: BorrowedIdentities<'_, '_, Orders<'_, '_>> =
+        BorrowedIdentities::build(ctx, |_| Ok(()))?;
     for occurrence in &ir.model.occurrences {
         ctx.charge_work(1, "product occurrence row")?;
         let valid_prototype = match &occurrence.prototype {
-            PrototypeReference::Local { definition } => definitions.contains(ctx, definition.as_str())?,
+            PrototypeReference::Local { definition } => {
+                definitions.contains(ctx, definition.as_str())?
+            }
             PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => true,
         };
         let valid_parent = match &occurrence.parent {
             OccurrenceParent::Root {} => true,
-            OccurrenceParent::Occurrence { occurrence } => occurrences.contains(ctx, occurrence.as_str())?,
+            OccurrenceParent::Occurrence { occurrence } => {
+                occurrences.contains(ctx, occurrence.as_str())?
+            }
         };
         let ordinal_unique = match &occurrence.parent {
             OccurrenceParent::Root {} => root_ordinals.insert(occurrence.ordinal)?,
@@ -71,7 +100,10 @@ pub(super) fn check_products(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut
             };
             let mut copy_targets_valid = true;
             if let Some(copy) = link.copy_on_change() {
-                for reference in [copy.source.as_ref(), copy.group.as_ref()].into_iter().flatten() {
+                for reference in [copy.source.as_ref(), copy.group.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
                     ctx.charge_work(1, "product copy target")?;
                     if let PrototypeReference::Local { definition } = reference {
                         if !definitions.contains(ctx, definition.as_str())? {
@@ -84,7 +116,14 @@ pub(super) fn check_products(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut
             auxiliary_definitions = element_valid && copy_targets_valid;
         }
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
-            record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(occurrence.id.as_str()), format_args!("invalid occurrence reference, ordinal, or affine transform"))?;
+            record_finding(
+                ctx,
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                Some(occurrence.id.as_str()),
+                format_args!("invalid occurrence reference, ordinal, or affine transform"),
+            )?;
         }
     }
     for joint in &ir.model.assembly_joints {
@@ -93,7 +132,14 @@ pub(super) fn check_products(ctx: &DecodeContext<'_>, ir: &CadIr, findings: &mut
             ctx.charge_work(1, "assembly joint connector")?;
             if let OperandContainer::Occurrence { occurrence } = &connector.operand.container {
                 if !occurrences.contains(ctx, occurrence.as_str())? {
-                    record_finding(ctx, findings, Check::ReferentialIntegrity, crate::report::Severity::Error, Some(joint.id.as_str()), format_args!("invalid assembly joint operands, frames, or limits"))?;
+                    record_finding(
+                        ctx,
+                        findings,
+                        Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        Some(joint.id.as_str()),
+                        format_args!("invalid assembly joint operands, frames, or limits"),
+                    )?;
                     break;
                 }
             }
@@ -145,7 +191,12 @@ mod tests {
         ));
 
         let mut findings = Vec::new();
-        check_products(&cadmpeg_test_support::service_decode_context(), &ir, &mut findings).unwrap();
+        check_products(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &mut findings,
+        )
+        .unwrap();
         assert!(findings.is_empty(), "{findings:?}");
 
         let occurrence =

@@ -46,17 +46,21 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                             panic!("NURBS support lane");
                         };
                         nurbs
-                            .try_map_control_points(|pole_index, point| {
-                                if pole_index == 1 {
-                                    cadmpeg_ir::units::FinitePoint2::new(Point2::new(
-                                        crate::decode::MISSING_TOLERANCE,
-                                        crate::decode::MISSING_TOLERANCE,
-                                    ))
-                                    .ok_or(())
-                                } else {
-                                    Ok(point)
-                                }
-                            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+                            .try_map_control_points(
+                                |pole_index, point| {
+                                    if pole_index == 1 {
+                                        cadmpeg_ir::units::FinitePoint2::new(Point2::new(
+                                            crate::decode::MISSING_TOLERANCE,
+                                            crate::decode::MISSING_TOLERANCE,
+                                        ))
+                                        .ok_or(())
+                                    } else {
+                                        Ok(point)
+                                    }
+                                },
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("pole edit admission")
                             .unwrap();
                     };
                     cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
@@ -144,14 +148,18 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                             panic!("NURBS support lane");
                         };
                         nurbs
-                            .try_map_control_points(|_, point| {
-                                let point = point.get();
-                                cadmpeg_ir::units::FinitePoint2::new(Point2::new(
-                                    point.u + 100.0,
-                                    point.v,
-                                ))
-                                .ok_or(())
-                            }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+                            .try_map_control_points(
+                                |_, point| {
+                                    let point = point.get();
+                                    cadmpeg_ir::units::FinitePoint2::new(Point2::new(
+                                        point.u + 100.0,
+                                        point.v,
+                                    ))
+                                    .ok_or(())
+                                },
+                                &cadmpeg_test_support::service_decode_context(),
+                            )
+                            .expect("pole edit admission")
                             .unwrap();
                     };
                     cadmpeg_ir::geometry::IntcurveSupportContext::try_new(

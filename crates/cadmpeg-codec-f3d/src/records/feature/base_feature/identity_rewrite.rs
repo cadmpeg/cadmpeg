@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignBaseFeatureBodyReferenceForm, DesignBaseFeatureCompactMode, DesignBaseFeatureConstruction, DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults, DesignLegacyBaseFeatureBody};
+use super::{
+    DesignBaseFeatureBodyReferenceForm, DesignBaseFeatureCompactMode,
+    DesignBaseFeatureConstruction, DesignBaseFeatureEntry, DesignBaseFeatureResultBody,
+    DesignBaseFeatureResults, DesignLegacyBaseFeatureBody,
+};
 
 rewrite_native_scalar!(DesignBaseFeatureBodyReferenceForm);
 rewrite_native_scalar!(DesignBaseFeatureCompactMode);

@@ -40,9 +40,7 @@ pub fn is_valid_identity(id: &str) -> bool {
 }
 
 /// One grammar scan with an explicit admission callback before each scalar.
-fn check_identity<E>(
-    id: &str, mut visit: impl FnMut(u64) -> Result<(), E>,
-) -> Result<bool, E> {
+fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
     visit(0)?;
     let mut characters = id.chars();
     let mut separators = 0_u8;
@@ -50,13 +48,22 @@ fn check_identity<E>(
     let mut nonempty = false;
     while !characters.as_str().is_empty() {
         visit(1)?;
-        let Some(character) = characters.next() else { break; };
-        if character.is_whitespace() { return Ok(false); }
+        let Some(character) = characters.next() else {
+            break;
+        };
+        if character.is_whitespace() {
+            return Ok(false);
+        }
         match character {
             '#' if key || !nonempty || separators != 2 => return Ok(false),
-            '#' => { key = true; nonempty = false; }
+            '#' => {
+                key = true;
+                nonempty = false;
+            }
             ':' if !key => {
-                if !nonempty || separators == 2 { return Ok(false); }
+                if !nonempty || separators == 2 {
+                    return Ok(false);
+                }
                 separators += 1;
                 nonempty = false;
             }
@@ -118,9 +125,14 @@ impl Identity {
     /// Admit owned text with the same grammar used by standard reconstruction.
     /// Invalid grammar returns the owned input; admission failure stays outside it.
     pub(crate) fn admit_text<E>(
-        value: String, visit: impl FnMut(u64) -> Result<(), E>,
+        value: String,
+        visit: impl FnMut(u64) -> Result<(), E>,
     ) -> Result<Result<Self, String>, E> {
-        Ok(if check_identity(&value, visit)? { Ok(Self(value)) } else { Err(value) })
+        Ok(if check_identity(&value, visit)? {
+            Ok(Self(value))
+        } else {
+            Err(value)
+        })
     }
 
     /// Borrow the identity string.

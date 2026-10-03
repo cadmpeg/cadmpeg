@@ -741,8 +741,13 @@ fn semantic_writer_round_trips_move_copy_body() {
             else {
                 panic!("typed body motion");
             };
-            *bodies =
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"));
+            *bodies = BodySelection::Bodies(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body_id.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("distinct bodies"),
+            );
             *translation =
                 cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
             *rotation = Some(AxisAngle {
@@ -1009,8 +1014,13 @@ fn semantic_writer_round_trips_cut_with_surface() {
             else {
                 panic!("typed surface cut");
             };
-            *targets =
-                BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()], &cadmpeg_test_support::service_decode_context()).expect("distinct bodies"));
+            *targets = BodySelection::Bodies(
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body_id.clone()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("distinct bodies"),
+            );
             *tools = FaceSelection::Faces(vec![face_id.clone()]);
             *reverse = Some(true);
         });

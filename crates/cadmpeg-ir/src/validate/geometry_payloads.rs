@@ -13,38 +13,62 @@ pub(super) fn check_tessellations(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let bodies = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for body in &ir.model.bodies { add(body.id.as_str(), ())?; }
+        for body in &ir.model.bodies {
+            add(body.id.as_str(), ())?;
+        }
         Ok(())
     })?;
     let faces = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for face in &ir.model.faces { add(face.id.as_str(), ())?; }
+        for face in &ir.model.faces {
+            add(face.id.as_str(), ())?;
+        }
         Ok(())
     })?;
     let assets = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for asset in &ir.model.assets { add(asset.id.as_str(), ())?; }
+        for asset in &ir.model.assets {
+            add(asset.id.as_str(), ())?;
+        }
         Ok(())
     })?;
     for mesh in &ir.model.tessellations {
         ctx.charge_work(1, "tessellation reference row")?;
         if let Some(body) = &mesh.body {
             if !bodies.contains(ctx, body.as_str())? {
-                super::record_finding(ctx, findings, Check::Tessellation, Severity::Error,
-                    Some(mesh.id.as_str()), format_args!("references a missing tessellation body"))?;
+                super::record_finding(
+                    ctx,
+                    findings,
+                    Check::Tessellation,
+                    Severity::Error,
+                    Some(mesh.id.as_str()),
+                    format_args!("references a missing tessellation body"),
+                )?;
             }
         }
         for face in &mesh.faces {
             ctx.charge_work(1, "tessellation face reference")?;
             if !faces.contains(ctx, face.as_str())? {
-                super::record_finding(ctx, findings, Check::Tessellation, Severity::Error,
-                    Some(mesh.id.as_str()), format_args!("references a missing tessellation face"))?;
+                super::record_finding(
+                    ctx,
+                    findings,
+                    Check::Tessellation,
+                    Severity::Error,
+                    Some(mesh.id.as_str()),
+                    format_args!("references a missing tessellation face"),
+                )?;
                 break;
             }
         }
         for assignment in mesh.texture_assignments() {
             ctx.charge_work(1, "tessellation texture reference")?;
             if !assets.contains(ctx, assignment.texture.as_str())? {
-                super::record_finding(ctx, findings, Check::Tessellation, Severity::Error,
-                    Some(mesh.id.as_str()), format_args!("references a missing tessellation texture asset"))?;
+                super::record_finding(
+                    ctx,
+                    findings,
+                    Check::Tessellation,
+                    Severity::Error,
+                    Some(mesh.id.as_str()),
+                    format_args!("references a missing tessellation texture asset"),
+                )?;
                 break;
             }
         }

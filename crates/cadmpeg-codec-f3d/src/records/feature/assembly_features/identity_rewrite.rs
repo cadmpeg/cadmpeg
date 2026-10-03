@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignComponentInsertConstruction, DesignComponentInsertMatrix, DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction};
+use super::{
+    DesignComponentInsertConstruction, DesignComponentInsertMatrix,
+    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
+};
 
 rewrite_native_record!(DesignComponentInsertConstruction, []; {relation_record_index, carrier_record_index, occurrence_identity, neutron_role, neutron_role_offset, placement});
 rewrite_native_record!(DesignComponentInsertMatrix, []; {scope, carrier_offset});

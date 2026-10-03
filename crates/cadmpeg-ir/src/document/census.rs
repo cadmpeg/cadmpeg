@@ -15,18 +15,32 @@ pub(crate) trait CensusStorage {
     type Error;
     fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error>;
-    fn insert(&self, counts: &mut BTreeMap<CensusKey, usize>, key: CensusKey, count: usize, operation: &'static str) -> Result<(), Self::Error>;
+    fn insert(
+        &self,
+        counts: &mut BTreeMap<CensusKey, usize>,
+        key: CensusKey,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), Self::Error>;
 }
 
 pub(crate) struct StandardStorage;
 
 impl CensusStorage for StandardStorage {
     type Error = Infallible;
-    fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> { Ok(()) }
+    fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> {
+        Ok(())
+    }
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error> {
         Ok(CensusKey::native(format, arena))
     }
-    fn insert(&self, counts: &mut BTreeMap<CensusKey, usize>, key: CensusKey, count: usize, _operation: &'static str) -> Result<(), Self::Error> {
+    fn insert(
+        &self,
+        counts: &mut BTreeMap<CensusKey, usize>,
+        key: CensusKey,
+        count: usize,
+        _operation: &'static str,
+    ) -> Result<(), Self::Error> {
         counts.insert(key, count);
         Ok(())
     }
@@ -38,12 +52,32 @@ impl CensusStorage for DecodeContext<'_> {
         self.charge_work(u64_from_index(count), operation)
     }
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error> {
-        self.format_retained(format_args!("native.{format}.{arena}"), "validation native census key").map(CensusKey::from_wire)
+        self.format_retained(
+            format_args!("native.{format}.{arena}"),
+            "validation native census key",
+        )
+        .map(CensusKey::from_wire)
     }
-    fn insert(&self, counts: &mut BTreeMap<CensusKey, usize>, key: CensusKey, count: usize, operation: &'static str) -> Result<(), Self::Error> {
-        let work = key.as_str().len().checked_add(1)
-            .and_then(|bytes| counts.len().checked_add(1).and_then(|count| bytes.checked_mul(count)))
-            .ok_or_else(|| self.refuse_codec_limit("validation census key comparisons", u64::MAX - 1, u64::MAX))?;
+    fn insert(
+        &self,
+        counts: &mut BTreeMap<CensusKey, usize>,
+        key: CensusKey,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), Self::Error> {
+        let work = key
+            .as_str()
+            .len()
+            .checked_add(1)
+            .and_then(|bytes| {
+                counts
+                    .len()
+                    .checked_add(1)
+                    .and_then(|count| bytes.checked_mul(count))
+            })
+            .ok_or_else(|| {
+                self.refuse_codec_limit("validation census key comparisons", u64::MAX - 1, u64::MAX)
+            })?;
         self.charge_work(u64_from_index(work), "validation census key comparisons")?;
         self.admit_retained_btree_record::<CensusKey, usize>(0, operation)?;
         counts.insert(key, count);
@@ -84,21 +118,40 @@ mod tests {
     #[test]
     fn census_preserves_registered_and_nonempty_native_populations() {
         let mut ir = CadIr::empty();
-        ir.native.namespace_mut("future").arenas_mut().insert("empty".into(), Vec::new());
-        ir.native.namespace_mut("future").arenas_mut().insert("records".into(), vec![crate::native::NativeRecord::new(
-            crate::ids::Identity::new("test:native:record#counted").unwrap(), serde_json::Map::new()).unwrap()]);
+        ir.native
+            .namespace_mut("future")
+            .arenas_mut()
+            .insert("empty".into(), Vec::new());
+        ir.native.namespace_mut("future").arenas_mut().insert(
+            "records".into(),
+            vec![crate::native::NativeRecord::new(
+                crate::ids::Identity::new("test:native:record#counted").unwrap(),
+                serde_json::Map::new(),
+            )
+            .unwrap()],
+        );
         let standard = ir.census();
         assert_eq!(standard["native.future.records"], 1);
         assert!(!standard.contains_key("native.future.empty"));
-        for name in super::ArenaName::ALL { assert_eq!(standard[name.as_str()], 0); }
-        let decoded = count(&cadmpeg_test_support::service_decode_context(), NativeView::new(&ir, None)).unwrap();
+        for name in super::ArenaName::ALL {
+            assert_eq!(standard[name.as_str()], 0);
+        }
+        let decoded = count(
+            &cadmpeg_test_support::service_decode_context(),
+            NativeView::new(&ir, None),
+        )
+        .unwrap();
         assert_eq!(decoded, standard);
     }
 
     #[test]
     fn census_refuses_retained_nodes_items_and_comparison_work() {
         let ir = CadIr::empty();
-        for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
@@ -108,12 +161,31 @@ mod tests {
                 _ => unreachable!(),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let Err(CodecError::ResourceLimit(limit)) = count(&ctx, NativeView::new(&ir, None)) else { panic!("census must retain the caller refusal"); };
+            let Err(CodecError::ResourceLimit(limit)) = count(&ctx, NativeView::new(&ir, None))
+            else {
+                panic!("census must retain the caller refusal");
+            };
             assert_eq!(limit.dimension, dimension);
-            assert_eq!(limit.operation, if dimension == ResourceDimension::WorkUnits { "validation census key comparisons" } else { "validation model census slots" });
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert_eq!(
+                limit.operation,
+                if dimension == ResourceDimension::WorkUnits {
+                    "validation census key comparisons"
+                } else {
+                    "validation model census slots"
+                }
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
             assert!(!ir.census().is_empty());
         }
-        assert_eq!(count(&cadmpeg_test_support::service_decode_context(), NativeView::new(&ir, None)).unwrap(), ir.census());
+        assert_eq!(
+            count(
+                &cadmpeg_test_support::service_decode_context(),
+                NativeView::new(&ir, None)
+            )
+            .unwrap(),
+            ir.census()
+        );
     }
 }

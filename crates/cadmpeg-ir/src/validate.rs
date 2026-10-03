@@ -57,8 +57,8 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use topology::{check_references, check_tolerances, check_topology_tolerances};
 use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wire_topology};
+use topology::{check_references, check_tolerances, check_topology_tolerances};
 
 /// The parameter interval a pcurve carrier is defined on, when the carrier
 /// states one.
@@ -76,7 +76,8 @@ use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wir
 fn pcurve_parameter_domain(
     ctx: &DecodeContext<'_>,
     geometry: &crate::geometry::pcurve::PcurveGeometry,
-) -> Result<Option<crate::topology::IncreasingParameterInterval>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<crate::topology::IncreasingParameterInterval>, cadmpeg_core::decode::ResourceLimit>
+{
     use crate::geometry::pcurve::PcurveGeometry;
     let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
     ctx.charge_work_limit(1, "pcurve parameter domain visit")?;
@@ -98,7 +99,9 @@ fn pcurve_parameter_domain(
                 None => pcurve_parameter_domain(ctx, trimmed_pcurve.basis())?,
             }
         }
-        PcurveGeometry::Offset(offset_pcurve) => pcurve_parameter_domain(ctx, offset_pcurve.basis())?,
+        PcurveGeometry::Offset(offset_pcurve) => {
+            pcurve_parameter_domain(ctx, offset_pcurve.basis())?
+        }
         PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(ctx, placed.basis())?,
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
@@ -122,14 +125,25 @@ fn record_finding(
 ) -> Result<(), CodecError> {
     ctx.reserve_retained_vec(findings, 1, "validation finding storage")?;
     let message = ctx.format_retained(message, "validation finding message")?;
-    let entity = entity.map(|id| ctx.copy_retained_text(id, "validation finding identity")).transpose()?;
-    findings.push(Finding { check, severity, message, entity });
+    let entity = entity
+        .map(|id| ctx.copy_retained_text(id, "validation finding identity"))
+        .transpose()?;
+    findings.push(Finding {
+        check,
+        severity,
+        message,
+        entity,
+    });
     Ok(())
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_model(ctx: &DecodeContext<'_>, ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::new(ir, ctx)?;
+fn validate_model(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::build(ir, ctx)?;
     validate_model_with_index(ctx, ir, losses, &index)
 }
 
@@ -165,7 +179,9 @@ fn validate_model_with_index(
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
     let reference_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) { add(id?, ())?; }
+        for id in ids.identities(ctx) {
+            add(id?, ())?;
+        }
         Ok(())
     })?;
     check_presentation(ctx, ir, &reference_ids, &mut findings)?;
@@ -199,12 +215,15 @@ fn validate_annotations<'a>(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let all_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) { add(id?, ())?; }
-        for id in additional { add(id, ())?; }
+        for id in ids.identities(ctx) {
+            add(id?, ())?;
+        }
+        for id in additional {
+            add(id, ())?;
+        }
         Ok(())
     })?;
     check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
-
 }
 
 fn validate_model_with_annotations(
@@ -213,9 +232,15 @@ fn validate_model_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::new(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir, ctx)?;
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-    validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
+    validate_annotations(
+        ctx,
+        &index,
+        annotations,
+        std::iter::empty(),
+        &mut report.findings,
+    )?;
     Ok(report)
 }
 
@@ -226,7 +251,8 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+        let index =
+            crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
         validate_model_with_index(ctx, ir, losses, &index)
     })
 }
@@ -252,11 +278,18 @@ pub fn validate_neutral_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index = crate::index::ModelIndex::new(ir, ctx)?;
+        let index = crate::index::ModelIndex::build(ir, ctx)?;
         let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-        validate_annotations(ctx, &index, &source_fidelity.annotations,
-            source_fidelity.retained_records().keys().map(|id| id.as_str()),
-            &mut report.findings)?;
+        validate_annotations(
+            ctx,
+            &index,
+            &source_fidelity.annotations,
+            source_fidelity
+                .retained_records()
+                .keys()
+                .map(crate::ids::UnknownId::as_str),
+            &mut report.findings,
+        )?;
         Ok(report)
     })
 }
@@ -279,33 +312,56 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         for entity in [None, Some("test:model:point#missing")] {
-            for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems,
-                ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+            for dimension in [
+                ResourceDimension::RetainedBytes,
+                ResourceDimension::CollectionItems,
+                ResourceDimension::WorkUnits,
+                ResourceDimension::MaterializedBytes,
+            ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 match dimension {
                     ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
                     ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
                     ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = 0;
+                    }
                     _ => unreachable!(),
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut findings = Vec::new();
-                let mut create = || super::record_finding(&ctx, &mut findings,
-                    crate::report::check::Check::ReferentialIntegrity, crate::report::Severity::Error,
-                    entity, format_args!("unresolved reference"));
+                let mut create = || {
+                    super::record_finding(
+                        &ctx,
+                        &mut findings,
+                        crate::report::check::Check::ReferentialIntegrity,
+                        crate::report::Severity::Error,
+                        entity,
+                        format_args!("unresolved reference"),
+                    )
+                };
                 let result = if dimension == ResourceDimension::MaterializedBytes {
-                    ctx.with_scoped_storage("temporary validation findings", create).map(|_| ())
-                } else { create() };
-                let Err(CodecError::ResourceLimit(limit)) = result else { panic!("finding must refuse"); };
+                    ctx.with_scoped_storage("temporary validation findings", create)
+                        .map(|_| ())
+                } else {
+                    create()
+                };
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("finding must refuse");
+                };
                 assert_eq!(limit.dimension, dimension);
-                assert_eq!(limit.operation, match dimension {
-                    ResourceDimension::WorkUnits => "validation finding message",
-                    _ => "validation finding storage",
-                });
+                assert_eq!(
+                    limit.operation,
+                    match dimension {
+                        ResourceDimension::WorkUnits => "validation finding message",
+                        _ => "validation finding storage",
+                    }
+                );
                 assert!(findings.is_empty());
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+                );
             }
         }
     }
@@ -315,14 +371,27 @@ mod tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut findings = Vec::new();
         for entity in [None, Some("test:model:point#missing")] {
-            super::record_finding(&ctx, &mut findings, crate::report::check::Check::ReferentialIntegrity,
-                crate::report::Severity::Error, entity, format_args!("unresolved reference {}", 7)).unwrap();
+            super::record_finding(
+                &ctx,
+                &mut findings,
+                crate::report::check::Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                entity,
+                format_args!("unresolved reference {}", 7),
+            )
+            .unwrap();
         }
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].entity, None);
-        assert_eq!(findings[1].entity.as_deref(), Some("test:model:point#missing"));
+        assert_eq!(
+            findings[1].entity.as_deref(),
+            Some("test:model:point#missing")
+        );
         for finding in findings {
-            assert_eq!(finding.check, crate::report::check::Check::ReferentialIntegrity);
+            assert_eq!(
+                finding.check,
+                crate::report::check::Check::ReferentialIntegrity
+            );
             assert_eq!(finding.severity, crate::report::Severity::Error);
             assert_eq!(finding.message, "unresolved reference 7");
         }
@@ -331,7 +400,8 @@ mod tests {
 
     fn nurbs_pcurve_leaf() -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -340,7 +410,8 @@ mod tests {
                 ],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         }
     }
@@ -355,7 +426,6 @@ mod tests {
         }
         Ok(geometry)
     }
-
 
     #[test]
     fn pcurve_parameter_domain_preserves_session_depth_and_work_refusals() {
@@ -383,12 +453,17 @@ mod tests {
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, cap);
             assert_eq!(limit.additional, 1);
-            assert_eq!(limit.operation, match dimension {
-                ResourceDimension::RecursionDepth => "pcurve parameter domain nesting",
-                _ => "pcurve parameter domain visit",
-            });
+            assert_eq!(
+                limit.operation,
+                match dimension {
+                    ResourceDimension::RecursionDepth => "pcurve parameter domain nesting",
+                    _ => "pcurve parameter domain visit",
+                }
+            );
             drop(guard);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
         }
     }
 
@@ -396,8 +471,10 @@ mod tests {
     fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_recursion_depth = cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        policy.limits.max_recursion_depth =
+            cadmpeg_core::decode::u64_from_index(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let accepted =
             placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
         assert!(pcurve_parameter_domain(&ctx, &accepted).unwrap().is_some());
@@ -488,7 +565,11 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies, &cadmpeg_test_support::service_decode_context()).unwrap(),
+            dependencies: crate::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,

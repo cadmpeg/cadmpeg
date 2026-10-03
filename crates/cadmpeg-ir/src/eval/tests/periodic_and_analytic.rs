@@ -14,7 +14,8 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![
@@ -24,12 +25,21 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         ],
         None,
         true,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &geometry, 0.5),
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &geometry, 2.5)
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            0.5
+        ),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            2.5
+        )
     );
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -73,12 +83,14 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     {
         let replacement = false;
         edit::replace(nurbs, |previous| {
-            crate::geometry::nurbs::NurbsCurve::new(&cadmpeg_test_support::service_decode_context(),
+            crate::geometry::nurbs::NurbsCurve::new(
+                &cadmpeg_test_support::service_decode_context(),
                 previous.degree(),
                 previous.knots().to_vec(),
                 previous.pole_rows().clone(),
                 replacement,
-            ).expect("fixture final NURBS admission")
+            )
+            .expect("fixture final NURBS admission")
         })
         .unwrap();
     };
@@ -96,7 +108,8 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
 fn rational_quadratic_arc_evaluates_on_the_circle() {
     // Quarter circle of radius 5 as a rational quadratic Bezier.
     let weight = 0.5_f64.sqrt();
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -106,22 +119,30 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
         ],
         Some(vec![1.0, weight, 1.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
-    let point = crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, &curve, 0.5).unwrap();
+    let point = crate::eval::decode::nurbs_curve_point_at(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &curve,
+        0.5,
+    )
+    .unwrap();
     let radius = (point.x * point.x + point.y * point.y).sqrt();
     assert!((radius - 5.0).abs() < 1.0e-12, "mid-span radius {radius}");
 }
 
 #[test]
 fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
-    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(),
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap();
     assert_eq!(
         curve
@@ -133,7 +154,12 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     assert_eq!(curve.pole_rows().weight_at(1), Some(2.0));
     assert!(curve.pole_rows().point_at(2).is_none());
     assert_eq!(
-        crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, &curve, 0.5).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::nurbs_curve_point_at(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            0.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(4.0 / 3.0, 0.0, 0.0))
     );
 
@@ -144,7 +170,9 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
                 .unwrap(),
         },
         0.01,
-     &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("polyline construction admission")
     .unwrap();
     assert_eq!(
         polyline.point_at(1).map(crate::features::FinitePoint3::get),
@@ -157,7 +185,12 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     assert!(polyline.point_at(2).is_none());
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &geometry, 0.5).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            0.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0, 0.0, 0.0))
     );
 }
@@ -174,10 +207,18 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
         Point2::new(0.0, 5.0),
     ];
     let weights = [1.0, weight, 1.0];
-    let interior =
-        crate::eval::nurbs_pcurve_uv(&cadmpeg_test_support::service_decode_context(), 2, &knots, &controls, Some(&weights), 0.375).unwrap();
+    let interior = crate::eval::nurbs_pcurve_uv(
+        &cadmpeg_test_support::service_decode_context(),
+        2,
+        &knots,
+        &controls,
+        Some(&weights),
+        0.375,
+    )
+    .unwrap();
     assert_eq!(
-        crate::eval::nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
+        crate::eval::nurbs_pcurve_contains_point(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
@@ -189,7 +230,8 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
         Some(true)
     );
     assert_eq!(
-        crate::eval::nurbs_pcurve_contains_point(&cadmpeg_test_support::service_decode_context(),
+        crate::eval::nurbs_pcurve_contains_point(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             &knots,
             &controls,
@@ -216,7 +258,12 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
         .unwrap(),
     ));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 1.5).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &parabola,
+            1.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(4.5, 6.0, 0.0))
     );
 
@@ -230,7 +277,12 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
         )
         .unwrap(),
     ));
-    let point = crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.5).unwrap();
+    let point = crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &hyperbola,
+        0.5,
+    )
+    .unwrap();
     assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
     assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
     assert_eq!(point.z, 3.0);
@@ -258,7 +310,12 @@ fn transformed_carriers_preserve_basis_parameters() {
         .expect("placed curve"),
     ));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve, 3.0).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            3.0
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(-4.0, 5.0, 6.0))
     );
 
@@ -277,7 +334,13 @@ fn transformed_carriers_preserve_basis_parameters() {
         .expect("placed surface"),
     ));
     assert_eq!(
-        crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 2.0, 3.0).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            2.0,
+            3.0
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 11.0, 6.0))
     );
 }
@@ -296,11 +359,18 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &increasing, 2.0).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &increasing,
+            2.0
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0, 0.0, 0.0))
     );
 
@@ -316,11 +386,18 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .expect("nonempty polyline fixture"),
             },
             0.01,
-         &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("polyline construction admission")
         .unwrap(),
     ));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &decreasing, 2.5).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &decreasing,
+            2.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.5, 0.0, 0.0))
     );
 }
@@ -344,14 +421,36 @@ fn analytic_surface_points_that_overflow_report_the_non_finite_point() {
         matches!(point, Err(EvaluationFailure::NonFinite(point))
             if point.x.is_nan() && point.y == 0.0 && point.z == 0.0)
     };
-    assert!(overflowed(crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &plane, f64::MAX, 0.0)));
-    assert!(overflowed(crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &plane, f64::MAX, 0.0))));
+    assert!(overflowed(crate::eval::decode::surface_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &plane,
+        f64::MAX,
+        0.0
+    )));
+    assert!(overflowed(
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(
+            &budget,
+            |admission| crate::eval::decode::surface_point(admission, &plane, f64::MAX, 0.0)
+        )
+    ));
     assert_eq!(
-        crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &plane, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &plane,
+            -f64::MAX,
+            0.0
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &plane, -f64::MAX, 0.0))
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| crate::eval::decode::surface_point(
+                admission,
+                &plane,
+                -f64::MAX,
+                0.0
+            ))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
@@ -390,8 +489,16 @@ fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_poin
     // The basis point has no finite x coordinate, and the placement's plain
     // row products carry it into every coordinate.
     for point in [
-        crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &placed, f64::MAX, 0.0),
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::surface_point(admission, &placed, f64::MAX, 0.0)),
+        crate::eval::decode::surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &placed,
+            f64::MAX,
+            0.0,
+        ),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| {
+                crate::eval::decode::surface_point(admission, &placed, f64::MAX, 0.0)
+            }),
     ] {
         assert!(
             matches!(point, Err(EvaluationFailure::NonFinite(point))
@@ -400,15 +507,21 @@ fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_poin
         );
     }
     assert_eq!(
-        crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &placed, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
+        crate::eval::decode::surface_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &placed,
+            -f64::MAX,
+            0.0
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 1.0))
     );
 }
 
 #[test]
 fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
-    use crate::eval::EvaluationFailure;
     use crate::eval::model_surface_point_by_id;
+    use crate::eval::EvaluationFailure;
 
     let mut ir = crate::CadIr::empty();
     let surface_id = crate::ids::SurfaceId::mint("test:model:surface#overflow".to_string())
@@ -418,11 +531,20 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
         geometry: SurfaceGeometry::Solved(overflowing_plane()),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     for point in [
-        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, f64::MAX, 2.0),
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface_id, f64::MAX, 2.0)),
+        model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface_id,
+            f64::MAX,
+            2.0,
+        ),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| {
+                model_surface_point_by_id(admission, &index, &surface_id, f64::MAX, 2.0)
+            }),
     ] {
         assert!(
             matches!(point, Err(EvaluationFailure::NonFinite(point))
@@ -442,7 +564,11 @@ fn a_line_pcurve_whose_point_overflows_reports_the_non_finite_point() {
         LinePcurve::try_new(Point2::new(f64::MAX, 0.0), Point2::new(1.0, 0.0)).unwrap(),
     );
     assert_eq!(
-        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &line, f64::MAX),
+        crate::eval::decode::pcurve_uv(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &line,
+            f64::MAX
+        ),
         Err(EvaluationFailure::NonFinite(Point2::new(
             f64::INFINITY,
             0.0
@@ -467,26 +593,62 @@ fn conic_arms_refuse_points_and_derivatives_that_overflow() {
     let circle = solved(SolvedCurveGeometry::Circle(
         CircleCurve::try_new(edge, axis, reference, 1.0e308).unwrap(),
     ));
-    assert!(overflows(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0)));
-    assert!(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &circle, std::f64::consts::PI).is_ok());
+    assert!(overflows(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &circle,
+        0.0
+    )));
+    assert!(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &circle,
+        std::f64::consts::PI
+    )
+    .is_ok());
     let ellipse = solved(SolvedCurveGeometry::Ellipse(
         EllipseCurve::try_new(edge, axis, reference, 1.0e308, 1.0).unwrap(),
     ));
-    assert!(overflows(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, 0.0)));
-    assert!(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, std::f64::consts::PI).is_ok());
+    assert!(overflows(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &ellipse,
+        0.0
+    )));
+    assert!(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &ellipse,
+        std::f64::consts::PI
+    )
+    .is_ok());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(edge, axis, reference, 1.0).unwrap(),
     ));
-    assert!(overflows(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 1.0e154)));
-    assert!(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.0).is_ok());
+    assert!(overflows(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &parabola,
+        1.0e154
+    )));
+    assert!(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &parabola,
+        0.0
+    )
+    .is_ok());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(edge, axis, reference, 1.0e308, 1.0).unwrap(),
     ));
-    assert!(overflows(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0)));
+    assert!(overflows(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &hyperbola,
+        0.0
+    )));
     let centered = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, reference, 1.0e308, 1.0).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &centered, 0.0).is_ok());
+    assert!(crate::eval::decode::curve_point(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &centered,
+        0.0
+    )
+    .is_ok());
 
     // A frame direction admitted within the unit tolerance but longer than
     // one carries a largest-radius derivative term past the finite range.
@@ -494,39 +656,114 @@ fn conic_arms_refuse_points_and_derivatives_that_overflow() {
     let circle = solved(SolvedCurveGeometry::Circle(
         CircleCurve::try_new(origin, axis, stretched, f64::MAX).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0).is_err());
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0).is_err());
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &circle, std::f64::consts::FRAC_PI_4).is_ok());
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &circle, std::f64::consts::FRAC_PI_4).is_ok());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &circle,
+        0.0
+    )
+    .is_err());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &circle,
+        0.0
+    )
+    .is_err());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &circle,
+        std::f64::consts::FRAC_PI_4
+    )
+    .is_ok());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &circle,
+        std::f64::consts::FRAC_PI_4
+    )
+    .is_ok());
     let ellipse = solved(SolvedCurveGeometry::Ellipse(
         EllipseCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, std::f64::consts::FRAC_PI_2).is_err());
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, 0.0).is_err());
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, std::f64::consts::FRAC_PI_4).is_ok());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &ellipse,
+        std::f64::consts::FRAC_PI_2
+    )
+    .is_err());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &ellipse,
+        0.0
+    )
+    .is_err());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &ellipse,
+        std::f64::consts::FRAC_PI_4
+    )
+    .is_ok());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(origin, axis, stretched, 0.5 * f64::MAX).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 1.0).is_err());
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.0).is_err());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &parabola,
+        1.0
+    )
+    .is_err());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &parabola,
+        0.0
+    )
+    .is_err());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(origin, axis, reference, 0.5 * f64::MAX).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.5).is_ok());
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &parabola, 0.0).is_ok());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &parabola,
+        0.5
+    )
+    .is_ok());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &parabola,
+        0.0
+    )
+    .is_ok());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, stretched, 1.0, f64::MAX).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_err());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &hyperbola,
+        0.0
+    )
+    .is_err());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
     ));
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_err());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &hyperbola,
+        0.0
+    )
+    .is_err());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, reference, 1.0, f64::MAX).unwrap(),
     ));
-    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_ok());
-    assert!(curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 0.0).is_ok());
+    assert!(crate::eval::decode::curve_tangent(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &hyperbola,
+        0.0
+    )
+    .is_ok());
+    assert!(curve_second_derivative(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &hyperbola,
+        0.0
+    )
+    .is_ok());
 }
 
 #[test]
@@ -541,7 +778,12 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
     };
     let near_edge = CurveGeometry::Solved(line(Point3::new(f64::MAX, 0.0, 0.0)));
     assert_eq!(
-        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &near_edge, 0.0).ok(),
+        crate::eval::decode::curve_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &near_edge,
+            0.0
+        )
+        .ok(),
         FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
     );
     assert!(matches!(
@@ -550,7 +792,12 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
             if point.x.is_nan() && point.y == 0.0 && point.z == 0.0
     ));
     assert_eq!(
-        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &near_edge, 0.0).ok(),
+        crate::eval::decode::curve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &near_edge,
+            0.0
+        )
+        .ok(),
         FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
     );
 
@@ -566,15 +813,26 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
     ));
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::curve_point(admission, &placed, 0.0)).ok(),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| crate::eval::decode::curve_point(
+                admission, &placed, 0.0
+            ))
+            .ok(),
         FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
     );
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::curve_tangent(admission, &placed, 0.0)).ok(),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| crate::eval::decode::curve_tangent(
+                admission, &placed, 0.0
+            ))
+            .ok(),
         FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
     );
     assert_eq!(
-        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| crate::eval::decode::curve_point(admission, &placed, 2.0)),
+        crate::eval::admission::EvaluationAdmission::Standard
+            .within_work_slice(&budget, |admission| crate::eval::decode::curve_point(
+                admission, &placed, 2.0
+            )),
         Err(crate::eval::EvaluationFailure::NonFinite(Point3::new(
             f64::INFINITY,
             1.0,
@@ -705,18 +963,36 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
         ).unwrap()
         .expect("subset surface exists and has no procedural construction");
 
-    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     assert!(
         matches!(
-            crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset_id, 1.0e308, 0.5),
+            crate::eval::model_surface_point_by_id(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &index,
+                &subset_id,
+                1.0e308,
+                0.5
+            ),
             Err(EvaluationFailure::NonFinite(_))
         ),
         "{:?}",
-        crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset_id, 1.0e308, 0.5)
+        crate::eval::model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &subset_id,
+            1.0e308,
+            0.5
+        )
     );
     assert_eq!(
-        crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset_id, 0.0, 0.5)
-            .map(crate::features::FinitePoint3::get),
+        crate::eval::model_surface_point_by_id(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &subset_id,
+            0.0,
+            0.5
+        )
+        .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e308, 0.5, 0.0))
     );
 }

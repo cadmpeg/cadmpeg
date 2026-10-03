@@ -1360,15 +1360,33 @@ fn predefined_associativity_valid(
     }
 }
 
-fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId, ctx: &DecodeContext<'_>, ) -> Result<Option<Point3>, CodecError> {
-let Some(vertex) = index.vertices(vertex.as_str(), ctx)? else { return Ok(None); };
-    Ok(index.points(vertex.point.as_str(), ctx)?.map(|point| point.position().get()))
+fn vertex_position(
+    index: &ModelIndex<'_>,
+    vertex: &VertexId,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Point3>, CodecError> {
+    let Some(vertex) = index.vertices(vertex.as_str(), ctx)? else {
+        return Ok(None);
+    };
+    Ok(index
+        .points(vertex.point.as_str(), ctx)?
+        .map(|point| point.position().get()))
 }
 
-fn plane_carrier(index: &ModelIndex<'_>, sequence: u32, ctx: &DecodeContext<'_>, ) -> Result<Option<(Point3, Vector3)>, CodecError> {
-let mut key_storage = [0_u8; 64];
-    let Some(key) = crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage) else { return Ok(None); };
-    let Some(surface) = index.surfaces(key, ctx)? else { return Ok(None); };
+fn plane_carrier(
+    index: &ModelIndex<'_>,
+    sequence: u32,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(Point3, Vector3)>, CodecError> {
+    let mut key_storage = [0_u8; 64];
+    let Some(key) =
+        crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage)
+    else {
+        return Ok(None);
+    };
+    let Some(surface) = index.surfaces(key, ctx)? else {
+        return Ok(None);
+    };
     Ok(match surface.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -1446,9 +1464,9 @@ fn linear_nurbs_boundary_points(
         "iges plane NURBS boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter))?,
-        )?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
+        )?)?
         else {
             return Ok(None);
         };
@@ -1702,12 +1720,16 @@ fn plane_boundary_edge(
     let key =
         crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
             .ok_or(PlaneBoundaryError::MissingEdge)?;
-    let source_edge = index.edges(key, ctx).map_err(CodecError::from)?.ok_or(PlaneBoundaryError::MissingEdge)?;
+    let source_edge = index
+        .edges(key, ctx)
+        .map_err(CodecError::from)?
+        .ok_or(PlaneBoundaryError::MissingEdge)?;
     let curve_id = source_edge
         .curve()
         .ok_or(PlaneBoundaryError::MissingCurve)?;
     let curve = index
-        .curves(curve_id.as_str(), ctx).map_err(CodecError::from)?
+        .curves(curve_id.as_str(), ctx)
+        .map_err(CodecError::from)?
         .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
     let Some(geometry) = curve.geometry.solved() else {
         return Err(PlaneBoundaryError::MissingCurveCarrier);
@@ -1749,7 +1771,8 @@ fn plane_boundary_edge(
     }
     let start =
         vertex_position(index, &source_edge.start, ctx)?.ok_or(PlaneBoundaryError::MissingStart)?;
-    let end = vertex_position(index, &source_edge.end, ctx)?.ok_or(PlaneBoundaryError::MissingEnd)?;
+    let end =
+        vertex_position(index, &source_edge.end, ctx)?.ok_or(PlaneBoundaryError::MissingEnd)?;
     if start.distance(end) > resolution {
         return Err(PlaneBoundaryError::NotClosed);
     }
@@ -1811,14 +1834,13 @@ fn plane_face_draft(
         });
         let mut ring_coedges = ctx.collection_vec(1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
-        let ring =
-            match cadmpeg_ir::topology::LoopRing::new(ctx, ring_coedges, Vec::new())
-                .map_err(cadmpeg_core::CodecError::from)
-            {
-                Ok(Ok(ring)) => ring,
-                Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
-                Err(error) => return Err(error.into()),
-            };
+        let ring = match cadmpeg_ir::topology::LoopRing::new(ctx, ring_coedges, Vec::new())
+            .map_err(cadmpeg_core::CodecError::from)
+        {
+            Ok(Ok(ring)) => ring,
+            Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
+            Err(error) => return Err(error.into()),
+        };
         ctx.reserve_vec(
             &mut candidate.model_mut().loops,
             1,
@@ -3173,10 +3195,7 @@ pub(super) fn project(
     drop(index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate) in legacy_face_candidates {
-        if commit_session
-            .commit_model(candidate)?
-            .is_err()
-        {
+        if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

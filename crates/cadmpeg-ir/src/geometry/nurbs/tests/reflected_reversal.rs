@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use crate::scalar::FiniteReal;
 
 #[test]
 fn reflected_reversal_preserves_the_carrier_on_every_work_refusal() {
@@ -18,7 +18,9 @@ fn reflected_reversal_preserves_the_carrier_on_every_work_refusal() {
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut reversed = original.clone();
-        let Err(CodecError::ResourceLimit(limit)) = reversed.reverse_parameterization_in_range(&ctx, start, end) else {
+        let Err(CodecError::ResourceLimit(limit)) =
+            reversed.reverse_parameterization_in_range(&ctx, start, end)
+        else {
             panic!("validation and all mutation work require admission");
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
@@ -33,7 +35,9 @@ fn reflected_reversal_preserves_the_carrier_on_every_work_refusal() {
         };
         assert_eq!(limit.operation, operation);
         assert_eq!(reversed, original);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -43,14 +47,26 @@ fn reflected_reversal_preserves_the_carrier_on_every_work_refusal() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut reversed = original.clone();
-    assert_eq!(reversed.reverse_parameterization_in_range(&ctx, start, end).expect("exact visits"), Some(()));
+    assert_eq!(
+        reversed
+            .reverse_parameterization_in_range(&ctx, start, end)
+            .expect("exact visits"),
+        Some(())
+    );
     assert_eq!(reversed.knots(), original.knots());
     for index in 0..original.pole_count() {
         let reverse = original.pole_count() - index - 1;
-        assert_eq!(reversed.pole_rows().point_at(index), original.pole_rows().point_at(reverse));
-        assert_eq!(reversed.pole_rows().weight_at(index), original.pole_rows().weight_at(reverse));
+        assert_eq!(
+            reversed.pole_rows().point_at(index),
+            original.pole_rows().point_at(reverse)
+        );
+        assert_eq!(
+            reversed.pole_rows().weight_at(index),
+            original.pole_rows().weight_at(reverse)
+        );
     }
-    ctx.finish_session().expect("no allocation and no extra pass");
+    ctx.finish_session()
+        .expect("no allocation and no extra pass");
 }
 
 #[test]
@@ -62,7 +78,13 @@ fn reflected_reversal_admits_invalid_reflection_before_geometric_absence() {
     let mut curve = super::curve();
     let original = curve.clone();
     let bound = FiniteReal::new(f64::MAX).expect("finite");
-    assert_eq!(curve.reverse_parameterization_in_range(&ctx, bound, bound).expect("one invalid reflected knot"), None);
+    assert_eq!(
+        curve
+            .reverse_parameterization_in_range(&ctx, bound, bound)
+            .expect("one invalid reflected knot"),
+        None
+    );
     assert_eq!(curve, original);
-    ctx.finish_session().expect("semantic absence has no resource refusal");
+    ctx.finish_session()
+        .expect("semantic absence has no resource refusal");
 }

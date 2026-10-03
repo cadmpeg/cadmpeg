@@ -79,9 +79,23 @@ fn two_parameter_cycle() -> Vec<cadmpeg_ir::features::DesignParameter> {
     let first = parameters[0].id.clone();
     let second = parameters[1].id.clone();
     parameters[0].dependencies.clear();
-    parameters[0].dependencies.insert(&cadmpeg_test_support::service_decode_context(), second, "insert fixture member").expect("member insertion admission");
+    parameters[0]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            second,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     parameters[1].dependencies.clear();
-    parameters[1].dependencies.insert(&cadmpeg_test_support::service_decode_context(), first, "insert fixture member").expect("member insertion admission");
+    parameters[1]
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            first,
+            "insert fixture member",
+        )
+        .expect("member insertion admission");
     parameters
 }
 

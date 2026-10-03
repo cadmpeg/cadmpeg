@@ -27,26 +27,37 @@ impl TextWork for DecodeContext<'_> {
 
 /// Compare text in byte order, admitting only the bytes actually compared.
 pub fn compare<P: TextWork>(
-    ctx: &P, first: &str, second: &str, operation: &'static str,
+    ctx: &P,
+    first: &str,
+    second: &str,
+    operation: &'static str,
 ) -> Result<Ordering, P::Error> {
     ctx.comparison_work(1, operation)?;
     compare_bytes(ctx, first, second, operation)
 }
 
 fn compare_bytes<P: TextWork>(
-    ctx: &P, first: &str, second: &str, operation: &'static str,
+    ctx: &P,
+    first: &str,
+    second: &str,
+    operation: &'static str,
 ) -> Result<Ordering, P::Error> {
     for (first, second) in first.as_bytes().iter().zip(second.as_bytes()) {
         ctx.comparison_work(1, operation)?;
         let order = first.cmp(second);
-        if order != Ordering::Equal { return Ok(order); }
+        if order != Ordering::Equal {
+            return Ok(order);
+        }
     }
     Ok(first.len().cmp(&second.len()))
 }
 
 /// Test text equality, admitting the length gate before byte comparisons.
 pub fn equal<P: TextWork>(
-    ctx: &P, first: &str, second: &str, operation: &'static str,
+    ctx: &P,
+    first: &str,
+    second: &str,
+    operation: &'static str,
 ) -> Result<bool, P::Error> {
     ctx.comparison_work(1, operation)?;
     if first.len() != second.len() {

@@ -20,7 +20,11 @@ impl RecordAdmission<'_, '_> {
         }
     }
 
-    pub(crate) fn retained_vec<T>(self, count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
+    pub(crate) fn retained_vec<T>(
+        self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
         match self {
             Self::Charged(ctx) => ctx.retained_vec(count, operation),
             Self::Admitted => DecodeContext::admitted_vec(count, operation),

@@ -316,19 +316,30 @@ fn native_record_slot_refuses_collection_limit_before_json_materialization() {
     let record = serde_json::json!({"id": "test:native:record#first", "payload": "value"});
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
-    let error = namespace
-        .set_arena(&limited, "records", std::slice::from_ref(&record))
-        .unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
-    else {
-        panic!("native record storage must preserve the resource refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "store native record");
-    assert!(namespace.arenas().is_empty());
+    for collection_limit in [1, 0] {
+        policy.limits.max_collection_items = collection_limit;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        namespace.arenas_mut().clear();
+        let error = namespace
+            .set_arena(&limited, "records", std::slice::from_ref(&record))
+            .unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
+        else {
+            panic!("native record storage must preserve the resource refusal")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(
+            limit.operation,
+            if collection_limit == 0 {
+                "store native record"
+            } else {
+                "serialize native record"
+            }
+        );
+        assert_eq!(limited.resource_refusal(), Some(limit));
+        assert!(namespace.arenas().is_empty());
+    }
 
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -827,7 +838,10 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         )
         .expect("valid native identity")],
     );
-    right.native.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    right
+        .native
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let result = diff(&left, &right);
     assert_eq!(
@@ -863,7 +877,10 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         serde_json::Map::new(),
     )
     .expect("valid native identity");
-    right.native.finalize(&cadmpeg_test_support::service_decode_context()).expect("fixture ordering is admitted");
+    right
+        .native
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     assert!(validate_neutral(&right, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -1193,10 +1210,10 @@ fn arena_write_error_refuses_before_allocating_its_box() {
 
 #[test]
 fn typed_native_field_rewrite_preserves_session_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use crate::ids::BodyId;
     use crate::topology::{Body, BodyKind};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     let body = Body {
         id: BodyId::mint("test:model:body#one").unwrap(),
         kind: BodyKind::Solid,
@@ -1207,7 +1224,13 @@ fn typed_native_field_rewrite_preserves_session_refusals() {
         visible: None,
     };
     let record = NativeRecord::from_typed(&body).unwrap();
-    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -1219,37 +1242,63 @@ fn typed_native_field_rewrite_preserves_session_refusals() {
             _ => panic!("test covers reconstruction dimensions"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = record.rewrite_fields::<Body, _>(&ctx, |source| {
-            ctx.copy_retained_text(source, "test native target")
-        }).unwrap_err();
-        let CodecError::ResourceLimit(limit) = CodecError::from(error) else { panic!("typed native refusal must stay outside serde"); };
+        let error = record
+            .rewrite_fields::<Body, _>(&ctx, |source| {
+                ctx.copy_retained_text(source, "test native target")
+            })
+            .unwrap_err();
+        let CodecError::ResourceLimit(limit) = CodecError::from(error) else {
+            panic!("typed native refusal must stay outside serde");
+        };
         assert_eq!(limit.dimension, dimension);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
     let ctx = super::test_ctx();
-    let fields = record.rewrite_fields::<Body, _>(&ctx, |source| {
-        ctx.format_retained(format_args!("test:occurrence:{}", source.strip_prefix("test:model:").unwrap()), "test native target")
-    }).unwrap();
+    let fields = record
+        .rewrite_fields::<Body, _>(&ctx, |source| {
+            ctx.format_retained(
+                format_args!(
+                    "test:occurrence:{}",
+                    source.strip_prefix("test:model:").unwrap()
+                ),
+                "test native target",
+            )
+        })
+        .unwrap();
     assert_eq!(fields["name"], serde_json::json!("test:model:body#one"));
     assert!(!fields.contains_key("id"));
 }
 
 #[test]
 fn native_field_rewrite_does_not_require_serde_reconstruction() {
-    use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_core::CodecError;
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     use crate::topology::Body;
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::CodecError;
 
     struct FieldOwner;
     impl RewriteIdentities for FieldOwner {
-        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(ctx: &DecodeContext<'_>, value: &mut serde_json::Value, map: &mut IdentityMap<'_, F>) -> Result<(), CodecError> {
+        fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+            ctx: &DecodeContext<'_>,
+            value: &mut serde_json::Value,
+            map: &mut IdentityMap<'_, F>,
+        ) -> Result<(), CodecError> {
             Body::rewrite_native_value(ctx, value, map)
         }
-        fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+        fn visit_identity_references(
+            &self,
+            ctx: &DecodeContext<'_>,
+            _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+        ) -> Result<(), CodecError> {
             ctx.charge_work(1, "test field owner")
         }
-        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+        fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+            self,
+            ctx: &DecodeContext<'_>,
+            _map: &mut IdentityMap<'_, F>,
+        ) -> Result<Self, CodecError> {
             ctx.charge_work(1, "test field owner")?;
             Ok(self)
         }
@@ -1260,13 +1309,26 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
             "kind": "solid",
             "regions": ["test:model:region#one"],
             "name": "test:model:region#one"
-        })).unwrap(),
-    ).unwrap();
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     let ctx = super::test_ctx();
-    let fields = record.rewrite_fields::<FieldOwner, _>(&ctx, |id| {
-        ctx.format_retained(format_args!("test:occurrence:{}", id.strip_prefix("test:model:").unwrap()), "test native identity")
-    }).unwrap();
-    assert_eq!(fields["regions"], serde_json::json!(["test:occurrence:region#one"]));
+    let fields = record
+        .rewrite_fields::<FieldOwner, _>(&ctx, |id| {
+            ctx.format_retained(
+                format_args!(
+                    "test:occurrence:{}",
+                    id.strip_prefix("test:model:").unwrap()
+                ),
+                "test native identity",
+            )
+        })
+        .unwrap();
+    assert_eq!(
+        fields["regions"],
+        serde_json::json!(["test:occurrence:region#one"])
+    );
     assert_eq!(fields["name"], serde_json::json!("test:model:region#one"));
     assert!(!fields.contains_key("id"));
     ctx.finish_session().unwrap();
@@ -1277,15 +1339,33 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
     use crate::attributes::AttributeTarget;
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let ctx = super::test_ctx();
-    for kind in ["body", "face", "shell", "loop", "coedge", "edge", "vertex", "document"] {
+    for kind in [
+        "body", "face", "shell", "loop", "coedge", "edge", "vertex", "document",
+    ] {
         let mut value = serde_json::json!({"kind": kind});
-        if kind != "document" { value["id"] = serde_json::json!(format!("test:model:{kind}#one")); }
+        if kind != "document" {
+            value["id"] = serde_json::json!(format!("test:model:{kind}#one"));
+        }
         let expected: AttributeTarget = serde_json::from_value(value.clone()).unwrap();
-        let remap = |id: &str| ctx.format_retained(format_args!("test:occurrence:{}", id.strip_prefix("test:model:").unwrap()), "test native identity");
+        let remap = |id: &str| {
+            ctx.format_retained(
+                format_args!(
+                    "test:occurrence:{}",
+                    id.strip_prefix("test:model:").unwrap()
+                ),
+                "test native identity",
+            )
+        };
         let mut map = IdentityMap::new(&ctx, "test native identity", remap).unwrap();
         AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut map).unwrap();
         map.finish(&ctx).unwrap();
-        let expected = crate::schema::rewrite::identities(&ctx, "test typed attribute target", expected, remap).unwrap();
+        let expected = crate::schema::rewrite::identities(
+            &ctx,
+            "test typed attribute target",
+            expected,
+            remap,
+        )
+        .unwrap();
         assert_eq!(value, serde_json::to_value(expected).unwrap());
     }
     ctx.finish_session().unwrap();
@@ -1300,15 +1380,23 @@ fn native_field_copy_preserves_bits_and_borrowed_storage() {
             "unsigned": u64::MAX,
             "negative_zero": -0.0,
             "nested": [{"text": "nested text"}]
-        })).unwrap(),
-    ).unwrap();
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     assert!(std::ptr::eq(record.fields(), record.fields()));
     let ctx = super::test_ctx();
     let copied = record.copy_fields(&ctx).unwrap();
     assert_eq!(&copied, record.fields());
-    assert_ne!(copied["text"].as_str().unwrap().as_ptr(), record.fields()["text"].as_str().unwrap().as_ptr());
+    assert_ne!(
+        copied["text"].as_str().unwrap().as_ptr(),
+        record.fields()["text"].as_str().unwrap().as_ptr()
+    );
     assert_eq!(copied["unsigned"].as_u64(), Some(u64::MAX));
-    assert_eq!(copied["negative_zero"].as_f64().unwrap().to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(
+        copied["negative_zero"].as_f64().unwrap().to_bits(),
+        (-0.0_f64).to_bits()
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -1319,8 +1407,15 @@ fn native_field_copy_preserves_caller_resource_refusals() {
     let record = NativeRecord::new(
         crate::ids::Identity::new("test:native:record#fields").unwrap(),
         serde_json::from_value(serde_json::json!({"nested": [{"text": "retained"}]})).unwrap(),
-    ).unwrap();
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+    )
+    .unwrap();
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -1333,12 +1428,17 @@ fn native_field_copy_preserves_caller_resource_refusals() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = if dimension == ResourceDimension::MaterializedBytes {
-            ctx.with_scoped_storage("native field copy scope", || record.copy_fields(&ctx)).unwrap_err()
+            ctx.with_scoped_storage("native field copy scope", || record.copy_fields(&ctx))
+                .unwrap_err()
         } else {
             record.copy_fields(&ctx).unwrap_err()
         };
-        let CodecError::ResourceLimit(limit) = CodecError::from(error) else { panic!("native field copy must retain its resource refusal"); };
+        let CodecError::ResourceLimit(limit) = CodecError::from(error) else {
+            panic!("native field copy must retain its resource refusal");
+        };
         assert_eq!(limit.dimension, dimension);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 }

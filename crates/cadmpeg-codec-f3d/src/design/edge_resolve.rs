@@ -355,12 +355,8 @@ pub(super) fn resolved_edge_flange_group(
         ctx.push_vec(&mut historical_edges, id, "f3d edge flange historical edge")?;
     }
     let native = ctx.copy_retained_text(&group.id, "f3d edge flange historical group id")?;
-    let historical = cadmpeg_ir::features::EdgeSelection::historical(
-        state,
-        historical_edges,
-        native,
-        ctx,
-    )?;
+    let historical =
+        cadmpeg_ir::features::EdgeSelection::historical(state, historical_edges, native, ctx)?;
     Ok(match historical {
         Ok(selection) => selection,
         Err(_) => EdgeSelection::Native(
@@ -965,9 +961,8 @@ fn resolved_edge_group_with_transition_chain(
                 }
             }
             let native = ctx.copy_retained_text(&group.id, "f3d identity historical group id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical(
-                state, edges, native, ctx,
-            )? {
+            return match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)?
+            {
                 Ok(selection) => Ok(selection),
                 Err(_) => native_edge_selection(group, ctx),
             };
@@ -1204,9 +1199,8 @@ fn resolved_edge_group_with_transition_chain(
                 }
             }
             let native = ctx.copy_retained_text(&group.id, "f3d combined historical group id")?;
-            return match cadmpeg_ir::features::EdgeSelection::historical(
-                state, edges, native, ctx,
-            )? {
+            return match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)?
+            {
                 Ok(selection) => Ok(selection),
                 Err(_) => native_edge_selection(group, ctx),
             };
@@ -1253,8 +1247,7 @@ fn resolved_edge_group_with_transition_chain(
     } else {
         let native =
             ctx.copy_retained_text(&group.id, "f3d resolved edge group historical group id")?;
-        match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)?
-        {
+        match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)? {
             Ok(selection) => Ok(selection),
             Err(_) => native_edge_selection(group, ctx),
         }

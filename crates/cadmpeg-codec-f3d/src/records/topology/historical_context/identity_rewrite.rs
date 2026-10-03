@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignEdgeRecipeReferenceContext, DesignHistoricalEdgeContext, DesignHistoricalEdgeLoopContext, DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignHistoricalLoopBoundary, DesignHistoricalLoopCoedge, DesignHistoricalLoopPoint, DesignHistoricalLoopPosition, DesignHistoricalLoopVertex};
+use super::{
+    DesignEdgeRecipeReferenceContext, DesignHistoricalEdgeContext, DesignHistoricalEdgeLoopContext,
+    DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
+    DesignHistoricalFaceSupportContext, DesignHistoricalLoopBoundary, DesignHistoricalLoopCoedge,
+    DesignHistoricalLoopPoint, DesignHistoricalLoopPosition, DesignHistoricalLoopVertex,
+};
 
 rewrite_native_record!(DesignEdgeRecipeReferenceContext, []; {reference_ordinal, result_faces, result_face_boundaries, result_shared_edge_slots, preceding_faces, preceding_face_boundaries, preceding_support_face_slots, preceding_support_face_boundaries, shared_edge_slots, changed_shared_edge_slots, changed_reference_edge_slots});
 rewrite_native_record!(DesignHistoricalEdgeContext, []; {edge_slot, incident_loops});

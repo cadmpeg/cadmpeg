@@ -2,13 +2,13 @@
 
 use super::*;
 
-
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 const INVERSE_FIT_TOLERANCE: f64 = 1e-6;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
-    NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    NurbsSurface::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![domain[0], domain[0], domain[1], domain[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -19,7 +19,8 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
             None,
         ),
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .unwrap()
 }
 #[test]
@@ -50,24 +51,30 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     )
     .expect("test context");
     let mut s = bilinear([0., 1.], 1.);
-    s.try_map_control_points(|_, p| {
-        let mut p = p.get();
-        p.z = p.x * p.y;
-        cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
-            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                "control_points contains a non-finite point".into(),
-            )
-        })
-    }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
+    s.try_map_control_points(
+        |_, p| {
+            let mut p = p.get();
+            p.z = p.x * p.y;
+            cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
+        },
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("pole edit admission")
     .unwrap();
     for d in [1., SMALL_PARAMETER_DOMAIN] {
-        let c = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let c = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., d, d],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 1., 1.)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
         let samples = nurbs_curve_sample_parameters(&ctx, &c, [0., d])
             .unwrap()
@@ -76,9 +83,14 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
             .expect("resource allocation did not fail")
             .unwrap();
         let observed = Point3::new(0.5, 0.5, 0.5).distance(
-            cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &s, 0.5, 0.5)
-                .unwrap()
-                .get(),
+            cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &s,
+                0.5,
+                0.5,
+            )
+            .unwrap()
+            .get(),
         );
         println!("SW d{d:e} samples{samples:?} uv{uv:?} reported_error={error} actual_midpoint_error={observed}");
         assert_eq!(error, observed);
@@ -87,7 +99,6 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
         assert_eq!(samples.last(), Some(&d));
     }
 }
-
 
 use cadmpeg_ir::geometry::analytic::{CircleCurve, SphereSurface};
 use cadmpeg_ir::math::Vector3;
@@ -168,14 +179,35 @@ fn derive_sphere(out: &mut Brep) {
         &ctx,
         out,
         &mut AnnotationBuilder::new(),
-        &StreamHandle::new(&cadmpeg_test_support::service_decode_context(), cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap(), "fixture stream handle").unwrap(),
+        &StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap(),
+            "fixture stream handle",
+        )
+        .unwrap(),
     )
     .expect("spherical pcurve derivation");
 }
 fn error_at(out: &Brep, t: f64) -> f64 {
-    let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &out.pcurves[0].geometry, t).unwrap();
-    let hit = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &out.surfaces[0].geometry, uv.u, uv.v).unwrap();
-    let wanted = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &out.curves[0].geometry, t).unwrap();
+    let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &out.pcurves[0].geometry,
+        t,
+    )
+    .unwrap();
+    let hit = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &out.surfaces[0].geometry,
+        uv.u,
+        uv.v,
+    )
+    .unwrap();
+    let wanted = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &out.curves[0].geometry,
+        t,
+    )
+    .unwrap();
     hit.distance(wanted.get())
 }
 #[test]
@@ -247,13 +279,15 @@ fn numerical_0922b_wide_curve_inverse() {
     )
     .unwrap();
     for d in [[0., 1.], [-1e308, 1e308], [1e308, 1.1e308]] {
-        let curve = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let curve = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![d[0], d[0], d[1], d[1]],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap();
         let r = nurbs_parameter_at_point(&ctx, &curve, Point3::new(0.3, 0., 0.)).unwrap();
         let result = match r {
@@ -262,7 +296,12 @@ fn numerical_0922b_wide_curve_inverse() {
             InverseResolution::Ambiguous => panic!("ambiguous"),
         };
         println!("SW chart{d:?}: inverse{result:?}");
-        let hit = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, result.unwrap()).unwrap();
+        let hit = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            result.unwrap(),
+        )
+        .unwrap();
         assert!((hit.x - 0.3).abs() < INVERSE_FIT_TOLERANCE);
     }
 }

@@ -17,30 +17,45 @@ fn surface_derivatives_use_the_existing_scratch_context() {
             (0..3)
                 .map(|i| {
                     (0..3)
-                        .map(|j| Point3::new(
-                            f64::from(i) / 2.0,
-                            f64::from(j) / 2.0,
-                            f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
-                        ))
+                        .map(|j| {
+                            Point3::new(
+                                f64::from(i) / 2.0,
+                                f64::from(j) / 2.0,
+                                f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
+                            )
+                        })
                         .collect()
                 })
                 .collect(),
             None,
         ),
         false,
-    ).expect("surface admission").expect("quadratic surface");
+    )
+    .expect("surface admission")
+    .expect("quadratic surface");
     let source_scratch = Scratch::new(&source);
-    let local = nurbs_surface_local(&source_scratch, &surface, 0.25, 0.75)
-        .expect("finite local surface");
+    let local =
+        nurbs_surface_local(&source_scratch, &surface, 0.25, 0.75).expect("finite local surface");
     let first = local.first(&source_scratch).expect("finite first partials");
-    assert_eq!(first.lanes.map(|row| row.map(|value| value.get())),
-        [[1.0, 0.0, 0.5], [0.0, 1.0, 1.5]]);
-    assert_eq!(local.second(&source_scratch, &first).expect("finite second partials")
-        .map(|row| row.map(|value| value.get())),
-        [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]);
+    assert_eq!(
+        first
+            .lanes
+            .map(|row| row.map(crate::scalar::FiniteReal::get)),
+        [[1.0, 0.0, 0.5], [0.0, 1.0, 1.5]]
+    );
+    assert_eq!(
+        local
+            .second(&source_scratch, &first)
+            .expect("finite second partials")
+            .map(|row| row.map(crate::scalar::FiniteReal::get)),
+        [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]
+    );
     for second in [false, true] {
-        for dimension in [ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::WorkUnits,
+        ] {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,

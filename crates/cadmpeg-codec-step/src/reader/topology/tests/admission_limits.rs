@@ -919,14 +919,16 @@ fn implicit_face_loop_normals_refuse_collection_limit() {
 
 fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
     let ir = cadmpeg_ir::CadIr::empty();
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index =
+        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     let surface_id =
         cadmpeg_ir::ids::SurfaceId::mint("test:audit:surface#1").expect("valid surface identity");
     let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
     );
     let pcurve = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 0.5, 1.0, 1.0],
             vec![
@@ -936,7 +938,8 @@ fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
             ],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("finite pcurve"),
     };
     let arena = DecodeArena::new();

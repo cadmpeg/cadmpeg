@@ -256,13 +256,16 @@ impl Serialize for FaceSidedness {
             containment: Option<FaceContainment>,
         }
         Wire {
-            id: self.source_namespace.serialized_id("face-sidedness", self.record_index),
+            id: self
+                .source_namespace
+                .serialized_id("face-sidedness", self.record_index),
             face: &self.face,
             record_index: self.record_index,
             native_sense: self.native_sense,
             normalized_sense: self.normalized_sense(),
             containment: self.containment,
-        }.serialize(serializer)
+        }
+        .serialize(serializer)
     }
 }
 

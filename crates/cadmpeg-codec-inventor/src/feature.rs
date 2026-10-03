@@ -1854,7 +1854,12 @@ fn feature_result(
         return None;
     }
     let members = match cadmpeg_ir::features::FeatureResultMembers::new(
-        bodies, Vec::new(), Vec::new(), Vec::new(), ctx, "precheck distinct Inventor feature result bodies",
+        bodies,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        ctx,
+        "precheck distinct Inventor feature result bodies",
     ) {
         Ok(Ok(members)) => members,
         Ok(Err(_)) => return None,

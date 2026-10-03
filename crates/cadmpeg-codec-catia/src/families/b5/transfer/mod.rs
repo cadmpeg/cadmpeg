@@ -575,7 +575,14 @@ fn build_plan(
                 let geometry = PcurveGeometry::Nurbs {
                     nurbs: admitted!(crate::nurbs::note_refusal(
                         ctx,
-                        admitted!(PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false,)),
+                        admitted!(PcurveNurbs::from_lanes(
+                            ctx,
+                            pcurve.degree,
+                            knots,
+                            points,
+                            weights,
+                            false,
+                        )),
                         refusal,
                         format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
                     ))?,
@@ -1072,7 +1079,8 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     };
     let Some(nurbs) = crate::nurbs::note_refusal(
         ctx,
-        PcurveNurbs::from_lanes(ctx, 
+        PcurveNurbs::from_lanes(
+            ctx,
             crate::families::a5a8::records::A8Pcurve::DEGREE,
             knots,
             ctx.collect_vec(
@@ -1319,85 +1327,91 @@ pub(in crate::families) fn resolved_extrusion_surface(
         let construction_id = graph.canonical_surface_id(surface_id)?;
         let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
         let active = extrusion.parameter_bounds[1];
-        let mut resolve_support =
-            |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (
-                u32,
-                u32,
-                [FiniteReal; 2],
-            )|
-             -> Result<Option<ResolvedExtrusionSupport>, cadmpeg_core::CodecError> {
-                (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
-                    let source_surface = graph.surfaces.get(&surface_object_id)?;
-                    let surface =
-                        match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
-                            Ok(Some(surface)) => surface,
-                            Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
-                        };
-                    let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                    let knots = match pcurve_nurbs_knots(ctx, pcurve) {
-                        Ok(Some(knots)) => knots,
+        let mut resolve_support = |(
+            surface_object_id,
+            pcurve_object_id,
+            pcurve_parameter_range,
+        ): (u32, u32, [FiniteReal; 2])|
+         -> Result<
+            Option<ResolvedExtrusionSupport>,
+            cadmpeg_core::CodecError,
+        > {
+            (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
+                let source_surface = graph.surfaces.get(&surface_object_id)?;
+                let surface =
+                    match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
+                        Ok(Some(surface)) => surface,
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                    let knots = match ctx.collect_vec(
-                        knots.into_iter().map(FiniteReal::get),
-                        "catia_b5_extrusion_pcurve_knots",
-                    ) {
-                        Ok(knots) => knots,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    let domain = pcurve_parameter_domain(pcurve)?;
-                    bounded_occurrence_range(pcurve_parameter_range, domain)?;
-                    let points = match ctx.collect_vec(
-                        pcurve
-                            .control_points
-                            .iter()
-                            .map(|point| neutral_pcurve_point(point.get(), source_surface)),
-                        "catia_b5_extrusion_pcurve_points",
-                    ) {
-                        Ok(points) => points,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    let weights = match pcurve
-                        .weights
-                        .as_ref()
-                        .map(|weights| {
-                            ctx.collect_vec(
-                                weights.iter().copied().map(PositiveReal::get),
-                                "catia_b5_extrusion_pcurve_weights",
-                            )
-                        })
-                        .transpose()
+                let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+                let knots = match pcurve_nurbs_knots(ctx, pcurve) {
+                    Ok(Some(knots)) => knots,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let knots = match ctx.collect_vec(
+                    knots.into_iter().map(FiniteReal::get),
+                    "catia_b5_extrusion_pcurve_knots",
+                ) {
+                    Ok(knots) => knots,
+                    Err(error) => return Some(Err(error)),
+                };
+                let domain = pcurve_parameter_domain(pcurve)?;
+                bounded_occurrence_range(pcurve_parameter_range, domain)?;
+                let points = match ctx.collect_vec(
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(point.get(), source_surface)),
+                    "catia_b5_extrusion_pcurve_points",
+                ) {
+                    Ok(points) => points,
+                    Err(error) => return Some(Err(error)),
+                };
+                let weights = match pcurve
+                    .weights
+                    .as_ref()
+                    .map(|weights| {
+                        ctx.collect_vec(
+                            weights.iter().copied().map(PositiveReal::get),
+                            "catia_b5_extrusion_pcurve_weights",
+                        )
+                    })
+                    .transpose()
+                {
+                    Ok(weights) => weights,
+                    Err(error) => return Some(Err(error)),
+                };
+                let nurbs = match crate::nurbs::note_refusal(
+                    ctx,
+                    match PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false)
                     {
-                        Ok(weights) => weights,
+                        Ok(result) => result,
                         Err(error) => return Some(Err(error)),
-                    };
-                    let nurbs = match crate::nurbs::note_refusal(
-                        ctx,
-                        match PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false) { Ok(result) => result, Err(error) => return Some(Err(error)) },
-                        refusal,
-                        format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-                    ) {
-                        Ok(Some(nurbs)) => nurbs,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
-                    let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
-                        Ok(curve) => curve,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    Some(Ok(ResolvedExtrusionSupport {
-                        surface_object_id,
-                        surface,
-                        pcurve: pcurve_geometry,
-                        pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
-                        curve,
-                    }))
-                })()
-                .transpose()
-            };
+                    },
+                    refusal,
+                    format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
+                ) {
+                    Ok(Some(nurbs)) => nurbs,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
+                let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
+                    Ok(curve) => curve,
+                    Err(error) => return Some(Err(error)),
+                };
+                Some(Ok(ResolvedExtrusionSupport {
+                    surface_object_id,
+                    surface,
+                    pcurve: pcurve_geometry,
+                    pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
+                    curve,
+                }))
+            })()
+            .transpose()
+        };
         let directrix = match &extrusion.directrix {
             B5ExtrusionDirectrix::Intersection {
                 supports,

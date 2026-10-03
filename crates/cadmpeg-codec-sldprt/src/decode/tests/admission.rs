@@ -101,7 +101,7 @@ fn work_refusal_with_options(
     use cadmpeg_core::decode::ResourceDimension;
 
     options.policy.limits.max_work_units = 0;
-    for _ in 0..4096 {
+    for _ in 0..65_536 {
         let error = SldprtCodec
             .decode(&mut Cursor::new(source), &options)
             .expect_err("work limit must refuse the decode");

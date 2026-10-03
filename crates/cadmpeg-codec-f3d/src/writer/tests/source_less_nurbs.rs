@@ -47,7 +47,9 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             cadmpeg_ir::math::Point3::new(3.0, -6.0, 9.0),
@@ -84,9 +86,12 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-1.0, -1.0, 2.0, 2.0], true),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
@@ -107,7 +112,8 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
                 None,
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid source-less surface"),
     );
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(expected.clone());
@@ -139,9 +145,12 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -159,7 +168,8 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid source-less rational surface"),
     );
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(expected.clone());
@@ -192,10 +202,13 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let curve_id = CurveId::mint("generated:test:nurbs_curve#0").expect("identity grammar");
     let expected = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
             vec![
@@ -205,7 +218,8 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
             ],
             Some(vec![1.0, 0.6, 1.0]),
             true,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid source-less rational curve"),
     );
     source_less.model.curves.push(Curve {
@@ -253,7 +267,9 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .expect("generated inline pcurve decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = source_less.model.pcurves[0].clone();
 
     let mut encoded = Vec::new();
@@ -321,7 +337,9 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         .expect("generated inline pcurve decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let pcurve = &mut source_less.model.pcurves[0];
     pcurve.geometry = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -365,13 +383,15 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     assert_eq!(
         round_trip.ir().model.pcurves[0].geometry,
         PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![-2.0, -2.0, 3.0, 3.0],
                 vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
                 None,
                 false,
-            ).expect("fixture pcurve construction admission")
+            )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         }
     );
@@ -385,7 +405,9 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
         .expect("generated rational pcurve decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = source_less.model.pcurves[0].clone();
     assert!(matches!(
         &expected.geometry,
@@ -423,7 +445,9 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         .expect("generated shared-edge decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected_surface = SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -512,7 +536,9 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         .expect("generated planar triangle decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     let loop_id = LoopId::mint("generated:test:loop#1").expect("identity grammar");
     let mut coedge_ids = Vec::new();
@@ -576,7 +602,13 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         id: loop_id.clone(),
         face: face_id,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(&cadmpeg_test_support::service_decode_context(), coedge_ids, Vec::new()).expect("fixture ring admission").expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(
+                &cadmpeg_test_support::service_decode_context(),
+                coedge_ids,
+                Vec::new(),
+            )
+            .expect("fixture ring admission")
+            .expect("valid loop ring"),
         ),
     });
     let face_loops = source_less.model.faces[0]
@@ -627,10 +659,13 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         .expect("generated pcurve");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
 
     let expected_surface = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -648,13 +683,15 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid shared rational surface"),
     );
     source_less.model.surfaces[1].geometry = SurfaceGeometry::Solved(expected_surface.clone());
     let curve_id = CurveId::mint("generated:test:shared_nurbs#0").expect("identity grammar");
     let expected_curve = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -664,7 +701,8 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
             ],
             Some(vec![1.0, 0.7, 1.0]),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid shared rational curve"),
     );
     source_less.model.curves.push(Curve {
@@ -842,7 +880,9 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         .expect("generated shared-edge decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected_surface = SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
@@ -916,7 +956,9 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         .expect("generated shared-edge decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -980,7 +1022,9 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .expect("generated extrusion decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
     let directrix_id = match expected.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
@@ -998,7 +1042,8 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.25, 0.25, 0.75, 0.75],
             vec![
@@ -1007,7 +1052,8 @@ fn generated_source_less_writes_translational_extrusion_definition() {
             ],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap(),
     ));
 
@@ -1084,7 +1130,9 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         .expect("revision-gated extrusion decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
     let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = expected.definition() else {
         panic!("expected a revision-gated extrusion")
@@ -1179,7 +1227,9 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
         .expect("parameterized extrusion decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
     assert_eq!(expected.cache_fit_tolerance(), None);
 
@@ -1258,9 +1308,12 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     );
     let u = 0.5;
     let v = 0.25;
-    let directrix_point =
-        cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry.expect("typed extrusion directrix"), u)
-            .expect("directrix evaluation");
+    let directrix_point = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        directrix_geometry.expect("typed extrusion directrix"),
+        u,
+    )
+    .expect("directrix evaluation");
     let surface_geometry = decoded
         .ir()
         .model
@@ -1271,8 +1324,14 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         })
         .map(|surface| &surface.geometry)
         .expect("extrusion surface carrier");
-    let surface_point = cadmpeg_ir::eval::model_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, decoded.ir(), surface_geometry, u, v)
-        .expect("procedural extrusion evaluation");
+    let surface_point = cadmpeg_ir::eval::model_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        decoded.ir(),
+        surface_geometry,
+        u,
+        v,
+    )
+    .expect("procedural extrusion evaluation");
     assert_eq!(surface_point.x, directrix_point.x + v * direction.x);
     assert_eq!(surface_point.y, directrix_point.y + v * direction.y);
     assert_eq!(surface_point.z, directrix_point.z + v * direction.z);
@@ -1292,7 +1351,9 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     let expected_definition = procedural.definition().clone();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1353,7 +1414,9 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
         .expect("generated cache-less extrusion decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let directrix = source_less.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
             panic!("expected extrusion definition")
@@ -1446,7 +1509,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .expect("generated rolling-ball decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let supports = match source_less.model.procedural_surfaces[0].definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
             let supports = definition_payload.supports();
@@ -1504,7 +1569,8 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .find(|curve| curve.id == spine)
         .expect("rolling-ball spine carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -1513,7 +1579,8 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             ],
             None,
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .unwrap(),
     ));
     let expected = source_less.model.procedural_surfaces[0].clone();

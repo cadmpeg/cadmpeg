@@ -26,7 +26,9 @@ impl From<NurbsError> for ConstructionError {
     }
 }
 
-pub(in crate::geometry) fn finish<T>(result: Result<T, ConstructionError>) -> Result<Result<T, NurbsError>, CodecError> {
+pub(in crate::geometry) fn finish<T>(
+    result: Result<T, ConstructionError>,
+) -> Result<Result<T, NurbsError>, CodecError> {
     match result {
         Ok(value) => Ok(Ok(value)),
         Err(ConstructionError::Geometry(NurbsError::ResourceLimit(limit))) => Err(limit.into()),
@@ -54,16 +56,24 @@ impl super::NurbsAdmission for DecodeContext<'_> {
         self.try_collect_retained_with(values, operation, convert)
     }
 
-    fn reserve<T>(&self, values: &mut Vec<T>, storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>, operation: &'static str) -> Result<(), Self::Error> {
+    fn reserve<T>(
+        &self,
+        values: &mut Vec<T>,
+        storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
+        operation: &'static str,
+    ) -> Result<(), Self::Error> {
         if let Some(storage) = storage {
-            self.reserve_scoped_vec(storage, values, 1, operation).map_err(Into::into)
+            self.reserve_scoped_vec(storage, values, 1, operation)
+                .map_err(Into::into)
         } else {
-            self.reserve_retained_vec(values, 1, operation).map_err(Into::into)
+            self.reserve_retained_vec(values, 1, operation)
+                .map_err(Into::into)
         }
     }
 
     fn copy_field(&self, field: &str) -> Result<String, Self::Error> {
-        self.copy_retained_text(field, "IR NURBS refusal field").map_err(Into::into)
+        self.copy_retained_text(field, "IR NURBS refusal field")
+            .map_err(Into::into)
     }
 
     fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error> {
@@ -92,8 +102,13 @@ impl NurbsCurve {
             } else {
                 None
             };
-            let poles = super::pair_curve_lanes(ctx, control_points, weights, &mut pair_storage,
-                |index, weight| super::admit_weight(ctx, "poles", index, weight))?;
+            let poles = super::pair_curve_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut pair_storage,
+                |index, weight| super::admit_weight(ctx, "poles", index, weight),
+            )?;
             super::build_curve(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -129,8 +144,13 @@ impl NurbsSurface {
             } else {
                 None
             };
-            let poles = super::pair_grid_lanes(ctx, control_points, weights, &mut pair_storage,
-                |index, weight| super::admit_weight(ctx, "pole grid row", index, weight))?;
+            let poles = super::pair_grid_lanes(
+                ctx,
+                control_points,
+                weights,
+                &mut pair_storage,
+                |index, weight| super::admit_weight(ctx, "pole grid row", index, weight),
+            )?;
             super::build_surface(ctx, u, v, poles, normal_reversed)
         })())
     }

@@ -4,8 +4,8 @@
 mod admission;
 use admission::{RadiusAdmission, StandardAdmission};
 
-use super::{EdgeSelection, FaceSelection};
 use super::selection_overlap::{face_selections_overlap, standard_result, OverlapAdmission};
+use super::{EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
@@ -142,22 +142,27 @@ impl FullRoundFilletGroup {
         side_one_faces: FullRoundSideSelection,
         side_two_faces: FullRoundSideSelection,
     ) -> Result<Result<Self, &'static str>, S::Error> {
-        admission.work(0)?;
         fn explicit(side: &FullRoundSideSelection) -> Option<&FaceSelection> {
             match side {
                 FullRoundSideSelection::Explicit(faces) => Some(faces),
                 FullRoundSideSelection::Automatic | FullRoundSideSelection::Unresolved => None,
             }
         }
+        admission.work(0)?;
         let first = explicit(&side_one_faces);
         let second = explicit(&side_two_faces);
-        for pair in [Some(&center_faces).zip(first), Some(&center_faces).zip(second), first.zip(second)] {
-            if let Some((first, second)) = pair {
-                if face_selections_overlap(admission, first, second)? {
-                    return Ok(Err(
-                        "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
-                    ));
-                }
+        for (first, second) in [
+            Some(&center_faces).zip(first),
+            Some(&center_faces).zip(second),
+            first.zip(second),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if face_selections_overlap(admission, first, second)? {
+                return Ok(Err(
+                    "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
+                ));
             }
         }
         Ok(Ok(Self {
@@ -187,8 +192,12 @@ impl<'de> Deserialize<'de> for FullRoundFilletGroup {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = FullRoundFilletGroupWire::deserialize(deserializer)?;
         standard_result(Self::build(
-            &super::selection_overlap::StandardAdmission, wire.center, wire.side_one, wire.side_two,
-        )).map_err(serde::de::Error::custom)
+            &super::selection_overlap::StandardAdmission,
+            wire.center,
+            wire.side_one,
+            wire.side_two,
+        ))
+        .map_err(serde::de::Error::custom)
     }
 }
 
@@ -237,14 +246,21 @@ pub struct VariableRadii(Vec<VariableRadius<Fraction, NonNegativeLength>>);
 
 impl VariableRadii {
     /// Admits finite ordered parameters in [0, 1] and nonnegative radii with one positive radius.
-    pub fn new(points: Vec<VariableRadius>, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+    pub fn new(
+        points: Vec<VariableRadius>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
         admission::finish(Self::build(ctx, points))
     }
 
-    fn build<A: RadiusAdmission>(admission: &A, points: Vec<VariableRadius>) -> Result<Self, A::Error> {
+    fn build<A: RadiusAdmission>(
+        admission: &A,
+        points: Vec<VariableRadius>,
+    ) -> Result<Self, A::Error> {
         let points = admission.collect(points, |point| {
             let parameter = Fraction::new(point.parameter).ok_or_else(|| admission.invalid())?;
-            let radius = NonNegativeLength::try_from(point.radius).map_err(|_| admission.invalid())?;
+            let radius =
+                NonNegativeLength::try_from(point.radius).map_err(|_| admission.invalid())?;
             Ok(VariableRadius { parameter, radius })
         })?;
         Self::build_parts(admission, points)
@@ -260,17 +276,29 @@ impl VariableRadii {
         admission::finish(Self::build_parts(ctx, points))
     }
 
-    fn build_parts<A: RadiusAdmission>(admission: &A, points: Vec<VariableRadius<Fraction, NonNegativeLength>>) -> Result<Self, A::Error> {
-        if points.len() < 2 { return Err(admission.invalid()); }
+    fn build_parts<A: RadiusAdmission>(
+        admission: &A,
+        points: Vec<VariableRadius<Fraction, NonNegativeLength>>,
+    ) -> Result<Self, A::Error> {
+        if points.len() < 2 {
+            return Err(admission.invalid());
+        }
         let mut positive = false;
         for point in &points {
             admission.work("IR variable radius positivity")?;
-            if point.radius.get() > 0.0 { positive = true; break; }
+            if point.radius.get() > 0.0 {
+                positive = true;
+                break;
+            }
         }
-        if !positive { return Err(admission.invalid()); }
+        if !positive {
+            return Err(admission.invalid());
+        }
         for pair in points.windows(2) {
             admission.work("IR variable radius parameter comparison")?;
-            if pair[0].parameter >= pair[1].parameter { return Err(admission.invalid()); }
+            if pair[0].parameter >= pair[1].parameter {
+                return Err(admission.invalid());
+            }
         }
         Ok(Self(points))
     }

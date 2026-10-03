@@ -252,15 +252,15 @@ fn source_parameter_range(
         ) else {
             continue;
         };
-        let Some(evaluated_start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]))?,
-        )?
+        let Some(evaluated_start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]),
+        )?)?
         else {
             continue;
         };
-        let Some(evaluated_end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]))?,
-        )?
+        let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]),
+        )?)?
         else {
             continue;
         };
@@ -778,11 +778,13 @@ pub(super) fn project(
                 };
                 let offset_direction = normal_direction.cross(direction);
                 let Some(source_start) =
-                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
-                        ctx,
-                        &offset_source_geometry,
-                        start,
-                    ))?)?
+                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point_solved(
+                            ctx,
+                            &offset_source_geometry,
+                            start,
+                        ),
+                    )?)?
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -792,12 +794,9 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let Some(source_end) =
-                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
-                        ctx,
-                        &offset_source_geometry,
-                        end,
-                    ))?)?
+                let Some(source_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_solved(ctx, &offset_source_geometry, end),
+                )?)?
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -828,7 +827,8 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let offset_nurbs = match NurbsCurve::new(ctx, 
+                let offset_nurbs = match NurbsCurve::new(
+                    ctx,
                     1,
                     knots,
                     NurbsPoles3::Polynomial { points: controls },
@@ -1026,13 +1026,13 @@ pub(super) fn project(
                         break;
                     };
                     let independent = inverse_parameter(function_parameter);
-                    let Some(base) = finite_or_refusal(
-                        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
+                    let Some(base) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point_solved(
                             ctx,
                             &offset_source_geometry,
                             source_parameter(independent),
-                        ))?,
-                    )?
+                        ),
+                    )?)?
                     else {
                         controls.clear();
                         break;
@@ -1062,11 +1062,13 @@ pub(super) fn project(
                         .map(|value| source_parameter(inverse_parameter(*value))),
                 );
                 let Some(function_start) =
-                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                        ctx,
-                        &function.geometry,
-                        function_range[0],
-                    ))?)?
+                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point(
+                            ctx,
+                            &function.geometry,
+                            function_range[0],
+                        ),
+                    )?)?
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -1106,7 +1108,8 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let offset_nurbs = match NurbsCurve::new(ctx, 
+                let offset_nurbs = match NurbsCurve::new(
+                    ctx,
                     function_nurbs.degree(),
                     knots,
                     NurbsPoles3::Polynomial { points: controls },
@@ -1139,9 +1142,9 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(start_position) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, start))?,
-        )?
+        let Some(start_position) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, start),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,
@@ -1151,9 +1154,9 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(end_position) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, end))?,
-        )?
+        let Some(end_position) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, end),
+        )?)?
         else {
             super::push_entity_loss(
                 ctx,

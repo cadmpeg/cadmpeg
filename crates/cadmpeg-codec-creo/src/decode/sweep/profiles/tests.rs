@@ -41,7 +41,8 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 
 #[test]
 fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
-    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -50,7 +51,8 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
         ],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("linear NURBS fixture");
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01)
@@ -61,7 +63,8 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
 }
 
 fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
-    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -70,7 +73,8 @@ fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
         ],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("linear NURBS fixture")
 }
 
@@ -164,13 +168,15 @@ fn profile_sketch_copy_with_limit(
     limit: u64,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     let geometry = super::ProfileGeometry::Nurbs {
-        curve: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        curve: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("linear pcurve fixture"),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -268,13 +274,15 @@ fn profile_line(start: [f64; 2], end: [f64; 2]) -> super::ProfileEntity {
 }
 
 fn profile_nurbs_line() -> super::ProfileEntity {
-    let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .expect("linear profile pcurve");
     super::ProfileEntity {
         geometry: super::ProfileGeometry::Nurbs { curve },
@@ -561,7 +569,8 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
     let sketch_id = SketchId::mint("creo:model:sketch#74").expect("identity grammar");
     let entity_id =
         SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("identity grammar");
-    let nurbs = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let nurbs = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -571,7 +580,8 @@ fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
         ],
         None,
         false,
-    ).expect("fixture pcurve construction admission")
+    )
+    .expect("fixture pcurve construction admission")
     .expect("closed source NURBS");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -659,13 +669,15 @@ fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
 #[test]
 fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
     let geometry = SketchGeometry::nurbs(
-        PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
             vec![Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("wide finite sketch NURBS"),
     );
     let area = crate::decode::with_test_decode_ctx(|ctx| {
@@ -795,10 +807,20 @@ fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
     .expect("service allocation")
     .expect("quarter-circle geometry");
     assert_eq!(
-        cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.0).expect("start"),
+        cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            0.0
+        )
+        .expect("start"),
         Point2::new(1.0, 0.0)
     );
-    let end = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, 1.0).expect("end");
+    let end = cadmpeg_ir::eval::decode::pcurve_uv(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &pcurve,
+        1.0,
+    )
+    .expect("end");
     assert!(end.u.abs() < EPS_QUARTER_CIRCLE_SEAM);
     assert!((end.v - 1.0).abs() < EPS_QUARTER_CIRCLE_SEAM);
 }
@@ -1022,7 +1044,8 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
     for rational in [false, true] {
         let sketch_id = SketchId::mint("creo:model:sketch#74").expect("ID");
         let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("ID");
-        let curve = PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let curve = PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1032,7 +1055,8 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
             ],
             rational.then(|| vec![1.0, 2.0, 1.0]),
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .expect("curve");
         let mut ir = CadIr::empty();
         ir.model.sketches.push(sketch(&sketch_id, &entity_id));
@@ -1065,7 +1089,8 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
 
 #[test]
 fn nurbs_profile_local_depth_ceiling_refuses() {
-    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1075,7 +1100,8 @@ fn nurbs_profile_local_depth_ceiling_refuses() {
         ],
         None,
         false,
-    ).expect("fixture constructor admission")
+    )
+    .expect("fixture constructor admission")
     .expect("curved fixture");
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut evaluator =

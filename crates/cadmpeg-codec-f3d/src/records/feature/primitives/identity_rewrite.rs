@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignBoxPrimitive, DesignCylinderPrimitive, DesignSpherePrimitive, DesignTorusPrimitive};
+use super::{
+    DesignBoxPrimitive, DesignCylinderPrimitive, DesignSpherePrimitive, DesignTorusPrimitive,
+};
 
 rewrite_native_record!(DesignBoxPrimitive, []; {length, length_record_index, length_offset, width, width_record_index, width_offset, height, height_record_index, height_offset, offset_x, offset_x_record_index, offset_x_offset, offset_y, offset_y_record_index, offset_y_offset, operation, operation_offset});
 rewrite_native_scalar!(DesignCylinderPrimitive);

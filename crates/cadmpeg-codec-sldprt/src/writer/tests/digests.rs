@@ -28,12 +28,21 @@ fn metadata_document() -> CadIr {
 fn metadata_digest_preserves_source_order_and_excludes_unit_code() {
     let ir = metadata_document();
     let expected = [
-        (&ir.model.attributes[1].id, ir.model.attributes[1].name.as_str()),
-        (&ir.model.attributes[0].id, ir.model.attributes[0].name.as_str()),
+        (
+            &ir.model.attributes[1].id,
+            ir.model.attributes[1].name.as_str(),
+        ),
+        (
+            &ir.model.attributes[0].id,
+            ir.model.attributes[0].name.as_str(),
+        ),
     ];
     let expected = cadmpeg_ir::hash::sha256_hex(&serde_json::to_vec_pretty(&expected).unwrap());
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap(), expected);
+    assert_eq!(
+        crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap(),
+        expected
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -45,8 +54,18 @@ fn metadata_digest_views_use_scoped_storage_and_retain_only_the_digest() {
     policy.limits.max_materialized_bytes = 16384;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap().len(), 64);
-    let storage = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "metadata digest views released").unwrap();
+    assert_eq!(
+        crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir)
+            .unwrap()
+            .len(),
+        64
+    );
+    let storage = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "metadata digest views released",
+        )
+        .unwrap();
     drop(storage);
     ctx.finish_session().unwrap();
 }
@@ -54,7 +73,12 @@ fn metadata_digest_views_use_scoped_storage_and_retain_only_the_digest() {
 #[test]
 fn metadata_digest_preserves_each_resource_refusal() {
     let ir = metadata_document();
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -65,10 +89,14 @@ fn metadata_digest_preserves_each_resource_refusal() {
             _ => panic!("metadata digest refusal dimensions"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(limit) = crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap_err() else {
+        let CodecError::ResourceLimit(limit) =
+            crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap_err()
+        else {
             panic!("metadata digest must preserve refusal");
         };
         assert_eq!(limit.dimension, dimension);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+        );
     }
 }

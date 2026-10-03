@@ -45,13 +45,15 @@ fn curves() -> Vec<CurveGeometry> {
             self_intersect: Some(false),
         }),
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
                 Some(vec![1., 2.]),
                 false,
-            ).expect("fixture constructor admission")
+            )
+            .expect("fixture constructor admission")
             .unwrap(),
         )),
     ];
@@ -77,7 +79,13 @@ fn curves() -> Vec<CurveGeometry> {
         },
     ] {
         result.push(CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-            PolylineCurve::new(samples, 0.125, &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission").unwrap(),
+            PolylineCurve::new(
+                samples,
+                0.125,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("polyline construction admission")
+            .unwrap(),
         )));
     }
     result

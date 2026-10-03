@@ -13,7 +13,11 @@ struct Shape {
 
 #[test]
 fn structural_projection_preserves_nonfinite_values_and_admits_each_dimension() {
-    let shape = Shape { text: "source text".into(), values: vec![f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.0], optional: Some(Box::new((true, 17))) };
+    let shape = Shape {
+        text: "source text".into(),
+        values: vec![f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.0],
+        optional: Some(Box::new((true, 17))),
+    };
     let expected = serde_value::to_value(&shape).unwrap();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -22,7 +26,12 @@ fn structural_projection_preserves_nonfinite_values_and_admits_each_dimension() 
     assert_eq!(*projected, expected);
     drop(projected);
     ctx.finish_session().unwrap();
-    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RecursionDepth,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -34,9 +43,13 @@ fn structural_projection_preserves_nonfinite_values_and_admits_each_dimension() 
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = project(&ctx, &shape, "project structural fixture").unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal must stay outside serde"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal must stay outside serde");
+        };
         assert_eq!(limit.dimension, dimension);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
 
@@ -58,21 +71,28 @@ fn structural_projection_holds_and_releases_its_storage_reservation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let first = project(&ctx, "abcde", "project first text").unwrap();
     let error = project(&ctx, "x", "project second text").unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
+    );
     drop(first);
 }
 
 #[test]
 fn structural_projection_counts_both_variant_containers() {
     #[derive(Serialize)]
-    enum Shape { Tuple(), Struct {} }
+    enum Shape {
+        Tuple(),
+        Struct {},
+    }
     for shape in [Shape::Tuple(), Shape::Struct {}] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = project(&ctx, &shape, "project variant containers").unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth && limit.used == 1 && limit.additional == 1));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth && limit.used == 1 && limit.additional == 1)
+        );
     }
 }
 
@@ -112,9 +132,13 @@ fn structural_display_text_preserves_formatting_refusal() {
     policy.limits.max_materialized_bytes = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = project(&ctx, &DisplayText, "project display text").unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("display formatting must refuse"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("display formatting must refuse");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(limit.operation, "project display text");
     assert_eq!(limit.additional, 5);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }

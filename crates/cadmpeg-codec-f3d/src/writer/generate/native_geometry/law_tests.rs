@@ -32,7 +32,8 @@ fn document(revision: bool) -> CadIr {
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.source = None;
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[]).unwrap();
+    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     ir
 }
 

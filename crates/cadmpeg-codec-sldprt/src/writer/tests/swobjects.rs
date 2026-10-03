@@ -510,7 +510,11 @@ fn encoder_writes_source_less_line_sketches() {
         native_ref: None,
     });
     ir.model
-        .set_feature_regeneration_parent(&cadmpeg_test_support::service_decode_context(), &(extrude_feature_id), &(sketch_feature_id))
+        .set_feature_regeneration_parent(
+            &cadmpeg_test_support::service_decode_context(),
+            &(extrude_feature_id),
+            &(sketch_feature_id),
+        )
         .unwrap();
 
     let mut encoded = Vec::new();
@@ -986,7 +990,8 @@ fn patched_retained_metadata(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let context_bytes = payload.clone();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&context_bytes, &arena, &policy)?;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&context_bytes, &arena, &policy)?;
     crate::annotations::note(
         &ctx,
         &mut annotations,

@@ -43,8 +43,7 @@ pub(super) fn local_body_selection(
             ctx.copy_retained_text(body, "NX local body selection identity")
         })?;
     let native_copy = ctx.copy_retained_text(&native, "NX feature projection text")?;
-    Ok(BodySelection::local(bodies, native_copy, ctx)?
-        .unwrap_or(BodySelection::Native(native)))
+    Ok(BodySelection::local(bodies, native_copy, ctx)?.unwrap_or(BodySelection::Native(native)))
 }
 
 impl FeatureBodySelection<'_> {
@@ -64,16 +63,15 @@ impl FeatureBodySelection<'_> {
                     "NX resolved body selection members",
                     |body| body.try_clone_for_decode(ctx, "NX resolved body selection identity"),
                 )?;
-                let bodies =
-                    match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
-                        Ok(bodies) => bodies,
-                        Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                            return Err(limit.into())
-                        }
-                        Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
-                            return Ok(BodySelection::Native(native))
-                        }
-                    };
+                let bodies = match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
+                    Ok(bodies) => bodies,
+                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                        return Err(limit.into())
+                    }
+                    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
+                        return Ok(BodySelection::Native(native))
+                    }
+                };
                 Ok(BodySelection::Resolved { bodies, native })
             }
         }

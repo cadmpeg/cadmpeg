@@ -1170,14 +1170,23 @@ fn variable_fillet_radius_groups<'a>(
                 |_| 0,
                 OPERATION,
             )?;
-            let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+            let mut sample_storage =
+                ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
             let mut points = Vec::new();
             for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
                 ctx.charge_work(1, "SLDPRT variable radius source conversion")?;
-                let Some(parameter) = f64_from_index(parameter) else { return Ok(None); };
-                ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
-                    parameter, radius: Length::from(radius),
-                }, "SLDPRT variable radius source samples")?;
+                let Some(parameter) = f64_from_index(parameter) else {
+                    return Ok(None);
+                };
+                ctx.push_scoped_vec(
+                    &mut sample_storage,
+                    &mut points,
+                    VariableRadius {
+                        parameter,
+                        radius: Length::from(radius),
+                    },
+                    "SLDPRT variable radius source samples",
+                )?;
             }
             let Some(points) =
                 cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
@@ -1351,12 +1360,21 @@ fn variable_fillet_radius_groups<'a>(
         let mut points = Vec::new();
         for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
             ctx.charge_work(1, "SLDPRT variable radius source conversion")?;
-            let Some(parameter) = f64_from_index(parameter) else { return Ok(None); };
-            ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
-                parameter, radius: Length::from(radius),
-            }, "SLDPRT variable radius source samples")?;
+            let Some(parameter) = f64_from_index(parameter) else {
+                return Ok(None);
+            };
+            ctx.push_scoped_vec(
+                &mut sample_storage,
+                &mut points,
+                VariableRadius {
+                    parameter,
+                    radius: Length::from(radius),
+                },
+                "SLDPRT variable radius source samples",
+            )?;
         }
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
+        let Some(points) =
+            cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
         else {
             return Ok(None);
         };
@@ -1458,17 +1476,24 @@ fn variable_fillet_radius_groups<'a>(
     ctx.reserve_vec(&mut result, groups.len(), OPERATION)?;
     for ((first, second), selections) in groups {
         let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
-        let raw_points = sample_storage.with_storage(|| ctx.collect_retained_vec([
-            VariableRadius {
-                parameter: 0.0,
-                radius: Length::from(first),
-            },
-            VariableRadius {
-                parameter: 1.0,
-                radius: Length::from(second),
-            },
-        ], "SLDPRT variable radius source samples"))?;
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx)?.ok() else {
+        let raw_points = sample_storage.with_storage(|| {
+            ctx.collect_retained_vec(
+                [
+                    VariableRadius {
+                        parameter: 0.0,
+                        radius: Length::from(first),
+                    },
+                    VariableRadius {
+                        parameter: 1.0,
+                        radius: Length::from(second),
+                    },
+                ],
+                "SLDPRT variable radius source samples",
+            )
+        })?;
+        let Some(points) =
+            cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx)?.ok()
+        else {
             return Ok(None);
         };
         result.push(RadiusSelectionGroup(
@@ -2155,9 +2180,7 @@ pub(crate) fn project_compact_surface_selections(
                 ctx.charge_work(1, ALIAS_OPERATION)?;
                 if producer != &feature.id && !feature.dependencies.contains(producer) {
                     let copy = copy_projection_feature_id(ctx, producer, ALIAS_OPERATION)?;
-                    feature
-                        .dependencies
-                        .insert(ctx, copy, ALIAS_OPERATION)?;
+                    feature.dependencies.insert(ctx, copy, ALIAS_OPERATION)?;
                 }
             }
         }
@@ -2432,7 +2455,8 @@ fn draft_face_selection(
         };
         let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-        let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx,)?
+        let Ok(face) =
+            cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx)?
         else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
@@ -2466,7 +2490,7 @@ fn draft_face_selection(
         }
         let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
         Ok(
-            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy, ctx,)?
+            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy, ctx)?
                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
         )
     }
@@ -2998,7 +3022,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         ctx.format_retained(format_args!("{local_id}"), GENERATED_OPERATION)?;
                     *face = match cadmpeg_ir::features::GeneratedFaceRef::new(
                         producer_id,
-                        local_id_text, ctx,
+                        local_id_text,
+                        ctx,
                     )? {
                         Ok(generated_face) => {
                             let mut faces = Vec::new();
@@ -3006,7 +3031,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             faces.push(generated_face);
                             let native_copy =
                                 ctx.format_retained(format_args!("{native}"), GENERATED_OPERATION)?;
-                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx)?
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         }
                         Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),

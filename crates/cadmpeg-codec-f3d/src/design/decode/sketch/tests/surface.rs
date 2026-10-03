@@ -146,9 +146,14 @@ fn sketch_surface_decoder_keeps_constructor_refusals_in_the_outer_result() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = parse_sketch_surface(&ctx, &payload, 0) else { panic!("constructor refusal must not disappear"); };
+        let Err(CodecError::ResourceLimit(original)) = parse_sketch_surface(&ctx, &payload, 0)
+        else {
+            panic!("constructor refusal must not disappear");
+        };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.used, allowance);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+        );
     }
 }

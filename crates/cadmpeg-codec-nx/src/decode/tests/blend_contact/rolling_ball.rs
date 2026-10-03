@@ -205,7 +205,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 ),
             },
         );
-        ir.model.add_procedural_curve(None, &spine, procedural).unwrap().unwrap();
+        ir.model
+            .add_procedural_curve(None, &spine, procedural)
+            .unwrap()
+            .unwrap();
         assert_eq!(
             crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
             1.0
@@ -248,7 +251,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         );
         let continuation_parameters =
         crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
-            &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex),
+            &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
             &surface,
             outside_boundary_point,
             None,
@@ -270,7 +273,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
         let direct_parameters =
             crate::decode::blend::blend_surface_parameters_from_point_with_index_and_budget(
-                &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
                 &surface,
                 outside_boundary_point,
                 None,
@@ -469,7 +472,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let _attached = ir.model.add_procedural_curve(None, 
+        let _attached = ir.model.add_procedural_curve(
+            None,
             &boundary_curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")
@@ -590,7 +594,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         };
         *cache = Some(
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 10.0, 10.0],
                     vec![
@@ -599,7 +604,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     ],
                     None,
                     false,
-                ).expect("fixture constructor admission")
+                )
+                .expect("fixture constructor admission")
                 .unwrap(),
             ))
             .solved()
@@ -713,7 +719,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             .find(|candidate| candidate.id == outer)
             .map(|surface| &surface.geometry)
             .unwrap();
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(

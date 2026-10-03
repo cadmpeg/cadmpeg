@@ -171,25 +171,42 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
         1,
         POINT_CLASS,
     )]);
-    with_transaction_limits(&scan, 100, None, Some(0), |expand| {
-        let context = DecodeContext::new(&scan, expand).expect("transaction");
-        let mut scratch = expand
-            .ctx()
-            .reserve_scoped(0, "Rhino instance traversal scratch")
-            .expect("empty scope");
-        let error = context
-            .reference_segment(
-                0,
-                scan.objects[0].identity().expect("identity"),
-                &mut scratch,
-            )
-            .expect_err("path UUID needs scoped storage");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+    let record_storage =
+        u64::try_from(std::mem::size_of::<cadmpeg_ir::unknown::UnknownRecord>()).unwrap();
+    for materialized_limit in [0, record_storage] {
+        with_transaction_limits(&scan, 100, None, Some(materialized_limit), |expand| {
+            let context = DecodeContext::new(&scan, expand);
+            if materialized_limit == 0 {
+                let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = context else {
+                    panic!("unknown record staging must refuse before construction");
+                };
+                assert_eq!(
+                    first.dimension,
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                );
+                assert_eq!(first.operation, "Rhino object unknown records");
+                assert_eq!(expand.ctx().resource_refusal(), Some(first));
+                return;
+            }
+            let context = context.expect("transaction");
+            let mut scratch = expand
+                .ctx()
+                .reserve_scoped(0, "Rhino instance traversal scratch")
+                .expect("empty scope");
+            let error = context
+                .reference_segment(
+                    0,
+                    scan.objects[0].identity().expect("identity"),
+                    &mut scratch,
+                )
+                .expect_err("path UUID needs scoped storage");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && refusal.operation == "Rhino instance path segment")
-        );
-    });
+            );
+        });
+    }
 }
 
 #[test]
@@ -197,16 +214,24 @@ fn transformed_instance_links_refuse_scoped_slots_before_copy() {
     let scan = scan_with_objects(&[]);
     with_transaction_limits(&scan, 100, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
-        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
-        context.ir_mut().model.bodies.push(cadmpeg_ir::topology::Body {
-            id: "rhino:test:body#one".try_into().expect("id"),
-            name: None,
-            kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
-            color: None,
-            visible: None,
-            transform: None,
-        });
+        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &context.session.document().model,
+            expand.ctx(),
+        )
+        .unwrap();
+        context
+            .ir_mut()
+            .model
+            .bodies
+            .push(cadmpeg_ir::topology::Body {
+                id: "rhino:test:body#one".try_into().expect("id"),
+                name: None,
+                kind: cadmpeg_ir::topology::BodyKind::Solid,
+                regions: Vec::new(),
+                color: None,
+                visible: None,
+                transform: None,
+            });
         let mut scratch = expand
             .ctx()
             .reserve_scoped(0, "Rhino instance link scratch")
@@ -233,16 +258,24 @@ fn transformed_instance_identity_refuses_scoped_text_before_copy() {
     let slot_bytes = u64::try_from(4 * std::mem::size_of::<String>()).expect("size");
     with_transaction_limits(&scan, 100, None, Some(slot_bytes), |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
-        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
-        context.ir_mut().model.curves.push(cadmpeg_ir::geometry::Curve {
-            id: "rhino:test:curve#one".try_into().expect("id"),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
-                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(super::line_nurbs(
-                    0.0, 1.0, false,
-                )),
-            ),
-            source_object: None,
-        });
+        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &context.session.document().model,
+            expand.ctx(),
+        )
+        .unwrap();
+        context
+            .ir_mut()
+            .model
+            .curves
+            .push(cadmpeg_ir::geometry::Curve {
+                id: "rhino:test:curve#one".try_into().expect("id"),
+                geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(super::line_nurbs(
+                        0.0, 1.0, false,
+                    )),
+                ),
+                source_object: None,
+            });
         let mut scratch = expand
             .ctx()
             .reserve_scoped(0, "Rhino instance link scratch")
@@ -267,7 +300,11 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
     let scan = scan_with_objects(&[]);
     with_transaction_limits(&scan, 100, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
-        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
+        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &context.session.document().model,
+            expand.ctx(),
+        )
+        .unwrap();
         context.ir_mut().model.points.push(Point::new(
             "rhino:test:point#one".try_into().expect("id"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("point"),

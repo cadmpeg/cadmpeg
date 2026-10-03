@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct identity walks for native record fields.
 
-use super::{DesignCombineBodySelection, DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation, DesignCombineTools, DesignExternalVersion};
+use super::{
+    DesignCombineBodySelection, DesignCombineExternalBodyIdentity, DesignCombineForm,
+    DesignCombineOperation, DesignCombineTools, DesignExternalVersion,
+};
 
 rewrite_native_record!(DesignCombineBodySelection, []; {record_index, external_identity});
 rewrite_native_record!(DesignCombineExternalBodyIdentity, []; {selector_asset_id, selector_asset_id_offset, selector_context_id, selector_context_id_offset, occurrence_reference, occurrence_reference_offset, external_body_reference, external_body_reference_offset, external_segment, external_segment_offset, external_asset_id_offset, external_link_name, external_link_name_offset, external_version, tail_values, tail_value_offsets});

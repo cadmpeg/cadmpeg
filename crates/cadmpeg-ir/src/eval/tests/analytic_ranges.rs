@@ -20,7 +20,12 @@ fn numerical_ranges_parabola_point_and_tangent_stay_finite() {
         )
         .unwrap(),
     );
-    let point = crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, 0.5).unwrap();
+    let point = crate::eval::decode::curve_point_solved(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &curve,
+        0.5,
+    )
+    .unwrap();
     assert_eq!(point, Point3::new(2.5e307, 1e308, 0.));
     let pcurve = PcurveGeometry::Parabola(
         ParabolaPcurve::try_new(
@@ -31,11 +36,21 @@ fn numerical_ranges_parabola_point_and_tangent_stay_finite() {
         )
         .unwrap(),
     );
-    let point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 1e200).unwrap();
+    let point = crate::eval::decode::pcurve_uv(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &pcurve,
+        1e200,
+    )
+    .unwrap();
     assert!((point.u / 2.5e199 - 1.).abs() < EPS_RELATIVE);
     assert_eq!(point.v, 1e200);
     assert_eq!(
-        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 1e200).map(crate::units::FinitePoint2::get),
+        pcurve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            1e200
+        )
+        .map(crate::units::FinitePoint2::get),
         Ok(Point2::new(0.5, 1.))
     );
 }
@@ -63,12 +78,35 @@ fn numerical_ranges_hyperbolas_scale_before_exponentiation_overflows() {
     );
     for t in [-720.0_f64, 720.] {
         let expected = (t.abs() + 1e-10_f64.ln()).exp() * 0.5;
-        let point = crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, t).unwrap();
+        let point = crate::eval::decode::curve_point_solved(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            t,
+        )
+        .unwrap();
         assert!((point.x / expected - 1.).abs() < EPS_RELATIVE);
         assert!((point.y / (t.signum() * expected) - 1.).abs() < EPS_RELATIVE);
-        assert!(curve_tangent_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, t).unwrap().is_finite());
-        assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, t).unwrap().is_finite());
-        assert!(pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, t).unwrap().is_finite());
+        assert!(curve_tangent_solved(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            t
+        )
+        .unwrap()
+        .is_finite());
+        assert!(crate::eval::decode::pcurve_uv(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            t
+        )
+        .unwrap()
+        .is_finite());
+        assert!(pcurve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            t
+        )
+        .unwrap()
+        .is_finite());
     }
 }
 #[test]
@@ -83,7 +121,12 @@ fn numerical_ranges_offset_keeps_finite_cancellation() {
         )
         .unwrap(),
     );
-    let point = crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, std::f64::consts::FRAC_PI_4).unwrap();
+    let point = crate::eval::decode::curve_point_solved(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &curve,
+        std::f64::consts::FRAC_PI_4,
+    )
+    .unwrap();
     assert!((point.x / 1e308 - 1.).abs() < EPS_RELATIVE);
     assert!((point.y / 1.6e308 - 1.).abs() < EPS_RELATIVE);
 }
@@ -121,13 +164,22 @@ fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
         )
         .unwrap(),
     );
-    let point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &curve, 1.).unwrap();
+    let point = crate::eval::decode::pcurve_uv(
+        crate::eval::admission::EvaluationAdmission::Standard,
+        &curve,
+        1.,
+    )
+    .unwrap();
     let expected = (1.0_f64.exp() - 1.) * 1e308;
     assert!((point.u / expected - 1.).abs() < EPS_RELATIVE);
     assert_eq!(point.v, 0.);
     // The derivative's u coordinate `cosine_sinh + sine_cosh` overflows.
     assert_eq!(
-        pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &curve, 1.),
+        pcurve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            1.
+        ),
         Err(crate::eval::EvaluationFailure::NonFinite(Point2::new(
             f64::INFINITY,
             0.
@@ -138,21 +190,33 @@ fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
 #[test]
 fn numerical_ranges_nurbs_basis_supports_spans_wider_than_f64() {
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-1e308, -1e308, 1e308, 1e308],
             vec![Point2::new(0., 0.), Point2::new(1., 0.)],
             None,
             false,
-        ).expect("fixture pcurve construction admission")
+        )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     for (parameter, expected) in [(-1e308, 0.), (0., 0.5), (1e308, 1.)] {
         assert_eq!(
-            crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter).map(crate::units::FinitePoint2::get),
+            crate::eval::decode::pcurve_uv(
+                crate::eval::admission::EvaluationAdmission::Standard,
+                &pcurve,
+                parameter
+            )
+            .map(crate::units::FinitePoint2::get),
             Ok(Point2::new(expected, 0.))
         );
-        let tangent = pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, parameter).unwrap();
+        let tangent = pcurve_tangent(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &pcurve,
+            parameter,
+        )
+        .unwrap();
         assert!((tangent.u / 5e-309 - 1.).abs() < EPS_RELATIVE);
         assert_eq!(tangent.v, 0.);
     }

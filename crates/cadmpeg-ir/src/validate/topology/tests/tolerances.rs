@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::document::CadIr;
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use crate::document::CadIr;
-use crate::report::{check::{Check, Finding}, Severity};
 
 fn refused(check: impl Fn(&DecodeContext<'_>, &mut Vec<Finding>) -> Result<(), CodecError>) {
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -17,10 +24,14 @@ fn refused(check: impl Fn(&DecodeContext<'_>, &mut Vec<Finding>) -> Result<(), C
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = check(&ctx, &mut findings) else { panic!("tolerance check must refuse"); };
+        let Err(CodecError::ResourceLimit(limit)) = check(&ctx, &mut findings) else {
+            panic!("tolerance check must refuse");
+        };
         assert_eq!(limit.dimension, dimension);
         assert!(findings.is_empty());
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
 
@@ -56,11 +67,19 @@ fn tolerance_validation_preserves_warning_owners_and_arena_order() {
         assert_eq!(finding.severity, Severity::Warning);
     }
     assert_eq!(findings[0].entity, None);
-    assert_eq!(findings[0].message, "document tolerance is outside a sane canonical range");
+    assert_eq!(
+        findings[0].message,
+        "document tolerance is outside a sane canonical range"
+    );
     for (finding, owner) in findings[1..].iter().zip([
-        ir.model.vertices[0].id.as_str(), ir.model.edges[0].id.as_str(), ir.model.faces[0].id.as_str(),
+        ir.model.vertices[0].id.as_str(),
+        ir.model.edges[0].id.as_str(),
+        ir.model.faces[0].id.as_str(),
     ]) {
         assert_eq!(finding.entity.as_deref(), Some(owner));
-        assert_eq!(finding.message, "topology tolerance is outside a sane canonical range");
+        assert_eq!(
+            finding.message,
+            "topology tolerance is outside a sane canonical range"
+        );
     }
 }

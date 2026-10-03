@@ -1098,7 +1098,8 @@ mod tests {
     }
 
     fn boundary_count_with_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
-        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1109,7 +1110,8 @@ mod tests {
                 Some(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid rational boundary surface");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1128,7 +1130,8 @@ mod tests {
     fn cubic_generator_with_collection_limit(
         limit: u64,
     ) -> Result<Option<cadmpeg_ir::geometry::CurveGeometry>, cadmpeg_core::CodecError> {
-        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1144,7 +1147,8 @@ mod tests {
                 ]),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid cubic generator surface");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1249,7 +1253,8 @@ mod tests {
 
     #[test]
     fn nurbs_plane_boundary_preserves_control_index_refusal() {
-        let surface = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1260,7 +1265,8 @@ mod tests {
                 None,
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid plane boundary surface");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1286,7 +1292,8 @@ mod tests {
     }
 
     fn shared_generator_surfaces() -> (NurbsSurface, NurbsSurface) {
-        let first = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let first = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1297,9 +1304,11 @@ mod tests {
                 Some(vec![vec![2.0, 2.0], vec![3.0, 4.0]]),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid first extrusion surface");
-        let second = NurbsSurface::from_lanes(&cadmpeg_test_support::service_decode_context(), 
+        let second = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
             NurbsSurfaceLanes::new(
@@ -1310,7 +1319,8 @@ mod tests {
                 Some(vec![vec![6.0, 8.0], vec![8.0, 8.0]]),
             ),
             false,
-        ).expect("fixture constructor admission")
+        )
+        .expect("fixture constructor admission")
         .expect("valid second extrusion surface");
         (first, second)
     }
