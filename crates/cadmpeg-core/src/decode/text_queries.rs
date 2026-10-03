@@ -67,6 +67,46 @@ impl DecodeContext<'_> {
         self.charge_work(u64_from_index(text.len()), operation)?;
         Ok(text.trim_end())
     }
+
+    /// Removes leading matching characters after admitting input bytes.
+    /// The predicate admits its own child work.
+    pub fn trim_start_matches<'text>(&self, text: &'text str, mut matches: impl FnMut(char) -> Result<bool, CodecError>, operation: &'static str) -> Result<&'text str, CodecError> {
+        let mut start = 0;
+        for character in self.admit_iter(text, operation)? {
+            if !matches(character)? { break; }
+            start += character.len_utf8();
+        }
+        Ok(&text[start..])
+    }
+
+    /// Removes trailing matching characters after admitting input bytes.
+    /// The predicate admits its own child work.
+    pub fn trim_end_matches<'text>(&self, text: &'text str, mut matches: impl FnMut(char) -> Result<bool, CodecError>, operation: &'static str) -> Result<&'text str, CodecError> {
+        let mut end = text.len();
+        for character in self.admit_iter(text, operation)?.rev() {
+            if !matches(character)? { break; }
+            end -= character.len_utf8();
+        }
+        Ok(&text[..end])
+    }
+
+    /// Removes matching characters from both ends through the two admitted scans.
+    pub fn trim_matches<'text>(&self, text: &'text str, mut matches: impl FnMut(char) -> Result<bool, CodecError>, operation: &'static str) -> Result<&'text str, CodecError> {
+        let text = self.trim_start_matches(text, &mut matches, operation)?;
+        self.trim_end_matches(text, matches, operation)
+    }
+
+    /// Removes trailing ASCII whitespace after admitting input bytes.
+    pub fn trim_ascii_end<'text>(&self, text: &'text str, operation: &'static str) -> Result<&'text str, CodecError> {
+        self.charge_work(u64_from_index(text.len()), operation)?;
+        Ok(text.trim_ascii_end())
+    }
+
+    /// Tests whether every byte is ASCII after admitting the complete scan.
+    pub fn is_ascii(&self, bytes: &[u8], operation: &'static str) -> Result<bool, CodecError> {
+        self.charge_work(u64_from_index(bytes.len()), operation)?;
+        Ok(bytes.is_ascii())
+    }
     /// Converts ASCII letters in place after admitting the complete byte scan.
     pub fn make_ascii_lowercase(&self, text: &mut str, operation: &'static str) -> Result<(), CodecError> {
         self.charge_work(u64_from_index(text.len()), operation)?;
@@ -139,5 +179,43 @@ mod tests {
         assert_eq!(text, "ABCé");
         let CodecError::ResourceLimit(second) = ctx.find_text("a", "a", "search").expect_err("fused") else { panic!("refusal") };
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn charged_trim_patterns_preserve_unicode_boundaries_and_scan_totals() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The leading scan admits seven bytes; its five-byte suffix is admitted for the trailing scan.
+        policy.limits.max_work_units = 12;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(ctx.trim_matches("éabcé", |character| Ok(character == 'é'), "trim").expect("admission"), "abc");
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").expect_err("exact work") else { panic!("refusal") };
+        assert_eq!(limit.used, 12);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        for text in ["", "é", "éé", "éabcé", " abc ", "λ"] {
+            assert_eq!(ctx.trim_start_matches(text, |character| Ok(character == 'é'), "start").expect("admission"), text.trim_start_matches('é'));
+            assert_eq!(ctx.trim_end_matches(text, |character| Ok(character == 'é'), "end").expect("admission"), text.trim_end_matches('é'));
+            assert_eq!(ctx.trim_matches(text, |character| Ok(character == 'é'), "both").expect("admission"), text.trim_matches('é'));
+            assert_eq!(ctx.trim_ascii_end(text, "ASCII trim").expect("admission"), text.trim_ascii_end());
+            assert_eq!(ctx.is_ascii(text.as_bytes(), "ASCII").expect("admission"), text.is_ascii());
+        }
+    }
+
+    #[test]
+    fn charged_trim_patterns_refuse_before_predicate_and_keep_child_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let called = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(first) = ctx.trim_start_matches("a", |_| { called.set(true); Ok(true) }, "trim").expect_err("refusal") else { panic!("refusal") };
+        assert!(!called.get());
+        let CodecError::ResourceLimit(second) = ctx.is_ascii(b"a", "ASCII").expect_err("fused") else { panic!("refusal") };
+        assert_eq!(first, second);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let mut calls = 0;
+        let CodecError::ResourceLimit(child) = ctx.trim_matches("abc", |_| { calls += 1; Err(ctx.refuse_codec_limit("child", 0, 1)) }, "trim").expect_err("child refusal") else { panic!("refusal") };
+        assert_eq!(calls, 1);
+        assert_eq!(child.operation, "child");
     }
 }
