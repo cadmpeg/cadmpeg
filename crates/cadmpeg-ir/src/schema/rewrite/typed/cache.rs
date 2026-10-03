@@ -52,16 +52,22 @@ pub(super) struct ReplacementIndex<'ctx> {
 }
 
 impl<'ctx> ReplacementIndex<'ctx> {
-    pub(super) fn build(
-        ctx: &DecodeContext<'_>, replacements: &'ctx BTreeMap<String, String>,
+    pub(super) fn build<K: AsRef<str> + Ord>(
+        ctx: &DecodeContext<'_>, replacements: &'ctx BTreeMap<K, String>,
         storage: &mut ScopedReservation<'_>, operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_work(0, operation)?;
-        let mut values = Vec::new();
+        let mut values: Vec<(&'ctx str, &'ctx str)> = Vec::new();
         ctx.reserve_scoped_vec(storage, &mut values, replacements.len(), operation)?;
         for (source, target) in replacements {
             ctx.charge_work(1, operation)?;
-            values.push((source.as_str(), target.as_str()));
+            let source = source.as_ref();
+            if let Some((previous, _)) = values.last() {
+                if compare(ctx, previous, source, operation)? != Ordering::Less {
+                    return Err(CodecError::malformed("text replacements must have unique keys in byte order"));
+                }
+            }
+            values.push((source, target.as_str()));
         }
         Ok(Self { values })
     }
