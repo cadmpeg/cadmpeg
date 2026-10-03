@@ -4,18 +4,18 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-pub(super) struct Orders<'ctx, 'arena> {
-    values: Vec<u32>,
+pub(super) struct Orders<'ctx, 'arena, T = u32> {
+    values: Vec<T>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
-impl<'ctx, 'arena> Orders<'ctx, 'arena> {
+impl<'ctx, 'arena, T: Ord + Copy> Orders<'ctx, 'arena, T> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self { values: Vec::new(), ctx, storage: ctx.reserve_scoped(0, "validation order storage")? })
     }
 
-    pub(super) fn insert(&mut self, order: u32) -> Result<bool, CodecError> {
+    pub(super) fn insert(&mut self, order: T) -> Result<bool, CodecError> {
         let mut low = 0;
         let mut high = self.values.len();
         while low < high {
@@ -56,7 +56,7 @@ mod tests {
                 _ => unreachable!(),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut orders = super::Orders::new(&ctx).unwrap();
+            let mut orders = super::Orders::<u32>::new(&ctx).unwrap();
             let result = if dimension == ResourceDimension::WorkUnits {
                 assert!(orders.insert(10).unwrap());
                 orders.insert(5)
@@ -78,7 +78,7 @@ mod tests {
         policy.limits.max_materialized_bytes = 4096;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         {
-            let mut orders = super::Orders::new(&ctx).unwrap();
+            let mut orders = super::Orders::<u32>::new(&ctx).unwrap();
             for order in [10, 3, 7] { assert!(orders.insert(order).unwrap()); }
             for order in [7, 3, 10] { assert!(!orders.insert(order).unwrap()); }
             assert_eq!(orders.values, [3, 7, 10]);
@@ -86,4 +86,16 @@ mod tests {
         drop(ctx.reserve_scoped(4096, "order scope released").unwrap());
         ctx.finish_session().unwrap();
     }
+    #[test]
+    fn validation_orders_keep_full_width_feature_ordinals() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut orders = super::Orders::new(&ctx).unwrap();
+        assert!(orders.insert(u64::MAX).unwrap());
+        assert!(orders.insert(0u64).unwrap());
+        assert!(!orders.insert(u64::MAX).unwrap());
+        assert_eq!(orders.values, [0, u64::MAX]);
+        drop(orders);
+        ctx.finish_session().unwrap();
+    }
+
 }
