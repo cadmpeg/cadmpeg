@@ -19,10 +19,11 @@ fn sketch_nurbs_point_refuses_polynomial_input_copy_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d nurbs evaluator input"));
+        if limit.operation == "f3d nurbs evaluator poles"));
 }
 
 #[test]
@@ -41,10 +42,11 @@ fn sketch_nurbs_point_refuses_rational_input_copy_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d nurbs evaluator input"));
+        if limit.operation == "f3d nurbs evaluator weights"));
 }
 
 #[test]
@@ -63,10 +65,11 @@ fn certified_nurbs_tubes_refuse_point_copy_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
 
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube input"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube points"
     ));
 }
 
@@ -86,10 +89,11 @@ fn certified_nurbs_tubes_refuse_weight_copy_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
 
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube input"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube weights"
     ));
 }
 
@@ -115,10 +119,11 @@ fn sketch_nurbs_endpoints_refuse_pole_copy_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
 
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::sketch_entity_endpoints(&entity, &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator input"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
 }
 
@@ -144,10 +149,11 @@ fn closed_sketch_nurbs_endpoints_propagate_collection_refusal() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
 
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         closed_sketch_profiles(&ctx, &sketch_id, &[entity], 0.01),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator input"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
 }
 
@@ -181,10 +187,11 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
 
+    // Pole and weight copies have separate admission operations; knots are borrowed.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::dimensions::exact_coincident_loci(&[&nurbs, &point], &ctx),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator input"
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
 }
 

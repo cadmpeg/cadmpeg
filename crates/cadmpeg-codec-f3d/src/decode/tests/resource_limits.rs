@@ -325,9 +325,10 @@ fn annotation_provenance_refuses_retained_limit() {
     let error = annotations
         .note(&ctx, "f3d:test:entity#one", &stream, 0, Some("entity"))
         .unwrap_err();
+    // Copying the map key admits retained bytes before the provenance node.
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect source provenance")
+        if limit.operation == "retain source provenance identity")
     );
 }
 
