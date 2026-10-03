@@ -16,6 +16,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             },
             _ => self.substitute(self.typeck.node_args(expression.hir_id)),
         };
+        let arguments = self.tcx.mk_args(&arguments.iter().map(|argument| match argument.kind() {
+            ty::GenericArgKind::Type(value) => types::reveal_opaque(self.tcx, value).into(),
+            _ => argument,
+        }).collect::<Vec<_>>());
         self.tcx
             .try_normalize_erasing_regions(self.typing_env(), ty::Unnormalized::new_wip(arguments))
             .ok()

@@ -25,6 +25,13 @@ pub(crate) fn standard(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -
     )
 }
 
+pub(crate) fn reveal_opaque<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Ty<'tcx> {
+    let ty::Alias(_, alias) = value.kind() else { return value; };
+    let ty::AliasTyKind::Opaque { def_id, .. } = alias.kind else { return value; };
+    let hidden = tcx.type_of(def_id).instantiate(tcx, alias.args).skip_norm_wip();
+    if hidden == value { value } else { reveal_opaque(tcx, hidden) }
+}
+
 pub(crate) fn checked(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
     let name = tcx.crate_name(definition.krate);
     name.as_str().starts_with("cadmpeg_codec_")
@@ -214,16 +221,29 @@ pub(crate) fn work<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<'
     shape
 }
 
-pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
-    let value = value.peel_refs();
+pub(crate) fn iteration<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Shape {
+    let value = reveal_opaque(tcx, value.peel_refs());
     if matches!(value.kind(), ty::Array(_, _)) {
         return Shape::Fixed;
     }
     match value.kind() {
         ty::Str | ty::Slice(_) => Shape::Dynamic,
-        ty::Adt(definition, _) => {
+        ty::Adt(definition, arguments) => {
             let path = tcx.def_path_str(definition.did());
             let name = tcx.item_name(definition.did());
+            if standard(tcx, definition.did()) {
+                let mut arguments = arguments.types();
+                if matches!(name.as_str(), "Map" | "Filter" | "FilterMap" | "Enumerate" | "Rev" | "Cloned" | "Copied"
+                    | "Inspect" | "Take" | "Skip" | "TakeWhile" | "SkipWhile" | "StepBy"
+                    | "Peekable" | "Fuse" | "Scan" | "MapWhile" | "DecodeUtf16") {
+                    return arguments.next().map_or(Shape::Unknown, |source| iteration(tcx, source));
+                }
+                if matches!(name.as_str(), "Zip" | "Chain" | "FlatMap") {
+                    let source = arguments.next().map_or(Shape::Unknown, |source| iteration(tcx, source));
+                    let other = arguments.next().map_or(Shape::Unknown, |source| iteration(tcx, source));
+                    return source.join(other);
+                }
+            }
             if standard(tcx, definition.did())
                 && matches!(name.as_str(), "Option" | "Result" | "Once" | "Empty")
             {
@@ -252,8 +272,8 @@ pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
     }
 }
 
-pub(crate) fn admitted_iterator(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
-    let ty::Adt(owner, arguments) = value.peel_refs().kind() else { return false; };
+pub(crate) fn admitted_iterator<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> bool {
+    let ty::Adt(owner, arguments) = reveal_opaque(tcx, value.peel_refs()).kind() else { return false; };
     if tcx.item_name(owner.did()).as_str() == "AdmittedIter"
         && (tcx.crate_name(owner.did().krate).as_str() == "cadmpeg_core"
             && matches!(tcx.def_path_str(owner.did()).as_str(),
