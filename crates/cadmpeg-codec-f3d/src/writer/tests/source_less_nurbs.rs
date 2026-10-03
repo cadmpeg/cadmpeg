@@ -1271,7 +1271,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         })
         .map(|surface| &surface.geometry)
         .expect("extrusion surface carrier");
-    let surface_point = cadmpeg_ir::eval::model_surface_point(decoded.ir(), surface_geometry, u, v)
+    let surface_point = cadmpeg_ir::eval::model_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, decoded.ir(), surface_geometry, u, v)
         .expect("procedural extrusion evaluation");
     assert_eq!(surface_point.x, directrix_point.x + v * direction.x);
     assert_eq!(surface_point.y, directrix_point.y + v * direction.y);

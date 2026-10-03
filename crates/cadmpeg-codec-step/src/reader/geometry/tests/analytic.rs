@@ -292,7 +292,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 10.0, 0.0)
+        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 10.0, 0.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
@@ -427,11 +427,11 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(5.0, 0.0, 0.0))
     );
-    let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+    let partials = model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
         .expect("NURBS linear sweep partials");
     assert!((partials.du.x - 1.0).abs() < 1.0e-12);
     assert!(partials.du.y.abs() < 1.0e-12);
@@ -459,11 +459,11 @@ fn swept_surface_chart_ignores_pcurve_population() {
         let surface_id = SurfaceId::mint("step:data:surface#9").expect("identity grammar");
         let index = ModelIndex::new(decoded.ir());
         assert_eq!(
-            model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+            model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
                 .map(cadmpeg_ir::features::FinitePoint3::get),
             Ok(Point3::new(5.0, 0.0, 0.0))
         );
-        let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+        let partials = model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
             .expect("swept-surface chart partials");
         assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
         assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
@@ -502,7 +502,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.0, 10.0)
+        model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.0, 10.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
@@ -571,17 +571,9 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
 #8=SHAPE_REPRESENTATION('',(#7),$);",
     );
     let index = ModelIndex::new(result.ir());
-    let start = model_curve_point_by_id(
-        &index,
-        &CurveId::mint("step:data:curve#6").expect("identity grammar"),
-        0.0,
-    )
+    let start = model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &CurveId::mint("step:data:curve#6").expect("identity grammar"), 0.0)
     .expect("trimmed ellipse start");
-    let end = model_curve_point_by_id(
-        &index,
-        &CurveId::mint("step:data:curve#6").expect("identity grammar"),
-        std::f64::consts::FRAC_PI_2,
-    )
+    let end = model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &CurveId::mint("step:data:curve#6").expect("identity grammar"), std::f64::consts::FRAC_PI_2)
     .expect("trimmed ellipse end");
     assert!((start.x - 2.0).abs() < 1.0e-12);
     assert!(start.y.abs() < 1.0e-12);
@@ -666,29 +658,17 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         });
     }
 
-    let numeric_start = model_curve_point_by_id(
-        &ModelIndex::new(decoded.ir()),
-        &CurveId::mint("step:data:curve#13").expect("identity grammar"),
-        0.0,
-    )
+    let numeric_start = model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &ModelIndex::new(decoded.ir()), &CurveId::mint("step:data:curve#13").expect("identity grammar"), 0.0)
     .expect("numeric trim start");
     assert!((numeric_start.x - 2.0).abs() < 1.0e-12);
     assert!(numeric_start.y.abs() < 1.0e-12);
-    let cartesian_end = model_curve_point_by_id(
-        &ModelIndex::new(decoded.ir()),
-        &CurveId::mint("step:data:curve#14").expect("identity grammar"),
-        std::f64::consts::FRAC_PI_2,
-    )
+    let cartesian_end = model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &ModelIndex::new(decoded.ir()), &CurveId::mint("step:data:curve#14").expect("identity grammar"), std::f64::consts::FRAC_PI_2)
     .expect("Cartesian trim end");
     assert!(cartesian_end.x.abs() < 1.0e-12);
     assert!((cartesian_end.y - 6.0).abs() < 1.0e-12);
 
     let index = ModelIndex::new(decoded.ir());
-    let replica_start = model_curve_point_by_id(
-        &index,
-        &CurveId::mint("step:data:curve#17").expect("identity grammar"),
-        -std::f64::consts::FRAC_PI_2,
-    )
+    let replica_start = model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &CurveId::mint("step:data:curve#17").expect("identity grammar"), -std::f64::consts::FRAC_PI_2)
     .expect("replica start");
     assert!((replica_start.x - 12.0).abs() < 1.0e-12);
     assert!(replica_start.y.abs() < 1.0e-12);

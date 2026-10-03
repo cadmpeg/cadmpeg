@@ -14,7 +14,6 @@ use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
-use crate::eval::model_surface_point_by_id_with_budget;
 use crate::eval::model_surface_second_partials_by_id;
 use crate::eval::nurbs_curve_parameter_near_point;
 
@@ -394,13 +393,13 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     let index = crate::index::ModelIndex::new(&ir);
     let budget = WorkBudget::new(5);
     assert_eq!(
-        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0)),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(6);
     assert_eq!(
-        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget)
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.0, 2.0))
     );
@@ -965,24 +964,24 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     ];
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &second_id, 1.0e16, -1.0e16)
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     let budget = WorkBudget::new(2);
     assert_eq!(
-        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &second_id, 1.0e16, -1.0e16)),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(3);
     assert_eq!(
-        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,)
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &second_id, 1.0e16, -1.0e16))
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     assert_eq!(budget.consumed(), 3);
-    let partials = model_surface_partials_by_id(&index, &second_id, 1.0e16, -1.0e16)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &second_id, 1.0e16, -1.0e16)
         .expect("transformed plane evaluates");
     assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
@@ -1037,7 +1036,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         record_bounds: None,
     });
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &offset_id, 0.25, 1.2)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset_id, 0.25, 1.2)
         .expect("linearly extended offset")
         .get();
 
@@ -1098,7 +1097,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     });
 
     let point =
-        model_surface_point_by_id(&crate::index::ModelIndex::new(&ir), &offset_id, 0.2, 0.3)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &crate::index::ModelIndex::new(&ir), &offset_id, 0.2, 0.3)
             .expect("oriented offset point")
             .get();
 
@@ -1168,11 +1167,11 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         .expect("offset surface exists and has no procedural construction");
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &offset_id, 0.25, 0.5)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset_id, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(-0.25, 0.5, -2.0))
     );
-    let partials = model_surface_partials_by_id(&index, &offset_id, 0.25, 0.5)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &offset_id, 0.25, 0.5)
         .expect("offset of a reversed subset evaluates");
     assert_eq!(partials.point, Point3::new(-0.25, 0.5, -2.0));
     assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
@@ -1222,11 +1221,11 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &bounded_id, 0.25, 0.75)
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.25, 2.75, 3.0))
     );
-    let partials = model_surface_partials_by_id(&index, &bounded_id, 0.25, 0.75)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &bounded_id, 0.25, 0.75)
         .expect("curve-bounded support evaluates");
     assert_eq!(partials.point, Point3::new(1.25, 2.75, 3.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
@@ -1283,16 +1282,16 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &surface_id, 0.5, 4.0)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 4.0)
         .expect("linear sweep point")
         .get();
     assert_eq!(point, Point3::new(2.0, 2.0, 7.0));
     let partials =
-        model_surface_partials_by_id(&index, &surface_id, 0.5, 4.0).expect("linear sweep partials");
+        model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 4.0).expect("linear sweep partials");
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
-    let second_partials = model_surface_second_partials_by_id(&index, &surface_id, 0.5, 4.0)
+    let second_partials = model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 4.0)
         .expect("linear sweep second partials");
     assert_eq!(second_partials.duu, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.duv, Vector3::new(0.0, 0.0, 0.0));
@@ -1350,7 +1349,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         record_bounds: None,
     });
     let index = crate::index::ModelIndex::new(&ir);
-    let partials = model_surface_partials_by_id(&index, &surface_id, -0.5, 3.0)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, -0.5, 3.0)
         .expect("cacheless reversed extrusion point");
     assert_eq!(partials.point, Point3::new(0.5, 0.0, 3.0));
     assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
@@ -1365,16 +1364,16 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     let index = crate::index::ModelIndex::new(&ir);
     let expected = Point3::new(0.5, -0.5, 0.25);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.5, 0.25)
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 0.25)
             .map(crate::features::FinitePoint3::get),
         Ok(expected)
     );
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.25)
+        model_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &ir, &ir.model.surfaces[0].geometry, 0.5, 0.25)
             .map(crate::features::FinitePoint3::get),
         Ok(expected)
     );
-    let partials = model_surface_partials_by_id(&index, &surface_id, 0.5, 0.25)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.5, 0.25)
         .expect("cacheless sweep partials");
     assert_eq!(partials.point, expected);
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
@@ -1427,20 +1426,20 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
         .expect("axis revolution point")
         .get();
     assert!(point.x.abs() < 1.0e-12);
     assert!((point.y - 2.0).abs() < 1.0e-12);
     assert!((point.z - 1.5).abs() < 1.0e-12);
     let partials =
-        model_surface_partials_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
+        model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
             .expect("axis revolution partials");
     assert!((partials.du.x + 2.0).abs() < 1.0e-12);
     assert!(partials.du.y.abs() < 1.0e-12);
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
     let second_partials =
-        model_surface_second_partials_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
+        model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
             .expect("axis revolution second partials");
     assert!((second_partials.duu.y + 2.0).abs() < 1.0e-12);
     assert!(second_partials.duv.norm() < 1.0e-12);
@@ -1481,7 +1480,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
-    let partials = model_surface_second_partials_by_id(&index, &surface_id, 1.5, 12.0)
+    let partials = model_surface_second_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 1.5, 12.0)
         .expect("mapped revolution partials");
     assert!(partials.point.x.abs() < 1.0e-12);
     assert!((partials.point.y - 2.0).abs() < 1.0e-12);
@@ -1537,7 +1536,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         },
     ).unwrap().unwrap();
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &surface_id, 0.0, 0.0)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 0.0, 0.0)
         .expect("wide mapped revolution point")
         .get();
     assert!(point.x.abs() < 1.0e-12);
@@ -1628,11 +1627,11 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         ).unwrap()
         .unwrap();
     let index = crate::index::ModelIndex::new(&ir);
-    let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+    let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
         .expect("normalized line domain maps to distance carrier")
         .get();
     assert_eq!(point, Point3::new(2.0, 0.0, 5.0));
-    let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+    let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, 5.0, 0.0)
         .expect("normalized line domain partials");
     assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
 }

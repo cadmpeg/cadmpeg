@@ -408,7 +408,7 @@ fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_poin
 #[test]
 fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
     use crate::eval::EvaluationFailure;
-    use crate::eval::{model_surface_point_by_id, model_surface_point_by_id_with_budget};
+    use crate::eval::model_surface_point_by_id;
 
     let mut ir = crate::CadIr::empty();
     let surface_id = crate::ids::SurfaceId::mint("test:model:surface#overflow".to_string())
@@ -421,8 +421,8 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
     let index = crate::index::ModelIndex::new(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     for point in [
-        model_surface_point_by_id(&index, &surface_id, f64::MAX, 2.0),
-        model_surface_point_by_id_with_budget(&index, &surface_id, f64::MAX, 2.0, &budget),
+        model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, f64::MAX, 2.0),
+        crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface_id, f64::MAX, 2.0)),
     ] {
         assert!(
             matches!(point, Err(EvaluationFailure::NonFinite(point))
@@ -708,14 +708,14 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     let index = crate::index::ModelIndex::new(&ir);
     assert!(
         matches!(
-            crate::eval::model_surface_point_by_id(&index, &subset_id, 1.0e308, 0.5),
+            crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset_id, 1.0e308, 0.5),
             Err(EvaluationFailure::NonFinite(_))
         ),
         "{:?}",
-        crate::eval::model_surface_point_by_id(&index, &subset_id, 1.0e308, 0.5)
+        crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset_id, 1.0e308, 0.5)
     );
     assert_eq!(
-        crate::eval::model_surface_point_by_id(&index, &subset_id, 0.0, 0.5)
+        crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &subset_id, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e308, 0.5, 0.0))
     );

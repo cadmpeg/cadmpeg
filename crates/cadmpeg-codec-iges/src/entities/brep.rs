@@ -346,9 +346,7 @@ fn resolve_pcurve_uses<'a>(
             ))?)
             .map_err(CodecError::from)?
             .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    index, support.id, uv.u, uv.v,
-                ))
+                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, support.id, uv.u, uv.v))
             })
             .transpose()?
             .flatten(),
@@ -357,9 +355,7 @@ fn resolve_pcurve_uses<'a>(
             ))?)
             .map_err(CodecError::from)?
             .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    index, support.id, uv.u, uv.v,
-                ))
+                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, support.id, uv.u, uv.v))
             })
             .transpose()?
             .flatten(),

@@ -12,9 +12,9 @@ use super::offset::{
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::eval::model_surface_partials_by_id;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
-use cadmpeg_ir::eval::model_surface_partials_by_id_with_budget;
-use cadmpeg_ir::eval::model_surface_point_by_id_with_budget;
 use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FiniteVector3;
@@ -566,7 +566,7 @@ pub(super) fn decoded_surface_point_inner_with_budget(
     }
     // A non-finite point is returned as the evaluation reached it; only an
     // evaluation with no value falls back to the blend construction.
-    match model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget) {
+    match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, u, v)) {
         Ok(point) => Ok(Some(point.get())),
         Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
         Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
@@ -597,7 +597,7 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     // evaluation with no value falls back to the next route.
     let evaluated = match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| cadmpeg_ir::eval::decode::surface_point(admission, geometry, u, v)) {
         Err(EvaluationFailure::NoValue) => {
-            model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_point_by_id(admission, index, surface, u, v))
         }
         direct => direct,
     };
@@ -1976,13 +1976,7 @@ impl BlendContactDerivativeContext<'_> {
             return Ok(None);
         };
         let Some(support) =
-            cadmpeg_ir::eval::finite_or_refusal(model_surface_partials_by_id_with_budget(
-                self.index,
-                support,
-                uv.u,
-                uv.v,
-                geometry_budget,
-            ))?
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, self.index, support, uv.u, uv.v)))?
         else {
             return Ok(None);
         };
@@ -2727,7 +2721,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             return Ok(None);
         };
         let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
-            model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget),
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges).within_work_slice(geometry_budget, |admission| model_surface_partials_by_id(admission, index, support, uv.u, uv.v)),
         )?
         else {
             return Ok(None);

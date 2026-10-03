@@ -7,9 +7,8 @@ use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit, Wo
 
 use cadmpeg_core::decode::work_scratch::WorkScratch;
 
-use super::EvaluationFailure;
+use super::{admission::EvaluationAdmission, EvaluationFailure};
 use crate::geometry::{Curve, Surface};
-use crate::math::Point3;
 
 const INDEPENDENT_MODEL_EVALUATION_DEPTH: usize = 256;
 
@@ -72,11 +71,13 @@ impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
     }
 
     /// A repeated carrier is a cycle, independent of the session depth limit.
-    pub(super) fn bind(&self, identity: ModelEvaluationIdentity, budget: Option<&WorkBudget<'_>>) -> bool {
+    pub(super) fn bind(&self, identity: ModelEvaluationIdentity, admission: EvaluationAdmission<'_, '_>) -> bool {
         let repeated = self.previous.contains(&Some(identity));
         if repeated {
             MODEL_EVALUATION_CYCLE.with(|cycle| cycle.set(true));
-            if let Some(budget) = budget { budget.exhaust(); }
+            if admission.context().is_none() {
+                if let Some(budget) = admission.work_slice() { budget.exhaust(); }
+            }
         } else {
             MODEL_EVALUATION_IDENTITIES.with(|identities| {
                 if let Some(slot) = identities.borrow_mut().last_mut() { *slot = Some(identity); }
@@ -86,15 +87,19 @@ impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
     }
 
     /// Preserve the first resource refusal across evaluator fallback branches.
-    pub(super) fn finish_budgeted<T>(budget: &WorkBudget<'_>, result: Result<T, EvaluationFailure<Point3>>) -> Result<T, EvaluationFailure<Point3>> {
+    pub(super) fn finish_budgeted<T, R>(admission: EvaluationAdmission<'_, '_>, result: Result<T, EvaluationFailure<R>>) -> Result<T, EvaluationFailure<R>> {
         // An attached work refusal can pass through an optional evaluator branch.
         // A zero-byte reservation reads the session's first refusal without growing storage.
-        let _boundary = budget.reserve_scratch(0, "finish model evaluation")
-            .map_err(EvaluationFailure::ResourceLimit)?;
+        if let Some(budget) = admission.work_slice() {
+            let _boundary = budget.reserve_scratch(0, "finish model evaluation")
+                .map_err(EvaluationFailure::ResourceLimit)?;
+        }
         if let Some(limit) = MODEL_EVALUATION_REFUSAL.with(Cell::get) {
             Err(EvaluationFailure::ResourceLimit(limit))
         } else if MODEL_EVALUATION_CYCLE.with(Cell::get) {
-            budget.exhaust();
+            if admission.context().is_none() {
+                if let Some(budget) = admission.work_slice() { budget.exhaust(); }
+            }
             Err(EvaluationFailure::NoValue)
         } else { result }
     }
@@ -145,7 +150,7 @@ mod tests {
 
     #[test]
     fn budgeted_model_evaluators_preserve_work_refusal_after_frame_admission() {
-        use crate::eval::{model_curve_point_by_id_with_budget, model_surface_point_by_id_with_budget, model_surface_partials_by_id_with_budget, EvaluationFailure};
+        use crate::eval::{model_curve_point_by_id, model_surface_point_by_id, model_surface_partials_by_id, EvaluationFailure};
         use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface, SurfaceGeometry, SolvedSurfaceGeometry};
         use crate::math::{Point3, Vector3};
         let mut ir = crate::CadIr::empty();
@@ -173,9 +178,9 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let budget = ctx.work_budget(1000);
             let error = match trigger {
-                0 => model_curve_point_by_id_with_budget(&index, &curve, 0.5, &budget).unwrap_err(),
-                1 => model_surface_point_by_id_with_budget(&index, &surface, 0.5, 0.5, &budget).unwrap_err(),
-                2 => model_surface_partials_by_id_with_budget(&index, &surface, 0.5, 0.5, &budget).unwrap_err(),
+                0 => crate::eval::admission::EvaluationAdmission::Decode(&ctx).within_work_slice(&budget, |admission| model_curve_point_by_id(admission, &index, &curve, 0.5)).unwrap_err(),
+                1 => crate::eval::admission::EvaluationAdmission::Decode(&ctx).within_work_slice(&budget, |admission| model_surface_point_by_id(admission, &index, &surface, 0.5, 0.5)).unwrap_err(),
+                2 => crate::eval::admission::EvaluationAdmission::Decode(&ctx).within_work_slice(&budget, |admission| model_surface_partials_by_id(admission, &index, &surface, 0.5, 0.5)).unwrap_err(),
                 _ => unreachable!(),
             };
             let EvaluationFailure::ResourceLimit(first) = error else { panic!("model evaluation must retain the work refusal"); };

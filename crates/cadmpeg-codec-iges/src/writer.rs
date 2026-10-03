@@ -4291,8 +4291,8 @@ impl PcurveOrientationContext<'_> {
             };
             let start_uv = pcurve_point(range[0], "start")?;
             let end_uv = pcurve_point(range[1], "end")?;
-            let start = model_surface_point(self.ir, self.surface, start_uv.u, start_uv.v);
-            let end = model_surface_point(self.ir, self.surface, end_uv.u, end_uv.v);
+            let start = model_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, self.ir, self.surface, start_uv.u, start_uv.v);
+            let end = model_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, self.ir, self.surface, end_uv.u, end_uv.v);
             // Both ends are refused outside the support before either is
             // refused as non-finite.
             for (point, position) in [(&start, "start"), (&end, "end")] {

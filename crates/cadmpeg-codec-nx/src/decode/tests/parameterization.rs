@@ -56,12 +56,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             .expect("offset surface owner")
             .clone();
         let expected = Point2::new(12.0, 7.0);
-        let point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(result.ir()),
-            &surface,
-            expected.u,
-            expected.v,
-        )
+        let point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(result.ir()), &surface, expected.u, expected.v)
         .unwrap()
         .get();
 
@@ -88,12 +83,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                         .unwrap();
             }
         }
-        let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&translated),
-            &surface,
-            expected.u,
-            expected.v,
-        )
+        let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&translated), &surface, expected.u, expected.v)
         .unwrap()
         .get();
         let translated_parameters = offset_surface_parameters_with_tolerance(
@@ -147,12 +137,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                 ),
                 None,
             ));
-        let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&translated),
-            &nested_surface,
-            expected.u,
-            expected.v,
-        )
+        let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&translated), &nested_surface, expected.u, expected.v)
         .unwrap()
         .get();
         let nested_parameters = offset_surface_parameters_with_tolerance(
@@ -182,12 +167,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
             .expect("offset surface owner")
             .clone();
         let seed = Point2::new(12.0, 7.0);
-        let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(result.ir()),
-            &surface,
-            seed.u,
-            seed.v,
-        )
+        let mut point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(result.ir()), &surface, seed.u, seed.v)
         .unwrap()
         .get();
         point.x += 0.01;
@@ -299,12 +279,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         ));
 
         let expected = Point2::new(0.2, 0.45);
-        let point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
-            &offset,
-            expected.u,
-            expected.v,
-        )
+        let point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &offset, expected.u, expected.v)
         .expect("offset point")
         .get();
         let actual = offset_surface_parameters_with_tolerance(
@@ -352,12 +327,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             ),
             None,
         ));
-        let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
-            &nested,
-            expected.u,
-            expected.v,
-        )
+        let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &nested, expected.u, expected.v)
         .expect("nested offset point")
         .get();
         let nested_actual = offset_surface_parameters_with_tolerance(
@@ -1203,13 +1173,8 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         let points = parameters
             .into_iter()
             .map(|parameter| {
-                cadmpeg_ir::eval::model_surface_point_by_id(
-                    &index,
-                    &SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
-                        .expect("identity grammar"),
-                    parameter.u,
-                    parameter.v,
-                )
+                cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
+                        .expect("identity grammar"), parameter.u, parameter.v)
                 .expect("NURBS chart point")
                 .get()
             })
@@ -1416,7 +1381,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 .unwrap()
                 .get();
                 let actual =
-                    cadmpeg_ir::eval::model_surface_point_by_id(&index, surface, uv.u, uv.v)
+                    cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, surface, uv.u, uv.v)
                         .unwrap()
                         .get();
                 assert!((actual.x - expected.x).abs() <= 1.0e-3);

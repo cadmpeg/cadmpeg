@@ -615,7 +615,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
-    let point = cadmpeg_ir::eval::model_surface_point(result.ir(), &surface.geometry, 2.0, 0.5)
+    let point = cadmpeg_ir::eval::model_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, result.ir(), &surface.geometry, 2.0, 0.5)
         .expect("D8 surface point");
     let expected = 2.0_f64.sqrt();
     assert!((point.x - expected).abs() < TEST_TOLERANCE);

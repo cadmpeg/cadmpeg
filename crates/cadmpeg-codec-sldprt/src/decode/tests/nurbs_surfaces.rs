@@ -190,12 +190,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     }));
 
     let face_surface = &result.ir().model.faces[0].surface;
-    let point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(result.ir()),
-        face_surface,
-        0.0,
-        0.0,
-    )
+    let point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(result.ir()), face_surface, 0.0, 0.0)
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

@@ -279,7 +279,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     let point_set_residual = |fraction: f64| {
         let parameter = parameter_range[0].mul_add(1.0 - fraction, parameter_range[1] * fraction);
         let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter).expect("evaluate pcurve");
-        let mapped = model_surface_point_by_id(&index, &surface_id, uv.u, uv.v)
+        let mapped = model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface_id, uv.u, uv.v)
             .expect("map pcurve through plane");
         (mapped.distance(curve_center) - curve_radius).abs()
     };

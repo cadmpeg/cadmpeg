@@ -1297,12 +1297,7 @@ fn indicator_normal(
     let partials = match procedural {
         Some(_) => {
             let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
-            finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
-                &index,
-                surface,
-                parameters[0],
-                parameters[1],
-            ))?
+            finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), &index, surface, parameters[0], parameters[1]))?
         }
         None => {
             // A support with no procedural entry takes `model_surface_mapping`'s

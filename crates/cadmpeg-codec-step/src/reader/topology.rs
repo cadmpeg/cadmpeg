@@ -4758,7 +4758,7 @@ fn pcurve_locus_witness(
         let Some(uv) = pcurve_selection_uv(ctx, geometry, pcurve_parameter)? else {
             return Ok(false);
         };
-        let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v)? else {
+        let Some(mapped) = surface_selection_point(ctx, index, surface_id, uv.u, uv.v)? else {
             return Ok(false);
         };
         let curve_seed =
@@ -4777,7 +4777,7 @@ fn pcurve_locus_witness(
         else {
             return Ok(false);
         };
-        let curve_point = match model_curve_point_by_id(index, &curve_id, curve_parameter) {
+        let curve_point = match model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, &curve_id, curve_parameter) {
             Ok(point) => point,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                 return Err(limit.into())
@@ -4934,6 +4934,7 @@ fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
 }
 
 fn surface_selection_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     u: f64,
@@ -4942,7 +4943,7 @@ fn surface_selection_point(
     let [u, v] = surface_selection_parameters(index, surface_id, u, v);
     // A non-finite point is returned as the evaluation reached it; the
     // selection measures read it as a miss.
-    match model_surface_point_by_id(index, surface_id, u, v) {
+    match model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, u, v) {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
@@ -4964,10 +4965,10 @@ fn pcurve_declared_endpoint_fit(
     let Some(last_uv) = pcurve_selection_uv(ctx, geometry, range[1])? else {
         return Ok(None);
     };
-    let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else {
+    let Some(first) = surface_selection_point(ctx, index, surface_id, first_uv.u, first_uv.v)? else {
         return Ok(None);
     };
-    let Some(last) = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)? else {
+    let Some(last) = surface_selection_point(ctx, index, surface_id, last_uv.u, last_uv.v)? else {
         return Ok(None);
     };
     let forward = first.distance(start).max(last.distance(end));
@@ -4990,10 +4991,10 @@ fn pcurve_declared_endpoint_fit_directed(
     let Some(last_uv) = pcurve_selection_uv(ctx, geometry, range[1])? else {
         return Ok(None);
     };
-    let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else {
+    let Some(first) = surface_selection_point(ctx, index, surface_id, first_uv.u, first_uv.v)? else {
         return Ok(None);
     };
-    let Some(last) = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)? else {
+    let Some(last) = surface_selection_point(ctx, index, surface_id, last_uv.u, last_uv.v)? else {
         return Ok(None);
     };
     Ok(Some(first.distance(start).max(last.distance(end))))
@@ -5063,7 +5064,7 @@ fn mapped_pcurve_closest(
         let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
-        surface_selection_point(index, surface_id, uv.u, uv.v)
+        surface_selection_point(ctx, index, surface_id, uv.u, uv.v)
     };
     let evaluate_tangent = |parameter: f64| -> Result<Option<Vector3>, ResourceLimit> {
         let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
@@ -5075,7 +5076,7 @@ fn mapped_pcurve_closest(
             Err(_) => return Ok(None),
         };
         let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
-        let partials = match model_surface_partials_by_id(index, surface_id, u, v) {
+        let partials = match model_surface_partials_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, u, v) {
             Ok(value) => value,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),

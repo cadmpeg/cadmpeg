@@ -37,6 +37,52 @@ impl<'ctx, 'arena> From<&'ctx DecodeContext<'arena>> for EvaluationAdmission<'ct
 }
 
 impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
+    /// Model carriers share the caller's depth, cycle path and scratch policy.
+    pub(super) fn within_model<T, R>(self,
+        run: impl for<'frame> FnOnce(EvaluationAdmission<'frame, 'frame>) -> Result<T, EvaluationFailure<R>>,
+    ) -> Result<T, EvaluationFailure<R>> {
+        let evaluate = |admission: EvaluationAdmission<'_, '_>| {
+            let scratch = super::decode::Scratch::new(admission);
+            scratch.unless_refused().map_err(EvaluationFailure::ResourceLimit)?;
+            let result = run(admission);
+            let result = match admission.work_slice() {
+                Some(_) => super::ModelEvaluationDepthGuard::finish_budgeted(admission, result),
+                None => result,
+            };
+            scratch.settle(result)
+        };
+        if let Self::Decode(context) = self {
+            let work = context.work_budget(u64_from_index(usize::MAX));
+            self.within_work_slice(&work, evaluate)
+        } else {
+            evaluate(self)
+        }
+    }
+
+    pub(super) fn work_slice(self) -> Option<&'ctx WorkBudget<'ctx>> {
+        match self {
+            Self::WorkSlice(EvaluationWorkSlice { policy: WorkSlicePolicy::Independent(work) | WorkSlicePolicy::Session { work, .. } }) => Some(work),
+            Self::Decode(_) | Self::Standard => None,
+        }
+    }
+
+    /// Each model carrier consumes one work step before reading its payload.
+    pub(super) fn model_step<R>(self) -> Result<(), EvaluationFailure<R>> {
+        match self.work_slice() {
+            Some(work) => {
+                let remaining = u64_from_index(work.remaining());
+                if work.charge() { return Ok(()); }
+                if let Some(context) = self.context() {
+                    context.charge_work_limit(0, "model evaluation work slice").map_err(EvaluationFailure::ResourceLimit)?;
+                    drop(context.refuse_codec_limit("model evaluation work slice", remaining, 1));
+                    context.charge_work_limit(0, "model evaluation work slice").map_err(EvaluationFailure::ResourceLimit)?;
+                }
+                Err(EvaluationFailure::NoValue)
+            }
+            None => self.work(1, "model evaluation work step").map_err(EvaluationFailure::ResourceLimit),
+        }
+    }
+
     /// Run one evaluation under a bounded slice. Session work is charged by
     /// the child as it occurs; consumption transfers to the parent once.
     /// Independent slices charge the stored representation's work cost.
@@ -149,6 +195,122 @@ mod tests {
     use crate::eval::EvaluationFailure;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn model_entries_use_the_live_resource_policy() {
+        use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface, SurfaceGeometry, SolvedSurfaceGeometry};
+        use crate::math::{Point3, Vector3};
+        let mut ir = crate::CadIr::empty();
+        let curve = crate::ids::CurveId::mint("test:model:curve#line").unwrap();
+        let surface = crate::ids::SurfaceId::mint("test:model:surface#plane").unwrap();
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(crate::geometry::analytic::LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(crate::geometry::analytic::PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
+            source_object: None,
+        });
+        let index = crate::index::ModelIndex::new(&ir);
+        for trigger in 0..5 {
+            for route in 0..4 {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = 4096;
+                let dimension = match trigger {
+                    0 => { policy.limits.max_materialized_bytes = 0; ResourceDimension::MaterializedBytes }
+                    1 => { policy.limits.max_collection_items = 0; ResourceDimension::CollectionItems }
+                    2 => { policy.limits.max_work_units = 0; ResourceDimension::WorkUnits }
+                    3 => { policy.limits.max_recursion_depth = 0; ResourceDimension::RecursionDepth }
+                    _ => { policy.limits.max_retained_bytes = 0; ResourceDimension::RetainedBytes }
+                };
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let evaluate = || match route {
+                    0 => crate::eval::model_curve_point_by_id(EvaluationAdmission::Decode(&ctx), &index, &curve, 0.5),
+                    1 => crate::eval::model_surface_point_by_id(EvaluationAdmission::Decode(&ctx), &index, &surface, 0.5, 0.5),
+                    2 => crate::eval::model_surface_partials_by_id(EvaluationAdmission::Decode(&ctx), &index, &surface, 0.5, 0.5).map(|partials| partials.point),
+                    _ => crate::eval::model_surface_point(EvaluationAdmission::Decode(&ctx), &ir, &ir.model.surfaces[0].geometry, 0.5, 0.5),
+                };
+                let result = evaluate();
+                if trigger == 4 {
+                    assert!(result.is_ok());
+                    let _storage = ctx.reserve_scoped_limit(policy.limits.max_materialized_bytes, "test released model path").unwrap();
+                    drop(_storage);
+                    assert!(ctx.finish_session().is_ok());
+                } else {
+                    let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else { panic!("a model admission refusal stays a resource error"); };
+                    assert_eq!(first.dimension, dimension);
+                    assert_eq!((first.limit, first.used), (0, 0));
+                    assert!(first.additional > 0);
+                    assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn model_child_nurbs_scratch_keeps_the_live_materialization_refusal() {
+        use crate::geometry::{Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+        use crate::geometry::nurbs::NurbsCurve;
+        use crate::math::{Point3, Vector3};
+        let mut ir = crate::CadIr::empty();
+        let curve = crate::ids::CurveId::mint("test:model:curve#directrix").unwrap();
+        let surface = crate::ids::SurfaceId::mint("test:model:surface#sweep").unwrap();
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(), 2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.5, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false,
+            ).unwrap().unwrap())),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface { id: surface.clone(), geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }), source_object: None });
+        ir.model.add_procedural_surface(None, &surface, ProceduralSurface::new(
+            crate::ids::ProceduralSurfaceId::mint("test:model:procedural#sweep").unwrap(),
+            ProceduralSurfaceDefinition::LinearSweep(crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(curve, Vector3::new(0.0, 0.0, 1.0)).unwrap()),
+            None,
+        )).unwrap().unwrap();
+        let index = crate::index::ModelIndex::new(&ir);
+        assert_eq!(crate::eval::model_surface_point_by_id(EvaluationAdmission::Standard, &index, &surface, 0.25, 2.0).unwrap().get(), Point3::new(0.25, 0.0, 2.0));
+        let frame_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Option<super::super::ModelEvaluationIdentity>>());
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3 * frame_bytes;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let evaluate = || crate::eval::model_surface_point_by_id(EvaluationAdmission::Decode(&ctx), &index, &surface, 0.25, 2.0);
+        let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else { panic!("child NURBS scratch must use the model session"); };
+        assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(first.limit, 3 * frame_bytes);
+        assert_eq!(first.used, 3 * frame_bytes);
+        // The core amortized reservation starts the three-value basis at four slots.
+        assert_eq!(first.additional, cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<f64>()));
+        assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+    }
+
+    #[test]
+    fn model_work_slice_keeps_cycles_distinct_from_resource_refusal() {
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry};
+        let mut ir = crate::CadIr::empty();
+        let id = crate::ids::CurveId::mint("test:model:curve#cycle").unwrap();
+        ir.model.curves.push(Curve { id: id.clone(), geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }), source_object: None });
+        ir.model.add_procedural_curve(None, &id, ProceduralCurve::new(
+            crate::ids::ProceduralCurveId::mint("test:model:procedural#cycle").unwrap(),
+            ProceduralCurveDefinition::Replica { source: id.clone(), transform: crate::transform::Transform::identity() },
+        )).unwrap().unwrap();
+        let index = crate::index::ModelIndex::new(&ir);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parent = ctx.work_budget(100_000);
+        assert_eq!(EvaluationAdmission::Decode(&ctx).within_work_slice(&parent, |admission|
+            crate::eval::model_curve_point_by_id(admission, &index, &id, 0.5)), Err(EvaluationFailure::NoValue));
+        assert!(ctx.finish_session().is_ok());
+    }
 
     #[test]
     fn work_slice_transfers_actual_session_work_once() {

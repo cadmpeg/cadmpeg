@@ -1716,9 +1716,7 @@ fn pcurves_agree(
         else {
             return Ok(false);
         };
-        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-            index, surface_id, start_uv.u, start_uv.v,
-        ))?
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, start_uv.u, start_uv.v))?
         else {
             return Ok(false);
         };
@@ -1728,9 +1726,7 @@ fn pcurves_agree(
         else {
             return Ok(false);
         };
-        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-            index, surface_id, end_uv.u, end_uv.v,
-        ))?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), index, surface_id, end_uv.u, end_uv.v))?
         else {
             return Ok(false);
         };
