@@ -693,3 +693,56 @@ fn evaluation_scratch_depth_is_shared_across_caller_contexts() {
     assert_eq!(second.finish(7), Err(original));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
 }
+
+#[test]
+fn geometry_entries_use_explicit_standard_storage() {
+    use crate::eval::admission::EvaluationAdmission;
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use crate::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+    use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use crate::math::{Point2, Vector3};
+    let curve = curve();
+    let solved_curve = SolvedCurveGeometry::Nurbs(curve.clone());
+    let geometry = CurveGeometry::Solved(solved_curve.clone());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(&ctx, 2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(0.5, 0.0), Point2::new(1.0, 0.0)],
+            Some(vec![1.0; 3]), false).unwrap().unwrap(),
+    };
+    let surface = NurbsSurface::from_lanes(&ctx,
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(vec![
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        ], None), false).unwrap().unwrap();
+    let solved_surface = SolvedSurfaceGeometry::Nurbs(surface.clone());
+    let surface_geometry = SurfaceGeometry::Solved(solved_surface.clone());
+    let standard = EvaluationAdmission::Standard;
+    let point = Point3::new(0.5, 0.0, 0.0);
+    let surface_point = Point3::new(0.25, 0.75, 0.0);
+    assert_eq!(super::curve_point_for_decode(standard, &geometry, 0.5).unwrap().unwrap().get(), point);
+    assert_eq!(super::nurbs_curve_point_at_for_decode(standard, &curve, 0.5).unwrap().unwrap().get(), point);
+    assert_eq!(super::curve_point_solved_for_decode(standard, &solved_curve, 0.5).unwrap().unwrap().get(), point);
+    assert_eq!(super::curve_tangent_for_decode(standard, &geometry, 0.5).unwrap().unwrap().get(), Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(super::pcurve_uv_for_decode(standard, &pcurve, 0.5).unwrap().unwrap().get(), Point2::new(0.5, 0.0));
+    assert_eq!(super::surface_point_for_decode(standard, &surface_geometry, 0.25, 0.75).unwrap().unwrap().get(), surface_point);
+    assert_eq!(super::surface_point_solved_for_decode(standard, &solved_surface, 0.25, 0.75).unwrap().unwrap().get(), surface_point);
+    assert_eq!(super::nurbs_surface_point_for_decode(standard, &surface, 0.25, 0.75).unwrap().unwrap().get(), surface_point);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let original = ctx.charge_work_limit(1, "original entry refusal").unwrap_err();
+    assert_eq!(super::curve_point_for_decode(&ctx, &geometry, f64::NAN), Err(original));
+    assert_eq!(super::nurbs_curve_point_at_for_decode(&ctx, &curve, f64::NAN), Err(original));
+    assert_eq!(super::curve_point_solved_for_decode(&ctx, &solved_curve, f64::NAN), Err(original));
+    assert_eq!(super::curve_tangent_for_decode(&ctx, &geometry, f64::NAN), Err(original));
+    assert_eq!(super::pcurve_uv_for_decode(&ctx, &pcurve, f64::NAN), Err(original));
+    assert_eq!(super::surface_point_for_decode(&ctx, &surface_geometry, f64::NAN, f64::NAN), Err(original));
+    assert_eq!(super::surface_point_solved_for_decode(&ctx, &solved_surface, f64::NAN, f64::NAN), Err(original));
+    assert_eq!(super::nurbs_surface_point_for_decode(&ctx, &surface, f64::NAN, f64::NAN), Err(original));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}

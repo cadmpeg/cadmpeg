@@ -1469,7 +1469,7 @@ pub fn nurbs_curve_point_at(
     curve: &NurbsCurve,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|ctx| decode::nurbs_curve_point_at_for_decode(ctx, curve, t))
+    default_evaluation(|admission| decode::nurbs_curve_point_at_for_decode(admission, curve, t))
 }
 
 /// Evaluate a NURBS curve with a caller-owned basis buffer of `degree + 1`
@@ -2544,7 +2544,7 @@ pub fn nurbs_surface_point(
     u_at: f64,
     v_at: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|ctx| decode::nurbs_surface_point_for_decode(ctx, surface, u_at, v_at))
+    default_evaluation(|admission| decode::nurbs_surface_point_for_decode(admission, surface, u_at, v_at))
 }
 
 /// A tensor-product NURBS surface at a parameter: its spans, its bases and
@@ -5531,7 +5531,7 @@ pub fn curve_point_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|ctx| decode::curve_point_solved_for_decode(ctx, geometry, t))
+    default_evaluation(|admission| decode::curve_point_solved_for_decode(admission, geometry, t))
 }
 
 fn curve_point_evaluation(
@@ -5675,7 +5675,7 @@ pub fn surface_point_solved(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|ctx| decode::surface_point_solved_for_decode(ctx, geometry, u, v))
+    default_evaluation(|admission| decode::surface_point_solved_for_decode(admission, geometry, u, v))
 }
 
 fn surface_point_evaluation(
@@ -8900,7 +8900,7 @@ pub fn pcurve_uv(
     geometry: &PcurveGeometry,
     t: f64,
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
-    default_evaluation(|ctx| decode::pcurve_uv_for_decode(ctx, geometry, t))
+    default_evaluation(|admission| decode::pcurve_uv_for_decode(admission, geometry, t))
 }
 
 /// Evaluate the exact first derivative of a directly stored pcurve.
@@ -9758,7 +9758,7 @@ pub fn curve_point(
     geometry: &CurveGeometry,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|ctx| decode::curve_point_for_decode(ctx, geometry, t))
+    default_evaluation(|admission| decode::curve_point_for_decode(admission, geometry, t))
 }
 
 /// Evaluate the exact first derivative of a stored curve carrier, or report
@@ -9768,7 +9768,7 @@ pub fn curve_tangent(
     geometry: &CurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    default_evaluation(|ctx| decode::curve_tangent_for_decode(ctx, geometry, t))
+    default_evaluation(|admission| decode::curve_tangent_for_decode(admission, geometry, t))
 }
 
 /// Evaluate the exact second derivative of a stored curve carrier, or report
@@ -9828,7 +9828,7 @@ pub fn surface_point(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|ctx| decode::surface_point_for_decode(ctx, geometry, u, v))
+    default_evaluation(|admission| decode::surface_point_for_decode(admission, geometry, u, v))
 }
 
 /// Evaluate a surface carrier at `(u, v)` within a caller-owned work slice.
@@ -9934,15 +9934,8 @@ fn default_scratch_evaluation<T, R>(
 
 fn default_evaluation<T, R>(
     run: impl FnOnce(
-        &cadmpeg_core::decode::DecodeContext<'_>,
+        admission::EvaluationAdmission<'_, '_>,
     ) -> Result<Result<T, EvaluationFailure<R>>, ResourceLimit>,
 ) -> Result<T, EvaluationFailure<R>> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .map_err(EvaluationFailure::from)?;
-    run(&ctx).map_err(EvaluationFailure::ResourceLimit)?
+    run(admission::EvaluationAdmission::Standard).map_err(EvaluationFailure::ResourceLimit)?
 }
