@@ -454,9 +454,10 @@ impl DialectLayers {
     ) -> Result<Self, CodecError> {
         let primary = self.primary.try_clone_for_decode(ctx, operation)?;
         let mut extra = ctx.collection_vec(self.extra.len(), operation)?;
-        ctx.charge_work(crate::decode::u64_from_index(self.extra.len()), operation)?;
-        for layer in &self.extra {
-            extra.push(layer.try_clone_for_decode(ctx, operation)?);
+        for layer in ctx.admit_iter(&self.extra, operation)? {
+            let layer = layer.try_clone_for_decode(ctx, operation)?;
+            ctx.reserve_capacity(&mut extra, 1, operation)?;
+            extra.push(layer);
         }
         Ok(Self { primary, extra })
     }
@@ -661,12 +662,10 @@ impl DialectMatch {
             namespace_len: self.dialect.namespace_len,
         };
         let mut declared = BTreeMap::new();
-        for (key, value) in &self.declared {
-            ctx.charge_work(1, operation)?;
-            ctx.admit_retained_btree_record::<NonBlankString, String>(0, operation)?;
-            let key = NonBlankString::new(ctx.copy_retained_text(key.as_str(), operation)?)
-                .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
-            declared.insert(key, ctx.copy_retained_text(value, operation)?);
+        for (key, value) in ctx.admit_iter(&self.declared, operation)? {
+            let key = key.try_clone_for_decode(ctx, operation)?;
+            let value = ctx.copy_retained_text(value, operation)?;
+            ctx.insert_btree_map(&mut declared, key, value, operation)?;
         }
         let instance = self
             .instance
@@ -740,11 +739,8 @@ impl DialectMatch {
         value: &str,
         operation: &'static str,
     ) -> Result<Self, crate::CodecError> {
-        if !self.declared.contains_key(&key) {
-            ctx.admit_retained_btree_record::<NonBlankString, String>(0, operation)?;
-        }
         let value = ctx.copy_retained_text(value, operation)?;
-        let previous = self.declared.insert(key, value);
+        let previous = ctx.insert_btree_map(&mut self.declared, key, value, operation)?;
         drop(previous);
         Ok(self)
     }
@@ -989,9 +985,8 @@ mod tests {
             + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        let nodes =
-            usize::try_from(policy.limits.max_collection_items.ilog2()).expect("test ceiling") + 2;
-        let bytes = nodes * node_bytes;
+        // The first declaration allocates one root node; its key copy precedes node admission.
+        let bytes = node_bytes;
         policy.limits.max_retained_bytes = crate::decode::u64_from_index(bytes) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
@@ -999,6 +994,40 @@ mod tests {
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.additional == crate::decode::u64_from_index(bytes))
         );
+    }
+
+    #[test]
+    fn dialect_declaration_replacement_keeps_one_collection_slot() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
+            .with_declared_entry(&ctx, crate::nonblank_literal!("version"), "first", "declaration").unwrap()
+            .with_declared_entry(&ctx, crate::nonblank_literal!("version"), "second", "declaration").unwrap();
+        assert_eq!(layer.declared().len(), 1);
+        assert_eq!(layer.declared().get("version").map(String::as_str), Some("second"));
+        let CodecError::ResourceLimit(limit) = ctx.charge_collection_items(1, "probe").unwrap_err() else { panic!("refusal") };
+        assert_eq!(limit.used, 1);
+    }
+
+    #[test]
+    fn dialect_declaration_copy_charges_complete_key_comparisons() {
+        let layer = DialectMatch::admitted(crate::dialect_id!("nx:unknown"))
+            .with_declared(BTreeMap::from([(crate::nonblank_literal!("k"), String::from("v")), (crate::nonblank_literal!("l"), String::from("w"))]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two map visits, four copied bytes, and two eleven-step comparisons of the second one-byte key.
+        policy.limits.max_work_units = 28;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(layer.try_clone_for_decode(&ctx, "copy declaration").unwrap(), layer);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("refusal") };
+        assert_eq!(limit.used, 28);
+        policy.limits.max_work_units = 27;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let CodecError::ResourceLimit(first) = layer.try_clone_for_decode(&ctx, "copy declaration").unwrap_err() else { panic!("refusal") };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else { panic!("refusal") };
+        assert_eq!(first, second);
     }
 
     #[test]
