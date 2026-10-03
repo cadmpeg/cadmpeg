@@ -54,10 +54,11 @@ fn instance_link_snapshot_bytes_refuse_materialized_limit() {
     let refusal = snapshot_instance_links(&ctx, &[one_instance_link_record()])
         .err()
         .expect("one temporary row exceeds the limit");
+    // Scoped byte admission uses the byte operation before collection admission.
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance link snapshot rows"
+            if limit.operation == "Rhino instance link snapshot bytes"
     ));
 }
 
@@ -84,10 +85,11 @@ fn instance_status_snapshot_bytes_refuse_materialized_limit() {
         .expect("empty root is admitted");
     let refusal = snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)])
         .expect_err("one status exceeds the temporary-byte limit");
+    // Scoped byte admission uses the byte operation before collection admission.
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance status snapshot"
+            if limit.operation == "Rhino instance status snapshot bytes"
     ));
 }
 

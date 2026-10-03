@@ -70,39 +70,38 @@ fn candidate_native_projection_preserves_materialized_refusal() {
         1,
         super::POINT_CLASS,
     )]);
-    let record_storage =
-        u64::try_from(std::mem::size_of::<cadmpeg_ir::unknown::UnknownRecord>()).unwrap();
-    for materialized_limit in [0, record_storage] {
-        with_transaction_limits(&scan, u64::MAX, None, Some(materialized_limit), |expand| {
-            let context = DecodeContext::new(&scan, expand);
-            if materialized_limit == 0 {
-                let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = context else {
-                    panic!("unknown record staging must refuse before construction");
-                };
-                assert_eq!(
-                    first.dimension,
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                );
-                assert_eq!(first.operation, "Rhino object unknown records");
-                assert_eq!(expand.ctx().resource_refusal(), Some(first));
-                return;
-            }
-            let mut context = context.unwrap();
+    // Candidate lookup keys admit scoped storage before unknown record staging.
+    with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
+        let Err(CodecError::ResourceLimit(first)) = DecodeContext::new(&scan, expand) else {
+            panic!("candidate keys must refuse before construction");
+        };
+        assert_eq!(first.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+        assert_eq!(first.operation, "Rhino object candidate keys");
+        assert_eq!(expand.ctx().resource_refusal(), Some(first));
+    });
+    // Native admission borrows unknown records and first reserves their identity-order slots.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "source product identity slots",
+        |cap| with_transaction_limits(&scan, u64::MAX, None, Some(cap), |expand| {
+            let mut context = DecodeContext::new(&scan, expand)?;
             let before = context.session.document().clone();
-            let result = context.validate_candidate::<()>(|_, _| ());
-            let Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) = result else {
-                panic!("native projection refusal must reach the candidate unchanged");
-            };
-            assert_eq!(
-                limit.dimension,
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            );
-            assert_eq!(context.session.document(), &before);
-            assert!(
-                matches!(expand.ctx().charge_work(0, "test native projection fuse"), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        });
-    }
+            match context.validate_candidate::<()>(|_, _| ()) {
+                Err(CandidateError::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+                    assert_eq!(context.session.document(), &before);
+                    assert!(matches!(expand.ctx().charge_work(0, "test native projection fuse"),
+                        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+                    Err(CodecError::ResourceLimit(limit))
+                }
+                Ok(()) => Ok(()),
+                other => panic!("unexpected candidate admission result: {other:?}"),
+            }
+        }),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "source product identity slots"));
 }
 
 fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
