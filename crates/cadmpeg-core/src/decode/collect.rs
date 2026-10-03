@@ -93,7 +93,7 @@ impl DecodeContext<'_> {
         items: Option<usize>,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        let (additional, bytes) = self.linear_growth::<T>(
+        let (additional, bytes, _growth) = self.linear_growth::<T>(
             values.len(), values.capacity(), count, growth, operation,
         )?;
         if let Some(items) = items {
@@ -740,12 +740,12 @@ impl DecodeContext<'_> {
         count: usize,
         growth: LinearGrowth,
         operation: &'static str,
-    ) -> Result<(usize, usize), ResourceLimit> {
+    ) -> Result<(usize, usize, ScopedReservation<'_>), ResourceLimit> {
         let required = len.checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if std::mem::size_of::<T>() == 0 || required <= capacity {
             self.charge_retained_limit(0, operation)?;
-            return Ok((0, 0));
+            return Ok((0, 0, self.reserve_scoped_limit(0, operation)?));
         }
         let target = if matches!(growth, LinearGrowth::Exact) {
             required
@@ -770,7 +770,8 @@ impl DecodeContext<'_> {
         let moved = capacity.checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
         self.charge_work_limit(u64_from_index(moved), operation)?;
-        Ok((target - len, bytes))
+        let overlap = self.reserve_scoped_limit(u64_from_index(moved), operation)?;
+        Ok((target - len, bytes, overlap))
     }
 
     /// Appends a deque item after charging its slot.
@@ -780,7 +781,7 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (additional, bytes) =
+        let (additional, bytes, _growth) =
             self.linear_growth::<T>(values.len(), values.capacity(), 1, LinearGrowth::Amortized, operation)?;
         self.charge_collection_items(1, operation)?;
         if additional != 0 {
@@ -804,7 +805,7 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (additional, bytes) =
+        let (additional, bytes, _growth) =
             self.linear_growth::<T>(values.len(), values.capacity(), 1, LinearGrowth::Amortized, operation)?;
         self.charge_collection_items(1, operation)?;
         if additional != 0 {
@@ -828,7 +829,7 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (additional, bytes) =
+        let (additional, bytes, _growth) =
             self.linear_growth::<T>(values.len(), values.capacity(), count, LinearGrowth::Amortized, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
         values.try_reserve_exact(additional).map_err(|_| {
@@ -1023,22 +1024,23 @@ impl DecodeContext<'_> {
         capacity: usize,
         count: usize,
         operation: &'static str,
-    ) -> Result<usize, ResourceLimit> {
+    ) -> Result<(usize, ScopedReservation<'_>), ResourceLimit> {
         let required = len
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required <= capacity {
-            return Ok(0);
+            return Ok((0, self.reserve_scoped_limit(0, operation)?));
         }
         let minimum = match std::mem::size_of::<T>() {
             0..=1 => 14,
             2..=3 => 7,
             _ => 3,
         };
-        let bytes = self.hash_storage_bytes::<T>(required.max(minimum), operation)?
-            - self.hash_storage_bytes::<T>(capacity, operation)?;
+        let old = self.hash_storage_bytes::<T>(capacity, operation)?;
+        let bytes = self.hash_storage_bytes::<T>(required.max(minimum), operation)? - old;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
-        Ok(bytes)
+        let overlap = self.reserve_scoped_limit(u64_from_index(old), operation)?;
+        Ok((bytes, overlap))
     }
 
     /// Reserves hash set entries after charging their slots.
@@ -1066,7 +1068,7 @@ impl DecodeContext<'_> {
                 self.charge_key(key, 1, operation)?;
             }
         }
-        let bytes =
+        let (bytes, _growth) =
             self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
         values.try_reserve(count).map_err(|_| {
             self.budget
@@ -1099,7 +1101,7 @@ impl DecodeContext<'_> {
                 self.charge_key(key.0, 1, operation)?;
             }
         }
-        let bytes =
+        let (bytes, _growth) =
             self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
         values.try_reserve(count).map_err(|_| {
             self.budget
@@ -1310,7 +1312,7 @@ impl DecodeContext<'_> {
         let mut reservation = self.reserve_scoped_limit(0, operation)?;
         let mut values = HashSet::new();
         reservation.with_storage_limit(|| {
-            let bytes = self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
+            let (bytes, _growth) = self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
             self.charge_collection_items_limit(u64_from_index(count), operation)?;
             values.try_reserve(count).map_err(|_| {
                 self.budget

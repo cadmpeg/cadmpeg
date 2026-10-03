@@ -282,7 +282,7 @@ impl<'a> DecodeContext<'a> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let (reserve, bytes) = self.linear_growth::<u8>(
+        let (reserve, bytes, _growth) = self.linear_growth::<u8>(
             text.len(), text.capacity(), additional, LinearGrowth::Exact, operation,
         )?;
         text.try_reserve_exact(reserve).map_err(|_| {
