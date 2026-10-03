@@ -121,7 +121,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if name == "container_callbacks" {
@@ -214,7 +214,7 @@ fn check_fixture(name: &str) {
                     | "zip"
                     | "boxing"
                     | "text_sources"
-                    | "text_growth"
+                    | "text_growth" | "btree_storage"
                     | "container_callbacks"
                     | "symbolic"
                     | "derived"
@@ -839,4 +839,9 @@ fn closed_text_views_keep_every_implementation_in_decode_coverage() {
 #[test]
 fn text_growth_receipts_bind_the_target_and_append_count_once() {
     check_fixture("text_growth");
+}
+
+#[test]
+fn btree_node_receipts_bind_the_collection_key_and_value_types() {
+    check_fixture("btree_storage");
 }

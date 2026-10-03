@@ -341,6 +341,23 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     coefficient: 1,
                 }]),
             ),
+            "admit_btree_node_storage" => {
+                let Some((length_id, operands)) = operands.get(1).and_then(|value| self.call(value)) else { return; };
+                if !types::standard(self.tcx, length_id) || self.tcx.item_name(length_id).as_str() != "len" { return; }
+                let Some(value) = operands.first() else { return; };
+                let ty::Adt(owner, args) = self.expr_ty(value).peel_refs().kind() else { return; };
+                if !types::standard(self.tcx, owner.did()) { return; }
+                let Some(call_args) = self.call_arguments(expression) else { return; };
+                let admitted = call_args.types().collect::<Vec<_>>();
+                let actual = args.types().collect::<Vec<_>>();
+                let matches = match self.tcx.item_name(owner.did()).as_str() {
+                    "BTreeMap" => admitted.len() == 2 && admitted.iter().eq(actual.iter().take(2)),
+                    "BTreeSet" => admitted.first() == actual.first() && admitted.get(1) == Some(&self.tcx.types.unit),
+                    _ => false,
+                };
+                if !matches { return; }
+                (self.key(value, &mut Vec::new()), Some(vec![ExtentTerm { factors: Vec::new(), coefficient: 1 }]))
+            }
             "linear_growth" => {
                 let Some((length_id, length)) = operands.get(1).and_then(|value| self.call(value)) else { return; };
                 let Some((capacity_id, capacity)) = operands.get(2).and_then(|value| self.call(value)) else { return; };
