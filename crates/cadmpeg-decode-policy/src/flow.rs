@@ -523,10 +523,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let mut binding = expression;
         while let ExprKind::AddrOf(_, _, inner)
         | ExprKind::DropTemps(inner)
+        | ExprKind::Unary(_, inner)
         | ExprKind::Field(inner, _)
         | ExprKind::Index(inner, _, _) = binding.kind
         {
             binding = inner;
+        }
+        if binding.hir_id != expression.hir_id {
+            self.invalidate_target(binding);
         }
         if let ExprKind::Path(ref path) = binding.kind {
             if let Res::Local(id) = self.typeck.qpath_res(path, binding.hir_id) {
