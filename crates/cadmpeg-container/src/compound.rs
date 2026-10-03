@@ -495,39 +495,44 @@ impl<'a> CompoundSnapshot<'a> {
     /// Builds generic hierarchy summaries using a codec-owned classifier.
     pub fn container_entries(
         &self,
+        ctx: &DecodeContext<'_>,
         classify: impl Fn(&CompoundEntry) -> ContainerRole,
-    ) -> Vec<ContainerEntry> {
-        self.entries
-            .iter()
-            .map(|entry| {
-                let mut attributes = BTreeMap::new();
-                attributes.insert("directory_id".into(), entry.directory_id().to_string());
-                match entry {
-                    CompoundEntry::Storage(_) => ContainerEntry {
-                        name: entry.path().into(),
-                        role: classify(entry),
-                        storage: EntryStorage::Directory,
-                        attributes,
-                    },
-                    CompoundEntry::Stream(stream) => {
-                        // An empty stream owns no sectors and has no allocation.
-                        if let Some(allocation) = stream.allocation() {
-                            attributes.insert("allocation".into(), allocation.label().into());
-                        }
-                        attributes.insert("start_sector".into(), stream.start_sector().to_string());
-                        ContainerEntry {
-                            name: stream.path.clone(),
-                            role: classify(entry),
-                            storage: EntryStorage::verbatim(
-                                VerbatimLabel::Stored,
-                                stream.logical_size(),
-                            ),
-                            attributes,
-                        }
+    ) -> Result<Vec<ContainerEntry>, CodecError> {
+        ctx.try_collect_retained_with(&self.entries, "CFB container summaries", |entry| {
+            let mut attributes = BTreeMap::new();
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.copy_retained_text("directory_id", "CFB summary attribute key")?,
+                ctx.format_retained(format_args!("{}", entry.directory_id()), "CFB summary attribute value")?,
+                "CFB summary attributes",
+            )?;
+            let storage = match entry {
+                CompoundEntry::Storage(_) => EntryStorage::Directory,
+                CompoundEntry::Stream(stream) => {
+                    if let Some(allocation) = stream.allocation() {
+                        ctx.insert_btree_map(
+                            &mut attributes,
+                            ctx.copy_retained_text("allocation", "CFB summary attribute key")?,
+                            ctx.copy_retained_text(allocation.label(), "CFB summary attribute value")?,
+                            "CFB summary attributes",
+                        )?;
                     }
+                    ctx.insert_btree_map(
+                        &mut attributes,
+                        ctx.copy_retained_text("start_sector", "CFB summary attribute key")?,
+                        ctx.format_retained(format_args!("{}", stream.start_sector()), "CFB summary attribute value")?,
+                        "CFB summary attributes",
+                    )?;
+                    EntryStorage::verbatim(VerbatimLabel::Stored, stream.logical_size())
                 }
+            };
+            Ok(ContainerEntry {
+                name: ctx.copy_retained_text(entry.path(), "CFB summary entry name")?,
+                role: classify(entry),
+                storage,
+                attributes,
             })
-            .collect()
+        })
     }
 
     fn regular_sector_view(&self, sector: u32) -> Result<View<'a>, CodecError> {
@@ -2528,6 +2533,20 @@ mod tests {
     }
 
     #[test]
+    fn compound_summary_refuses_before_classification() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("setup");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let called = std::cell::Cell::new(false);
+        assert!(matches!(snapshot.container_entries(&ctx, |_| { called.set(true); ContainerRole::Stream }), Err(CodecError::ResourceLimit(limit)) if limit.operation == "CFB container summaries"));
+        assert!(!called.get());
+    }
+
+    #[test]
     fn empty_streams_preserve_both_admitted_start_markers() {
         for marker in [END_OF_CHAIN, FREE_SECTOR] {
             let mut file = fixture();
@@ -2556,7 +2575,7 @@ mod tests {
                 .expect("empty stream opens")
                 .window()
                 .is_empty());
-            let summary = snapshot.container_entries(|_| ContainerRole::Stream);
+            let summary = snapshot.container_entries(&ctx, |_| ContainerRole::Stream).expect("summary admission");
             let entry = summary
                 .iter()
                 .find(|entry| entry.name == "Small")
