@@ -575,6 +575,7 @@ impl DecodeContext<'_> {
         source: &mut Vec<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.admit_moves(source, 1, operation)?;
         self.reserve_vec(target, source.len(), operation)?;
         target.append(source);
         Ok(())
