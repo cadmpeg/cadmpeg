@@ -66,7 +66,7 @@ fn numerical_ranges_hyperbolas_scale_before_exponentiation_overflows() {
         let point = crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, t).unwrap();
         assert!((point.x / expected - 1.).abs() < EPS_RELATIVE);
         assert!((point.y / (t.signum() * expected) - 1.).abs() < EPS_RELATIVE);
-        assert!(curve_tangent_solved(&curve, t).unwrap().is_finite());
+        assert!(curve_tangent_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, t).unwrap().is_finite());
         assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, t).unwrap().is_finite());
         assert!(pcurve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, t).unwrap().is_finite());
     }

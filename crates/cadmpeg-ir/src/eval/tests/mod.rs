@@ -1712,9 +1712,9 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
     );
 
     let cylinder_second =
-        surface_second_partials(&SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
+        surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
             .expect("cylinder second partials evaluate");
-    let cylinder = surface_partials(&SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
+    let cylinder = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)
         .expect("cylinder partials evaluate");
     assert_eq!(cylinder.point, Point3::new(2.0, 0.0, 4.0));
     assert_eq!(cylinder.du, Vector3::new(0.0, 2.0, 0.0));
@@ -1722,23 +1722,23 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
     assert_eq!(cylinder_second.duu, Vector3::new(-2.0, 0.0, 0.0));
     assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
-    let cone = surface_partials(&SurfaceGeometry::Solved(cone.clone()), 0.0, 3.0)
+    let cone = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(cone.clone()), 0.0, 3.0)
         .expect("cone partials evaluate");
     assert!((cone.point.x - 5.0).abs() < 1.0e-12);
     assert!((cone.du.y - 5.0).abs() < 1.0e-12);
     assert!((cone.dv.x - 1.0).abs() < 1.0e-12);
     assert_eq!(cone.dv.z, 1.0);
-    let sphere = surface_partials(&SurfaceGeometry::Solved(sphere.clone()), 0.0, 0.0)
+    let sphere = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(sphere.clone()), 0.0, 0.0)
         .expect("sphere partials evaluate");
     assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
     assert_eq!(sphere.du, Vector3::new(0.0, 3.0, 0.0));
     assert_eq!(sphere.dv, Vector3::new(0.0, 0.0, 3.0));
-    let torus = surface_partials(&SurfaceGeometry::Solved(torus.clone()), 0.0, 0.0)
+    let torus = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(torus.clone()), 0.0, 0.0)
         .expect("torus partials evaluate");
     assert_eq!(torus.point, Point3::new(7.0, 0.0, 0.0));
     assert_eq!(torus.du, Vector3::new(0.0, 7.0, 0.0));
     assert_eq!(torus.dv, Vector3::new(0.0, 0.0, 2.0));
-    let transformed = surface_partials(&SurfaceGeometry::Solved(transformed.clone()), 2.0, 3.0)
+    let transformed = surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &SurfaceGeometry::Solved(transformed.clone()), 2.0, 3.0)
         .expect("transformed partials evaluate");
     assert_eq!(transformed.point, Point3::new(11.0, 20.0, 13.0));
     assert_eq!(transformed.du, Vector3::new(2.0, 0.0, 0.0));
@@ -1764,7 +1764,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
     );
     assert_eq!(
-        curve_second_derivative(&CurveGeometry::Solved(circle.clone()), parameter)
+        curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(circle.clone()), parameter)
             .ok()
             .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(
@@ -1797,7 +1797,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
             .expect("rational arc point");
         let tangent = crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
             .expect("rational arc tangent");
-        let second = curve_second_derivative(&CurveGeometry::Solved(arc.clone()), parameter)
+        let second = curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &CurveGeometry::Solved(arc.clone()), parameter)
             .expect("rational arc acceleration");
         let radial_dot = point.x * tangent.x + point.y * tangent.y;
         assert!(radial_dot.abs() < 1.0e-12);
@@ -1961,3 +1961,5 @@ mod surface_inversion;
 mod offset_frames;
 
 mod isocurves;
+
+mod admission_derivatives;

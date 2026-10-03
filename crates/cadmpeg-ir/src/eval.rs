@@ -2744,19 +2744,18 @@ fn nurbs_surface_local_unsettled<'a>(
 
 /// A NURBS surface's point and first partials at `(u, v)`, the partials with
 /// their own outcome, or why the point has none.
-fn nurbs_surface_first_order<'ctx, 'arena: 'ctx>(
-    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
+fn nurbs_surface_first_order(
+    scratch: &decode::Scratch<'_, '_>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let scratch = decode::Scratch::new(admission);
     let result = (|| {
-        let local = nurbs_surface_local(&scratch, surface, u_at, v_at)?;
+        let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
         Ok(SurfaceFirstOrder {
             point: FinitePoint3::from_coordinates(x, y, z),
-            first: local.first(&scratch).map(|first| first.lanes.map(finite_vector)),
+            first: local.first(scratch).map(|first| first.lanes.map(finite_vector)),
         })
     })();
     scratch.settle(result)
@@ -2764,21 +2763,20 @@ fn nurbs_surface_first_order<'ctx, 'arena: 'ctx>(
 
 /// A NURBS surface's point with its first and second partials at `(u, v)`,
 /// each order with its own outcome, or why the point has none.
-fn nurbs_surface_jet<'ctx, 'arena: 'ctx>(
-    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
+fn nurbs_surface_jet(
+    scratch: &decode::Scratch<'_, '_>,
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    let scratch = decode::Scratch::new(admission);
     let result = (|| {
-        let local = nurbs_surface_local(&scratch, surface, u_at, v_at)?;
+        let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
-        let first = local.first(&scratch);
+        let first = local.first(scratch);
         let second = first
             .as_ref()
             .map_err(|failure| *failure)
-            .and_then(|first| local.second(&scratch, first));
+            .and_then(|first| local.second(scratch, first));
         Ok(SurfaceJet {
             point: FinitePoint3::from_coordinates(x, y, z),
             first: first.map(|first| first.lanes.map(finite_vector)),
@@ -3208,7 +3206,9 @@ pub fn nurbs_surface_partials<'ctx, 'arena: 'ctx>(
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    nurbs_surface_first_order(admission, surface, u_at, v_at)?.partials()
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| { nurbs_surface_first_order(&scratch, surface, u_at, v_at)?.partials() })();
+    scratch.settle(result)
 }
 
 /// [`nurbs_surface_partials`] within a caller-owned work slice. A refused
@@ -3248,7 +3248,9 @@ pub fn nurbs_surface_second_partials<'ctx, 'arena: 'ctx>(
     u_at: f64,
     v_at: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    nurbs_surface_jet(admission, surface, u_at, v_at)?.second_partials()
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| { nurbs_surface_jet(&scratch, surface, u_at, v_at)?.second_partials() })();
+    scratch.settle(result)
 }
 
 /// [`nurbs_surface_second_partials`] within a caller-owned work slice. A
@@ -3302,24 +3304,26 @@ fn periodic_parameter(
 /// parameter outside its segments or at a vertex whose segments disagree,
 /// and a NURBS span of zero width have no derivative. A derivative that
 /// leaves the finite range is non-finite; it carries no value.
-pub fn curve_tangent_solved(
+pub fn curve_tangent_solved<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    default_scratch_evaluation(|scratch| {
-        curve_derivative_evaluation(scratch, geometry, t, CurveDerivative::First)
-    })
+    let scratch = decode::Scratch::new(admission);
+    let result = curve_derivative_evaluation(&scratch, geometry, t, CurveDerivative::First);
+    scratch.settle(result)
 }
 
 /// Evaluate the exact second derivative of a directly stored curve, or report
 /// why it has no finite value, as [`curve_tangent_solved`] states.
-pub fn curve_second_derivative_solved(
+pub fn curve_second_derivative_solved<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedCurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    default_scratch_evaluation(|scratch| {
-        curve_derivative_evaluation(scratch, geometry, t, CurveDerivative::Second)
-    })
+    let scratch = decode::Scratch::new(admission);
+    let result = curve_derivative_evaluation(&scratch, geometry, t, CurveDerivative::Second);
+    scratch.settle(result)
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -5907,12 +5911,17 @@ fn rolling_ball_jet_interpolate_scalar(
 /// The point fails as [`decode::surface_point_solved`] states. At a finite point,
 /// first partials outside the finite range leave the evaluation there,
 /// carrying the point.
-pub fn surface_partials_solved(
+pub fn surface_partials_solved<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    surface_first_order_solved(geometry, u, v, None)?.partials()
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        surface_first_order_solved(&scratch, geometry, u, v, None)?.partials()
+    })();
+    scratch.settle(result)
 }
 
 /// The raw point and exact first and second partials of an analytic surface
@@ -6114,25 +6123,29 @@ fn analytic_surface_second_partials(
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
 /// construction; no arm follows an arena id.
 fn surface_jet_solved(
+    scratch: &decode::Scratch<'_, '_>,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    scratch.unless_refused().map_err(EvaluationFailure::ResourceLimit)?;
     match geometry {
         SolvedSurfaceGeometry::Nurbs(nurbs) => {
             if let Some(budget) = budget {
                 charge_nurbs_surface_partials(nurbs, budget)?;
             }
-            nurbs_surface_jet(crate::eval::admission::EvaluationAdmission::Standard, nurbs, u, v)
+            nurbs_surface_jet(scratch, nurbs, u, v)
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
+            scratch.work(1, "placed surface partial step").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            let _depth = scratch.enter().ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
             if budget.is_some_and(|budget| !budget.charge()) {
                 return Err(EvaluationFailure::NoValue);
             }
             placed_jet(
                 *placed.transform(),
-                surface_jet_solved(placed.basis(), u, v, budget),
+                surface_jet_solved(scratch, placed.basis(), u, v, budget),
             )
         }
         _ => {
@@ -6154,24 +6167,28 @@ fn surface_jet_solved(
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
 /// construction; no arm follows an arena id.
 fn surface_first_order_solved(
+    scratch: &decode::Scratch<'_, '_>,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    scratch.unless_refused().map_err(EvaluationFailure::ResourceLimit)?;
     match geometry {
         SolvedSurfaceGeometry::Nurbs(nurbs) => {
             if let Some(budget) = budget {
                 charge_nurbs_surface_partials(nurbs, budget)?;
             }
-            nurbs_surface_first_order(crate::eval::admission::EvaluationAdmission::Standard, nurbs, u, v)
+            nurbs_surface_first_order(scratch, nurbs, u, v)
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
+            scratch.work(1, "placed surface partial step").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            let _depth = scratch.enter().ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
             if budget.is_some_and(|budget| !budget.charge()) {
                 return Err(EvaluationFailure::NoValue);
             }
             let transform = *placed.transform();
-            let basis = surface_first_order_solved(placed.basis(), u, v, budget)
+            let basis = surface_first_order_solved(scratch, placed.basis(), u, v, budget)
                 .map_err(|failure| failure.map(|point| placed_reach(transform, point)))?;
             Ok(SurfaceFirstOrder {
                 point: transform
@@ -6243,12 +6260,17 @@ fn placed_jet(
 /// The point fails as [`decode::surface_point_solved`] states. At a finite point,
 /// partials outside the finite range leave the evaluation there, carrying
 /// the point.
-pub fn surface_second_partials_solved(
+pub fn surface_second_partials_solved<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    surface_jet_solved(geometry, u, v, None)?.second_partials()
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        surface_jet_solved(&scratch, geometry, u, v, None)?.second_partials()
+    })();
+    scratch.settle(result)
 }
 
 /// Evaluate a surface carrier with access to construction and child-carrier
@@ -8653,7 +8675,7 @@ fn model_surface_mapping(
                 }
             })
         }
-        _ => surface_jet(&carrier.geometry, u, v, budget).map(direct),
+        _ => surface_jet(crate::eval::admission::EvaluationAdmission::Standard, &carrier.geometry, u, v, budget).map(direct),
     }
 }
 
@@ -9643,11 +9665,16 @@ mod tests;
 /// Evaluate the exact second derivative of a stored curve carrier, or report
 /// why it has no finite value, as [`curve_tangent_solved`] states. A
 /// procedural carrier without a solved cache has no value here.
-pub fn curve_second_derivative(
+pub fn curve_second_derivative<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    curve_second_derivative_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, t)
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        curve_derivative_evaluation(&scratch, geometry.solved().ok_or(EvaluationFailure::NoValue)?, t, CurveDerivative::Second)
+    })();
+    scratch.settle(result)
 }
 
 /// Evaluate a stored curve carrier at `t` within a caller-owned work slice.
@@ -9709,23 +9736,33 @@ pub fn surface_point_with_budget(
 /// Evaluate the first partial derivatives of a surface carrier, or report
 /// why they have no finite value, as [`surface_partials_solved`] states. A
 /// procedural carrier without a solved cache has no value here.
-pub fn surface_partials(
+pub fn surface_partials<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    surface_partials_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v)
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        surface_first_order_solved(&scratch, geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v, None)?.partials()
+    })();
+    scratch.settle(result)
 }
 
 /// Evaluate the second partial derivatives of a surface carrier, or report
 /// why they have no finite value, as [`surface_second_partials_solved`]
 /// states. A procedural carrier without a solved cache has no value here.
-pub fn surface_second_partials(
+pub fn surface_second_partials<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    surface_second_partials_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v)
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        surface_jet_solved(&scratch, geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v, None)?.second_partials()
+    })();
+    scratch.settle(result)
 }
 
 /// Analytic surface parameters of the point on a surface carrier.
@@ -9738,34 +9775,44 @@ pub fn analytic_surface_parameters(
 
 /// [`surface_first_order_solved`] of a surface carrier's solved geometry. A
 /// procedural carrier without a solved cache has no value here.
-fn surface_first_order(
+fn surface_first_order<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    surface_first_order_solved(
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        surface_first_order_solved(&scratch, 
         geometry.solved().ok_or(EvaluationFailure::NoValue)?,
         u,
         v,
         budget,
     )
+    })();
+    scratch.settle(result)
 }
 
 /// [`surface_jet_solved`] of a surface carrier's solved geometry. A
 /// procedural carrier without a solved cache has no value here.
-fn surface_jet(
+fn surface_jet<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    surface_jet_solved(
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        surface_jet_solved(&scratch, 
         geometry.solved().ok_or(EvaluationFailure::NoValue)?,
         u,
         v,
         budget,
     )
+    })();
+    scratch.settle(result)
 }
 
 fn model_surface_point_with_budget(

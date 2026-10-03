@@ -619,7 +619,7 @@ fn assert_second_order_alone_overflows(
     point: Point3,
     [du, dv]: [Vector3; 2],
 ) {
-    assert!(crate::eval::curve_second_derivative(&overflowing_acceleration_circle(), 0.0).is_err());
+    assert!(crate::eval::curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &overflowing_acceleration_circle(), 0.0).is_err());
     for route in surface_routes(&ir, &surface, &geometry, u, v) {
         assert_eq!(route.map(FinitePoint3::get), Ok(point));
     }
@@ -805,7 +805,7 @@ fn a_hyperbola_whose_scaled_cosh_alone_overflows_keeps_its_point_and_second_deri
             .vector_from(Point3::new(0.0, 0.0, 0.0)),
     );
     lanes(
-        crate::eval::curve_second_derivative(&hyperbola, t)
+        crate::eval::curve_second_derivative(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, t)
             .expect("second derivative")
             .get(),
     );

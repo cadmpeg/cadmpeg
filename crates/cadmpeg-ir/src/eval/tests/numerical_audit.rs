@@ -572,12 +572,12 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
         .unwrap(),
     );
     assert_eq!(
-        super::super::curve_tangent_solved(&line, width / 2.0)
+        super::super::curve_tangent_solved(crate::eval::admission::EvaluationAdmission::Standard, &line, width / 2.0)
             .map(crate::features::FiniteVector3::get),
         Ok(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
-        super::super::curve_second_derivative_solved(&line, width / 2.0)
+        super::super::curve_second_derivative_solved(crate::eval::admission::EvaluationAdmission::Standard, &line, width / 2.0)
             .map(crate::features::FiniteVector3::get),
         Ok(Vector3::new(0.0, 0.0, 0.0))
     );
@@ -598,7 +598,7 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
         ).expect("fixture constructor admission")
         .unwrap(),
     );
-    let second = super::super::curve_second_derivative_solved(&quadratic, width / 2.0).unwrap();
+    let second = super::super::curve_second_derivative_solved(crate::eval::admission::EvaluationAdmission::Standard, &quadratic, width / 2.0).unwrap();
     assert!(
         (second.x - 2.0).abs() <= 512.0 * f64::EPSILON,
         "second derivative {}",
@@ -627,8 +627,8 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
     let base_weight = 1.0 + fraction;
     let expected_first = 2.0 * (pole / width) / (base_weight * base_weight);
     let expected_second = -4.0 * (pole / width) / width / (base_weight * base_weight * base_weight);
-    let first = super::super::curve_tangent_solved(&curve, parameter).unwrap();
-    let second = super::super::curve_second_derivative_solved(&curve, parameter).unwrap();
+    let first = super::super::curve_tangent_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, parameter).unwrap();
+    let second = super::super::curve_second_derivative_solved(crate::eval::admission::EvaluationAdmission::Standard, &curve, parameter).unwrap();
     assert!((first.x / expected_first - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
     assert!((second.x / expected_second - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
     assert_eq!((first.y, first.z, second.y, second.z), (0.0, 0.0, 0.0, 0.0));

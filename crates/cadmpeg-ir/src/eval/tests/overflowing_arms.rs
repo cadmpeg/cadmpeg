@@ -498,7 +498,7 @@ fn a_placed_surface_whose_partial_overflows_has_its_finite_point_on_both_point_r
         .expect("placed surface fixture"),
     ));
     let u = 0.25_f64.acos();
-    assert!(crate::eval::surface_partials(&surface, u, 1.0).is_err());
+    assert!(crate::eval::surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, 1.0).is_err());
     let budget = WorkBudget::new(64);
     let with_budget = surface_point_with_budget(&surface, u, 1.0, &budget);
     let point = crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, u, 1.0);
@@ -999,10 +999,10 @@ fn an_analytic_surface_whose_point_overflows_has_no_partials() {
     };
     assert!(reached(crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, &plane, f64::MAX, 2.0).err()));
     assert!(reached(
-        crate::eval::surface_partials(&plane, f64::MAX, 2.0).err()
+        crate::eval::surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &plane, f64::MAX, 2.0).err()
     ));
     assert!(reached(
-        crate::eval::surface_second_partials(&plane, f64::MAX, 2.0).err()
+        crate::eval::surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &plane, f64::MAX, 2.0).err()
     ));
     let id = SurfaceId::mint("test:model:surface#plane").expect("valid identity");
     let mut ir = CadIr::empty();
@@ -1054,7 +1054,7 @@ fn a_placed_surface_whose_second_partial_overflows_keeps_its_first_partials() {
     ));
     let point = Point3::new(0.0, 0.0, 1.0);
     assert_eq!(
-        crate::eval::surface_partials(&surface, 0.0, 1.0)
+        crate::eval::surface_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 1.0)
             .map(crate::eval::SurfacePartials::into_raw),
         Ok(crate::eval::SurfacePartials {
             point,
@@ -1063,7 +1063,7 @@ fn a_placed_surface_whose_second_partial_overflows_keeps_its_first_partials() {
         })
     );
     assert_eq!(
-        crate::eval::surface_second_partials(&surface, 0.0, 1.0)
+        crate::eval::surface_second_partials(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.0, 1.0)
             .map(crate::eval::SurfaceSecondPartials::into_raw),
         Err(EvaluationFailure::NonFinite(point))
     );

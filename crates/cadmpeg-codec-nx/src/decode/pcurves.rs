@@ -2653,7 +2653,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map(Err);
         }
-        let surface_jet = match finite_or_refusal(surface_second_partials(
+        let surface_jet = match finite_or_refusal(surface_second_partials(geometry_budget.charges, 
             &surface_carrier.geometry,
             uv.u,
             uv.v,
