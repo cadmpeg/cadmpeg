@@ -94,6 +94,13 @@ impl NonBlankString {
             .then_some(Self(value))
     }
 
+    /// Validates transferred text after admitting its complete UTF-8 traversal.
+    /// The caller admits the string's existing storage.
+    pub fn for_decode(ctx: &DecodeContext<'_>, value: String, operation: &'static str) -> Result<Option<Self>, CodecError> {
+        let nonblank = ctx.admit_iter(value.as_str(), operation)?.any(|character| !character.is_whitespace());
+        Ok(nonblank.then_some(Self(value)))
+    }
+
     /// Constructs a non-blank string from a leading character and a suffix.
     ///
     /// Total: the prefix is non-whitespace, so the result holds it whatever
@@ -122,7 +129,7 @@ impl NonBlankString {
         operation: &'static str,
     ) -> Result<Self, crate::CodecError> {
         let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        Self::new(text).ok_or_else(|| crate::CodecError::malformed("non-blank text copy changed"))
+        Ok(Self(text))
     }
 
     /// Consumes the value and returns the source string.
@@ -270,31 +277,23 @@ pub fn named_entries_reporting<V>(
 ) -> Result<(BTreeMap<NonBlankString, V>, Vec<NamedEntryError>), CodecError> {
     let mut kept = BTreeMap::new();
     let mut refused = Vec::new();
-    for (name, value) in entries {
-        ctx.charge_work(1, "named entry key scan")?;
-        ctx.charge_work(
-            crate::decode::u64_from_index(name.len()),
-            "named entry key scan",
-        )?;
-        match NonBlankString::new(name) {
-            Some(key) => match kept.entry(key) {
-                std::collections::btree_map::Entry::Vacant(slot) => {
-                    ctx.admit_retained_btree_record::<NonBlankString, V>(
-                        0,
-                        "named entry map nodes",
-                    )?;
-                    slot.insert(value);
-                }
-                std::collections::btree_map::Entry::Occupied(slot) => {
+    let mut entries = entries.into_iter();
+    loop {
+        let Some((name, value)) = ctx.next_charged(&mut entries, "named entry key scan")? else { break };
+        match NonBlankString::for_decode(ctx, name, "named entry key scan")? {
+            Some(key) => {
+                if ctx.contains_key_btree_map(&kept, &key, "named entry key comparisons")? {
                     let record = ctx
                         .format_retained(format_args!("{record}"), "named entry refused record")?;
                     let key = NonBlankString(
-                        ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
+                        ctx.copy_retained_text(key.as_str(), "named entry refused key")?,
                     );
                     ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
+                } else {
+                    ctx.insert_btree_map(&mut kept, key, value, "named entry map nodes")?;
                 }
-            },
+            }
             None => {
                 let record =
                     ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
@@ -404,6 +403,8 @@ impl<'de> Deserialize<'de> for NonBlankString {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use crate::CodecError;
 
     #[cfg(feature = "schema")]
     use std::collections::BTreeMap;
@@ -629,8 +630,8 @@ mod tests {
         let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<NonBlankString>().max(std::mem::align_of::<usize>());
-        // A one-item ceiling admits one split node and a new root.
-        let bytes = 2 * node_bytes;
+        // The first key allocates one root node in the empty tree.
+        let bytes = node_bytes;
         let error = checked_reporting(
             vec![("k".into(), 1)],
             1,
@@ -668,6 +669,46 @@ mod tests {
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "named entry key scan"));
+    }
+
+    #[test]
+    fn named_entry_scan_refuses_before_advancing_source() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let advanced = std::cell::Cell::new(false);
+        let entries = std::iter::from_fn(|| { advanced.set(true); Some((String::from("key"), 1)) });
+        let CodecError::ResourceLimit(first) = named_entries_reporting(&ctx, "f", entries).unwrap_err() else { panic!("refusal") };
+        assert!(!advanced.get());
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else { panic!("refusal") };
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn nonblank_decode_validation_admits_unicode_bytes_and_keeps_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Three UTF-8 whitespace bytes and one non-whitespace byte.
+        policy.limits.max_work_units = 4;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let value = String::from("\u{2003}a");
+        let pointer = value.as_ptr();
+        let value = NonBlankString::for_decode(&ctx, value, "validate").unwrap().unwrap();
+        assert_eq!(value.as_str(), "\u{2003}a");
+        assert_eq!(value.as_str().as_ptr(), pointer);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("refusal") };
+        assert_eq!(limit.used, 4);
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let CodecError::ResourceLimit(first) = NonBlankString::for_decode(&ctx, String::from("\u{2003}a"), "validate").unwrap_err() else { panic!("refusal") };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else { panic!("refusal") };
+        assert_eq!(first, second);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        for value in ["", "\u{2003}\n", " a "] {
+            assert_eq!(NonBlankString::for_decode(&ctx, String::from(value), "validate").unwrap().is_some(), NonBlankString::new(value).is_some());
+        }
     }
 
     #[test]
@@ -731,8 +772,11 @@ mod tests {
     #[test]
     fn checked_named_entry_restated_key_refuses_before_text_growth() {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
+        // One root node and the one-byte record consume the retained ceiling before the duplicate key copy.
+        let bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
+            + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<NonBlankString>() + 1;
         assert!(matches!(
-            checked_reporting(entries, 10, crate::decode::u64_from_index(5 * (11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>()) + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<NonBlankString>())) + 1),
+            checked_reporting(entries, 10, crate::decode::u64_from_index(bytes)),
             Err(crate::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "named entry refused key"
