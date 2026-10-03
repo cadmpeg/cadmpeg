@@ -607,8 +607,8 @@ mod tests {
         let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<NonBlankString>().max(std::mem::align_of::<usize>());
-        // A one-item ceiling admits one split node and a new root.
-        let bytes = 2 * node_bytes;
+        // One named-entry record admits one backing node before insertion.
+        let bytes = node_bytes;
         let error = checked_reporting(
             vec![("k".into(), 1)],
             1,
@@ -709,8 +709,12 @@ mod tests {
     #[test]
     fn checked_named_entry_restated_key_refuses_before_text_growth() {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
+        // One backing node and one record byte precede the restated key copy.
+        let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<NonBlankString>();
         assert!(matches!(
-            checked_reporting(entries, 10, crate::decode::u64_from_index(5 * (11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>()) + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<NonBlankString>())) + 1),
+            checked_reporting(entries, 10, crate::decode::u64_from_index(node_bytes) + 1),
             Err(crate::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "named entry refused key"

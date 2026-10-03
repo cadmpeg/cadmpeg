@@ -934,9 +934,8 @@ mod tests {
             + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        let nodes =
-            usize::try_from(policy.limits.max_collection_items.ilog2()).expect("test ceiling") + 2;
-        let bytes = nodes * node_bytes;
+        // One declaration record admits one backing node before its text copies.
+        let bytes = node_bytes;
         policy.limits.max_retained_bytes = crate::decode::u64_from_index(bytes) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
