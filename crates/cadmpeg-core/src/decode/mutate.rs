@@ -61,6 +61,110 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Fills inline Copy values after admitting each slot and its written bytes.
+    pub fn fill<T: Copy>(&self, values: &mut [T], value: T, operation: &'static str) -> Result<(), CodecError> {
+        self.admit_moves(values, 1, operation)?;
+        values.fill(value);
+        Ok(())
+    }
+
+    /// Replaces each value through a fallible factory that admits child construction.
+    /// A refusal preserves later values; completed replacements remain installed.
+    pub fn fill_with<T: DecodeCost>(&self, values: &mut [T], mut make: impl FnMut() -> Result<T, CodecError>, operation: &'static str) -> Result<(), CodecError> {
+        self.admit_moves(values, 1, operation)?;
+        for index in 0..values.len() {
+            self.charge_work(1, operation)?;
+            self.charge_key(&values[index], 1, operation)?;
+            values[index] = make()?;
+        }
+        Ok(())
+    }
+
+    /// Appends Copy elements after admitting the source copy and target growth.
+    pub fn extend_from_slice<T: Copy>(&self, values: &mut Vec<T>, source: &[T], operation: &'static str) -> Result<(), CodecError> {
+        self.admit_moves(source, 1, operation)?;
+        self.reserve_vec(values, source.len(), operation)?;
+        values.extend_from_slice(source);
+        Ok(())
+    }
+
+    /// Copies a valid original range into the same vector without child clones.
+    pub fn extend_from_within<T: Copy>(&self, values: &mut Vec<T>, source: std::ops::Range<usize>, operation: &'static str) -> Result<(), CodecError> {
+        let Some(slice) = values.get(source.clone()) else { return Err(CodecError::malformed("vector copy range exceeds length")); };
+        self.admit_moves(slice, 1, operation)?;
+        let count = slice.len();
+        self.reserve_vec(values, count, operation)?;
+        for index in source {
+            self.charge_work(1, operation)?;
+            let value = values[index];
+            values.push(value);
+        }
+        Ok(())
+    }
+
+    /// Resizes through a fallible factory; existing values move without cloning children.
+    /// The factory admits child construction. A refusal can leave a shorter growth.
+    pub fn resize_with<T: DecodeCost>(&self, values: &mut Vec<T>, length: usize, mut make: impl FnMut() -> Result<T, CodecError>, operation: &'static str) -> Result<(), CodecError> {
+        if length <= values.len() { return self.truncate_vec(values, length, operation); }
+        let count = length - values.len();
+        self.reserve_vec(values, count, operation)?;
+        for _index in 0..count {
+            self.charge_work(1, operation)?;
+            values.push(make()?);
+        }
+        Ok(())
+    }
+
+    /// Resizes Copy values through the one fallible growth implementation.
+    pub fn resize_vec<T: Copy + DecodeCost>(&self, values: &mut Vec<T>, length: usize, value: T, operation: &'static str) -> Result<(), CodecError> {
+        self.resize_with(values, length, || Ok(value), operation)
+    }
+
+    /// Moves a suffix into admitted storage and preserves both subsequence orders.
+    /// A refusal during movement can leave a partially split vector.
+    pub fn split_off_vec<T>(&self, values: &mut Vec<T>, at: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
+        let Some(suffix) = values.get(at..) else { return Err(CodecError::malformed("vector split exceeds length")); };
+        self.admit_moves(suffix, 3, operation)?;
+        let count = suffix.len();
+        let mut output = self.collection_vec(count, operation)?;
+        for _index in 0..count {
+            self.charge_work(1, operation)?;
+            let Some(value) = values.pop() else { return Err(CodecError::malformed("vector split suffix disappeared")); };
+            output.push(value);
+        }
+        self.reverse(&mut output, operation)?;
+        Ok(output)
+    }
+
+    fn split_vec_range<T>(&self, values: &mut Vec<T>, range: std::ops::Range<usize>, operation: &'static str) -> Result<(Vec<T>, Vec<T>), CodecError> {
+        if range.start > range.end || range.end > values.len() { return Err(CodecError::malformed("vector removal range exceeds length")); }
+        let tail = self.split_off_vec(values, range.end, operation)?;
+        let removed = self.split_off_vec(values, range.start, operation)?;
+        Ok((removed, tail))
+    }
+
+    /// Eagerly drains a range into retained storage through admitted suffix moves.
+    /// A refusal can leave a partially drained vector.
+    pub fn drain_vec<T>(&self, values: &mut Vec<T>, range: std::ops::Range<usize>, operation: &'static str) -> Result<Vec<T>, CodecError> {
+        let (removed, mut tail) = self.split_vec_range(values, range, operation)?;
+        self.append_vec(values, &mut tail, operation)?;
+        Ok(removed)
+    }
+
+    /// Replaces a range with owned values and returns its removed values in order.
+    /// Replacement children already exist. A refusal can leave a partial replacement.
+    pub fn splice_vec<T>(&self, values: &mut Vec<T>, range: std::ops::Range<usize>, mut replacement: Vec<T>, operation: &'static str) -> Result<Vec<T>, CodecError> {
+        let (removed, mut tail) = self.split_vec_range(values, range, operation)?;
+        self.append_vec(values, &mut replacement, operation)?;
+        self.append_vec(values, &mut tail, operation)?;
+        Ok(removed)
+    }
+
+    /// Shrinks owned vector capacity through the one admitted boxed-slice conversion.
+    pub fn shrink_vec<T>(&self, values: Vec<T>, operation: &'static str) -> Result<Vec<T>, CodecError> {
+        Ok(self.into_boxed_slice(values, operation)?.into_vec())
+    }
+
     /// Reverses slot order after admitting the inline values to move.
     pub fn reverse<T>(&self, values: &mut [T], operation: &'static str) -> Result<(), CodecError> {
         self.admit_moves(values, 3, operation)?;
@@ -111,11 +215,17 @@ impl DecodeContext<'_> {
     /// Keeps selected values in order. The predicate admits child work.
     /// On callback refusal, the vector keeps every value and may change their order.
     pub fn retain_vec<T: DecodeCost>(&self, values: &mut Vec<T>, mut keep: impl FnMut(&T) -> Result<bool, CodecError>, operation: &'static str) -> Result<(), CodecError> {
+        self.retain_mut(values, |value| keep(value), operation)
+    }
+
+    /// Keeps selected values while allowing the predicate to edit each value.
+    /// The predicate admits child work. A refusal keeps all values and completed edits.
+    pub fn retain_mut<T: DecodeCost>(&self, values: &mut Vec<T>, mut keep: impl FnMut(&mut T) -> Result<bool, CodecError>, operation: &'static str) -> Result<(), CodecError> {
         self.admit_moves(values, 3, operation)?;
         let mut write = 0;
         for read in 0..values.len() {
             self.charge_work(1, operation)?;
-            if keep(&values[read])? {
+            if keep(&mut values[read])? {
                 values.swap(write, read);
                 write += 1;
             }
@@ -155,6 +265,98 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::CodecError;
+
+    #[test]
+    fn charged_vector_edits_preserve_copy_split_drain_and_splice_order() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let mut values = vec![0_u8, 1, 2, 3];
+        ctx.fill(&mut values[..2], 9, "fill").unwrap();
+        assert_eq!(values, [9, 9, 2, 3]);
+        ctx.extend_from_slice(&mut values, &[4, 5], "extend").unwrap();
+        ctx.extend_from_within(&mut values, 2..4, "within").unwrap();
+        assert_eq!(values, [9, 9, 2, 3, 4, 5, 2, 3]);
+        let tail = ctx.split_off_vec(&mut values, 6, "split").unwrap();
+        assert_eq!(tail, [2, 3]);
+        assert_eq!(values, [9, 9, 2, 3, 4, 5]);
+        assert_eq!(ctx.drain_vec(&mut values, 1..3, "drain").unwrap(), [9, 2]);
+        assert_eq!(values, [9, 3, 4, 5]);
+        assert_eq!(ctx.splice_vec(&mut values, 1..3, vec![7, 8, 6], "splice").unwrap(), [3, 4]);
+        assert_eq!(values, [9, 7, 8, 6, 5]);
+        ctx.resize_vec(&mut values, 7, 1, "grow").unwrap();
+        assert_eq!(values, [9, 7, 8, 6, 5, 1, 1]);
+        ctx.resize_vec(&mut values, 2, 0, "truncate").unwrap();
+        assert_eq!(values, [9, 7]);
+        let values = ctx.shrink_vec(values, "shrink").unwrap();
+        assert_eq!(values.capacity(), values.len());
+        assert_eq!(values, [9, 7]);
+    }
+
+    #[test]
+    fn charged_mutable_retention_and_factory_fill_keep_completed_edits() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let mut values = vec![1_u32, 2, 3, 4];
+        ctx.retain_mut(&mut values, |value| { *value += 10; Ok(*value % 2 == 0) }, "retain edits").unwrap();
+        assert_eq!(values, [12, 14]);
+        let mut next = 0;
+        ctx.fill_with(&mut values, || { next += 1; Ok(next) }, "factory fill").unwrap();
+        assert_eq!(values, [1, 2]);
+        let CodecError::ResourceLimit(first) = ctx.refuse_codec_limit("child refusal", 1, 0) else { panic!("resource refusal") };
+        let mut calls = 0;
+        let error = ctx.fill_with(&mut values, || { calls += 1; Err(CodecError::ResourceLimit(first)) }, "fused fill").unwrap_err();
+        let CodecError::ResourceLimit(repeated) = error else { panic!("resource refusal") };
+        assert_eq!(repeated, first);
+        assert_eq!(calls, 0);
+        assert_eq!(values, [1, 2]);
+    }
+
+    #[test]
+    fn vector_edit_refusal_precedes_factories_and_suffix_movement() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut values = vec![1_u8, 2, 3];
+        let mut calls = 0;
+        let CodecError::ResourceLimit(first) = ctx.fill_with(&mut values, || { calls += 1; Ok(9) }, "fill refusal").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(values, [1, 2, 3]);
+        assert_eq!(calls, 0);
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let CodecError::ResourceLimit(repeated) = ctx.split_off_vec(&mut values, 1, "later split").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+        assert_eq!(values, [1, 2, 3]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(ctx.split_off_vec(&mut values, 1, "split storage"), Err(CodecError::ResourceLimit(_))));
+        assert_eq!(values, [1, 2, 3]);
+        assert!(ctx.extend_from_within(&mut values, 3..4, "invalid range").is_err());
+        assert_eq!(values, [1, 2, 3]);
+    }
+
+    #[test]
+    fn vector_growth_propagates_the_factory_resource_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four initial String slots; no retained bytes remain for the factory's text.
+        policy.limits.max_retained_bytes = 4 * u64::try_from(std::mem::size_of::<String>()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut values = Vec::<String>::new();
+        let mut calls = 0;
+        let CodecError::ResourceLimit(first) = ctx.resize_with(&mut values, 1, || {
+            calls += 1;
+            ctx.copy_retained_text("child", "factory text")
+        }, "growth").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(first.operation, "factory text");
+        assert_eq!(first.used, policy.limits.max_retained_bytes);
+        assert_eq!(first.additional, 5);
+        assert_eq!(calls, 1);
+        assert!(values.is_empty());
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let CodecError::ResourceLimit(repeated) = ctx.resize_with(&mut values, 1, || Ok(String::new()), "later growth").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+    }
 
     #[test]
     fn vector_boxing_reuses_exact_capacity_without_work_or_storage() {
