@@ -704,7 +704,6 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let sections_are_resolved = !shape.any_section_is_unresolved()
                 && shape
                     .referenced_profiles()
-                    .into_iter()
                     .all(planar_profile_ref_is_resolved);
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,

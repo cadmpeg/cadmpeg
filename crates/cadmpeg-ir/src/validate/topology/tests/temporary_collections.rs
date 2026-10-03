@@ -59,3 +59,35 @@ fn topology_profile_reference_borrows_the_selection_payload() {
     let super::super::ProfileReference::Planar(borrowed) = super::super::ProfileReference::from(&profile) else { panic!("planar view"); };
     assert!(std::ptr::eq(original, borrowed));
 }
+
+#[test]
+fn topology_sweep_profile_filter_admits_sections_that_produce_no_reference() {
+    let definition = crate::features::FeatureOperation::Sweep {
+        shape: crate::features::SweepShape::sheet_sections(
+            crate::features::SweepMode::Surface {},
+            crate::features::SweepSection::Unresolved(None),
+            vec![crate::features::SweepSection::Unresolved(None); 8],
+        ),
+        path: None,
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
+        twist: None,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
+        scale: None,
+        allow_multi_profile_faces: None,
+    };
+    for work in [0, 1] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(original)) = super::super::definition_profiles(&ctx, &definition) else { panic!("empty profile filter must admit upstream sections"); };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    }
+}

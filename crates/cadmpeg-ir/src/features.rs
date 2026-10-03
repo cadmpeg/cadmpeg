@@ -2273,30 +2273,25 @@ pub enum DecalMapping {
 
 impl DatumPointConstruction {
     /// Return construction features referenced by this rule.
-    pub fn feature_references(&self) -> Vec<&FeatureId> {
-        match self {
-            Self::ThreePlaneIntersection { planes } => planes
-                .iter()
-                .filter_map(|plane| match plane {
-                    DatumPlaneReference::Feature { feature } => Some(feature),
-                    DatumPlaneReference::Face { .. }
-                    | DatumPlaneReference::ResolvedPlane { .. } => None,
-                })
-                .collect(),
+    pub fn feature_references(&self) -> impl Iterator<Item = &FeatureId> {
+        let references = match self {
+            Self::ThreePlaneIntersection { planes } => planes.each_ref().map(|plane| match plane {
+                DatumPlaneReference::Feature { feature } => Some(feature),
+                DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. } => None,
+            }),
             Self::EdgePlaneIntersection {
                 plane: DatumPlaneReference::Feature { feature },
                 ..
-            } => vec![feature],
-            Self::Vertex {
-                vertex: VertexSelection::Generated { vertex, .. },
-            } => vec![&vertex.feature],
+            } => [Some(feature), None, None],
+            Self::Vertex { vertex: VertexSelection::Generated { vertex, .. } } => [Some(&vertex.feature), None, None],
             Self::CircleCenter { .. }
             | Self::TwoEdgeIntersection { .. }
             | Self::Vertex { .. }
             | Self::SketchPoint { .. }
             | Self::EdgePlaneIntersection { .. }
-            | Self::DistanceOnEdge { .. } => Vec::new(),
-        }
+            | Self::DistanceOnEdge { .. } => [None; 3],
+        };
+        references.into_iter().flatten()
     }
 }
 
@@ -8105,21 +8100,18 @@ impl SweepShape {
     }
 
     /// Every referenced profile, the primary cross-section first.
-    pub fn referenced_profiles(&self) -> Vec<&PlanarProfileRef> {
-        match self {
+    pub fn referenced_profiles(&self) -> impl Iterator<Item = &PlanarProfileRef> + Clone {
+        let (primary, sheet_sections, solid_sections): (
+            Option<&PlanarProfileRef>, &[SheetSweepSection], &[SweepSection],
+        ) = match self {
             Self::Unresolved { section, sections } | Self::Surface { section, sections } => {
-                std::iter::once(section)
-                    .chain(sections)
-                    .filter_map(SweepSection::referenced_profile)
-                    .collect()
+                (section.referenced_profile(), sections, &[])
             }
-            Self::Solid {
-                section, sections, ..
-            } => std::iter::once(section)
-                .chain(sections)
-                .filter_map(SweepSection::referenced_profile)
-                .collect(),
-        }
+            Self::Solid { section, sections, .. } => (section.referenced_profile(), &[], sections),
+        };
+        primary.into_iter()
+            .chain(sheet_sections.iter().filter_map(SweepSection::referenced_profile))
+            .chain(solid_sections.iter().filter_map(SweepSection::referenced_profile))
     }
 
     /// Generated cross-sections, mutable, the primary cross-section first.

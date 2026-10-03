@@ -1948,3 +1948,5 @@ fn feature_frames_hold_their_admitted_unit_axes() {
         FiniteVector3::new(Vector3::new(0.0, 3.0, 4.0)).unwrap()
     );
 }
+
+mod reference_views;
