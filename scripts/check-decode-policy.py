@@ -252,7 +252,7 @@ def unreachable_bodies(source, reached):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--crate", action="append", default=[], help="select a decode crate")
+    parser.add_argument("--crate", action="append", default=[], help="select findings from a decode crate; keep the full feature graph")
     parser.add_argument("--output", type=Path, help="write sorted TSV findings or external operation inventory")
     parser.add_argument("--external-output", type=Path, help="also save the resolved operation inventory during a findings run")
     parser.add_argument("--list-externals", action="store_true", help="list resolved external operations with allocation and named work costs")
@@ -345,13 +345,18 @@ def main():
         return clean
     if args.list_externals or args.external_output:
         env["CADMPEG_POLICY_EXTERNALS"] = "1"
-    result = compile_packages(packages)
+    # DefPathHash includes the crate disambiguator. Keep Cargo feature
+    # unification identical to graph collection; --crate filters reports.
+    result = compile_packages(decode_packages)
     sys.stderr.write(result.stderr)
     if args.external_output:
         externals = sorted(set(line for line in result.stdout.splitlines() if line.startswith("external_operation\t")))
         args.external_output.write_text("".join(line + "\n" for line in externals))
     prefixes = ("external_operation\t",) if args.list_externals else ("uncharged_decode_allocation\t", "uncharged_decode_work\t", "unproven_decode_charge\t")
     findings = sorted(set(line for line in result.stdout.splitlines() if line.startswith(prefixes)))
+    if args.crate and not args.list_externals:
+        selected = {"crates/" + name + "/" for name in packages}
+        findings = [line for line in findings if any(line.split("\t")[1].startswith(path) for path in selected)]
     content = "".join(line + "\n" for line in findings)
     sys.stdout.write(content)
     if args.output:
