@@ -520,29 +520,19 @@ impl<'a> DecodeContext<'a> {
             }
             return Ok(());
         }
-        let scratch_bytes = count
-            .checked_mul(super::u64_from_index(std::mem::size_of::<usize>()))
-            .and_then(|bytes| bytes.checked_mul(2))
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         self.charge_collection_items(
             count
                 .checked_mul(2)
                 .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
             operation,
         )?;
-        let _scratch = self.reserve_scoped(scratch_bytes, operation)?;
-        let mut order = Vec::new();
-        order.try_reserve_exact(values.len()).map_err(|_| {
-            self.budget
-                .scoped_allocation_failed(scratch_bytes, operation)
-        })?;
-        order.extend(0..values.len());
-        let mut destinations = Vec::new();
-        destinations.try_reserve_exact(values.len()).map_err(|_| {
-            self.budget
-                .scoped_allocation_failed(scratch_bytes, operation)
-        })?;
-        destinations.resize(values.len(), 0usize);
+        let (mut order, _order_storage) = self.scoped_vector_storage(values.len(), operation)?;
+        let (mut destinations, _destination_storage) = self.scoped_vector_storage(values.len(), operation)?;
+        for index in 0..values.len() {
+            self.charge_work(2, operation)?;
+            order.push(index);
+            destinations.push(0usize);
+        }
         self.sort_unstable_by_key(&mut order,
             |&index| (projection.project(&values[index]), index),
             |(_, left), (_, right)| compare(&values[*left], &values[*right]).then_with(|| left.cmp(right)),
