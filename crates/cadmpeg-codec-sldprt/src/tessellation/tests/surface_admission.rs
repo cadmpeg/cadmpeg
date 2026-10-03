@@ -11,7 +11,7 @@ fn nurbs_display_model(placed: bool) -> Model {
     let corners = super::test_nurbs_corners(&surface);
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| {
-            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+            cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, u, v)
                 .unwrap()
                 .get()
         })

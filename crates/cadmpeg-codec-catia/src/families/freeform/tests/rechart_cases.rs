@@ -33,7 +33,7 @@ fn planar_rechart_recovers_a_foreign_consolidated_chart() {
         .expect("an isometric stored chart recharts onto the target plane");
     for (site, locus) in stored.iter().zip(&loci) {
         let [u, v] = chart.point(*site);
-        let lifted = cadmpeg_ir::eval::surface_point(&target, u, v).expect("plane evaluates");
+        let lifted = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, u, v).expect("plane evaluates");
         assert!(
             (lifted.x - locus.x)
                 .hypot(lifted.y - locus.y)
@@ -46,7 +46,7 @@ fn planar_rechart_recovers_a_foreign_consolidated_chart() {
     // target's own, which lands far from the definition loci.
     let naive = ConsolidatedCarrierChart::Identity;
     let [u, v] = naive.point(stored[0]);
-    let lifted = cadmpeg_ir::eval::surface_point(&target, u, v).expect("plane evaluates");
+    let lifted = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, u, v).expect("plane evaluates");
     assert!(
         (lifted.x - loci[0].x)
             .hypot(lifted.y - loci[0].y)
@@ -92,7 +92,7 @@ fn planar_rechart_declines_a_chart_that_is_not_an_isometry() {
     let collinear_loci = collinear_sites
         .iter()
         .map(|[u, v]| {
-            cadmpeg_ir::eval::surface_point(&target, *u, *v)
+            cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, *u, *v)
                 .expect("plane")
                 .get()
         })

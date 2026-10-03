@@ -1320,7 +1320,7 @@ pub fn nurbs_surface_parameter_near_point(
                         return Ok(None);
                     };
                     let Some(candidate) =
-                        finite_or_refusal(nurbs_surface_point(surface, u.get(), v.get()))?
+                        finite_or_refusal(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, surface, u.get(), v.get()))?
                     else {
                         return Ok(None);
                     };
@@ -1364,7 +1364,7 @@ pub fn nurbs_surface_parameter_near_point(
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
             let Some(candidate_point) =
-                finite_or_refusal(nurbs_surface_point(surface, candidate.u, candidate.v))?
+                finite_or_refusal(crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, surface, candidate.u, candidate.v))?
             else {
                 return Ok(None);
             };
@@ -1455,20 +1455,6 @@ fn offset(base: Point3, terms: &[(f64, Vector3)]) -> Point3 {
         coordinate(base.y, |v| v.y),
         coordinate(base.z, |v| v.z),
     )
-}
-
-/// Evaluate a NURBS curve at knot-domain parameter `t` over its admitted
-/// poles, or report why it has no finite point there.
-///
-/// A parameter that is not finite, a knot vector that states no span at `t`,
-/// and a zero weight sum have no value. A basis that leaves the finite range
-/// reaches no coordinate, and each reads NaN; a projection that overflows
-/// carries each coordinate it reached.
-pub fn nurbs_curve_point_at(
-    curve: &NurbsCurve,
-    t: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|admission| decode::nurbs_curve_point_at_for_decode(admission, curve, t))
 }
 
 /// Evaluate a NURBS curve with a caller-owned basis buffer of `degree + 1`
@@ -2531,21 +2517,6 @@ pub fn nurbs_pcurve_contains_point(
     Ok((!search.truncated).then_some(false))
 }
 
-/// Evaluate a tensor-product NURBS surface at `(u, v)`, or report why it has
-/// no finite point there.
-///
-/// A parameter that is not finite, a knot vector or pole net that states no
-/// span at the parameter, and a zero weight sum have no value. A basis that
-/// leaves the finite range reaches no coordinate, and each reads NaN; a
-/// projection that overflows carries each coordinate it reached.
-pub fn nurbs_surface_point(
-    surface: &NurbsSurface,
-    u_at: f64,
-    v_at: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|admission| decode::nurbs_surface_point_for_decode(admission, surface, u_at, v_at))
-}
-
 /// A tensor-product NURBS surface at a parameter: its spans, its bases and
 /// its homogeneous base sum, with its finite point.
 struct NurbsSurfaceLocal<'a> {
@@ -2810,7 +2781,7 @@ fn finite_vector([x, y, z]: [FiniteReal; 3]) -> FiniteVector3 {
     FiniteVector3::from_components(x, y, z)
 }
 
-/// [`nurbs_surface_point`] within a caller-owned work slice. A refused
+/// [`decode::nurbs_surface_point`] within a caller-owned work slice. A refused
 /// charge leaves no value.
 pub fn nurbs_surface_point_with_budget(
     surface: &NurbsSurface,
@@ -2822,7 +2793,7 @@ pub fn nurbs_surface_point_with_budget(
     if !budget.charge_by(cost) {
         return Err(EvaluationFailure::NoValue);
     }
-    nurbs_surface_point(surface, u_at, v_at)
+    crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, surface, u_at, v_at)
 }
 
 /// The parametric direction a surface isoline holds fixed.
@@ -3216,7 +3187,7 @@ fn admit_lanes<const N: usize>(
 /// Evaluate a tensor-product NURBS surface and its exact rational first
 /// partials at `(u, v)`, or report why they have no finite value there.
 ///
-/// The point fails as [`nurbs_surface_point`] states. At a finite point,
+/// The point fails as [`decode::nurbs_surface_point`] states. At a finite point,
 /// first partials outside the finite range leave the evaluation there,
 /// carrying the point.
 pub fn nurbs_surface_partials(
@@ -3255,7 +3226,7 @@ fn charge_nurbs_surface_partials(
 /// second partials at `(u, v)`, or report why they have no finite value
 /// there.
 ///
-/// The point fails as [`nurbs_surface_point`] states. At a finite point,
+/// The point fails as [`decode::nurbs_surface_point`] states. At a finite point,
 /// partials outside the finite range leave the evaluation there, carrying
 /// the point.
 pub fn nurbs_surface_second_partials(
@@ -3340,7 +3311,7 @@ pub fn curve_second_derivative_solved(
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
 /// Analytic curves are constant-cost; transformed, polyline, and NURBS curves
 /// charge the work performed by their representation. A refused charge
-/// leaves no value; otherwise the failure is [`curve_point_solved`]'s.
+/// leaves no value; otherwise the failure is [`decode::curve_point_solved`]'s.
 pub fn curve_point_with_budget_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
@@ -3361,11 +3332,11 @@ pub fn curve_point_with_budget_solved(
         match geometry {
             SolvedCurveGeometry::Nurbs(nurbs) => {
                 charged(nurbs_curve_evaluation_cost(nurbs))?;
-                curve_point_solved(geometry, t)
+                crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, t)
             }
             SolvedCurveGeometry::Polyline(polyline) => {
                 charged(Some(polyline.point_count()))?;
-                curve_point_solved(geometry, t)
+                crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, t)
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 if !budget.charge() {
@@ -3373,7 +3344,7 @@ pub fn curve_point_with_budget_solved(
                 }
                 placed_point(*placed.transform(), evaluate(placed.basis(), t, budget))
             }
-            _ => curve_point_solved(geometry, t),
+            _ => crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, t),
         }
     }
 
@@ -4073,7 +4044,7 @@ fn model_curve_differential_by_id_inner(
         if let Some(cache) = curve.geometry.solved_cache() {
             return differential_at(
                 budget.map_or_else(
-                    || curve_point_solved(cache, parameter),
+                    || crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, cache, parameter),
                     |budget| curve_point_with_budget_solved(cache, parameter, budget),
                 ),
                 || curve_derivative_evaluation(scratch, cache, parameter, CurveDerivative::First),
@@ -4105,7 +4076,7 @@ fn model_curve_differential_by_id_inner(
                 },
             ),
             None => differential_at(
-                curve_point_solved(solved, parameter),
+                crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, solved, parameter),
                 || curve_derivative_evaluation(scratch, solved, parameter, CurveDerivative::First),
                 || curve_derivative_evaluation(scratch, solved, parameter, CurveDerivative::Second),
             ),
@@ -4690,7 +4661,7 @@ fn model_curve_point_by_id_inner(
         .and_then(|procedurals| procedurals.first().copied())
     else {
         return budget.map_or_else(
-            || curve_point(&curve.geometry, parameter),
+            || crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve.geometry, parameter),
             |budget| curve_point_with_budget(&curve.geometry, parameter, budget),
         );
     };
@@ -4730,7 +4701,7 @@ fn model_curve_point_by_id_inner(
             let points = std::array::from_fn(|side| {
                 // A non-finite offset-pcurve point is evaluated on its support
                 // as a finite one is.
-                let uv = match pcurve_uv(&parameterization.pcurves[side], parameter) {
+                let uv = match crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &parameterization.pcurves[side], parameter) {
                     Ok(uv) => uv.get(),
                     Err(EvaluationFailure::NonFinite(uv)) => uv,
                     Err(EvaluationFailure::NoValue) => return Err(EvaluationFailure::NoValue),
@@ -4776,7 +4747,7 @@ fn model_curve_point_by_id_inner(
         _ => {
             if let Some(cache) = curve.geometry.solved_cache() {
                 budget.map_or_else(
-                    || curve_point_solved(cache, parameter),
+                    || crate::eval::decode::curve_point_solved(crate::eval::admission::EvaluationAdmission::Standard, cache, parameter),
                     |budget| curve_point_with_budget_solved(cache, parameter, budget),
                 )
             } else if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
@@ -4784,7 +4755,7 @@ fn model_curve_point_by_id_inner(
             } else if let Some(budget) = budget {
                 curve_point_with_budget(&curve.geometry, parameter, budget)
             } else {
-                curve_point(&curve.geometry, parameter)
+                crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve.geometry, parameter)
             }
         }
     }
@@ -5387,7 +5358,7 @@ fn direct_curve_parameter_near_point(
                 return None
             }
         };
-        let evaluated = match decode::curve_point_solved_for_decode(ctx, geometry, parameter.get()).and_then(finite_or_refusal) {
+        let evaluated = match crate::eval::decode::outer_refusal(crate::eval::decode::curve_point_solved(ctx, geometry, parameter.get())).and_then(finite_or_refusal) {
             Ok(Some(point)) => point,
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit.into())),
@@ -5479,24 +5450,6 @@ fn polyline_parameter_near_point(
         }
     }
     best_candidate
-}
-
-/// Evaluate a 3D curve carrier at parameter `t` on its own parameterization,
-/// or report why it has no finite point there.
-///
-/// A parameter that is not finite has no value on every carrier that reads
-/// it; a degenerate carrier is its point at every parameter. A point outside
-/// the finite range is non-finite and carries the point the arm reached; a
-/// coefficient outside the finite range reaches no coordinate, and each reads
-/// NaN.
-///
-/// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
-/// construction; no arm follows an arena id.
-pub fn curve_point_solved(
-    geometry: &SolvedCurveGeometry,
-    t: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|admission| decode::curve_point_solved_for_decode(admission, geometry, t))
 }
 
 fn curve_point_evaluation(
@@ -5628,21 +5581,6 @@ fn curve_point_evaluation(
     }
 }
 
-/// Evaluate a surface carrier at `(u, v)` on its own parameterization: `u` is
-/// the azimuth angle and `v` the axial distance / polar angle on analytic
-/// quadrics, and both are knot-domain parameters on NURBS surfaces.
-///
-/// The evaluation fails only on the point: every carrier evaluates its point
-/// alone, so partials outside the finite range at a finite point leave the
-/// point finite.
-pub fn surface_point_solved(
-    geometry: &SolvedSurfaceGeometry,
-    u: f64,
-    v: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|admission| decode::surface_point_solved_for_decode(admission, geometry, u, v))
-}
-
 fn surface_point_evaluation(
     scratch: &decode::Scratch<'_, '_>,
     geometry: &SolvedSurfaceGeometry,
@@ -5695,7 +5633,7 @@ fn placed_point(
 /// slice. Analytic surfaces are constant-cost; transformed carriers charge
 /// each transform layer and NURBS carriers charge their local basis work. A
 /// refused charge leaves no value; otherwise the failure is
-/// [`surface_point_solved`]'s.
+/// [`decode::surface_point_solved`]'s.
 ///
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
 /// construction; no arm follows an arena id.
@@ -5716,7 +5654,7 @@ pub fn surface_point_with_budget_solved(
                 surface_point_with_budget_solved(placed.basis(), u, v, budget),
             )
         }
-        _ => surface_point_solved(geometry, u, v),
+        _ => crate::eval::decode::surface_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v),
     }
 }
 
@@ -5952,7 +5890,7 @@ fn rolling_ball_jet_interpolate_scalar(
 /// Evaluate a directly stored surface and its exact first partial
 /// derivatives, or report why they have no finite value.
 ///
-/// The point fails as [`surface_point_solved`] states. At a finite point,
+/// The point fails as [`decode::surface_point_solved`] states. At a finite point,
 /// first partials outside the finite range leave the evaluation there,
 /// carrying the point.
 pub fn surface_partials_solved(
@@ -6288,7 +6226,7 @@ fn placed_jet(
 /// Evaluate a directly stored surface and its exact first and second partial
 /// derivatives, or report why they have no finite value.
 ///
-/// The point fails as [`surface_point_solved`] states. At a finite point,
+/// The point fails as [`decode::surface_point_solved`] states. At a finite point,
 /// partials outside the finite range leave the evaluation there, carrying
 /// the point.
 pub fn surface_second_partials_solved(
@@ -6319,10 +6257,10 @@ fn model_surface_point_inner(
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let _depth = ModelEvaluationDepthGuard::enter(budget).map_err(EvaluationFailure::ResourceLimit)?;
     if let Some(cache) = geometry.solved_cache() {
-        return surface_point_solved(cache, u, v);
+        return crate::eval::decode::surface_point_solved(crate::eval::admission::EvaluationAdmission::Standard, cache, u, v);
     }
     let Some(construction) = geometry.procedural_construction() else {
-        return surface_point(geometry, u, v);
+        return crate::eval::decode::surface_point(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v);
     };
     let procedural = ir
         .model
@@ -7091,7 +7029,7 @@ fn straight_sweep_path_origin(
             let [start, _] = nurbs_curve_parameter_domain(nurbs)
                 .ok_or(EvaluationFailure::NoValue)?
                 .endpoints();
-            curve_point(&curve.geometry, start)
+            crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve.geometry, start)
                 .map(FinitePoint3::get)
                 .map_err(|failure| failure.map(|_| ()))
         }
@@ -7482,7 +7420,7 @@ fn variable_blend_contact_track(
     let pcurve = side.pcurve.as_ref().ok_or(no_value)?;
     // A non-finite offset-pcurve point is evaluated on its support as a
     // finite one is.
-    let uv = match pcurve_uv(pcurve, parameter) {
+    let uv = match crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, pcurve, parameter) {
         Ok(uv) => uv.get(),
         Err(EvaluationFailure::NonFinite(uv)) => uv,
         Err(EvaluationFailure::NoValue) => return Err(no_value),
@@ -7698,7 +7636,7 @@ fn variable_blend_radius(
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let [radius, _] = pcurve_uv(function, parameter)
+            let [radius, _] = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, function, parameter)
                 .map_err(|failure| failure.map(|_| ()))?
                 .coordinates();
             Ok(radius)
@@ -8369,7 +8307,7 @@ fn model_surface_point_with_budget_solved(
                 model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget)),
             )
         }
-        _ => surface_point_solved(geometry, u, v),
+        _ => crate::eval::decode::surface_point_solved(crate::eval::admission::EvaluationAdmission::Standard, geometry, u, v),
     }
 }
 
@@ -8838,34 +8776,6 @@ fn scale_vector(vector: Vector3, factor: f64) -> Vector3 {
 fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
     let point = offset(Point3::new(0.0, 0.0, 0.0), terms);
     Vector3::new(point.x, point.y, point.z)
-}
-
-/// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
-///
-/// Evaluation is total over the carrier's stated shape and does not consult a
-/// declared domain. A NURBS carrier extrapolates its end span past the knot
-/// interval, a trim hands `t` to its basis outside the trim interval, and a
-/// line and a conic evaluate at every finite `t`. The failure is never that
-/// `t` is out of domain.
-///
-/// An evaluation that leaves the finite range reports
-/// [`EvaluationFailure::NonFinite`] with the point it reached; a coordinate
-/// that no step reached is NaN. A carrier that evaluates its derivatives
-/// together with its point also reports its point this way when a derivative
-/// leaves the finite range. A parameter that is not finite, a structure that
-/// states no point at `t`, and an undefined step (a polar chart at its
-/// origin, an offset whose basis tangent is zero) report
-/// [`EvaluationFailure::NoValue`].
-///
-/// Callers that recover a parameter from an unreliable declared interval
-/// depend on this: they seed and step outside the interval and use the
-/// evaluated point as the witness. A caller that wants the domain asks
-/// the carrier for it.
-pub fn pcurve_uv(
-    geometry: &PcurveGeometry,
-    t: f64,
-) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
-    default_evaluation(|admission| decode::pcurve_uv_for_decode(admission, geometry, t))
 }
 
 /// Evaluate the exact first derivative of a directly stored pcurve.
@@ -9717,25 +9627,6 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests;
 
-/// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
-/// A procedural carrier without a solved cache has no value here.
-pub fn curve_point(
-    geometry: &CurveGeometry,
-    t: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|admission| decode::curve_point_for_decode(admission, geometry, t))
-}
-
-/// Evaluate the exact first derivative of a stored curve carrier, or report
-/// why it has no finite value, as [`curve_tangent_solved`] states. A
-/// procedural carrier without a solved cache has no value here.
-pub fn curve_tangent(
-    geometry: &CurveGeometry,
-    t: f64,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    default_evaluation(|admission| decode::curve_tangent_for_decode(admission, geometry, t))
-}
-
 /// Evaluate the exact second derivative of a stored curve carrier, or report
 /// why it has no finite value, as [`curve_tangent_solved`] states. A
 /// procedural carrier without a solved cache has no value here.
@@ -9759,7 +9650,7 @@ pub fn curve_point_with_budget(
     )
 }
 
-/// [`curve_tangent`] within a caller-owned work slice. A refused charge
+/// [`decode::curve_tangent`] within a caller-owned work slice. A refused charge
 /// leaves no value.
 pub fn curve_tangent_with_budget(
     geometry: &CurveGeometry,
@@ -9785,15 +9676,6 @@ pub fn curve_second_derivative_with_budget(
         t,
         budget,
     )
-}
-
-/// Evaluate a surface carrier at `(u, v)` on its own parameterization.
-pub fn surface_point(
-    geometry: &SurfaceGeometry,
-    u: f64,
-    v: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    default_evaluation(|admission| decode::surface_point_for_decode(admission, geometry, u, v))
 }
 
 /// Evaluate a surface carrier at `(u, v)` within a caller-owned work slice.
@@ -9897,10 +9779,4 @@ fn default_scratch_evaluation<T, R>(
     scratch.finish_evaluation(result).map_err(EvaluationFailure::ResourceLimit)?
 }
 
-fn default_evaluation<T, R>(
-    run: impl FnOnce(
-        admission::EvaluationAdmission<'_, '_>,
-    ) -> Result<Result<T, EvaluationFailure<R>>, ResourceLimit>,
-) -> Result<T, EvaluationFailure<R>> {
-    run(admission::EvaluationAdmission::Standard).map_err(EvaluationFailure::ResourceLimit)?
-}
+

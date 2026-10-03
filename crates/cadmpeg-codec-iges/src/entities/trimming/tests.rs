@@ -1695,10 +1695,10 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
                 .expect("coedge pcurve resolves");
             (
-                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0)
+                cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0)
                     .expect("start evaluates")
                     .get(),
-                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0)
+                cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 1.0)
                     .expect("end evaluates")
                     .get(),
             )
@@ -1828,7 +1828,7 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
                 .iter()
                 .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
                 .unwrap();
-            cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0)
+            cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, 0.0)
                 .unwrap()
                 .u
         })

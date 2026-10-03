@@ -284,8 +284,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     .iter()
                     .find(|candidate| &candidate.id == curve)
                     .unwrap();
-                let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
-                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)
+                let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve.geometry, parameter).unwrap();
+                let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter)
                     .unwrap()
                     .get();
                 let actual = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -405,7 +405,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             .enumerate()
             .all(|(side, pcurve)| {
                 for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-                    let Ok(uv) = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) else {
+                    let Ok(uv) = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter) else {
                         return false;
                     };
                     let Ok(point) = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -1501,7 +1501,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     else {
         unreachable!();
     };
-    let mut point = cadmpeg_ir::eval::nurbs_surface_point(&surface, 0.4, 0.6)
+    let mut point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, 0.4, 0.6)
         .unwrap()
         .get();
     point.z += 0.001;
@@ -1511,7 +1511,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
             .expect("resource allocation did not fail")
             .unwrap();
     let mapped =
-        cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, parameters.u, parameters.v).unwrap();
 
     assert!(Point3::distance(mapped.get(), point) <= 0.01);
 }

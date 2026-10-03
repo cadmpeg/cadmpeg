@@ -671,9 +671,9 @@ fn assert_pcurve_matches_curve(
     parameters: &[f64],
 ) {
     for parameter in parameters {
-        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, *parameter).expect("pcurve point");
-        let mapped = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v).expect("surface point");
-        let expected = cadmpeg_ir::eval::curve_point(curve, *parameter).expect("curve point");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, *parameter).expect("pcurve point");
+        let mapped = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v).expect("surface point");
+        let expected = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, curve, *parameter).expect("curve point");
         assert!((mapped.x - expected.x).abs() <= 1.0e-10);
         assert!((mapped.y - expected.y).abs() <= 1.0e-10);
         assert!((mapped.z - expected.z).abs() <= 1.0e-10);

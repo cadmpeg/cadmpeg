@@ -172,7 +172,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         false,
     );
     let expected = Point2::new(0.37, 0.61);
-    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, expected.u, expected.v).unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
         &surface,
@@ -446,7 +446,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             },
         ]);
         let nurbs_chart = [3.8, 3.9, 4.1, 4.2].map(|u| {
-            cadmpeg_ir::eval::nurbs_surface_point(&periodic_geometry, u, 0.5)
+            cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &periodic_geometry, u, 0.5)
                 .unwrap()
                 .get()
         });
@@ -621,7 +621,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         false,
     );
     let expected = Point2::new(0.125, 0.3);
-    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, expected.u, expected.v).unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
         &surface,
@@ -653,7 +653,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         false,
     );
     let expected = Point2::new(0.5001, 0.3);
-    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
+    let point = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface, expected.u, expected.v).unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(&cadmpeg_test_support::service_decode_context(),
         &surface,
@@ -1311,7 +1311,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             .unwrap(),
         ));
         let parameter = 1.2;
-        let mut point = cadmpeg_ir::eval::curve_point(&geometry, parameter)
+        let mut point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, parameter)
             .unwrap()
             .get();
         point.y += 3.0;

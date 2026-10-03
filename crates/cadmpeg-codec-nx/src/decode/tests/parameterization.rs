@@ -1409,7 +1409,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         let index = cadmpeg_ir::index::ModelIndex::new(&ir);
         for (side, surface) in procedural_surfaces.iter().enumerate() {
             for (parameter, expected) in parameters.iter().zip(&points) {
-                let uv = cadmpeg_ir::eval::pcurve_uv(
+                let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, 
                     &context.sides()[side].pcurve.as_ref().unwrap().geometry,
                     *parameter,
                 )
@@ -1536,7 +1536,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .find(|curve| curve.id == spine_curve)
             .expect("blend spine carrier");
         assert!(
-            cadmpeg_ir::eval::curve_point(&spine_carrier.geometry, 0.0).is_ok(),
+            cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &spine_carrier.geometry, 0.0).is_ok(),
             "spine carrier: {:?}",
             spine_carrier.geometry
         );

@@ -1312,20 +1312,20 @@ fn attach_standalone_wires(
             return Ok(false);
         };
         let Some(start) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                 admission.context(),
                 geometry,
                 range[0],
-            )?)?
+            ))?)?
         else {
             return Ok(false);
         };
         let Some(end) =
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                 admission.context(),
                 geometry,
                 range[1],
-            )?)?
+            ))?)?
         else {
             return Ok(false);
         };
@@ -1722,19 +1722,19 @@ fn standard_carrier_endpoint_loci(
     surface: &SurfaceGeometry,
     range: [f64; 2],
 ) -> Result<Option<[Point3; 2]>, cadmpeg_core::CodecError> {
-    let start = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[0])? {
+    let start = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, range[0]))? {
         Ok(start) => start,
         Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
         Err(_) => return Ok(None),
     };
-    let end = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[1])? {
+    let end = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, range[1]))? {
         Ok(end) => end,
         Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
         Err(_) => return Ok(None),
     };
     // A non-finite locus is kept as the evaluation reached it.
     let locus = |uv: cadmpeg_ir::units::FinitePoint2| -> Result<_, cadmpeg_core::CodecError> {
-        match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)? {
+        match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v))? {
             Ok(point) => Ok(Some(point.get())),
             Err(failure) => Ok(failure.non_finite()?),
         }
@@ -3620,7 +3620,7 @@ fn solve_planar_chart_rechart(
                 };
                 let uv = cadmpeg_ir::math::Point2::from(uv);
                 let Some(back) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, target, uv.u, uv.v)?,
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, target, uv.u, uv.v))?,
                 )?
                 else {
                     return Ok(None);
@@ -3780,12 +3780,12 @@ fn pcurve_lift_reaches_endpoints(
     }
     // A non-finite lift is measured as a finite one is.
     let lift = |parameter| {
-        let uv = match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)? {
+        let uv = match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter))? {
             Ok(uv) => uv,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
         };
-        match cadmpeg_ir::eval::decode::surface_point_solved_for_decode(ctx, surface, uv.u, uv.v)? {
+        match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point_solved(ctx, surface, uv.u, uv.v))? {
             Ok(point) => Ok(Some(point.get())),
             Err(failure) => failure.non_finite(),
         }
@@ -3837,24 +3837,24 @@ fn unique_paired_surface_lift_match<'a, T>(
     let resolved_lift =
         |parameter| -> Result<Option<FinitePoint3>, cadmpeg_core::decode::ResourceLimit> {
             let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, resolved_pcurve, parameter)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, resolved_pcurve, parameter))?,
             )?
             else {
                 return Ok(None);
             };
-            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
                 resolved_surface,
                 uv.u,
                 uv.v,
-            )?)
+            ))?)
         };
     let mut resolved_loci = [None; 3];
     let mut partner_uv = [None; 3];
     for (index, parameter) in parameters.into_iter().enumerate() {
         resolved_loci[index] = resolved_lift(parameter)?;
         partner_uv[index] = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, partner_pcurve, parameter)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, partner_pcurve, parameter))?,
         )?;
         if resolved_loci[index].is_none() || partner_uv[index].is_none() {
             return Ok(None);
@@ -3868,7 +3868,7 @@ fn unique_paired_surface_lift_match<'a, T>(
                 return Ok(None);
             };
             let Some(partner) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v))?,
             )?
             else {
                 matches = false;
@@ -5376,7 +5376,7 @@ mod tests {
                 .count(),
             1
         );
-        let start = cadmpeg_ir::eval::pcurve_uv(
+        let start = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, 
             &context.sides()[0]
                 .pcurve
                 .as_ref()
@@ -5450,7 +5450,7 @@ mod tests {
             .sides()
             .iter()
             .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
-        let start = cadmpeg_ir::eval::pcurve_uv(
+        let start = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, 
             &context.sides()[0]
                 .pcurve
                 .as_ref()
@@ -5752,7 +5752,7 @@ mod tests {
         let loci = target_sites
             .iter()
             .map(|[u, v]| {
-                cadmpeg_ir::eval::surface_point_solved(&target, *u, *v)
+                cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target, *u, *v)
                     .expect("plane evaluates")
                     .get()
             })

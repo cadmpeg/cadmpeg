@@ -13,7 +13,7 @@ pub(super) fn curve_point(
     parameter: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve, parameter)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, curve, parameter))?,
     )?)
 }
 
@@ -23,7 +23,7 @@ pub(super) fn nurbs_curve_point(
     parameter: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, curve, parameter)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, curve, parameter))?,
     )?)
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn nurbs_surface_point(
     v: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx, surface, u, v)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v))?,
     )?)
 }
 
@@ -107,7 +107,7 @@ pub(crate) fn surface_point(
     v: f64,
 ) -> Result<Option<FinitePoint3>, CodecError> {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, u, v)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, u, v))?,
     )?)
 }
 

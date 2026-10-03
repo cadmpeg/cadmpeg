@@ -3,11 +3,13 @@
 //! topology it supports.
 
 use crate::document::CadIr;
-use crate::eval::{
-    curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
-    model_surface_point_by_id, nurbs_pcurve_parameter_domain, pcurve_tangent, pcurve_uv,
-    EvaluationFailure,
-};
+use crate::eval::curve_parameter_near_point;
+use crate::eval::model_curve_point_by_id;
+use crate::eval::model_surface_partials_by_id;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::nurbs_pcurve_parameter_domain;
+use crate::eval::pcurve_tangent;
+use crate::eval::EvaluationFailure;
 use crate::features::FinitePoint3;
 use crate::geometry::{
     pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -129,7 +131,7 @@ pub(super) fn check_procedural_support_consistency(
             let solved = context
                 .parameter_range()
                 .endpoints()
-                .map(|parameter| measured_point(curve_point(solved, parameter)));
+                .map(|parameter| measured_point(crate::eval::decode::curve_point(ctx, solved, parameter)));
             let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
                 continue;
             };
@@ -143,7 +145,7 @@ pub(super) fn check_procedural_support_consistency(
                 continue;
             };
             let base = base_endpoints.map(|parameter| match parameter {
-                Some(parameter) => measured_point(curve_point(base, parameter.get())),
+                Some(parameter) => measured_point(crate::eval::decode::curve_point(ctx, base, parameter.get())),
                 None => Ok(None),
             });
             let [Some(base_start), Some(base_end)] = [base[0]?, base[1]?] else {
@@ -228,7 +230,7 @@ pub(super) fn check_procedural_support_consistency(
         let solved = context
             .parameter_range()
             .endpoints()
-            .map(|parameter| measured_point(curve_point(curve, parameter)));
+            .map(|parameter| measured_point(crate::eval::decode::curve_point(ctx, curve, parameter)));
         let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
             continue;
         };
@@ -291,7 +293,7 @@ fn check_support_sides(
                 else {
                     return Ok(None);
                 };
-                let uv = match pcurve_uv(&pcurve.geometry, parameter.get()) {
+                let uv = match crate::eval::decode::pcurve_uv(ctx, &pcurve.geometry, parameter.get()) {
                     Ok(uv) => uv.get(),
                     Err(failure) => {
                         let Some(uv) = failure.non_finite()? else {
@@ -392,8 +394,8 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let (Some(at_start), Some(at_end)) = (
-            measured_point(curve_point(geometry, start_t))?,
-            measured_point(curve_point(geometry, end_t))?,
+            measured_point(crate::eval::decode::curve_point(ctx, geometry, start_t))?,
+            measured_point(crate::eval::decode::curve_point(ctx, geometry, end_t))?,
         ) else {
             continue;
         };
@@ -448,8 +450,8 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let (Some(at_start), Some(at_end)) = (
-            measured_point(curve_point(geometry, start_t))?,
-            measured_point(curve_point(geometry, end_t))?,
+            measured_point(crate::eval::decode::curve_point(ctx, geometry, start_t))?,
+            measured_point(crate::eval::decode::curve_point(ctx, geometry, end_t))?,
         ) else {
             continue;
         };
@@ -663,7 +665,7 @@ pub(super) fn check_pcurve_surface_consistency(
             ctx.charge_work(1, "pcurve interval candidate")?;
             // A non-finite pcurve or surface point is measured as a finite
             // one is: the distance it produces is the finding's measure.
-            let pcurve_point = |geometry, parameter| match pcurve_uv(geometry, parameter) {
+            let pcurve_point = |geometry, parameter| match crate::eval::decode::pcurve_uv(ctx, geometry, parameter) {
                 Ok(uv) => Ok(Some(uv.get())),
                 Err(failure) => failure.non_finite(),
             };
@@ -851,7 +853,7 @@ fn mapped_pcurve_parameter_near_point(
     };
     // A non-finite pcurve or surface point is evaluated as a finite one is;
     // the search reads its non-finite distance.
-    let uv_at = |parameter: FiniteReal| match pcurve_uv(pcurve_geometry, parameter.get()) {
+    let uv_at = |parameter: FiniteReal| match crate::eval::decode::pcurve_uv(ctx, pcurve_geometry, parameter.get()) {
         Ok(uv) => Ok(Some(uv.get())),
         Err(failure) => failure.non_finite(),
     };

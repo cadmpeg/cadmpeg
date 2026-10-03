@@ -44,7 +44,7 @@ fn ellipse() -> CurveGeometry {
 }
 
 fn evaluated(geometry: &CurveGeometry, parameter: f64) -> [f64; 3] {
-    let point = cadmpeg_ir::eval::curve_point(geometry, parameter).expect("conic point");
+    let point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, geometry, parameter).expect("conic point");
     [point.x, point.y, point.z]
 }
 

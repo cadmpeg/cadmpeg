@@ -3,10 +3,12 @@
 //! the point an evaluation that leaves the finite range reached; an arm with
 //! no value reports that.
 
-use crate::eval::{
-    curve_point, model_curve_point_by_id, model_surface_point, model_surface_point_by_id,
-    model_surface_point_by_id_with_budget, pcurve_tangent, pcurve_uv, EvaluationFailure,
-};
+use crate::eval::model_curve_point_by_id;
+use crate::eval::model_surface_point;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::model_surface_point_by_id_with_budget;
+use crate::eval::pcurve_tangent;
+use crate::eval::EvaluationFailure;
 use crate::features::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
 use crate::geometry::pcurve::{CirclePcurve, LinePcurve, OffsetPcurve, PcurveGeometry};
@@ -161,14 +163,14 @@ fn a_nurbs_curve_whose_projection_overflows_reports_the_point_it_reached() {
         .expect("NURBS curve fixture"),
     ));
     assert_eq!(
-        curve_point(&curve, 0.5),
+        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve, 0.5),
         Err(EvaluationFailure::NonFinite(Point3::new(
             f64::INFINITY,
             0.0,
             0.0
         )))
     );
-    assert_eq!(curve_point(&curve, 2.0), Err(EvaluationFailure::NoValue));
+    assert_eq!(crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &curve, 2.0), Err(EvaluationFailure::NoValue));
 }
 
 /// A model with `curves` and the procedural curve `definition` builds on
@@ -497,7 +499,7 @@ fn an_offset_pcurve_whose_basis_acceleration_overflows_reports_its_tangent_as_le
     let offset = PcurveGeometry::Offset(
         OffsetPcurve::try_new(1.0, Box::new(basis)).expect("offset pcurve fixture"),
     );
-    assert!(pcurve_uv(&offset, parameter).is_ok());
+    assert!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &offset, parameter).is_ok());
     assert!(matches!(
         pcurve_tangent(&offset, parameter),
         Err(EvaluationFailure::NonFinite(tangent)) if tangent.u.is_nan() && tangent.v.is_nan()
@@ -521,7 +523,7 @@ fn an_offset_pcurve_over_an_offset_basis_has_no_tangent() {
     let outer =
         PcurveGeometry::Offset(OffsetPcurve::try_new(1.0, Box::new(inner)).expect("offset pcurve"));
     assert_eq!(
-        pcurve_uv(&outer, 0.5).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &outer, 0.5).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(0.5, 2.0))
     );
     assert_eq!(pcurve_tangent(&outer, 0.5), Err(EvaluationFailure::NoValue));
@@ -556,7 +558,7 @@ fn an_extrusion_whose_directrix_tangent_overflows_has_its_finite_point_on_every_
         )
         .expect("placed curve fixture"),
     ));
-    assert!(crate::eval::curve_tangent(&directrix, 0.0).is_err());
+    assert!(crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &directrix, 0.0).is_err());
     let (ir, surface, geometry) = curve_surface_model(vec![directrix], |curves| {
         ProceduralSurfaceDefinition::Extrusion(
             ExtrusionSurfaceConstruction::try_new(
@@ -797,7 +799,7 @@ fn a_hyperbola_whose_scaled_cosh_alone_overflows_keeps_its_point_and_second_deri
         assert_eq!(value.z, 0.0);
     };
     lanes(
-        curve_point(&hyperbola, t)
+        crate::eval::decode::curve_point(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, t)
             .expect("point")
             .get()
             .vector_from(Point3::new(0.0, 0.0, 0.0)),
@@ -808,7 +810,7 @@ fn a_hyperbola_whose_scaled_cosh_alone_overflows_keeps_its_point_and_second_deri
             .get(),
     );
     assert_eq!(
-        crate::eval::curve_tangent(&hyperbola, t),
+        crate::eval::decode::curve_tangent(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, t),
         Err(EvaluationFailure::NonFinite(()))
     );
 }

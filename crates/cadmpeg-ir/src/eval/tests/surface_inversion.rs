@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface inversion regressions.
 
-use super::{
-    bilinear_surface, nurbs_surface_parameter_near_point, nurbs_surface_parameter_within_tolerance,
-    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point, NurbsSurface,
-    NurbsSurfaceAxis, NurbsSurfaceLanes, Point2, Point3, WorkBudget,
-};
+use super::bilinear_surface;
+use super::nurbs_surface_parameter_near_point;
+use super::nurbs_surface_parameter_within_tolerance;
+use super::nurbs_surface_parameter_within_tolerance_with_budget;
+use super::NurbsSurface;
+use super::NurbsSurfaceAxis;
+use super::NurbsSurfaceLanes;
+use super::Point2;
+use super::Point3;
+use super::WorkBudget;
 
 const EPS_INVERSE_CONTRACT_MARGIN: f64 = 1.0e-12;
 const EPS_SURFACE_INVERSE_FIT: f64 = 1.0e-10;
@@ -164,7 +169,7 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
     let point = Point3::new(0.3, 0.7, 0.2);
     let parameters = nurbs_surface_parameter_near_point(&surface, point, None).expect("resource allocation did not fail")
         .expect("bounded local surface candidate");
-    let mapped = nurbs_surface_point(&surface, parameters.u, parameters.v).expect("surface point");
+    let mapped = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, parameters.u, parameters.v).expect("surface point");
     assert!(mapped.distance(point) <= 0.2 + f64::EPSILON * 1024.0);
     assert!((parameters.u - 0.3).abs() < f64::EPSILON * 1024.0);
     assert!((parameters.v - 0.7).abs() < f64::EPSILON * 1024.0);
@@ -187,7 +192,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
         false,
     ).expect("fixture constructor admission")
     .unwrap();
-    let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
+    let point = crate::eval::decode::nurbs_surface_point(crate::eval::admission::EvaluationAdmission::Standard, &surface, 0.75, 0.4).expect("surface point");
     let parameters = nurbs_surface_parameter_within_tolerance(&cadmpeg_test_support::service_decode_context(), &surface, point.get(), None, EPS_SURFACE_INVERSE_FIT).expect("resource allocation did not fail")
         .expect("rational multi-span inverse");
     assert!((parameters.u - 0.75).abs() < 1.0e-9);

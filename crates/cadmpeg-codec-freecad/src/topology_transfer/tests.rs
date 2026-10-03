@@ -1744,7 +1744,7 @@ Co 1001000 +2 1 +2 3 *
     assert_eq!(placed.transform().rows()[0][0], -2.0);
     assert_eq!(placed.transform().rows()[1][1], 2.0);
     let origin =
-        cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
+        cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface.geometry, 0.0, 0.0).expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);
     for edge in &result.ir().model.edges {
         let curve = result
@@ -1756,9 +1756,9 @@ Co 1001000 +2 1 +2 3 *
             .expect("required invariant");
         let range = edge.param_range().expect("located edge parameter range");
         let start =
-            cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]).expect("required invariant");
+            cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve.geometry, range[0]).expect("required invariant");
         let end =
-            cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
+            cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())

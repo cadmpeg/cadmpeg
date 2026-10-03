@@ -8,7 +8,7 @@ use crate::reader::geometry::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
-use cadmpeg_ir::eval::nurbs_curve_point_at;
+
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
@@ -423,8 +423,8 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     ).expect("fixture constructor admission")
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let start_point = nurbs_curve_point_at(&nurbs, 0.0).expect("start point");
-    let end_point = nurbs_curve_point_at(&nurbs, 1.0).expect("end point");
+    let start_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &nurbs, 0.0).expect("start point");
+    let end_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &nurbs, 1.0).expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
     let start = nurbs_curve_parameter_near_point(&cadmpeg_test_support::service_decode_context(), &nurbs, start_point.get(), EPS_ENDPOINT_WITNESS, start_seed)
         .expect("resource allocation did not fail")
@@ -865,8 +865,8 @@ fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
     assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
     assert!(matches!(scaled, PcurveGeometry::Harmonic(_)));
     for parameter in [0.0, 0.25, 1.0, 2.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &original, parameter).unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &scaled, parameter).unwrap();
         assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);
         assert!((actual.v - expected.v * 3.0).abs() < 1.0e-12);
     }
@@ -890,8 +890,8 @@ fn anisotropic_replica_scaling_conjugates_the_parent_map() {
     let mut scaled = original.clone();
     assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
     for parameter in [0.0, 0.5, 1.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &original, parameter).unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &scaled, parameter).unwrap();
         assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);
         assert!((actual.v - expected.v * 3.0).abs() < 1.0e-12);
     }
@@ -922,8 +922,8 @@ fn anisotropic_parabola_scaling_scales_both_axes_and_keeps_the_parameter() {
         "{scaled:?}"
     );
     for parameter in [0.0, 0.25, 1.0, 2.0] {
-        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        let expected = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &original, parameter).unwrap();
+        let actual = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &scaled, parameter).unwrap();
         assert_eq!(actual, Point2::new(expected.u * 2.0, expected.v * 3.0));
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::eval::pcurve_tangent;
-use crate::eval::pcurve_uv;
+
 use crate::eval::pcurve_uv_differential;
 use crate::eval::EvaluationFailure;
 use crate::geometry::pcurve::PcurveGeometry;
@@ -66,10 +66,10 @@ fn analytic_pcurves_preserve_angular_parameterization() {
 
     let circle_tangent =
         pcurve_tangent(&circle, std::f64::consts::FRAC_PI_2).expect("circle tangent");
-    let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).expect("circle evaluates");
-    let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
-    let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
-    let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).expect("polar NURBS evaluates");
+    let circle = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &circle, std::f64::consts::FRAC_PI_2).expect("circle evaluates");
+    let ellipse = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
+    let polar = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
+    let polar_nurbs = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &polar_nurbs, 0.5).expect("polar NURBS evaluates");
     assert!((circle.u - 2.0).abs() < 1.0e-12 && (circle.v + 1.0).abs() < 1.0e-12);
     assert!((circle_tangent.u + 4.0).abs() < 1.0e-12 && circle_tangent.v.abs() < 1.0e-12);
     assert!(ellipse.u.abs() < 1.0e-12 && (ellipse.v - 3.0).abs() < 1.0e-12);
@@ -91,7 +91,7 @@ fn hyperbola_pcurve_keeps_its_point_when_only_the_tangent_overflows() {
         )
         .unwrap(),
     );
-    let point = pcurve_uv(&hyperbola, 1.0e-7).unwrap();
+    let point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &hyperbola, 1.0e-7).unwrap();
     assert!((point.u - 1.0).abs() < 1.0e-12);
     assert!(point.v.is_finite() && point.v > 1.0e300);
     assert!(matches!(
@@ -110,7 +110,7 @@ fn hyperbolic_pcurve_keeps_its_point_when_only_the_tangent_overflows() {
         )
         .unwrap(),
     );
-    let point = pcurve_uv(&hyperbolic, 1.0e-7).unwrap();
+    let point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &hyperbolic, 1.0e-7).unwrap();
     assert!((point.u - 1.0).abs() < 1.0e-12);
     assert!(point.v.is_finite() && point.v > 1.0e300);
     assert!(matches!(
@@ -125,7 +125,7 @@ fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
         crate::geometry::pcurve::SphericalGreatCirclePcurve::try_new(0.25, 0.5, 1.0, -0.75)
             .unwrap(),
     );
-    let point = pcurve_uv(&geometry, 1.5).expect("great-circle pcurve evaluates");
+    let point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &geometry, 1.5).expect("great-circle pcurve evaluates");
     assert_eq!(point.u, 1.0);
     assert_eq!(point.v, (-0.75_f64).atan());
 }
@@ -150,7 +150,7 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
     );
     let angle = std::f64::consts::FRAC_PI_3;
     assert_eq!(
-        pcurve_uv(&harmonic, angle).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &harmonic, angle).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(
             2.0 + 4.0 * angle.cos() + 2.0 * angle.sin(),
             3.0 - angle.cos() + 5.0 * angle.sin(),
@@ -158,7 +158,7 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
     );
     let parameter = 0.75_f64;
     assert_eq!(
-        pcurve_uv(&hyperbolic, parameter).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &hyperbolic, parameter).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(
             -3.0 + 2.5 * parameter.cosh() + 1.5 * parameter.sinh(),
             7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
@@ -187,7 +187,7 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
         );
 
         assert_eq!(
-            pcurve_uv(&geometry, 2.0).map(crate::units::FinitePoint2::get),
+            crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &geometry, 2.0).map(crate::units::FinitePoint2::get),
             Ok(Point2::new(2.0, 26.0))
         );
         assert_eq!(
@@ -239,11 +239,11 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         )
         .unwrap(),
     );
-    let point = pcurve_uv(&line, 0.5).expect("regular line offset evaluates");
+    let point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &line, 0.5).expect("regular line offset evaluates");
     assert!((point.u - 0.9).abs() < 1.0e-12);
     assert!((point.v - 5.2).abs() < 1.0e-12);
     assert_eq!(
-        pcurve_uv(&circle, 0.0).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &circle, 0.0).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(3.0, 0.0))
     );
     assert_eq!(
@@ -277,7 +277,7 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     );
     for parameter in [0.0, 0.5, 1.0] {
         let point =
-            pcurve_uv(&rational_arc, parameter).expect("regular rational NURBS offset evaluates");
+            crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &rational_arc, parameter).expect("regular rational NURBS offset evaluates");
         let tangent = pcurve_tangent(&rational_arc, parameter).expect("rational offset tangent");
         assert!((point.u.hypot(point.v) - 0.75).abs() < 1.0e-12);
         assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1.0e-12);
@@ -286,7 +286,7 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     let nested = PcurveGeometry::Offset(
         crate::geometry::pcurve::OffsetPcurve::try_new(1.0, Box::new(line)).unwrap(),
     );
-    let nested_point = pcurve_uv(&nested, 0.5).expect("nested offset point");
+    let nested_point = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &nested, 0.5).expect("nested offset point");
     assert!((nested_point.u - 0.1).abs() < 1.0e-12);
     assert!((nested_point.v - 5.8).abs() < 1.0e-12);
     assert_eq!(
@@ -321,15 +321,15 @@ fn evaluation_extrapolates_past_a_declared_domain_for_every_carrier() {
     // The bare NURBS extrapolates its end span on both sides of the knot
     // interval, so out-of-domain is not a refusal anywhere in this evaluator.
     assert_eq!(
-        pcurve_uv(&nurbs, 0.5).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &nurbs, 0.5).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(0.5, 1.0))
     );
     assert_eq!(
-        pcurve_uv(&nurbs, 2.0).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &nurbs, 2.0).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(2.0, 4.0))
     );
     assert_eq!(
-        pcurve_uv(&nurbs, -1.0).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &nurbs, -1.0).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(-1.0, -2.0))
     );
     assert_eq!(
@@ -341,7 +341,7 @@ fn evaluation_extrapolates_past_a_declared_domain_for_every_carrier() {
     // answers exactly what its basis answers at every parameter, inside the
     // interval and outside it.
     for parameter in [-1.0, 0.1, 0.25, 0.5, 0.75, 2.0] {
-        assert_eq!(pcurve_uv(&trimmed, parameter), pcurve_uv(&nurbs, parameter));
+        assert_eq!(crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &trimmed, parameter), crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &nurbs, parameter));
         assert_eq!(
             pcurve_tangent(&trimmed, parameter),
             pcurve_tangent(&nurbs, parameter)
@@ -369,14 +369,14 @@ fn an_offset_pcurve_whose_point_overflows_reports_the_non_finite_point() {
     // The left normal of the upward line is -u, so a negative distance moves
     // the finite basis point past the largest finite u.
     assert_eq!(
-        pcurve_uv(&offset(-f64::MAX), 0.0),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &offset(-f64::MAX), 0.0),
         Err(crate::eval::EvaluationFailure::NonFinite(Point2::new(
             f64::INFINITY,
             0.0
         )))
     );
     assert_eq!(
-        pcurve_uv(&offset(f64::MAX), 0.0).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &offset(f64::MAX), 0.0).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(0.0, 0.0))
     );
     assert_eq!(

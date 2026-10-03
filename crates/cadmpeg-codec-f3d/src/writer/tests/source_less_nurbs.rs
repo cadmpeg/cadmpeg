@@ -1259,7 +1259,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     let u = 0.5;
     let v = 0.25;
     let directrix_point =
-        cadmpeg_ir::eval::curve_point(directrix_geometry.expect("typed extrusion directrix"), u)
+        cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry.expect("typed extrusion directrix"), u)
             .expect("directrix evaluation");
     let surface_geometry = decoded
         .ir()

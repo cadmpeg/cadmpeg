@@ -28,7 +28,7 @@ use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::eval::curve_point;
+
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -778,10 +778,10 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let range = [0.2, 1.1];
     let span = CurveSpan {
         range: cadmpeg_ir::units::FiniteVector::new(range).expect("finite test range"),
-        start: curve_point(&geometry, range[0])
+        start: cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, range[0])
             .expect("start evaluates")
             .get(),
-        end: curve_point(&geometry, range[1])
+        end: cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, range[1])
             .expect("end evaluates")
             .get(),
     };

@@ -644,7 +644,7 @@ pub(super) fn project(
             continue;
         };
         let Some(evaluated_start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, parameter_range[0])?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[0]))?,
         )?
         else {
             push_entity_loss(
@@ -656,7 +656,7 @@ pub(super) fn project(
             continue;
         };
         let Some(evaluated_end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, parameter_range[1])?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[1]))?,
         )?
         else {
             push_entity_loss(

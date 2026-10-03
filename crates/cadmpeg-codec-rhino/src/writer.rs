@@ -1338,7 +1338,7 @@ fn validate_nurbs_trim(
     sense: cadmpeg_ir::topology::Sense,
     explicit: &WritablePcurve<'_>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
+    
     use cadmpeg_ir::topology::Sense;
 
     let u_count = surface.u_count();
@@ -1420,7 +1420,7 @@ fn validate_nurbs_trim(
                 .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
             let parameter = sample.get();
             // A non-finite pcurve point is refused by the domain test.
-            let uv = match pcurve_uv(&pcurve.geometry, parameter) {
+            let uv = match cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter) {
                 Ok(uv) => uv.get(),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1436,7 +1436,7 @@ fn validate_nurbs_trim(
                 )));
             }
             // A non-finite surface point is measured as a finite one is.
-            let mapped = match nurbs_surface_point(surface, uv.u, uv.v) {
+            let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v) {
                 Ok(point) => point.get(),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(

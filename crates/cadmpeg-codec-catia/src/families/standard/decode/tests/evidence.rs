@@ -39,7 +39,7 @@ use crate::families::standard::records::SurfacePrefix;
 use crate::test_support::test_b5::{append_b5_record, b5_closed_triangle_stream};
 use crate::test_support::test_bytes::le_f64;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::surface_point;
+
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
@@ -510,7 +510,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid ConeSurface fixture"),
     ));
-    let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point").get();
+    let cone_point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cone, 0.5, 1.0).expect("cone point").get();
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
     assert!((cone_uv.u - 0.5).abs() < 1.0e-12);
     assert_eq!(cone_uv.v, 1.0);
@@ -524,7 +524,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid SphereSurface fixture"),
     ));
-    let sphere_point = surface_point(&sphere, 0.5, 0.25)
+    let sphere_point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &sphere, 0.5, 0.25)
         .expect("sphere point")
         .get();
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
@@ -540,7 +540,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid SphereSurface fixture"),
     ));
-    let signed_sphere_point = surface_point(&signed_sphere, 0.5, 0.25)
+    let signed_sphere_point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &signed_sphere, 0.5, 0.25)
         .expect("signed sphere point")
         .get();
     assert_eq!(
@@ -558,7 +558,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid TorusSurface fixture"),
     ));
-    let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point").get();
+    let torus_point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &torus, 0.5, 0.25).expect("torus point").get();
     assert_eq!(point_on_surface(torus_point, &torus), Ok(true));
 }
 

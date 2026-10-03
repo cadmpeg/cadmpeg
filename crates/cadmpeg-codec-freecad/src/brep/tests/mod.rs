@@ -793,9 +793,9 @@ fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
         assert_eq!(poles.len(), 14);
         assert_eq!(poles[12], poles[0]);
         assert_eq!(poles[13], poles[1]);
-        let start = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 0.0, 0.5)
+        let start = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &normalized, 0.0, 0.5)
             .expect("periodic start point");
-        let end = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 1.0, 0.5)
+        let end = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &normalized, 1.0, 0.5)
             .expect("periodic end point");
         assert!((start.x - end.x).abs() <= 1.0e-12);
         assert!((start.y - end.y).abs() <= 1.0e-12);

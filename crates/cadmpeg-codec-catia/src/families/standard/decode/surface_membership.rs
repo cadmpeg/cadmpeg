@@ -17,7 +17,7 @@ fn nurbs_surface_point_distance(
     uv: Point2,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let Some(position) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v),
+        cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, uv.u, uv.v),
     )?
     else {
         return Ok(None);

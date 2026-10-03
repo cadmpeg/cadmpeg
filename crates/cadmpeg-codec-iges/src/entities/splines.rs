@@ -171,14 +171,14 @@ fn add_edge(
     };
     let [lower, upper] = parameter_range.endpoints();
     let Some(start) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, lower)?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, lower))?,
     )?
     else {
         return Ok(None);
     };
-    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
+    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
         ctx, &nurbs, upper,
-    )?)?
+    ))?)?
     else {
         return Ok(None);
     };

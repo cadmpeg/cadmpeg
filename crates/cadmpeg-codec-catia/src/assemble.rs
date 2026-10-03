@@ -414,12 +414,12 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         return Ok(None);
     }
     let Some(surface_midpoint) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
             ctx,
             surface,
             midpoint_uv.u,
             midpoint_uv.v,
-        )?)?
+        ))?)?
     else {
         return Ok(None);
     };

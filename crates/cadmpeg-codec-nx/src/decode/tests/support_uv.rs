@@ -13,7 +13,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::eval::{model_surface_point_by_id, pcurve_uv};
+use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::ProceduralCurveId;
 use cadmpeg_ir::math::Point3;
@@ -273,7 +273,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
             parameter_range
                 .map(|parameter| {
-                    let uv = pcurve_uv(&pcurve.geometry, parameter)
+                    let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter)
                         .expect("pcurve endpoint")
                         .get();
                     model_surface_point_by_id(&index, &surface, uv.u, uv.v)

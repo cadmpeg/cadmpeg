@@ -39,7 +39,7 @@ fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
         ).expect("fixture constructor admission")
         .expect("valid nonclamped NURBS"),
     ));
-    let evaluated_start = cadmpeg_ir::eval::curve_point(&geometry, 1.0).expect("start point");
+    let evaluated_start = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &geometry, 1.0).expect("start point");
     assert_eq!(evaluated_start.get(), Point3::new(1.0, 0.0, 0.0));
     ir.model.curves[1].geometry = geometry;
     let mut output = Vec::new();

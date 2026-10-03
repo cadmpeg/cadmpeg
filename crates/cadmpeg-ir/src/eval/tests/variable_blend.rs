@@ -1099,7 +1099,7 @@ fn a_circular_variable_blend_whose_contact_pcurve_has_no_tangent_keeps_its_point
             .expect("line pcurve fixture"),
     )));
     assert_eq!(
-        crate::eval::pcurve_uv(&pcurve, 0.5).map(crate::units::FinitePoint2::get),
+        crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &pcurve, 0.5).map(crate::units::FinitePoint2::get),
         Ok(Point2::new(3.0, 0.5))
     );
     assert_eq!(

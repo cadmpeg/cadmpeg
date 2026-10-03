@@ -643,8 +643,8 @@ fn parabola_coordinate_scaling_preserves_parameterization() {
         let mut scaled = original.clone();
         scaled.try_scale_coordinates(scales).unwrap();
         for t in [-2.0, 0.0, 1.0, 3.0] {
-            let before = crate::eval::pcurve_uv(&original, t).unwrap();
-            let after = crate::eval::pcurve_uv(&scaled, t).unwrap();
+            let before = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &original, t).unwrap();
+            let after = crate::eval::decode::pcurve_uv(crate::eval::admission::EvaluationAdmission::Standard, &scaled, t).unwrap();
             assert_eq!(
                 after,
                 Point2::new(before.u * scales[0], before.v * scales[1])

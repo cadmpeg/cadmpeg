@@ -4,7 +4,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy}
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::eval::pcurve_uv;
+
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -170,7 +170,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         .unwrap(),
     );
     let exact_parameter = std::f64::consts::PI;
-    let exact_uv = pcurve_uv(&pcurve, exact_parameter).expect("witness pcurve is evaluable");
+    let exact_uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, exact_parameter).expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
     let index = ModelIndex::new(&ir);
     let arena = DecodeArena::new();
@@ -184,7 +184,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         .expect("resource allocation did not fail")
         .expect("bounded search returns an evaluated witness");
     assert!(bounded.0 > cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
-    let exact = pcurve_uv(&pcurve, exact_parameter).expect("exact point remains evaluable");
+    let exact = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve, exact_parameter).expect("exact point remains evaluable");
     assert!(Point3::new(exact.u, exact.v, 0.0).distance(target) <= f64::EPSILON);
 }
 
@@ -278,7 +278,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     let index = ModelIndex::new(decoded.ir());
     let point_set_residual = |fraction: f64| {
         let parameter = parameter_range[0].mul_add(1.0 - fraction, parameter_range[1] * fraction);
-        let uv = pcurve_uv(&pcurve.geometry, parameter).expect("evaluate pcurve");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter).expect("evaluate pcurve");
         let mapped = model_surface_point_by_id(&index, &surface_id, uv.u, uv.v)
             .expect("map pcurve through plane");
         (mapped.distance(curve_center) - curve_radius).abs()

@@ -137,7 +137,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                 })
     );
     for parameter in [-1.0, 0.0, 1.0] {
-        let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
+        let point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &selected.0, parameter)
             .expect("coaxial cone ellipse point");
         let point = [point.x, point.y, point.z];
         assert!(point_on_carrier(point, elliptical_first));
@@ -181,7 +181,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                 })
     );
     for parameter in [-1.0, 0.0, 1.0] {
-        let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
+        let point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &selected.0, parameter)
             .expect("reciprocal-frame section point");
         let point = [point.x, point.y, point.z];
         assert!(point_on_carrier(point, elliptical_first));

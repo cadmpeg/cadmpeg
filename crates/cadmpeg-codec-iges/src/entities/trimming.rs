@@ -871,7 +871,7 @@ fn linear_model_nurbs_points(
     )?;
     for parameter in parameters {
         let Some(point) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter))?,
         )?
         else {
             return Ok(None);
@@ -911,9 +911,9 @@ fn linear_pcurve_points(
         "iges linear parameter boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
             ctx, geometry, parameter,
-        )?)?
+        ))?)?
         else {
             return Ok(None);
         };
@@ -1710,9 +1710,9 @@ fn pcurves_agree(
 ) -> Result<bool, CodecError> {
     let mut mapped = ctx.collection_vec(pcurves.len(), "iges trimmed mapped pcurves")?;
     for (geometry, range) in pcurves {
-        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
             ctx, geometry, range[0],
-        )?)?
+        ))?)?
         else {
             return Ok(false);
         };
@@ -1722,9 +1722,9 @@ fn pcurves_agree(
         else {
             return Ok(false);
         };
-        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
+        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
             ctx, geometry, range[1],
-        )?)?
+        ))?)?
         else {
             return Ok(false);
         };
@@ -1769,14 +1769,14 @@ fn edge_range_matches_curve(
     }
     let geometry = &curve.geometry;
     let Some(evaluated_start) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, geometry, range[0])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, geometry, range[0]))?,
     )?
     else {
         return Ok(false);
     };
-    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
         ctx, geometry, range[1],
-    )?)?
+    ))?)?
     else {
         return Ok(false);
     };

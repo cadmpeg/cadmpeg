@@ -247,10 +247,10 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         };
         assert!(nurbs.control_points().len() > 2);
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, parameter)
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter)
                 .unwrap()
                 .get();
-            let point = cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v)
+            let point = cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &ir.model.surfaces[1].geometry, uv.u, uv.v)
                 .unwrap()
                 .get();
             let angle = std::f64::consts::TAU * parameter;
@@ -361,10 +361,10 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
         let target_pcurve = context.sides()[1].pcurve.as_ref().unwrap();
         assert!(nurbs.control_points().len() > 2);
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let source_uv = cadmpeg_ir::eval::pcurve_uv(&source_pcurve.geometry, parameter)
+            let source_uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_pcurve.geometry, parameter)
                 .unwrap()
                 .get();
-            let target_uv = cadmpeg_ir::eval::pcurve_uv(&target_pcurve.geometry, parameter)
+            let target_uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &target_pcurve.geometry, parameter)
                 .unwrap()
                 .get();
             assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
@@ -1196,7 +1196,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             .expect("charted tolerant intersection inverts");
             assert!((inverted.get() - parameter).abs() < 1.0e-8);
             let points: [Point3; 2] = std::array::from_fn(|side| {
-                let uv = cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter)
+                let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &parameterization.pcurves[side], parameter)
                     .unwrap()
                     .get();
                 let surface = ir
@@ -1205,7 +1205,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     .iter()
                     .find(|surface| surface.id == supports[side])
                     .unwrap();
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v)
+                cadmpeg_ir::eval::decode::surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &surface.geometry, uv.u, uv.v)
                     .unwrap()
                     .get()
             });

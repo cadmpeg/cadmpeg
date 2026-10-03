@@ -2067,7 +2067,7 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 mod tests {
     #[test]
     fn numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities() {
-        use cadmpeg_ir::eval::curve_point_solved;
+        
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
         let cases = [
             NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
@@ -2106,9 +2106,9 @@ mod tests {
                 for fraction in [0.0, 0.125, 0.25, 0.5, 0.625, 0.875, 1.0] {
                     let at = start + (end - start) * fraction;
                     let expected =
-                        curve_point_solved(&SolvedCurveGeometry::Nurbs(curve.clone()), at).unwrap();
+                        cadmpeg_ir::eval::decode::curve_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &SolvedCurveGeometry::Nurbs(curve.clone()), at).unwrap();
                     let actual =
-                        curve_point_solved(&SolvedCurveGeometry::Nurbs(elevated.clone()), at)
+                        cadmpeg_ir::eval::decode::curve_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &SolvedCurveGeometry::Nurbs(elevated.clone()), at)
                             .unwrap();
                     assert!(actual.distance(expected.get()) <= 64.0 * f64::EPSILON);
                 }
@@ -2118,7 +2118,7 @@ mod tests {
 
     #[test]
     fn numerical_audit_join_preserves_independently_scaled_rational_segments() {
-        use cadmpeg_ir::eval::curve_point_solved;
+        
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
         let first = NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 
             2,
@@ -2147,7 +2147,7 @@ mod tests {
         let joined =
             with_test_context(|ctx| super::join_nurbs_segments(ctx, vec![first, second], 0))
                 .unwrap();
-        let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(joined.curve), 1.5).unwrap();
+        let actual = cadmpeg_ir::eval::decode::curve_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &SolvedCurveGeometry::Nurbs(joined.curve), 1.5).unwrap();
         assert_eq!(actual, Point3::new(0.25, 0.75, 0.0));
     }
 

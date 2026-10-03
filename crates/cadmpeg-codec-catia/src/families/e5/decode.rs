@@ -2849,13 +2849,13 @@ fn e5_pcurve_on_surface(
                 return Ok(None);
             }
             let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[0].u, uv[0].v)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv[0].u, uv[0].v))?,
             )?
             else {
                 return Ok(None);
             };
             let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv[1].u, uv[1].v)?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv[1].u, uv[1].v))?,
             )?
             else {
                 return Ok(None);
@@ -2911,23 +2911,23 @@ fn e5_pcurve_on_surface(
                 let start_angle = angular_range[0];
                 let end_angle = angular_range[1];
                 let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                         ctx,
                         surface,
                         (center[0] + radius * start_angle.cos()) * scale[0],
                         (center[1] + radius * start_angle.sin()) * scale[1],
-                    )?,
+                    ))?,
                 )?
                 else {
                     return Ok(None);
                 };
                 let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                         ctx,
                         surface,
                         (center[0] + radius * end_angle.cos()) * scale[0],
                         (center[1] + radius * end_angle.sin()) * scale[1],
-                    )?,
+                    ))?,
                 )?
                 else {
                     return Ok(None);
@@ -2986,15 +2986,15 @@ fn e5_pcurve_on_surface(
                 return Ok(None);
             };
             let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                     ctx, surface, first[0], first[1],
-                )?,
+                ))?,
             )?
             else {
                 return Ok(None);
             };
             let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, last[0], last[1])?,
+                cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, last[0], last[1]))?,
             )?
             else {
                 return Ok(None);
@@ -3048,29 +3048,29 @@ fn e5_pcurve_on_surface(
             {
                 let range = range.map(FiniteReal::get);
                 let Some(start_uv) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, range[0])?,
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]))?,
                 )?
                 else {
                     return Ok(None);
                 };
                 let Some(end_uv) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, &geometry, range[1])?,
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]))?,
                 )?
                 else {
                     return Ok(None);
                 };
                 let Some(start) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                         ctx, surface, start_uv.u, start_uv.v,
-                    )?,
+                    ))?,
                 )?
                 else {
                     return Ok(None);
                 };
                 let Some(end) = cadmpeg_ir::eval::finite_or_refusal(
-                    cadmpeg_ir::eval::decode::surface_point_for_decode(
+                    cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                         ctx, surface, end_uv.u, end_uv.v,
-                    )?,
+                    ))?,
                 )?
                 else {
                     return Ok(None);
@@ -3229,7 +3229,7 @@ fn e5_boundary_curve(
         };
         let direction = line_pcurve.direction().as_raw();
         let start_uv = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[0]) {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, range[0])) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error.into())),
             },
@@ -3239,7 +3239,7 @@ fn e5_boundary_curve(
             Err(limit) => return Some(Err(limit.into())),
         };
         let end_uv = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, range[1]) {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, range[1])) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error.into())),
             },
@@ -3538,25 +3538,25 @@ fn e5_circle_carriers_have_same_ordered_sweep(
         return Ok(false);
     }
     let Some(left_start) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, left, left_range[0])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, left, left_range[0]))?,
     )?
     else {
         return Ok(false);
     };
     let Some(left_end) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, left, left_range[1])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, left, left_range[1]))?,
     )?
     else {
         return Ok(false);
     };
     let Some(right_start) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, right, right_range[0])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, right, right_range[0]))?,
     )?
     else {
         return Ok(false);
     };
     let Some(right_end) = cadmpeg_ir::eval::finite_or_refusal(
-        cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, right, right_range[1])?,
+        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, right, right_range[1]))?,
     )?
     else {
         return Ok(false);
@@ -3864,7 +3864,7 @@ mod route_tests {
     use crate::families::e5::records::E5Surface;
 
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::eval::pcurve_uv;
+    
     use cadmpeg_ir::geometry::{
         nurbs::NurbsSurface,
         pcurve::{PcurveGeometry, PcurveNurbs},
@@ -4986,7 +4986,7 @@ mod route_tests {
             (std::f64::consts::FRAC_PI_2, [2.0, 1.0]),
             (std::f64::consts::PI, [-2.0, -3.0]),
         ] {
-            let point = pcurve_uv(&arc, parameter).expect("arc evaluation");
+            let point = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &arc, parameter).expect("arc evaluation");
             assert!((point.u - expected[0]).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
             assert!((point.v - expected[1]).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         }

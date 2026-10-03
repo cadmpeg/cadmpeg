@@ -7,7 +7,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::eval::pcurve_uv;
+
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -249,7 +249,7 @@ fn align_sheet_edge_to_pcurve(
         _ => [0.0, 1.0],
     };
     let positions = parameter_range.map(|parameter| {
-        let uv = pcurve_uv(geometry, parameter).expect("test pcurve endpoint");
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, geometry, parameter).expect("test pcurve endpoint");
         Point3::new(uv.u, uv.v, 0.0)
     });
     for (point_id, position) in point_ids.into_iter().zip(positions) {
@@ -304,10 +304,10 @@ fn negative_cone_writes_reversed_axis_positive_angle_and_exact_points() {
         .expect("written STEP cone"),
     );
     for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
-        let source_point = cadmpeg_ir::eval::surface_point_solved(&source, u, v)
+        let source_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, u, v)
             .expect("source point")
             .get();
-        let written_point = cadmpeg_ir::eval::surface_point_solved(&written, -u, -v)
+        let written_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &written, -u, -v)
             .expect("written point")
             .get();
         let distance = (source_point.x - written_point.x)
@@ -367,10 +367,10 @@ fn negative_cone_round_trip_preserves_point_set_and_face_sense() {
         .expect("written cone face");
     assert_eq!(written_face.sense, source_face_sense);
     for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
-        let source_point = cadmpeg_ir::eval::surface_point_solved(&source, u, v)
+        let source_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, u, v)
             .expect("source point")
             .get();
-        let written_point = cadmpeg_ir::eval::surface_point_solved(&written, -u, -v)
+        let written_point = cadmpeg_ir::eval::decode::surface_point_solved(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &written, -u, -v)
             .expect("written point")
             .get();
         let distance = (source_point.x - written_point.x)

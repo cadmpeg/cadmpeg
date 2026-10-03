@@ -253,13 +253,13 @@ fn source_parameter_range(
             continue;
         };
         let Some(evaluated_start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[0])?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]))?,
         )?
         else {
             continue;
         };
         let Some(evaluated_end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[1])?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]))?,
         )?
         else {
             continue;
@@ -778,11 +778,11 @@ pub(super) fn project(
                 };
                 let offset_direction = normal_direction.cross(direction);
                 let Some(source_start) =
-                    finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved_for_decode(
+                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
                         ctx,
                         &offset_source_geometry,
                         start,
-                    )?)?
+                    ))?)?
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -793,11 +793,11 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(source_end) =
-                    finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved_for_decode(
+                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
                         ctx,
                         &offset_source_geometry,
                         end,
-                    )?)?
+                    ))?)?
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -1027,11 +1027,11 @@ pub(super) fn project(
                     };
                     let independent = inverse_parameter(function_parameter);
                     let Some(base) = finite_or_refusal(
-                        cadmpeg_ir::eval::decode::curve_point_solved_for_decode(
+                        cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
                             ctx,
                             &offset_source_geometry,
                             source_parameter(independent),
-                        )?,
+                        ))?,
                     )?
                     else {
                         controls.clear();
@@ -1062,11 +1062,11 @@ pub(super) fn project(
                         .map(|value| source_parameter(inverse_parameter(*value))),
                 );
                 let Some(function_start) =
-                    finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_for_decode(
+                    finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                         ctx,
                         &function.geometry,
                         function_range[0],
-                    )?)?
+                    ))?)?
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -1140,7 +1140,7 @@ pub(super) fn project(
             }
         };
         let Some(start_position) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, start)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, start))?,
         )?
         else {
             super::push_entity_loss(
@@ -1152,7 +1152,7 @@ pub(super) fn project(
             continue;
         };
         let Some(end_position) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, &geometry, end)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, end))?,
         )?
         else {
             super::push_entity_loss(

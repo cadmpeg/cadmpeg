@@ -142,12 +142,12 @@ pub(super) fn standard_pcurve_geometry(
     let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
     let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
     let Some(midpoint) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
             ctx,
             surface,
             midpoint_uv.u,
             midpoint_uv.v,
-        )?)?
+        ))?)?
     else {
         return Ok(None);
     };
@@ -236,12 +236,12 @@ pub(super) fn witnessed_surface_circle_end(
             candidate.v = selected;
         }
         let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
                 surface,
                 0.5 * (uv[0].u + candidate.u),
                 0.5 * (uv[0].v + candidate.v),
-            )?,
+            ))?,
         )?
         else {
             continue;
@@ -879,13 +879,13 @@ pub(super) fn standard_native_support_witness(
             return Ok(None);
         };
         let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter))?,
         )?
         else {
             return Ok(None);
         };
         Ok(cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v))?,
         )?
         .map(cadmpeg_ir::features::FinitePoint3::get))
     };

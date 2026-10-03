@@ -70,9 +70,9 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
             Some(trimmed.pole_count())
         );
         for parameter in [0.25, 0.5, 1.0, 1.5] {
-            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+            let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter)
                 .expect("source NURBS evaluates");
-            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
+            let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &trimmed, parameter)
                 .expect("trimmed NURBS evaluates");
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
@@ -109,9 +109,9 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
         .expect("evaluated active endpoints join exactly");
 
         for parameter in [0.25, 0.75, 1.25, 1.75] {
-            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+            let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter)
                 .expect("source NURBS evaluates");
-            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
+            let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &concatenated.nurbs, parameter)
                 .expect("concatenated NURBS evaluates");
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
@@ -148,9 +148,9 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
                 .expect("carrier lanes pair")
                 .expect("a valid active interval has an exact NURBS subrange");
             for parameter in parameters {
-                let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+                let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, parameter)
                     .expect("source NURBS evaluates");
-                let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
+                let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &trimmed, parameter)
                     .expect("trimmed NURBS evaluates");
                 assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
             }
@@ -186,7 +186,7 @@ fn concatenation_preserves_degree_zero_spans() {
         );
         for parameter in [0.5, 1.5, 2.5] {
             assert_eq!(
-                cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
+                cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &concatenated.nurbs, parameter)
                     .ok()
                     .map(cadmpeg_ir::features::FinitePoint3::get),
                 Some(point)
@@ -208,11 +208,11 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
             ],
             None,
         );
-        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
+        let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 2.0)
             .expect("valid multi-span linear NURBS evaluates before degree elevation");
         elevate_nurbs_to_degree(decode_ctx, &mut curve, [0.5, 2.5], 3, None)
             .expect("elevation lanes pair");
-        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
+        let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &curve, 2.0)
             .expect("valid multi-span linear NURBS evaluates after degree elevation");
         assert_eq!(curve.degree(), 3);
         assert!(before.distance(after.get()) <= 1.0e-12);
@@ -229,8 +229,8 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
             .expect("elevation lanes pair");
         assert_eq!(elevated.degree(), 2);
         for parameter in [0.25, 0.75, 1.25, 1.75] {
-            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
-            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
+            let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, parameter).unwrap();
+            let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &elevated, parameter).unwrap();
             assert_eq!(before, after);
         }
     });
@@ -257,8 +257,8 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
         assert_eq!(elevated.degree(), 3);
         assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
         for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
-            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
-            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
+            let before = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source, parameter).unwrap();
+            let after = cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &elevated, parameter).unwrap();
             assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
         }
     });
@@ -442,13 +442,13 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         reverse_nurbs(&cadmpeg_test_support::service_decode_context(), curve, [2.0, 5.0]).expect("a bounded subrange reverses exactly");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(&reversed, range[0])
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, range[0])
             .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(&reversed, range[1])
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &reversed, range[1])
             .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
@@ -495,7 +495,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
     assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(nurbs.control_points().len(), 3);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 1.5)
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, nurbs, 1.5)
             .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
