@@ -150,7 +150,7 @@ fn assert_trimming_materialized_refusal(bytes: &[u8], operation: &str) {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        match cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(decoded.ir(), &ctx) {
+        match cadmpeg_ir::index::ModelIndex::new_model_only(decoded.ir(), &ctx) {
             Err(limit) => {
                 assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));

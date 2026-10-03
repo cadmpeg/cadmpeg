@@ -1854,11 +1854,7 @@ impl CadIr {
                 for (arena, records) in incoming.arenas() {
                     admit_append_key(ctx, arena_bound, arena.len(), "append native arena lookup")?;
                     if let Some(existing) = destination.arenas_mut().get_mut(arena) {
-                        ctx.reserve_vec(
-                            existing,
-                            records.len(),
-                            "append native record slots",
-                        )?;
+                        ctx.reserve_vec(existing, records.len(), "append native record slots")?;
                         let moved = records
                             .len()
                             .checked_mul(std::mem::size_of::<crate::native::NativeRecord>())

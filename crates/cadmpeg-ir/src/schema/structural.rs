@@ -274,7 +274,7 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
         let bytes = self.admit(
             self.storage
                 .borrow_mut()
-                .with_storage(|| self.ctx.copy_retained_slice(value, self.operation)),
+                .with_storage(|| self.ctx.copy_slice(value, self.operation)),
         )?;
         Ok(Value::Bytes(bytes))
     }

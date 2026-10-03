@@ -68,8 +68,7 @@ pub(in crate::validate) fn check_coedge_pairing(
                 break;
             }
             positions.insert(current, path.len())?;
-            path_storage
-                .with_storage(|| ctx.push_retained_vec(&mut path, current, "radial path slots"))?;
+            path_storage.with_storage(|| ctx.push_vec(&mut path, current, "radial path slots"))?;
             let Some(current_coedge) = by_id.get(ctx, current)? else {
                 for member in path {
                     ctx.charge_work(1, "radial status scan")?;
@@ -424,7 +423,7 @@ pub(in crate::validate) fn check_shell_connectivity(
         let mut pending_storage = ctx.reserve_scoped(0, "shell pending storage")?;
         let mut pending = Vec::new();
         pending_storage
-            .with_storage(|| ctx.push_retained_vec(&mut pending, first, "shell pending slots"))?;
+            .with_storage(|| ctx.push_vec(&mut pending, first, "shell pending slots"))?;
         while !pending.is_empty() {
             ctx.charge_work(1, "shell connectivity pop")?;
             let Some(face) = pending.pop() else {
@@ -435,7 +434,7 @@ pub(in crate::validate) fn check_shell_connectivity(
                     ctx.charge_work(1, "shell connectivity neighbor scan")?;
                     if owned.contains(ctx, neighbor)? && reached.insert_unique(neighbor, ())? {
                         pending_storage.with_storage(|| {
-                            ctx.push_retained_vec(&mut pending, neighbor, "shell pending slots")
+                            ctx.push_vec(&mut pending, neighbor, "shell pending slots")
                         })?;
                     }
                 }

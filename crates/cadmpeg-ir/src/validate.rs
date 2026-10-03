@@ -123,7 +123,7 @@ fn record_finding(
     entity: Option<&str>,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(findings, 1, "validation finding storage")?;
+    ctx.reserve_vec(findings, 1, "validation finding storage")?;
     let message = ctx.format_retained(message, "validation finding message")?;
     let entity = entity
         .map(|id| ctx.copy_retained_text(id, "validation finding identity"))

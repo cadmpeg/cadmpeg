@@ -199,7 +199,7 @@ fn native_unknown_order<'ctx>(
         let mut order = Vec::new();
         for (position, _) in records.iter().enumerate() {
             ctx.charge_work(1, "source product position scan")?;
-            ctx.push_retained_vec(&mut order, position, "source product identity slots")?;
+            ctx.push_vec(&mut order, position, "source product identity slots")?;
         }
         ctx.sort_unstable_by(
             &mut order,

@@ -218,9 +218,7 @@ pub(crate) fn copy_fields_charged(
     for field in fields {
         let copy = match field {
             ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(
-                    ctx.copy_slice(&bytes.0, "catia_native_value_inline_bytes")?,
-                ),
+                bytes: InlineBytes(ctx.copy_slice(&bytes.0, "catia_native_value_inline_bytes")?),
                 offset: *offset,
             },
             ValueField::ByteString { bytes, offset } => ValueField::ByteString {

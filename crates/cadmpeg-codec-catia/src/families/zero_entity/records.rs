@@ -3,7 +3,7 @@
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
-use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;

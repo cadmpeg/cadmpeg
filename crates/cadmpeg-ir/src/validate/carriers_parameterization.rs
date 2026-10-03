@@ -926,7 +926,7 @@ pub(super) fn check_carrier_reachability(
     for curve in curves.identities() {
         ctx.charge_work(1, "carrier reference scan")?;
         queue_storage.with_storage(|| {
-            ctx.push_retained_vec(&mut reachable_curves, curve, "carrier traversal slots")
+            ctx.push_vec(&mut reachable_curves, curve, "carrier traversal slots")
         })?;
     }
     let mut next = 0;
@@ -939,11 +939,7 @@ pub(super) fn check_carrier_reachability(
                 let identity = segment.curve.as_str();
                 if curves.insert_unique(identity, ())? {
                     queue_storage.with_storage(|| {
-                        ctx.push_retained_vec(
-                            &mut reachable_curves,
-                            identity,
-                            "carrier traversal slots",
-                        )
+                        ctx.push_vec(&mut reachable_curves, identity, "carrier traversal slots")
                     })?;
                 }
             }

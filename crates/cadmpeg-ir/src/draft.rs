@@ -655,11 +655,8 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         &mut self,
         record: crate::unknown::UnknownRecord,
     ) -> Result<(), CodecError> {
-        self.ctx.reserve_vec(
-            &mut self.state.unknowns,
-            1,
-            "staged unknown record slots",
-        )?;
+        self.ctx
+            .reserve_vec(&mut self.state.unknowns, 1, "staged unknown record slots")?;
         if let Some(index) = &mut self.state.identities {
             self.ctx.charge_work(
                 u64_from_index(record.id().as_str().len()),

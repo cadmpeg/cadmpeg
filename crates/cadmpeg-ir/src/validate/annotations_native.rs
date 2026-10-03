@@ -37,7 +37,7 @@ macro_rules! define_model_entity_projection {
                     if let Some(position) = entity_position(ctx, entities, id)? {
                         entities[position].1 = AnnotatedEntity::Projected(value);
                     } else {
-                        storage.with_storage(|| ctx.push_retained_vec(entities, (id, AnnotatedEntity::Projected(value)), "annotated entity slots"))?;
+                        storage.with_storage(|| ctx.push_vec(entities, (id, AnnotatedEntity::Projected(value)), "annotated entity slots"))?;
                     }
                 }
             })*
@@ -106,7 +106,7 @@ pub(super) fn check_annotations(
                     NativeEntity::Source(source) => AnnotatedEntity::Source(source),
                 };
                 storage.with_storage(|| {
-                    ctx.push_retained_vec(
+                    ctx.push_vec(
                         &mut entities,
                         (record.id(), value),
                         "annotated entity slots",

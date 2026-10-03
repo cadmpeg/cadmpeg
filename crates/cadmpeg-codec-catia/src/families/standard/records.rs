@@ -457,10 +457,8 @@ pub(super) fn pair_standard_populations(
         Ok(Some((
             layout,
             StandardSurfacePopulation {
-                records: ctx
-                    .copy_slice(&population.records, "catia_population_pair_records")?,
-                supports: ctx
-                    .copy_slice(&population.supports, "catia_population_pair_supports")?,
+                records: ctx.copy_slice(&population.records, "catia_population_pair_records")?,
+                supports: ctx.copy_slice(&population.supports, "catia_population_pair_supports")?,
             },
         )))
     };

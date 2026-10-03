@@ -335,7 +335,7 @@ fn select_rows<T>(
                 u64_from_index(std::mem::size_of::<T>()),
                 "move F3D retained BREP row",
             )?;
-            ctx.push_retained_vec(&mut retained, row, "collect F3D retained BREP rows")?;
+            ctx.push_vec(&mut retained, row, "collect F3D retained BREP rows")?;
         }
     }
     Ok(retained)
@@ -371,7 +371,7 @@ fn select_links<T>(
         ctx.charge_work(1, operation)?;
         if target_selected(ctx, target(&row), reachable)? {
             ctx.charge_work(u64_from_index(std::mem::size_of::<T>()), operation)?;
-            ctx.push_retained_vec(&mut retained, row, operation)?;
+            ctx.push_vec(&mut retained, row, operation)?;
         }
     }
     Ok(retained)
@@ -427,7 +427,7 @@ impl Brep {
             let mut pending = Vec::new();
             for id in &reachable {
                 ctx.charge_work(1, "walk F3D BREP pending roots")?;
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut pending,
                     ctx.copy_retained_text(id.as_ref(), "copy F3D BREP pending root")?,
                     "collect F3D BREP pending roots",
@@ -449,7 +449,7 @@ impl Brep {
                             ctx.copy_retained_text(adjacent, "copy F3D reachable BREP ID")?,
                             "collect F3D reachable BREP IDs",
                         )?;
-                        ctx.push_retained_vec(
+                        ctx.push_vec(
                             &mut pending,
                             ctx.copy_retained_text(adjacent, "copy F3D pending BREP ID")?,
                             "collect F3D pending BREP IDs",
@@ -508,7 +508,7 @@ impl Brep {
                     u64_from_index(std::mem::size_of_val(&row)),
                     "move F3D retained annotation",
                 )?;
-                ctx.push_retained_vec(&mut annotations, row, "collect F3D retained annotations")?;
+                ctx.push_vec(&mut annotations, row, "collect F3D retained annotations")?;
             }
         }
         self.asm.annotation_records = annotations;
@@ -574,7 +574,7 @@ impl Brep {
                     "retain F3D qualified BREP ID",
                 )?;
                 ctx.charge_work(1, "move F3D BREP replacement")?;
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut replacements,
                     (id, replacement),
                     "index F3D BREP replacements",

@@ -46,7 +46,7 @@ pub(super) fn check(
     for identity in roots.identities() {
         ctx.charge_work(1, "composite curve ordered root scan")?;
         storage.with_storage(|| {
-            ctx.push_retained_vec(&mut ordered, identity, "composite curve ordered roots")
+            ctx.push_vec(&mut ordered, identity, "composite curve ordered roots")
         })?;
     }
     ctx.stable_sort_by(
@@ -71,9 +71,8 @@ pub(super) fn check(
             next_child: 0,
             _depth: ctx.enter_nested("composite curve traversal depth")?,
         };
-        storage.with_storage(|| {
-            ctx.push_retained_vec(&mut stack, frame, "composite curve traversal frames")
-        })?;
+        storage
+            .with_storage(|| ctx.push_vec(&mut stack, frame, "composite curve traversal frames"))?;
         while let Some(frame) = stack.last_mut() {
             ctx.charge_work(1, "composite curve frame visit")?;
             if frame.next_child >= frame.children.len() {
@@ -109,7 +108,7 @@ pub(super) fn check(
                 _depth: ctx.enter_nested("composite curve traversal depth")?,
             };
             storage.with_storage(|| {
-                ctx.push_retained_vec(&mut stack, frame, "composite curve traversal frames")
+                ctx.push_vec(&mut stack, frame, "composite curve traversal frames")
             })?;
         }
     }

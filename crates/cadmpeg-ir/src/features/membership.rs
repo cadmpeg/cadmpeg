@@ -156,8 +156,7 @@ impl AppendAdmission for DecodeAdmission<'_, '_> {
             .charge_work_limit(u64_from_index(count), self.operation)
     }
     fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
-        self.ctx
-            .reserve_retained_vec_limit(values, 1, self.operation)?;
+        self.ctx.reserve_vec_limit(values, 1, self.operation)?;
         values.push(value);
         Ok(())
     }

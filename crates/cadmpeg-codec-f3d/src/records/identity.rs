@@ -446,7 +446,13 @@ impl NativeRecordId {
         key: impl std::fmt::Display,
     ) -> Result<Self, String> {
         let id = Self::try_new(text, kind, key)?;
-        let scope = id
+        id.require_f3d_scope()?;
+        Ok(id)
+    }
+
+    /// Requires the id's stream to use the F3D scheme with an escaped nonempty scope.
+    fn require_f3d_scope(&self) -> Result<(), String> {
+        let scope = self
             .stream()
             .strip_prefix("f3d:")
             .ok_or("id must use the F3D native scheme")?;
@@ -459,7 +465,7 @@ impl NativeRecordId {
         {
             return Err("id must contain an escaped nonempty native scope".into());
         }
-        Ok(id)
+        Ok(())
     }
     pub(super) fn text(&self) -> &String {
         &self.text
@@ -472,6 +478,45 @@ impl NativeRecordId {
 
     pub(super) fn stream(&self) -> &str {
         &self.text[..self.stream_end]
+    }
+}
+
+impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for NativeRecordId {
+    fn rewrite_native_value<
+        RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+    >(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _value: &mut serde_json::Value,
+        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "walk native identity scalar")
+    }
+
+    fn visit_identity_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.charge_work(1, "walk typed reference scalar")
+    }
+
+    fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let text =
+            <String as cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>::rewrite_identities(
+                self.text, ctx, map,
+            )?;
+        let stream_end = crate::ids::native_stream(&text)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("id must contain a native stream"))?
+            .len();
+        let rewritten = Self { text, stream_end };
+        rewritten
+            .require_f3d_scope()
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok(rewritten)
     }
 }
 

@@ -8063,8 +8063,7 @@ fn resolve_standard_endpoint_pairs(
                 ctx.alloc_filled(1, pairs[0], "catia_standard_line_singleton_pair")?;
         } else {
             for edge in edges {
-                resolved[edge] =
-                    ctx.copy_slice(&pairs, "catia_standard_line_pair_copy")?;
+                resolved[edge] = ctx.copy_slice(&pairs, "catia_standard_line_pair_copy")?;
             }
         }
     }
@@ -8397,10 +8396,9 @@ fn merge_native_endpoint_evidence(
             // relation. Graph coordinates are reconstructed from independent
             // object records and only supply identities absent from the roster.
             if roster.iter().all(Option::is_some) {
-                return Ok(Ok(Some(ctx.copy_slice(
-                    roster,
-                    "catia_native_roster_evidence_copy",
-                )?)));
+                return Ok(Ok(Some(
+                    ctx.copy_slice(roster, "catia_native_roster_evidence_copy")?,
+                )));
             }
             let mut merged = Vec::new();
             ctx.reserve_vec(
