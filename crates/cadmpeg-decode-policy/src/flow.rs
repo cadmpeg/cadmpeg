@@ -395,6 +395,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         self.record_slots(expression);
+        self.record_key_work(expression);
         if !matches!(name.as_str(), "charge_work" | "charge_work_limit") {
             return;
         }
@@ -484,6 +485,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .flat_map(|term| &term.factors)
                     .any(|term| {
                         term == &key
+                            || (term.starts_with("keybytes:") || term.starts_with("treekeybytes:")) && term.contains(&key)
                             || term.starts_with(&format!("{key}."))
                             || key.starts_with(&format!("{term}."))
                     })
