@@ -365,6 +365,7 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     let unit = [FiniteReal::ZERO, FiniteReal::ONE];
     assert_eq!(
         polyline_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
             far.len(),
             |index| far.get(index).copied(),
             |index| unit.get(index).copied(),
@@ -380,6 +381,7 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     let wide = FiniteReal::array([-1e308, 1e308]).unwrap();
     assert_eq!(
         polyline_point(
+            crate::eval::admission::EvaluationAdmission::Standard,
             points.len(),
             |index| points.get(index).copied(),
             |index| wide.get(index).copied(),
@@ -388,7 +390,7 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
         .map(FinitePoint3::get),
         Ok(Point3::new(0.5, 0.0, 0.0))
     );
-    let tangent = polyline_tangent(&points, &wide, 0.0).unwrap();
+    let tangent = polyline_tangent(crate::eval::admission::EvaluationAdmission::Standard, &points, &wide, 0.0).unwrap();
     assert!((tangent.x / 5e-309 - 1.0).abs() <= 8.0 * f64::EPSILON);
 }
 

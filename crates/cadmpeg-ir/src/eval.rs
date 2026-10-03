@@ -3470,7 +3470,7 @@ fn curve_derivative_unsettled(
                 ),
             }
             .ok_or(EvaluationFailure::NoValue)?;
-            let tangent = polyline_tangent(&points, &parameters, t)?;
+            let tangent = polyline_tangent(scratch.admission, &points, &parameters, t)?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
         SolvedCurveGeometry::Transformed(placed) => {
@@ -5422,6 +5422,7 @@ fn curve_point_evaluation(
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => polyline_point(
+            scratch.admission,
             polyline.point_count(),
             |index| polyline.point_at(index),
             |index| polyline.parameter_at(index),
