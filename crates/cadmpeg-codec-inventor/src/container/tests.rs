@@ -54,7 +54,7 @@ fn container_summary_attribute_refuses_before_insert() {
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("service context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
-    let mut entries = snapshot.container_entries(classify);
+    let mut entries = snapshot.container_entries(&setup, classify).expect("summary admission");
     let entry = entries.first_mut().expect("fixture entry");
     insert_attribute(&setup, entry, "test", format_args!("value")).expect("service attribute");
     assert_eq!(entry.attributes["test"], "value");
@@ -107,7 +107,7 @@ fn container_summary_search_refuses_work_limit_before_scan() {
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("service context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
-    let mut entries = snapshot.container_entries(classify);
+    let mut entries = snapshot.container_entries(&setup, classify).expect("summary admission");
     assert!(
         find_summary_entry(&setup, &mut entries, snapshot.entries()[0].directory_id())
             .expect("service search")

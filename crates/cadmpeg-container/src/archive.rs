@@ -414,25 +414,28 @@ impl<'a> ArchiveSnapshot<'a> {
         classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
     ) -> Result<Vec<ContainerEntry>, CodecError> {
         let mut output = ctx.collection_vec(self.entries.len(), "ZIP container summaries")?;
-        for entry in &self.entries {
+        for entry in ctx.admit_iter(&self.entries, "ZIP summary entry visits")? {
             let mut attributes = BTreeMap::new();
-            ctx.charge_collection_items(4, "ZIP summary attributes")?;
-            attributes.insert(
+            ctx.insert_btree_map(
+                &mut attributes,
                 ctx.copy_retained_text("crc32", "ZIP summary attribute key")?,
                 ctx.format_retained(
                     format_args!("{:08x}", entry.crc32),
                     "ZIP summary attribute value",
                 )?,
-            );
+                "ZIP summary attributes",
+            )?;
             for (key, value) in [
                 ("header_offset", entry.header_start),
                 ("data_offset", entry.data_start),
                 ("central_header_offset", entry.central_start),
             ] {
-                attributes.insert(
+                ctx.insert_btree_map(
+                &mut attributes,
                     ctx.copy_retained_text(key, "ZIP summary attribute key")?,
                     ctx.format_retained(format_args!("{value}"), "ZIP summary attribute value")?,
-                );
+                    "ZIP summary attributes",
+                )?;
             }
             let storage = declared_storage(
                 ctx,
@@ -1643,7 +1646,11 @@ mod tests {
             + entry.data_start.to_string().len()
             + "central_header_offset".len()
             + entry.central_start.to_string().len();
-        policy.limits.max_retained_bytes += cadmpeg_core::decode::u64_from_index(attribute_bytes);
+        let node_bytes = 22 * std::mem::size_of::<String>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>();
+        // Four attribute texts and nine admitted tree nodes precede the first entry name.
+        policy.limits.max_retained_bytes += cadmpeg_core::decode::u64_from_index(attribute_bytes + 9 * node_bytes);
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(
