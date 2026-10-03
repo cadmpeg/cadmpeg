@@ -756,3 +756,8 @@ fn generic_candidate_substitutions() {
     check_fixture("generic_candidates");
     check_graph_resolution("generic_candidates");
 }
+
+#[test]
+fn admitted_iteration_work() {
+    check_fixture("work_admitted");
+}

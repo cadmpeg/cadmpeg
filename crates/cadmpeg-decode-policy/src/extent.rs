@@ -348,6 +348,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         seen.push(expression.hir_id);
         let value = self.expr_ty(expression).peel_refs();
+        if types::admitted_iterator(self.tcx, value) {
+            return Shape::Fixed;
+        }
         let constant_container = match value.kind() {
             ty::Str | ty::Slice(_) | ty::Array(_, _) => true,
             ty::Adt(owner, _) => {

@@ -252,6 +252,15 @@ pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
     }
 }
 
+pub(crate) fn admitted_iterator(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
+    matches!(value.peel_refs().kind(), ty::Adt(owner, _)
+        if tcx.item_name(owner.did()).as_str() == "AdmittedIter"
+            && (tcx.def_path_str(owner.did()) == "cadmpeg_core::decode::scan::AdmittedIter"
+                || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
+                    && owner.did().is_local()
+                    && tcx.def_path_str(owner.did()).ends_with("decode::scan::AdmittedIter")))
+}
+
 pub(crate) fn derived(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
     let generated = tcx.def_span(definition).macro_backtrace().any(|expansion| {
         matches!(
