@@ -198,6 +198,7 @@ fn numerical_followup_sweep_quotient_retains_finite_derivatives() {
             ],
         };
         let value = scalar_sweep_law_differential(
+            crate::eval::admission::EvaluationAdmission::Standard,
             &expression.admit().unwrap(),
             crate::scalar::FiniteReal::new(1.).unwrap(),
         )

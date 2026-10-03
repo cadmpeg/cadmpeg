@@ -6178,6 +6178,87 @@ fn operand_derivatives(
     Ok((first.derivative?, second.derivative?))
 }
 
+/// Remove Unicode whitespace while holding the spelling in scoped scratch.
+fn compact_sweep_text(
+    scratch: &decode::Scratch<'_, '_>, text: &str,
+) -> Result<String, EvaluationFailure<()>> {
+    let mut characters = text.chars();
+    let mut bytes = Vec::new();
+    while !characters.as_str().is_empty() {
+        scratch.work(1, "IR sweep law text scan").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+        let Some(character) = characters.next() else { break; };
+        if character.is_whitespace() { continue; }
+        scratch.reserve(&mut bytes, character.len_utf8(), "IR sweep law text storage")
+            .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+        let mut encoded = [0; 4];
+        for byte in character.encode_utf8(&mut encoded).bytes() {
+            scratch.work(1, "IR sweep law text copy").ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+            bytes.push(byte);
+        }
+    }
+    scratch.work(bytes.len(), "IR sweep law UTF-8 validation")
+        .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
+    String::from_utf8(bytes).map_err(|_| EvaluationFailure::NoValue)
+}
+
+/// Admit each edge character before testing whether it is whitespace.
+fn trim_sweep_text<'text>(
+    admission: admission::EvaluationAdmission<'_, '_>, mut text: &'text str,
+) -> Result<&'text str, EvaluationFailure<()>> {
+    while !text.is_empty() {
+        admission.work(1, "IR sweep law text whitespace").map_err(EvaluationFailure::ResourceLimit)?;
+        let Some(character) = text.chars().next() else { break; };
+        if !character.is_whitespace() { break; }
+        text = &text[character.len_utf8()..];
+    }
+    while !text.is_empty() {
+        admission.work(1, "IR sweep law text whitespace").map_err(EvaluationFailure::ResourceLimit)?;
+        let Some(character) = text.chars().next_back() else { break; };
+        if !character.is_whitespace() { break; }
+        text = &text[..text.len() - character.len_utf8()];
+    }
+    Ok(text)
+}
+
+/// Admit delimiter visits and stop at the first matching byte.
+fn split_sweep_text<'text>(
+    admission: admission::EvaluationAdmission<'_, '_>, text: &'text str, delimiter: u8,
+) -> Result<Option<(&'text str, &'text str)>, EvaluationFailure<()>> {
+    for (index, byte) in text.as_bytes().iter().enumerate() {
+        admission.work(1, "IR sweep law field scan").map_err(EvaluationFailure::ResourceLimit)?;
+        if *byte == delimiter {
+            return Ok(Some((&text[..index], &text[index + 1..])));
+        }
+    }
+    Ok(None)
+}
+
+/// Admit the numeric spelling before the standard floating-point parser reads it.
+fn parse_sweep_number(
+    admission: admission::EvaluationAdmission<'_, '_>, text: &str,
+) -> Result<Option<f64>, EvaluationFailure<()>> {
+    admission.work(u64_from_index(text.len()), "IR sweep law number parse").map_err(EvaluationFailure::ResourceLimit)?;
+    Ok(text.parse().ok())
+}
+
+/// Read exactly the fixed number of comma-delimited formula coordinates.
+fn sweep_number_fields<const N: usize>(
+    admission: admission::EvaluationAdmission<'_, '_>, text: &str,
+) -> Result<Option<[f64; N]>, EvaluationFailure<()>> {
+    let mut remaining = Some(text);
+    let mut values = [0.0; N];
+    for value in &mut values {
+        let Some(text) = remaining.take() else { return Ok(None); };
+        let field = match split_sweep_text(admission, text, b',')? {
+            Some((field, tail)) => { remaining = Some(tail); field }
+            None => text,
+        };
+        let Some(number) = parse_sweep_number(admission, field)? else { return Ok(None); };
+        *value = number;
+    }
+    Ok(remaining.is_none().then_some(values))
+}
+
 /// A scalar sweep law's value and derivative at `parameter`, or why it has
 /// no value.
 ///
@@ -6187,9 +6268,13 @@ fn operand_derivatives(
 /// outside the finite range. The derivative states its own outcome in the
 /// same terms.
 fn scalar_sweep_law_differential(
+    admission: admission::EvaluationAdmission<'_, '_>,
     expression: &LawExpression<FiniteReal, FiniteVector3, FinitePoint3>,
     parameter: FiniteReal,
 ) -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
+    admission.within_model(|admission| {
+        let _depth = ModelEvaluationDepthGuard::enter(admission.work_slice()).map_err(EvaluationFailure::ResourceLimit)?;
+        admission.model_step()?;
     let no_value = EvaluationFailure::NoValue;
     match expression {
         LawExpression::Null {} => Ok(constant_sweep_differential(FiniteReal::ZERO)),
@@ -6198,7 +6283,7 @@ fn scalar_sweep_law_differential(
         )),
         LawExpression::Double { value } => Ok(constant_sweep_differential(*value)),
         LawExpression::Text { value } => {
-            let value = value.as_str().trim();
+            let value = trim_sweep_text(admission, value.as_str())?;
             if value == "X" {
                 return Ok(ScalarSweepDifferential {
                     value: parameter,
@@ -6206,20 +6291,20 @@ fn scalar_sweep_law_differential(
                 });
             }
             // A text constant that is not finite states no value.
-            if let Ok(constant) = value.parse::<f64>() {
+            if let Some(constant) = parse_sweep_number(admission, value)? {
                 return FiniteReal::new(constant)
                     .map(constant_sweep_differential)
                     .ok_or(no_value);
             }
-            let (left, right) = value.split_once('*').ok_or(no_value)?;
-            let coefficient = if right.trim() == "X" {
-                left.trim().parse::<f64>()
-            } else if left.trim() == "X" {
-                right.trim().parse::<f64>()
+            let (left, right) = split_sweep_text(admission, value, b'*')?.ok_or(no_value)?;
+            let coefficient = if trim_sweep_text(admission, right)? == "X" {
+                parse_sweep_number(admission, trim_sweep_text(admission, left)?)?
+            } else if trim_sweep_text(admission, left)? == "X" {
+                parse_sweep_number(admission, trim_sweep_text(admission, right)?)?
             } else {
                 return Err(no_value);
             };
-            let coefficient = coefficient.ok().and_then(FiniteReal::new).ok_or(no_value)?;
+            let coefficient = coefficient.and_then(FiniteReal::new).ok_or(no_value)?;
             Ok(ScalarSweepDifferential {
                 value: law_real(coefficient.get() * parameter.get())?,
                 derivative: Ok(coefficient),
@@ -6227,15 +6312,15 @@ fn scalar_sweep_law_differential(
         }
         LawExpression::Algebraic { operator, operands } => {
             if let [operand] = operands.as_slice() {
-                let operand = scalar_sweep_law_differential(operand, parameter)?;
+                let operand = scalar_sweep_law_differential(admission, operand, parameter)?;
                 return scalar_unary_sweep_law_differential(operator, operand);
             }
             if operator == "O" {
                 let [outer, inner] = operands.as_slice() else {
                     return Err(no_value);
                 };
-                let inner = scalar_sweep_law_differential(inner, parameter)?;
-                let outer = scalar_sweep_law_differential(outer, inner.value)?;
+                let inner = scalar_sweep_law_differential(admission, inner, parameter)?;
+                let outer = scalar_sweep_law_differential(admission, outer, inner.value)?;
                 return Ok(ScalarSweepDifferential {
                     value: outer.value,
                     derivative: operand_derivatives(outer, inner)
@@ -6245,8 +6330,8 @@ fn scalar_sweep_law_differential(
             let [left, right] = operands.as_slice() else {
                 return Err(no_value);
             };
-            let left = scalar_sweep_law_differential(left, parameter)?;
-            let right = scalar_sweep_law_differential(right, parameter)?;
+            let left = scalar_sweep_law_differential(admission, left, parameter)?;
+            let right = scalar_sweep_law_differential(admission, right, parameter)?;
             let (x, y) = (left.value.get(), right.value.get());
             let derivatives = operand_derivatives(left, right);
             match operator.as_str() {
@@ -6293,6 +6378,7 @@ fn scalar_sweep_law_differential(
         | LawExpression::Edge { .. }
         | LawExpression::Spline { .. } => Err(no_value),
     }
+    })
 }
 
 /// `numerator / denominator` for a law derivative. A quotient that overflows
@@ -6645,31 +6731,23 @@ fn scalar_unary_sweep_law_differential(
 }
 
 fn sweep_scale(
+    admission: admission::EvaluationAdmission<'_, '_>,
     expression: &LawExpression<FiniteReal, FiniteVector3, FinitePoint3>,
-) -> Option<Vector3> {
-    match expression {
-        LawExpression::Null {} => Some(Vector3::new(1.0, 1.0, 1.0)),
-        LawExpression::Text { value } => {
-            let value = value
-                .as_str()
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>();
-            let values = value
-                .strip_prefix("VEC(")
-                .and_then(|value| value.strip_suffix(')'))?
-                .split(',')
-                .map(str::parse::<f64>)
-                .collect::<Result<Vec<_>, _>>()
-                .ok()?;
-            let [x, y, z] = values.as_slice() else {
-                return None;
-            };
-            Some(Vector3::new(*x, *y, *z))
-        }
-        LawExpression::Vector { value } => Some(value.get()),
-        _ => None,
-    }
+) -> Result<Option<Vector3>, EvaluationFailure<()>> {
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        Ok(match expression {
+            LawExpression::Null {} => Some(Vector3::new(1.0, 1.0, 1.0)),
+            LawExpression::Text { value } => {
+                let value = compact_sweep_text(&scratch, value.as_str())?;
+                let Some(values) = value.strip_prefix("VEC(").and_then(|value| value.strip_suffix(')')) else { return Ok(None); };
+                sweep_number_fields::<3>(admission, values)?.map(|[x, y, z]| Vector3::new(x, y, z))
+            }
+            LawExpression::Vector { value } => Some(value.get()),
+            _ => None,
+        })
+    })();
+    scratch.settle(result)
 }
 
 /// The profile differential scaled about `frame_point`. A scaled point
@@ -6700,76 +6778,40 @@ fn scale_sweep_profile(
     })
 }
 
-fn unit_domain_sweep_formula(name: &str) -> bool {
-    let Some(bounds) = name
-        .strip_prefix("DOMAIN(VEC(1,0,0),")
-        .and_then(|name| name.strip_suffix(')'))
-    else {
-        return false;
-    };
-    let mut bounds = bounds.split(',');
-    let Some(lower) = bounds.next().and_then(|value| value.parse::<f64>().ok()) else {
-        return false;
-    };
-    let Some(upper) = bounds.next().and_then(|value| value.parse::<f64>().ok()) else {
-        return false;
-    };
-    bounds.next().is_none() && lower.is_finite() && upper.is_finite() && lower < upper
+fn unit_domain_sweep_formula(
+    admission: admission::EvaluationAdmission<'_, '_>, name: &str,
+) -> Result<bool, EvaluationFailure<()>> {
+    let Some(bounds) = name.strip_prefix("DOMAIN(VEC(1,0,0),").and_then(|name| name.strip_suffix(')')) else { return Ok(false); };
+    let Some([lower, upper]) = sweep_number_fields::<2>(admission, bounds)? else { return Ok(false); };
+    Ok(lower.is_finite() && upper.is_finite() && lower < upper)
 }
 
 fn sweep_rail_transform(
+    admission: admission::EvaluationAdmission<'_, '_>,
     formula: &LawFormula<FiniteReal, FiniteVector3, FinitePoint3>,
-) -> Option<Transform> {
-    match formula {
-        LawFormula::Null {} => {
-            return Some(Transform::identity());
+) -> Result<Option<Transform>, EvaluationFailure<()>> {
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        let (name, variables) = match formula {
+            LawFormula::Null {} => return Ok(Some(Transform::identity())),
+            LawFormula::Named { name, variables } => (name, variables),
+        };
+        let name = compact_sweep_text(&scratch, name.as_str())?;
+        if variables.is_empty() {
+            return Ok(unit_domain_sweep_formula(admission, &name)?.then_some(Transform::identity()));
         }
-        LawFormula::Named { name, variables } if variables.is_empty() => {
-            let name = name
-                .as_str()
-                .chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>();
-            return unit_domain_sweep_formula(&name).then_some(Transform::identity());
-        }
-        LawFormula::Named { .. } => {}
-    }
-    let LawFormula::Named { name, variables } = formula else {
-        return None;
-    };
-    let name = name
-        .as_str()
-        .chars()
-        .filter(|character| !character.is_whitespace())
-        .collect::<String>();
-    let inner = name
-        .strip_prefix("ROTATE(")
-        .and_then(|name| name.strip_suffix(",TRANS1)"))?;
-    if !unit_domain_sweep_formula(inner) {
-        return None;
-    }
-    let [LawExpression::TransformVec {
-        vectors,
-        scale,
-        flags,
-    }] = variables.as_slice()
-    else {
-        return None;
-    };
-    if scale.get() != 1.0
-        || *flags != [true, false, false]
-        || vectors[3].get() != Vector3::new(0.0, 0.0, 0.0)
-    {
-        return None;
-    }
-    let [x, y, z] = [vectors[0], vectors[1], vectors[2]].map(FiniteVector3::components);
-    let zero = FiniteReal::ZERO;
-    let transform = Transform::from_finite_rows([
-        [x[0], y[0], z[0], zero],
-        [x[1], y[1], z[1], zero],
-        [x[2], y[2], z[2], zero],
-    ]);
-    transform.is_proper_rigid().then_some(transform)
+        let Some(inner) = name.strip_prefix("ROTATE(").and_then(|name| name.strip_suffix(",TRANS1)")) else { return Ok(None); };
+        if !unit_domain_sweep_formula(admission, inner)? { return Ok(None); }
+        let [LawExpression::TransformVec { vectors, scale, flags }] = variables.as_slice() else { return Ok(None); };
+        if scale.get() != 1.0 || *flags != [true, false, false] || vectors[3].get() != Vector3::new(0.0, 0.0, 0.0) { return Ok(None); }
+        let [x, y, z] = [vectors[0], vectors[1], vectors[2]].map(FiniteVector3::components);
+        let zero = FiniteReal::ZERO;
+        let transform = Transform::from_finite_rows([
+            [x[0], y[0], z[0], zero], [x[1], y[1], z[1], zero], [x[2], y[2], z[2], zero],
+        ]);
+        Ok(transform.is_proper_rigid().then_some(transform))
+    })();
+    scratch.settle(result)
 }
 
 /// The origin of a straight sweep path: a line's origin, or the start of a
@@ -6988,8 +7030,8 @@ fn cacheless_law_sweep_differentials(
     else {
         return Err(no_value);
     };
-    let rail_transform = sweep_rail_transform(formula).ok_or(no_value)?;
-    let scale = sweep_scale(second_law).ok_or(no_value)?;
+    let rail_transform = sweep_rail_transform(admission, formula).map_err(unreached)?.ok_or(no_value)?;
+    let scale = sweep_scale(admission, second_law).map_err(unreached)?.ok_or(no_value)?;
     let (Some(u), Some(v)) = (FiniteReal::new(u), FiniteReal::new(v)) else {
         return Err(no_value);
     };
@@ -7020,7 +7062,7 @@ fn cacheless_law_sweep_differentials(
         tangent: placed_derivative(rail_transform, profile.tangent),
         acceleration: placed_derivative(rail_transform, profile.acceleration),
     };
-    let law = scalar_sweep_law_differential(first_law, v).map_err(unreached)?;
+    let law = scalar_sweep_law_differential(admission, first_law, v).map_err(unreached)?;
     Ok((profile, spine, law, path_origin))
 }
 
@@ -7296,9 +7338,13 @@ fn revision_surface_tail_has_current_cache<P>(
 }
 
 fn variable_blend_is_zero_radius(
+    admission: admission::EvaluationAdmission<'_, '_>,
     value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
-) -> bool {
-    match &value.payload {
+) -> Result<bool, EvaluationFailure<()>> {
+    admission.within_model(|admission| {
+        let _depth = ModelEvaluationDepthGuard::enter(admission.work_slice()).map_err(EvaluationFailure::ResourceLimit)?;
+        admission.model_step()?;
+    let zero = match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [first_parameter, second_parameter],
             radii: [first_radius, second_radius],
@@ -7309,10 +7355,12 @@ fn variable_blend_is_zero_radius(
                 && second_radius.get() == 0.0
         }
         crate::geometry::VariableBlendValuePayload::Constant { radius, nested, .. } => {
-            radius.get() == 0.0 && variable_blend_is_zero_radius(nested)
+            radius.get() == 0.0 && variable_blend_is_zero_radius(admission, nested)?
         }
         _ => false,
-    }
+    };
+    Ok(zero)
+    })
 }
 
 /// The two contact tracks of a zero-radius rounded chamfer at `(u, v)`, or
@@ -7333,12 +7381,11 @@ fn cacheless_ruled_variable_blend_tracks(
         return Err(no_value);
     };
     let (finite_u, finite_v) = blend_parameters(u, v)?;
-    if !cacheless_variable_blend_domain_contains(payload, finite_u, finite_v)
-        || radius
-            .as_deref()
-            .is_some_and(|radius| !variable_blend_is_zero_radius(radius))
-    {
+    if !cacheless_variable_blend_domain_contains(payload, finite_u, finite_v) {
         return Err(no_value);
+    }
+    if let Some(radius) = radius.as_deref() {
+        if !variable_blend_is_zero_radius(admission, radius)? { return Err(no_value); }
     }
     Ok([
         variable_blend_contact_track(admission, index, &construction.sides[0], v)?,
@@ -9464,4 +9511,3 @@ fn surface_jet<'ctx, 'arena: 'ctx>(
 
 #[cfg(test)]
 mod numerical_range_tests;
-
