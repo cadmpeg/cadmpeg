@@ -796,7 +796,7 @@ impl CompoundState {
                 bytes,
                 sector_size,
                 sector_count,
-                directory_chain.iter().flat_map(SectorChain::iter),
+                directory_chain.as_ref().map(|chain| (&chain.first, chain.rest.as_slice())),
             )
         })?;
         let directory = parse_directory(ctx, &directory_bytes, version)?;
@@ -828,7 +828,7 @@ impl CompoundState {
                 bytes,
                 sector_size,
                 sector_count,
-                mini_fat_chain.iter().flat_map(SectorChain::iter),
+                mini_fat_chain.as_ref().map(|chain| (&chain.first, chain.rest.as_slice())),
             )
         })?;
         // Every joined sector passed the same exact-width proof above, so the
@@ -1472,7 +1472,7 @@ impl CompoundPrefixProbe {
                 "CFB probe joined directory",
             )?;
             let directory_bytes =
-                join_sectors(ctx, prefix, sector_size, available, directory_chain.iter())?;
+                join_sectors(ctx, prefix, sector_size, available, directory_chain.split_first())?;
             let directory = match parse_directory(ctx, &directory_bytes, version) {
                 Ok(value) => value,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1994,33 +1994,31 @@ fn chain(
     Ok(Some(output))
 }
 
-fn join_sectors<'a>(
+fn join_sectors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     sector_size: usize,
     sector_count: usize,
-    sectors: impl Iterator<Item = &'a u32> + Clone,
+    sectors: Option<(&u32, &[u32])>,
 ) -> Result<Vec<u8>, CodecError> {
-    let length = sectors
-        .clone()
-        .count()
-        .checked_mul(sector_size)
-        .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
+    let (first, rest) = sectors.map_or((None, &[][..]), |(first, rest)| (Some(first), rest));
+    let length = rest.len()
+        .checked_add(usize::from(first.is_some()))
+        .and_then(|count| count.checked_mul(sector_size))
+        .ok_or_else(|| ctx.refuse_codec_limit("join CFB sectors", u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(length),
         "join CFB sectors",
     )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(length),
-        "copy CFB sectors",
-    )?;
     let mut output = ctx.vector_storage(length, "join CFB sectors")?;
-    for &sector in sectors {
+    for &sector in first.into_iter().chain(ctx.admit_iter(rest, "walk CFB joined sectors")?) {
         let data = sector_slice(bytes, sector_size, sector_count, sector)
             .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?;
         if data.len() != sector_size {
             return malformed("CFB structural sector is truncated");
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "copy CFB sectors")?;
+        ctx.reserve_capacity(&mut output, data.len(), "join CFB sector slots")?;
         output.extend_from_slice(data);
     }
     Ok(output)
@@ -2129,6 +2127,24 @@ mod tests {
             CompoundPrefixProbe::inspect_with_context(&ctx, root).expect("probe");
         drop(storage);
         probe
+    }
+
+    #[test]
+    fn joined_sectors_use_bounded_parts_and_refuse_before_copy() {
+        let bytes = [0xabu8; 1536];
+        let first = 1;
+        let rest = [0];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
+        assert_eq!(super::join_sectors(&ctx, &bytes, 512, 2, Some((&first, &rest))).expect("joined sectors"), [0xabu8; 1024]);
+        assert!(super::join_sectors(&ctx, &bytes, 512, 2, None).expect("empty chain").is_empty());
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = super::join_sectors(&ctx, &bytes, 512, 2, Some((&first, &[]))).expect_err("copy work") else { panic!("refusal") };
+        assert_eq!(first.operation, "copy CFB sectors");
+        let CodecError::ResourceLimit(repeated) = ctx.charge_work(1, "later").expect_err("fused refusal") else { panic!("refusal") };
+        assert_eq!(first, repeated);
     }
 
     #[test]
