@@ -761,13 +761,14 @@ impl DecodeContext<'_> {
                 .ok_or_else(|| self.retained_size_overflow_limit(operation))?
                 .max(required).max(minimum)
         };
-        let bytes = (target - capacity).checked_mul(std::mem::size_of::<T>())
+        let target_bytes = target.checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         let maximum = usize::try_from(isize::MAX)
             .map_err(|_| self.retained_size_overflow_limit(operation))?;
-        if bytes > maximum {
-            return Err(self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation));
+        if target_bytes > maximum {
+            return Err(self.budget.retained_allocation_failed_limit(u64_from_index(target_bytes), operation));
         }
+        let bytes = (target - capacity) * std::mem::size_of::<T>();
         if !matches!(growth, LinearGrowth::PrechargedBytes) {
             self.charge_retained_limit(u64_from_index(bytes), operation)?;
         }
