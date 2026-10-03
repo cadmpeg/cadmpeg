@@ -38,7 +38,6 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
@@ -853,7 +852,7 @@ impl CodecBackend for FcstdCodec {
         }
         if container::has_document_markers(ctx, prefix)? {
             Ok(Confidence::High)
-        } else if contains(prefix, b"Document.xml") {
+        } else if ctx.contains_bytes(prefix, b"Document.xml", "detect FreeCAD document marker")? {
             Ok(Confidence::Medium)
         } else {
             Ok(Confidence::Low)

@@ -3648,7 +3648,7 @@ fn build_geometry_ir(
             id.as_str(),
             &source_stream.path,
             0,
-            container::payload_family(&source_stream.payload).label(),
+            container::payload_family(ctx, &source_stream.payload, "classify SLDPRT compound source payload")?.label(),
             Exactness::ByteExact,
         )?;
         unknowns.push(UnknownRecord::retained(
@@ -3814,7 +3814,7 @@ fn add_preview_metadata(
     for section in scan.sections() {
         ctx.charge_work(1, "scan SLDPRT preview metadata")?;
         let payload = section.payload();
-        match container::payload_family(payload) {
+        match container::payload_family(ctx, payload, "classify SLDPRT preview payload")? {
             container::PayloadFamily::PngPreview => {
                 if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
                     continue;

@@ -92,11 +92,6 @@ pub fn find_in(haystack: &[u8], needle: &[u8], start: usize, end: usize) -> Opti
     find(window, needle).map(|relative| start + relative)
 }
 
-/// Whether `needle` occurs in `haystack`. Empty needles are absent.
-pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    find(haystack, needle).is_some()
-}
-
 #[cfg(test)]
 mod tests {
 

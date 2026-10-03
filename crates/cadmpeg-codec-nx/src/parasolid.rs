@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::bytes::{contains, find};
+use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
@@ -944,7 +944,7 @@ pub(crate) fn extract_streams<'a>(
                     start + offset
                 )));
             };
-            let body = classify(&inflated);
+            let body = classify(ctx, &inflated)?;
             ctx.charge_entities(1, "admit NX streams")?;
             ctx.push_vec(
                 &mut streams,
@@ -999,7 +999,7 @@ fn append_all_zlib_streams<'a>(
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
             if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
-                let body = classify(&inflated);
+                let body = classify(ctx, &inflated)?;
                 let file_offset = file_start + i;
                 if ctx.insert_scoped_btree_set(
                     &mut seen_guard,
@@ -1106,7 +1106,7 @@ pub(crate) fn extract_legacy_streams<'a>(
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
         })?;
         let inflated = ctx.copy_retained(payload, "retain legacy NX Parasolid stream")?;
-        let body = classify(&inflated);
+        let body = classify(ctx, &inflated)?;
         let consumed = u64::try_from(payload.len()).map_err(|_| {
             CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
         })?;
@@ -1188,14 +1188,10 @@ fn legacy_transmit_header(
         cadmpeg_core::decode::u64_from_index(description.len()),
         "validate NX legacy stream description",
     )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(description.len()),
-        "find NX legacy transmit marker",
-    )?;
     Ok(description
         .iter()
         .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        && contains(description, b"TRANSMIT FILE"))
+        && ctx.contains_bytes(description, b"TRANSMIT FILE", "find NX legacy transmit marker")?)
 }
 
 /// Inflate one complete zlib member.
@@ -1257,23 +1253,24 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.
-fn classify(inflated: &[u8]) -> StreamBody {
+fn classify(ctx: &DecodeContext<'_>, inflated: &[u8]) -> Result<StreamBody, CodecError> {
+    ctx.charge_work(0, "classify NX stream prologue")?;
     if !inflated.starts_with(b"PS\x00\x00") {
-        return StreamBody::Preview;
+        return Ok(StreamBody::Preview);
     }
     let window = &inflated[..inflated.len().min(512)];
-    let subtype = if contains(window, b"(partition)") {
+    let subtype = if ctx.contains_bytes(window, b"(partition)", "classify NX stream prologue")? {
         ParasolidSubtype::Partition
-    } else if contains(window, b"(deltas)") {
+    } else if ctx.contains_bytes(window, b"(deltas)", "classify NX stream prologue")? {
         ParasolidSubtype::Deltas
     } else {
         ParasolidSubtype::Plain
     };
-    StreamBody::Parasolid {
+    Ok(StreamBody::Parasolid {
         subtype,
         schema: cadmpeg_parasolid::find_schema_token(window)
             .map(cadmpeg_parasolid::OwnedSchemaToken::from),
-    }
+    })
 }
 
 #[cfg(test)]
