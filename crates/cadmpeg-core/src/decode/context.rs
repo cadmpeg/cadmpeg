@@ -475,8 +475,7 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let projection = super::sort::BorrowedKey { key, marker: std::marker::PhantomData };
-        self.admit_sort(values, &projection, operation)?;
-        self.stable_sort_admitted(values, |left, right| compare((projection.key)(left), (projection.key)(right)), operation)
+        self.stable_sort_projected(values, &projection, |left, right| compare((projection.key)(left), (projection.key)(right)), operation)
     }
 
     /// Sorts copied keys stably without cloning any owned children.
@@ -488,16 +487,17 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let projection = super::sort::CopiedKey { key, marker: std::marker::PhantomData };
-        self.admit_sort(values, &projection, operation)?;
-        self.stable_sort_admitted(values, |left, right| compare(&(projection.key)(left), &(projection.key)(right)), operation)
+        self.stable_sort_projected(values, &projection, |left, right| compare(&(projection.key)(left), &(projection.key)(right)), operation)
     }
 
-    fn stable_sort_admitted<T>(
+    fn stable_sort_projected<T, P: super::sort::SortProjection<T>>(
         &self,
         values: &mut [T],
+        projection: &P,
         mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.admit_sort(values, projection, operation)?;
         let count = super::u64_from_index(values.len());
         // Small runs use adjacent swaps, so their stable order needs no scratch.
         if values.len() <= 20 {
@@ -538,9 +538,10 @@ impl<'a> DecodeContext<'a> {
                 .scoped_allocation_failed(scratch_bytes, operation)
         })?;
         destinations.resize(values.len(), 0usize);
-        order.sort_unstable_by(|&left: &usize, &right: &usize| {
-            compare(&values[left], &values[right]).then_with(|| left.cmp(&right))
-        });
+        self.sort_unstable_by_key(&mut order,
+            |&index| (projection.project(&values[index]), index),
+            |(_, left), (_, right)| compare(&values[*left], &values[*right]).then_with(|| left.cmp(right)),
+            operation)?;
         for (destination, source) in order.into_iter().enumerate() {
             self.charge_work(1, operation)?;
             destinations[source] = destination;
