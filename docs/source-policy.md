@@ -543,7 +543,8 @@ admits that site alone.
 | `custom` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `sort_unstable_by` | `sort_unstable_by` |
 | `from_str` | `parse_text` |
-| `pop` | `charge_work` from the complete value cost for variable child work; an owned vector pop moves one slot |
+| `push` | `push_vec`, `push_heap` or `push_back` for the concrete collection |
+| `pop` | `DecodeContext::pop_heap` for a binary heap; vector and deque pops have fixed work. |
 | `rfind` | `rfind_text` or `rfind_bytes`; `admit_iter` before reverse iterator search |
 | `resize` | `resize_with` |
 | `to_str` | `validate_utf8` |
@@ -665,3 +666,11 @@ by the compiler integration suite:
 ```
 cargo +nightly-2026-09-08 test -q --manifest-path crates/cadmpeg-decode-policy/Cargo.toml --lib
 ```
+
+Heap sifts charge the maximum `DecodeCost` of all stored operands and the incoming
+value. With `n` operands, the work bound is `n` measuring visits plus
+`(bit_length(n) + 1) * 4 * (maximum_operand_bytes + size_of::<T>())`.
+Heap capacity growth has its own retained, scoped and movement charges.
+Hash growth charges the old bucket storage as movement work, in addition to stored
+key visits and hash bytes. Tree insertion and removal charge four passes over the
+bounded node storage for shifts, splits, merges and parent-link repair.

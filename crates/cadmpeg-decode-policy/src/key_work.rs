@@ -142,13 +142,24 @@ impl<'tcx> Analysis<'_, 'tcx> {
         } else { return; };
         self.flow.work.push(Credit { extents: vec![ExtentTerm { factors: vec![factor], coefficient }], opaque: false });
     }
-    pub(crate) fn record_sort_work(&mut self, expression: &'tcx Expr<'tcx>) {
+    pub(crate) fn record_order_work(&mut self, expression: &'tcx Expr<'tcx>) {
         let Some((definition, args)) = self.call(expression) else { return; };
         if self.tcx.crate_name(definition.krate).as_str() != "cadmpeg_core"
-            || self.tcx.item_name(definition).as_str() != "admit_sort"
+            || !matches!(self.tcx.item_name(definition).as_str(), "admit_sort" | "admit_heap")
             || !self.propagated(expression) { return; }
         let Some(key) = args.get(1).and_then(|value| self.key_work_operand(value)) else { return; };
-        self.flow.work.push(Credit { extents: vec![ExtentTerm { factors: vec![format!("sortbytes:{key}")], coefficient: self.flow.iterations }], opaque: false });
+        let factor = if self.tcx.item_name(definition).as_str() == "admit_heap" {
+            let Some(incoming) = args.get(2) else { return; };
+            if let Some((constructor, payload)) = self.call(incoming) {
+                let [value] = payload.as_slice() else { return; };
+                if !types::standard(self.tcx, constructor) || self.tcx.item_name(constructor).as_str() != "Some" { return; }
+                let Some(value) = self.key_work_operand(value) else { return; };
+                format!("heappushbytes:{key}|{value}")
+            } else if matches!(incoming.kind, ExprKind::Path(ref path) if matches!(self.typeck.qpath_res(path, incoming.hir_id), rustc_hir::def::Res::Def(_, id) if types::standard(self.tcx, id) && self.tcx.item_name(id).as_str() == "None")) {
+                format!("heappopbytes:{key}")
+            } else { return; }
+        } else { format!("sortbytes:{key}") };
+        self.flow.work.push(Credit { extents: vec![ExtentTerm { factors: vec![factor], coefficient: self.flow.iterations }], opaque: false });
     }
     fn consume_key_factor(&mut self, factor: &str) -> bool {
         let Some(term) = self.flow.work.iter_mut().filter(|credit| !credit.opaque)
@@ -170,6 +181,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if matches!(name, "sort_unstable_by" | "sort_unstable_by_key" | "sort_by" | "sort_by_key" | "sort" | "sort_unstable") {
             return operands.first().and_then(|value| self.key_work_operand(value))
                 .is_some_and(|key| self.consume_key_factor(&format!("sortbytes:{key}")));
+        }
+        if matches!(name, "pop" | "push") {
+            let Some(receiver) = operands.first() else { return false; };
+            let rustc_middle::ty::Adt(owner, _) = self.expr_ty(receiver).peel_refs().kind() else { return false; };
+            if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "BinaryHeap" {
+                let Some(key) = self.key_work_operand(receiver) else { return false; };
+                let factor = if name == "push" {
+                    let Some(value) = operands.get(1).and_then(|value| self.key_work_operand(value)) else { return false; };
+                    format!("heappushbytes:{key}|{value}")
+                } else { format!("heappopbytes:{key}") };
+                return self.consume_key_factor(&factor);
+            }
         }
         let comparison = matches!(name, "comparison" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "cmp" | "partial_cmp");
         if comparison {

@@ -541,6 +541,7 @@ pub(crate) fn summary(
             (Allocation::Input(0), Work::Fixed)
         }
         "pop" if path.contains("BinaryHeap") => (Allocation::None, Work::Receiver),
+        "push" if path.contains("BinaryHeap") => (Allocation::Growth, Work::Receiver),
         "pop_first" | "difference" | "intersection" | "union" => (Allocation::None, Work::Fixed),
         "is_subset" | "is_disjoint" => (Allocation::None, Work::Receiver),
         "unzip" if path.contains("Iterator") => (Allocation::Collect, Work::Iterator),
