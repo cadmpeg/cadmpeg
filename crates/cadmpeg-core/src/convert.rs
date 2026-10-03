@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked conversions between numeric representations.
 
-/// Converts zero or an index with at most 53 significant bits after removing trailing zeros.
-#[expect(
+#![expect(
     clippy::as_conversions,
+    clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    reason = "zero or at most 53 significant bits after removing trailing zeros is exact in f64"
+    clippy::cast_sign_loss,
+    reason = "each conversion checks exactness or the finite target range before casting"
 )]
+
+/// Converts zero or an index with at most 53 significant bits after removing trailing zeros.
 pub fn f64_from_index(value: usize) -> Option<f64> {
     if value == 0 || usize::BITS - value.leading_zeros() - value.trailing_zeros() <= 53 {
         Some(value as f64)
@@ -16,11 +19,6 @@ pub fn f64_from_index(value: usize) -> Option<f64> {
 }
 
 /// Converts zero or an unsigned integer with at most 53 significant bits after removing trailing zeros.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "zero or at most 53 significant bits after removing trailing zeros is exact in f64"
-)]
 pub fn f64_from_u64(value: u64) -> Option<f64> {
     if value == 0 || u64::BITS - value.leading_zeros() - value.trailing_zeros() <= 53 {
         Some(value as f64)
@@ -31,11 +29,6 @@ pub fn f64_from_u64(value: u64) -> Option<f64> {
 
 /// Converts zero or a signed integer whose magnitude has at most 53 significant bits
 /// after removing trailing zeros. This includes `i64::MIN`.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "zero or a magnitude with at most 53 significant bits after removing trailing zeros is exact in f64"
-)]
 pub fn f64_from_i64(value: i64) -> Option<f64> {
     let magnitude = value.unsigned_abs();
     if magnitude == 0 || u64::BITS - magnitude.leading_zeros() - magnitude.trailing_zeros() <= 53 {
@@ -46,11 +39,6 @@ pub fn f64_from_i64(value: i64) -> Option<f64> {
 }
 
 /// Rounds a finite `f64` to the nearest representable `f32`.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "finite magnitude is bounded by the target range before rounding"
-)]
 pub fn f32_from_f64(value: f64) -> Option<f32> {
     if value.is_finite() && value.abs() <= f64::from(f32::MAX) {
         Some(value as f32)
@@ -60,11 +48,6 @@ pub fn f32_from_f64(value: f64) -> Option<f32> {
 }
 
 /// Truncates a finite `f64` to an `i32` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "the truncated value is checked against both target bounds"
-)]
 pub fn truncate_f64_to_i32(value: f64) -> Option<i32> {
     let value = value.trunc();
     if value.is_finite() && value >= f64::from(i32::MIN) && value < 2_147_483_648.0 {
@@ -75,11 +58,6 @@ pub fn truncate_f64_to_i32(value: f64) -> Option<i32> {
 }
 
 /// Truncates a finite `f64` to an `i64` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "the truncated value is checked against the half-open target range"
-)]
 pub fn truncate_f64_to_i64(value: f64) -> Option<i64> {
     let value = value.trunc();
     if value.is_finite()
@@ -92,11 +70,6 @@ pub fn truncate_f64_to_i64(value: f64) -> Option<i64> {
 }
 
 /// Truncates a finite `f64` to an `i128` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "the truncated value is checked against the half-open target range"
-)]
 pub fn truncate_f64_to_i128(value: f64) -> Option<i128> {
     let value = value.trunc();
     if value.is_finite()
@@ -111,12 +84,6 @@ pub fn truncate_f64_to_i128(value: f64) -> Option<i128> {
 }
 
 /// Truncates a finite `f64` to a `u8` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the truncated value is nonnegative and below the target upper bound"
-)]
 pub fn truncate_f64_to_u8(value: f64) -> Option<u8> {
     let value = value.trunc();
     if value.is_finite() && (0.0..256.0).contains(&value) {
@@ -127,12 +94,6 @@ pub fn truncate_f64_to_u8(value: f64) -> Option<u8> {
 }
 
 /// Truncates a finite `f64` to a `u16` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the truncated value is nonnegative and below the target upper bound"
-)]
 pub fn truncate_f64_to_u16(value: f64) -> Option<u16> {
     let value = value.trunc();
     if value.is_finite() && (0.0..65_536.0).contains(&value) {
@@ -143,12 +104,6 @@ pub fn truncate_f64_to_u16(value: f64) -> Option<u16> {
 }
 
 /// Truncates a finite `f64` to a `u32` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the truncated value is nonnegative and below the target upper bound"
-)]
 pub fn truncate_f64_to_u32(value: f64) -> Option<u32> {
     let value = value.trunc();
     if value.is_finite() && (0.0..4_294_967_296.0).contains(&value) {
@@ -159,12 +114,6 @@ pub fn truncate_f64_to_u32(value: f64) -> Option<u32> {
 }
 
 /// Truncates a finite `f64` to a `u64` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the truncated value is nonnegative and below the target upper bound"
-)]
 pub fn truncate_f64_to_u64(value: f64) -> Option<u64> {
     let value = value.trunc();
     if value.is_finite() && (0.0..18_446_744_073_709_551_616.0).contains(&value) {
@@ -175,12 +124,6 @@ pub fn truncate_f64_to_u64(value: f64) -> Option<u64> {
 }
 
 /// Truncates a finite `f64` to a `usize` when the result fits.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the truncated value is nonnegative and below the target upper bound"
-)]
 pub fn truncate_f64_to_usize(value: f64) -> Option<usize> {
     let value = value.trunc();
     let upper = if usize::BITS == 64 {

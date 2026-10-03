@@ -291,23 +291,23 @@ pub(crate) fn bind_parameter_scalars<'a>(
             ctx.charge_work(1, OPERATION)?;
             ctx.insert_hash_map(&mut names_by_id, name.id.as_str(), name, OPERATION)?;
         }
-        let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
+        let mut starts = Vec::<(Option<u64>, &crate::records::Feature)>::new();
         for feature in native_features.values() {
             ctx.charge_work(1, OPERATION)?;
-            let start = feature_object_name(feature, lane).map_or(u64::MAX, |name| name.offset);
+            let start = feature_object_name(feature, lane).map(|name| name.offset);
             ctx.reserve_vec(&mut starts, 1, OPERATION)?;
             starts.push((start, feature));
         }
         ctx.charge_work(u64_from_index(starts.len()), OPERATION)?;
         ctx.stable_sort_by(
             &mut starts,
-            |left, right| left.0.cmp(&right.0),
+            |left, right| (left.0.is_none(), left.0).cmp(&(right.0.is_none(), right.0)),
             |_| 0,
             "sort SLDPRT feature starts",
         )?;
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = starts.get(index + 1).and_then(|next| next.0);
             for parameter in parameters.iter_mut() {
                 ctx.charge_work(1, OPERATION)?;
                 let owner = parameter
@@ -323,7 +323,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     ctx.charge_work(1, OPERATION)?;
                     let owned = match scalar.feature_ref.as_deref() {
                         Some(owner) => owner == native_feature.id,
-                        None => scalar.offset > start && scalar.offset < end,
+                        None => {
+                            start.is_some_and(|start| scalar.offset > start)
+                                && end.is_none_or(|end| scalar.offset < end)
+                        }
                     };
                     if !owned {
                         continue;

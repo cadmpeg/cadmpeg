@@ -1490,6 +1490,7 @@ fn decode_parameter_scalar(
         let (first, second) = if prefix == 0xb7 {
             (0x3f, 0xe4)
         } else {
+            // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
             let second = prefix.wrapping_sub(0x8b);
             (if second >= 0x80 { 0x3f } else { 0x40 }, second)
         };
@@ -1583,11 +1584,11 @@ fn decode_variable_scalar(
         0x51 => Some([0x3f, 0xc6]),
         0x53..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
         0xad => Some([0x3f, 0xd9]),
-        0xa7..=0xac | 0xae => Some([0xbf, prefix.wrapping_add(0x2c)]),
+        0xa7..=0xac | 0xae => Some((0xbf2c_u16 + u16::from(prefix)).to_be_bytes()),
         0xb3 => Some([0xbf, 0xe0]),
         0xbd => Some([0xbf, 0xea]),
         0xc3 => Some([0xbf, 0xf0]),
-        0xc6..=0xce => Some([0xbf, prefix.wrapping_add(0x2d)]),
+        0xc6..=0xce => Some((0xbf2d_u16 + u16::from(prefix)).to_be_bytes()),
         0xd0 => Some([0xbf, 0xfe]),
         0xd2 => Some([0xc0, 0x00]),
         0xd4 => Some([0xc0, 0x02]),
@@ -5913,6 +5914,7 @@ fn saved_section_scalar(
     if matches!(prefix, 0x74 | 0x75) && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         raw[1] = prefix.wrapping_sub(0x8b);
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         // endian-exception: reconstructed-scalar
@@ -6876,6 +6878,7 @@ fn saved_spline_parameter(
         return Some((0.0, offset + 1));
     }
     if matches!(prefix, 0x6d | 0x85 | 0x93 | 0x9e) {
+        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
         let second = prefix.wrapping_sub(0x8b);
         return scalar::ieee7_with_prefix(
             payload,

@@ -6,6 +6,8 @@ use std::io::Read;
 use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceFailure};
 use crate::CodecError;
 
+const INPUT_CHUNK: usize = 8192;
+
 impl DecodeContext<'_> {
     /// Reads at most `length` bytes and admits each copied byte before growth.
     /// Input storage is governed by the input-byte dimension.
@@ -26,7 +28,7 @@ impl DecodeContext<'_> {
         bytes: &mut Vec<u8>,
         length: usize,
     ) -> Result<(), CodecError> {
-        let mut chunk = [0_u8; 8192];
+        let mut chunk = [0_u8; INPUT_CHUNK];
         while bytes.len() < length {
             self.charge_work(1, "input prefix iteration")?;
             let count = (length - bytes.len()).min(chunk.len());
@@ -61,8 +63,29 @@ impl DecodeContext<'_> {
         bytes: &mut Vec<u8>,
     ) -> Result<(), CodecError> {
         let max = self.policy().limits.max_input_bytes;
-        let length = usize::try_from(max).map_or(usize::MAX, std::convert::identity);
-        self.extend_input_prefix(reader, bytes, length)?;
+        loop {
+            let remaining = max
+                .checked_sub(u64_from_index(bytes.len()))
+                .ok_or_else(|| self.refuse_input_limit(0, "complete input prefix"))?;
+            let count = if remaining >= u64_from_index(INPUT_CHUNK) {
+                INPUT_CHUNK
+            } else {
+                usize::try_from(remaining).map_err(|_| {
+                    self.refuse_codec_limit(
+                        "address input chunk",
+                        u64_from_index(INPUT_CHUNK),
+                        remaining,
+                    )
+                })?
+            };
+            let length = bytes.len().checked_add(count).ok_or_else(|| {
+                self.refuse_codec_limit("address complete input", u64_from_index(usize::MAX), max)
+            })?;
+            self.extend_input_prefix(reader, bytes, length)?;
+            if count == 0 || bytes.len() < length {
+                break;
+            }
+        }
         self.charge_work(1, "input end probe")?;
         if reader.read(&mut [0_u8; 1])? != 0 {
             return Err(self.refuse_input_limit(1, "complete input"));
@@ -127,5 +150,35 @@ mod tests {
         assert!(matches!(ctx.read_input_prefix(&mut reader, 1),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::InputBytes
                 && limit.used == 2 && limit.additional == 1));
+    }
+
+    #[test]
+    fn complete_input_preserves_large_policy_and_prefix() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_input_bytes = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let source = vec![b'x'; 9000];
+        let mut reader = Cursor::new(&source);
+        let mut bytes = ctx.read_input_prefix(&mut reader, 7).expect("prefix");
+        ctx.complete_input(&mut reader, &mut bytes)
+            .expect("complete input");
+        assert_eq!(bytes, source);
+        assert_eq!(ctx.budget.input_bytes(), 9000);
+    }
+
+    #[test]
+    fn complete_input_refusal_keeps_input_dimension() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_input_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut bytes = Vec::new();
+        assert!(
+            matches!(ctx.complete_input(&mut Cursor::new(b"abc"), &mut bytes),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::InputBytes
+                && limit.used == 2 && limit.additional == 1)
+        );
+        assert_eq!(bytes, b"ab");
     }
 }

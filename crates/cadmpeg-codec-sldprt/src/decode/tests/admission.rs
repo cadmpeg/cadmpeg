@@ -574,9 +574,7 @@ fn direct_parasolid_stream_copy_refuses_retained_limit() {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
         cadmpeg_core::decode::u64_from_index(stream.len()) - 1;
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &options)
-        .expect_err("direct Parasolid copy must be admitted");
+    let error = retained_refusal_at(&source, &mut options, "retain direct Parasolid stream");
     assert!(
         matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))

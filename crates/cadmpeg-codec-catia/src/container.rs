@@ -393,7 +393,7 @@ fn parse_external_reference(data: &[u8], start: usize) -> Option<(usize, &str)> 
 }
 
 /// Tag byte plus one-byte length that precede a length-prefixed ASCII string.
-const LENGTH_PREFIXED_ASCII_HEADER: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
+const LENGTH_PREFIXED_ASCII_HEADER: Option<NonZeroU32> = NonZeroU32::new(2);
 
 fn length_prefixed_ascii<'a>(data: &'a [u8], at: &mut usize) -> Option<&'a str> {
     (data.get(*at) == Some(&0x34)).then_some(())?;
@@ -990,8 +990,7 @@ pub(crate) fn logical_record_streams(
     }
     if streams.is_empty() {
         if let Some(range) = outer_preamble_range(&scan.data) {
-            let stream =
-                ctx.copy_slice(&scan.data[range], "catia_outer_preamble_stream")?;
+            let stream = ctx.copy_slice(&scan.data[range], "catia_outer_preamble_stream")?;
             ctx.push_vec(&mut streams, stream, "catia_logical_record_streams")?;
         }
     }
@@ -2029,7 +2028,9 @@ pub(crate) fn summarize(
         let storage = EntryStorage::framed_by(
             VerbatimLabel::None,
             reference.target.as_str().into(),
-            LENGTH_PREFIXED_ASCII_HEADER,
+            LENGTH_PREFIXED_ASCII_HEADER.ok_or_else(|| {
+                CodecError::InvalidInput("CATIA ASCII framing must be nonzero".into())
+            })?,
         );
         let name = ctx.copy_retained_text(&reference.target, "catia_summary_entry_name")?;
         ctx.push_vec(

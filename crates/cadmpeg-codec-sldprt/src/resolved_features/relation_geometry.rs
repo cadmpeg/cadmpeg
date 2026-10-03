@@ -3141,12 +3141,12 @@ fn declared_entity_handle_declared_child_pairs<'a>(
         let next_marker_offset = feature_markers
             .iter()
             .find(|marker| marker.offset() > radial.offset())
-            .map_or(u64::MAX, |marker| marker.offset());
+            .map(|marker| marker.offset());
         charge_relation_parameter_work(ctx, lane.classes.len(), 32, DIMENSIONED_HANDLE_OPERATION)?;
         if !lane.classes.iter().any(|class| {
             class.name == class_name
                 && class.offset > radial.offset()
-                && class.offset < next_marker_offset
+                && next_marker_offset.is_none_or(|end| class.offset < end)
         }) {
             continue;
         }

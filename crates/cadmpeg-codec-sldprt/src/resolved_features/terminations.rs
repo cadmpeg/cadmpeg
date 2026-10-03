@@ -1773,14 +1773,18 @@ pub(crate) fn project_compact_combine_paths(
             let order = features
                 .iter()
                 .find(|feature| feature.id == dependency)
-                .map_or(u64::MAX, |feature| feature.ordinal);
+                .map(|feature| feature.ordinal);
             ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
             ordered.push((order, ordinal, dependency));
         }
         ctx.sort_unstable_by(
             &mut ordered,
             |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
-                (left_order, left_ordinal).cmp(&(right_order, right_ordinal))
+                (left_order.is_none(), left_order, left_ordinal).cmp(&(
+                    right_order.is_none(),
+                    right_order,
+                    right_ordinal,
+                ))
             },
             |_| 0,
             OPERATION,
