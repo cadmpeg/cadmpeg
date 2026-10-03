@@ -1902,7 +1902,11 @@ fn procedural_construction_reduction_is_reported() {
         },
     );
     ir.model
-        .add_procedural_curve(&cadmpeg_ir::document::admission::StandardAdmission, &owner, procedural)
+        .add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &owner,
+            procedural,
+        )
         .unwrap()
         .unwrap();
 

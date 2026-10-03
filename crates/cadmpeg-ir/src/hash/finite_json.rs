@@ -89,10 +89,7 @@ struct FiniteGuard<A: Admission> {
 }
 
 impl<A: Admission> FiniteGuard<A> {
-    fn admit<T, E: serde::ser::Error>(
-        &self,
-        result: Result<T, A::Error>,
-    ) -> Result<T, E> {
+    fn admit<T, E: serde::ser::Error>(&self, result: Result<T, A::Error>) -> Result<T, E> {
         result.map_err(|error| {
             if let Some(limit) = A::resource(error) {
                 let mut refusal = self.resource.borrow_mut();
@@ -114,7 +111,11 @@ impl<A: Admission> FiniteGuard<A> {
 
     /// Returns a guard that has refused nothing.
     fn new(admission: A) -> Self {
-        Self { refused: Cell::new(None), admission, resource: RefCell::new(None) }
+        Self {
+            refused: Cell::new(None),
+            admission,
+            resource: RefCell::new(None),
+        }
     }
 
     /// Returns the refused float, if this walk refused one.
@@ -422,7 +423,8 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
 
     fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
-        self.guard.admit(self.guard.admission.collect_str(self.inner, value))?
+        self.guard
+            .admit(self.guard.admission.collect_str(self.inner, value))?
     }
 
     fn is_human_readable(&self) -> bool {

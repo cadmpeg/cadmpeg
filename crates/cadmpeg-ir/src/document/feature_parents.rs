@@ -61,10 +61,14 @@ impl ParentError<'_> {
 }
 
 /// Check supplied models using the caller context and scoped indexes.
-pub(crate) fn validate<'a>(ctx: &DecodeContext<'_>, models: &[&'a Model]) -> Result<Result<(), ParentError<'a>>, CodecError> {
-    let (result, _storage) = ctx.with_scoped_storage("feature parent validation storage", || {
-        validate_graph(models, &DecodeStorage(ctx)).map_err(CodecError::from)
-    })?;
+pub(crate) fn validate<'a>(
+    ctx: &DecodeContext<'_>,
+    models: &[&'a Model],
+) -> Result<Result<(), ParentError<'a>>, CodecError> {
+    let (result, _storage) = ctx
+        .with_scoped_storage("feature parent validation storage", || {
+            validate_graph(models, &DecodeStorage(ctx)).map_err(CodecError::from)
+        })?;
     Ok(result)
 }
 

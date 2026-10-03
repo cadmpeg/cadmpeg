@@ -213,7 +213,11 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        cache_fit_tolerance: None,
     };
     ir.model
-        .add_procedural_curve(&crate::document::admission::StandardAdmission, &curve, construction)
+        .add_procedural_curve(
+            &crate::document::admission::StandardAdmission,
+            &curve,
+            construction,
+        )
         .unwrap()
         .unwrap();
     ir
@@ -1023,7 +1027,11 @@ fn edge_endpoint_mismatch_is_flagged() {
         cache_fit_tolerance: Some(0.99),
     };
     ir.model
-        .add_procedural_curve(&crate::document::admission::StandardAdmission, &curve, procedural)
+        .add_procedural_curve(
+            &crate::document::admission::StandardAdmission,
+            &curve,
+            procedural,
+        )
         .unwrap()
         .unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
@@ -1190,7 +1198,11 @@ fn pcurve_surface_mismatch_is_flagged() {
     };
     procedural
         .model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission, &surface, construction)
+        .add_procedural_surface(
+            &crate::document::admission::StandardAdmission,
+            &surface,
+            construction,
+        )
         .unwrap()
         .unwrap();
     let procedural_report =

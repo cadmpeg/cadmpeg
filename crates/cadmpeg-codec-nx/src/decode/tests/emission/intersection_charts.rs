@@ -860,7 +860,11 @@ fn blend_contact_transfer_fixture(
             },
         );
         ir.model
-            .add_procedural_curve(&cadmpeg_ir::document::admission::StandardAdmission, &curve, procedural)
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve,
+                procedural,
+            )
             .unwrap()
             .unwrap();
     }
@@ -1411,7 +1415,11 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             },
         );
         ir.model
-            .add_procedural_curve(&cadmpeg_ir::document::admission::StandardAdmission, &curve, procedural)
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve,
+                procedural,
+            )
             .unwrap()
             .unwrap();
 

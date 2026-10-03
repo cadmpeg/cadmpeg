@@ -206,7 +206,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             },
         );
         ir.model
-            .add_procedural_curve(&cadmpeg_ir::document::admission::StandardAdmission, &spine, procedural)
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &spine,
+                procedural,
+            )
             .unwrap()
             .unwrap();
         assert_eq!(

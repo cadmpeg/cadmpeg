@@ -1578,7 +1578,6 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     );
 }
 
-
 mod projection;
 
 mod implicit_planes;

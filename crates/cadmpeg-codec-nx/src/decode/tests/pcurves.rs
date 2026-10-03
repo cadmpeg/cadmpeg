@@ -1677,7 +1677,11 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         None,
     );
     ir.model
-        .add_procedural_surface(&cadmpeg_ir::document::admission::StandardAdmission, &cache, procedural)
+        .add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &cache,
+            procedural,
+        )
         .unwrap()
         .unwrap();
 
@@ -1730,7 +1734,11 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             },
         );
         ir.model
-            .add_procedural_curve(&cadmpeg_ir::document::admission::StandardAdmission, &curve_id, procedural)
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve_id,
+                procedural,
+            )
             .unwrap()
             .unwrap();
 

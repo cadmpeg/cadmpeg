@@ -435,4 +435,3 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
-

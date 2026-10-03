@@ -151,18 +151,25 @@ fn e5_carrier_id_creation_refuses_retained_limit() {
             |cap| {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                CatiaCodec.decode(
-                    &mut Cursor::new(&file),
-                    &DecodeOptions { policy, ..DecodeOptions::default() },
-                ).map_err(|error| match error {
-                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
-                    other => panic!("unexpected E5 decode refusal: {other}"),
-                })
+                CatiaCodec
+                    .decode(
+                        &mut Cursor::new(&file),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|error| match error {
+                        cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected E5 decode refusal: {other}"),
+                    })
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == operation));
+                && limit.operation == operation)
+        );
     }
 }
 

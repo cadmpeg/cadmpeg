@@ -185,7 +185,8 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_model_vector_growth() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, false).unwrap_err();
+        let error = limited_product(&named_scan(), 6, u64::MAX, false)
+            .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -208,15 +209,19 @@ mod tests {
                 operation,
                 |cap| limited_product(&named_scan(), u64::MAX, cap, false),
             );
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation), "{operation}: {error:?}");
+                    && resource.operation == operation),
+                "{operation}: {error:?}"
+            );
         }
     }
 
     #[test]
     fn part_product_identities_refuse_before_allocation() {
-        let error = limited_product(&named_scan(), u64::MAX, 0, false).unwrap_err();
+        let error = limited_product(&named_scan(), u64::MAX, 0, false)
+            .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -245,7 +250,8 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_body_reference_rows_and_ids() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, true).unwrap_err();
+        let error = limited_product(&named_scan(), 6, u64::MAX, true)
+            .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems

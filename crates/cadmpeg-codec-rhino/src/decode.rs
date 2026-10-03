@@ -6394,11 +6394,7 @@ fn stage_curve_tree(
         staged
             .draft
             .model_mut()
-            .add_procedural_curve(
-                ctx,
-                &id,
-                ProceduralCurve::new(procedure_id, definition),
-            )?
+            .add_procedural_curve(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
             .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
@@ -7014,11 +7010,7 @@ fn commit_curve_tree(
             curve_key,
         );
         ir.model
-            .add_procedural_curve(
-                ctx,
-                &id,
-                ProceduralCurve::new(procedure_id, definition),
-            )?
+            .add_procedural_curve(ctx, &id, ProceduralCurve::new(procedure_id, definition))?
             .map_err(|error| error.to_string())?;
     }
     Ok(id)

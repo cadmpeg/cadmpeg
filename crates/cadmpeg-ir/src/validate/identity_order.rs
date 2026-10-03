@@ -155,9 +155,7 @@ pub(super) fn check_identity_and_order(
                 ctx.admit_btree_entry(&by_arena.0, &label, "validation native arena slots")?;
                 let ids = match by_arena.0.entry(label) {
                     Entry::Occupied(entry) => entry.into_mut(),
-                    Entry::Vacant(entry) => {
-                        entry.insert(Vec::new())
-                    }
+                    Entry::Vacant(entry) => entry.insert(Vec::new()),
                 };
                 for record in records.records() {
                     ctx.charge_work(1, "validation native order scan")?;

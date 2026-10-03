@@ -4855,9 +4855,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             source_object: None,
         });
 
-        let _attached = ir
-            .model
-            .add_procedural_curve(ctx, &curve_id, procedural)?;
+        let _attached = ir.model.add_procedural_curve(ctx, &curve_id, procedural)?;
     }
     Ok(())
 }

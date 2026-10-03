@@ -632,7 +632,11 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
         .unwrap()
         .unwrap();
     base.model
-        .add_procedural_surface(&crate::document::admission::StandardAdmission, &owner, procedural)
+        .add_procedural_surface(
+            &crate::document::admission::StandardAdmission,
+            &owner,
+            procedural,
+        )
         .unwrap()
         .unwrap();
     assert_eq!(refused, base);
@@ -701,7 +705,11 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
         .unwrap()
         .unwrap();
     base.model
-        .add_procedural_curve(&crate::document::admission::StandardAdmission, &owner, procedural)
+        .add_procedural_curve(
+            &crate::document::admission::StandardAdmission,
+            &owner,
+            procedural,
+        )
         .unwrap()
         .unwrap();
     assert_eq!(refused, base);

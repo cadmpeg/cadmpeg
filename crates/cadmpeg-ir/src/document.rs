@@ -1228,7 +1228,12 @@ impl Model {
         } else {
             let child = child.try_clone_for_decode(ctx, OPERATION)?;
             ctx.charge_work(1, OPERATION)?;
-            ctx.insert_btree_map(&mut self.feature_regeneration_parents.0, child, parent, OPERATION)?;
+            ctx.insert_btree_map(
+                &mut self.feature_regeneration_parents.0,
+                child,
+                parent,
+                OPERATION,
+            )?;
         }
         Ok(())
     }
@@ -1370,7 +1375,8 @@ impl Model {
                 )?)));
             }
             SurfaceGeometry::Solved(_) => {
-                let construction = admission.surface_id(&procedural.id, "procedural surface owner identity")?;
+                let construction =
+                    admission.surface_id(&procedural.id, "procedural surface owner identity")?;
                 admission.reserve(
                     &mut self.procedural_surfaces,
                     1,
@@ -1491,7 +1497,8 @@ impl Model {
                 )?)));
             }
             CurveGeometry::Solved(_) => {
-                let construction = admission.curve_id(&procedural.id, "ir_procedural_curve_construction_id")?;
+                let construction =
+                    admission.curve_id(&procedural.id, "ir_procedural_curve_construction_id")?;
                 admission.reserve(
                     &mut self.procedural_curves,
                     1,
@@ -1816,7 +1823,10 @@ impl CadIr {
                             })?;
                         ctx.charge_work(u64_from_index(moved), "append native record moves")?;
                     } else {
-                        ctx.admit_btree_node_storage::<String, Vec<crate::native::NativeRecord>>(arena_len, "append native arena nodes")?;
+                        ctx.admit_btree_node_storage::<String, Vec<crate::native::NativeRecord>>(
+                            arena_len,
+                            "append native arena nodes",
+                        )?;
                         ctx.charge_collection_items(1, "append native arena nodes")?;
                         ctx.charge_work(1, "append native arena nodes")?;
                         arena_len += 1;

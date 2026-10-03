@@ -671,7 +671,11 @@ impl AnnotationState {
             if !self.annotations.provenance.contains_key(id) {
                 ctx.charge_work(1, "collect source provenance")?;
             }
-            ctx.admit_btree_entry(&self.annotations.provenance, id, "collect source provenance")?;
+            ctx.admit_btree_entry(
+                &self.annotations.provenance,
+                id,
+                "collect source provenance",
+            )?;
         }
         let tag = tag
             .map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag"))
@@ -740,7 +744,11 @@ impl AnnotationState {
         ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
         if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
             ctx.charge_work(1, "collect source exactness entities")?;
-            ctx.admit_btree_entry(&self.annotations.exactness, &id, "collect source exactness entities")?;
+            ctx.admit_btree_entry(
+                &self.annotations.exactness,
+                &id,
+                "collect source exactness entities",
+            )?;
         }
         if let Some(note) = self.annotations.exactness.get_mut(&id) {
             note.fields_mut().retain(|_, value| *value != exactness);
@@ -821,7 +829,11 @@ impl AnnotationState {
             keep_field && existing.is_none_or(|note| !note.fields().contains_key(field.as_ref()));
         if new_entity {
             ctx.charge_work(1, "collect source exactness entities")?;
-            ctx.admit_btree_entry(&self.annotations.exactness, &id, "collect source exactness entities")?;
+            ctx.admit_btree_entry(
+                &self.annotations.exactness,
+                &id,
+                "collect source exactness entities",
+            )?;
         }
         let fields = existing.map_or(0, |note| note.fields().len());
         admit_identity_work(ctx, fields, field.len(), "collect source exactness fields")?;
@@ -843,7 +855,11 @@ impl AnnotationState {
         if new_field {
             ctx.charge_work(1, "collect source exactness fields")?;
             let empty = BTreeMap::new();
-            let fields = self.annotations.exactness.get(&id).map_or(&empty, ExactnessNote::fields);
+            let fields = self
+                .annotations
+                .exactness
+                .get(&id)
+                .map_or(&empty, ExactnessNote::fields);
             ctx.admit_btree_entry(fields, &field, "collect source exactness fields")?;
         }
         self.set_field_exactness(id, field, exactness);
@@ -1096,10 +1112,16 @@ impl Annotations {
             ) {
                 (true, true) => {
                     let provenance_key = ctx.copy_retained_text(&target, operation)?;
-                    ctx.admit_btree_node_storage::<String, AnnotationProvenance>(provenance_count, operation)?;
+                    ctx.admit_btree_node_storage::<String, AnnotationProvenance>(
+                        provenance_count,
+                        operation,
+                    )?;
                     ctx.charge_collection_items(1, operation)?;
                     ctx.charge_work(1, operation)?;
-                    ctx.admit_btree_node_storage::<String, ExactnessNote>(exactness_count, operation)?;
+                    ctx.admit_btree_node_storage::<String, ExactnessNote>(
+                        exactness_count,
+                        operation,
+                    )?;
                     ctx.charge_collection_items(1, operation)?;
                     ctx.charge_work(1, operation)?;
                     provenance_count += 1;
@@ -1110,14 +1132,20 @@ impl Annotations {
                     }
                 }
                 (true, false) => {
-                    ctx.admit_btree_node_storage::<String, AnnotationProvenance>(provenance_count, operation)?;
+                    ctx.admit_btree_node_storage::<String, AnnotationProvenance>(
+                        provenance_count,
+                        operation,
+                    )?;
                     ctx.charge_collection_items(1, operation)?;
                     ctx.charge_work(1, operation)?;
                     provenance_count += 1;
                     Destination::Provenance(target)
                 }
                 (false, true) => {
-                    ctx.admit_btree_node_storage::<String, ExactnessNote>(exactness_count, operation)?;
+                    ctx.admit_btree_node_storage::<String, ExactnessNote>(
+                        exactness_count,
+                        operation,
+                    )?;
                     ctx.charge_collection_items(1, operation)?;
                     ctx.charge_work(1, operation)?;
                     exactness_count += 1;
@@ -1241,10 +1269,16 @@ mod tests {
                 operation,
                 |cap| {
                     policy.limits.max_retained_bytes = cap;
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .expect("empty root");
-                    super::AnnotationBuilder::new()
-                        .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    super::AnnotationBuilder::new().annotate(
+                        &ctx,
+                        id,
+                        stream,
+                        42,
+                        tag,
+                        super::Exactness::Derived,
+                    )
                 },
             );
             let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
