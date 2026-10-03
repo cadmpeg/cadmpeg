@@ -354,60 +354,59 @@ impl JsonStringScan {
 /// Builds an ordinary JSON tree for derived typed conversion. The Value
 /// deserializer's private raw-value carrier is not part of derived JSON data;
 /// ignored extension members must remain ordinary objects during admission.
-struct PlainJson;
+struct PlainJson(serde_json::Value);
 
-impl<'de> serde::de::DeserializeSeed<'de> for PlainJson {
-    type Value = serde_json::Value;
-    fn deserialize<D: serde::Deserializer<'de>>(self, parser: D) -> Result<Self::Value, D::Error> {
-        parser.deserialize_any(self)
-    }
-}
-
-impl<'de> serde::de::Visitor<'de> for PlainJson {
-    type Value = serde_json::Value;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a JSON value")
-    }
-    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Null)
-    }
-    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Bool(value))
-    }
-    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Number(value.into()))
-    }
-    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::Number(value.into()))
-    }
-    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
-        serde_json::Number::from_f64(value)
-            .map(serde_json::Value::Number)
-            .ok_or_else(|| E::custom("JSON number is not finite"))
-    }
-    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::String(value.to_owned()))
-    }
-    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
-        Ok(serde_json::Value::String(value))
-    }
-    fn visit_seq<A: serde::de::SeqAccess<'de>>(
-        self,
-        mut sequence: A,
-    ) -> Result<Self::Value, A::Error> {
-        let mut values = Vec::new();
-        while let Some(value) = sequence.next_element_seed(PlainJson)? {
-            values.push(value);
+impl<'de> serde::Deserialize<'de> for PlainJson {
+    fn deserialize<D: serde::Deserializer<'de>>(parser: D) -> Result<Self, D::Error> {
+        struct JsonVisitor;
+        impl<'de> serde::de::Visitor<'de> for JsonVisitor {
+            type Value = serde_json::Value;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON value")
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Null)
+            }
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Bool(value))
+            }
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Number(value.into()))
+            }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::Number(value.into()))
+            }
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                serde_json::Number::from_f64(value)
+                    .map(serde_json::Value::Number)
+                    .ok_or_else(|| E::custom("JSON number is not finite"))
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::String(value.to_owned()))
+            }
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(serde_json::Value::String(value))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut sequence: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut values = Vec::new();
+                while let Some(value) = sequence.next_element::<PlainJson>()? {
+                    values.push(value.0);
+                }
+                Ok(serde_json::Value::Array(values))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut values = serde_json::Map::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    let value = map.next_value::<PlainJson>()?;
+                    drop(values.insert(key, value.0));
+                }
+                Ok(serde_json::Value::Object(values))
+            }
         }
-        Ok(serde_json::Value::Array(values))
-    }
-    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-        let mut values = serde_json::Map::new();
-        while let Some(key) = map.next_key::<String>()? {
-            let value = map.next_value_seed(PlainJson)?;
-            drop(values.insert(key, value));
-        }
-        Ok(serde_json::Value::Object(values))
+        parser.deserialize_any(JsonVisitor).map(Self)
     }
 }
 
@@ -524,13 +523,12 @@ impl DecodeContext<'_> {
             if interpret_raw {
                 serde_json::from_str(text).map_err(|error| self.tree_malformed(error, operation))
             } else {
-                use serde::de::DeserializeSeed;
+                use serde::Deserialize;
                 let mut parser = serde_json::Deserializer::from_str(text);
-                PlainJson
-                    .deserialize(&mut parser)
+                PlainJson::deserialize(&mut parser)
                     .and_then(|value| {
                         parser.end()?;
-                        Ok(value)
+                        Ok(value.0)
                     })
                     .map_err(|error| self.tree_malformed(error, operation))
             }
