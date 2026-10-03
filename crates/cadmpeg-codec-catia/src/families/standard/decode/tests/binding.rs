@@ -304,13 +304,13 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
         [[0.3, 0.8], [0.2, 0.8], [-0.1, 0.1]],
     );
 
-    assert_eq!(owner_matches_a5_carrier(&admitted, &surface), Ok(true));
+    assert_eq!(owner_matches_a5_carrier(&cadmpeg_test_support::service_decode_context(), &admitted, &surface), Ok(true));
     assert_eq!(
-        owner_matches_a5_carrier(&outside_parameter_domain, &surface),
+        owner_matches_a5_carrier(&cadmpeg_test_support::service_decode_context(), &outside_parameter_domain, &surface),
         Ok(false)
     );
     assert_eq!(
-        owner_matches_a5_carrier(&clipped_model_bounds, &surface),
+        owner_matches_a5_carrier(&cadmpeg_test_support::service_decode_context(), &clipped_model_bounds, &surface),
         Ok(false)
     );
 }
@@ -1822,3 +1822,26 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
 }
 
 mod curve_bindings;
+
+#[test]
+fn owner_carrier_helper_preserves_session_depth_refusal() {
+    let surface = unit_square_surface();
+    let tail = owner_tail([0.25, 0.25], [0.75, 0.75], [[0.2, 0.8], [0.2, 0.8], [-0.1, 0.1]]);
+    crate::test_support::with_work_limit(0, |ctx| {
+        let limit = owner_matches_a5_carrier(ctx, &tail, &surface).expect_err("control traversal refuses work");
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(limit.operation, "IR homogeneous pole traversal");
+        assert_eq!(ctx.charge_work_limit(0, "observe owner work refusal"), Err(limit));
+    });
+    crate::test_support::with_depth_limit(0, |ctx| {
+        assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Ok(true));
+        let original = ctx.enter_nested_limit("owner test outer frame").err().expect("outer frame refuses");
+        let limit = owner_matches_a5_carrier(ctx, &tail, &surface).expect_err("first evaluator frame refuses");
+        assert_eq!(limit, original);
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(ctx.charge_work_limit(0, "observe owner refusal"), Err(limit));
+        assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
+    });
+}

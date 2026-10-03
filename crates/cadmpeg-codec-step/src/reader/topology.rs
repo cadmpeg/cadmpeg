@@ -4638,7 +4638,7 @@ fn select_associated_pcurve(
         return Err(PcurveSelectionFailure::Locus);
     }
     let parameter_range = if let Some(range) = pcurve_declared_parameter_range(geometry) {
-        let declared = pcurve_declared_endpoint_fit_directed(
+        let declared = pcurve_declared_endpoint_fit_directed(ctx, 
             &index,
             &surface_id,
             geometry,
@@ -4755,7 +4755,7 @@ fn pcurve_locus_witness(
         let pcurve_parameter = endpoint
             .start_parameter
             .mul_add(1.0 - fraction, endpoint.end_parameter * fraction);
-        let Some(uv) = pcurve_selection_uv(geometry, pcurve_parameter)? else {
+        let Some(uv) = pcurve_selection_uv(ctx, geometry, pcurve_parameter)? else {
             return Ok(false);
         };
         let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v)? else {
@@ -4828,7 +4828,7 @@ fn pcurve_endpoint_fit(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PcurveEndpointFit>, PcurveSelectionFailure> {
     if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
-        let Some(declared_score) = pcurve_declared_endpoint_fit_directed(
+        let Some(declared_score) = pcurve_declared_endpoint_fit_directed(ctx, 
             index,
             surface_id,
             geometry,
@@ -4850,11 +4850,11 @@ fn pcurve_endpoint_fit(
         // Search for an alternative interval, then use the evaluated residual
         // as the witness. The search does not establish a global minimum.
         let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
-        let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?
+        let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
         else {
             return Ok(None);
         };
-        let Some(end) = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)? else {
+        let Some(end) = pcurve_surface_closest(ctx, index, surface_id, geometry, end, &seeds)? else {
             return Ok(None);
         };
         return Ok(Some(PcurveEndpointFit {
@@ -4864,10 +4864,10 @@ fn pcurve_endpoint_fit(
         }));
     }
     let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
-    let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)? else {
+    let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)? else {
         return Ok(None);
     };
-    let Some(end) = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)? else {
+    let Some(end) = pcurve_surface_closest(ctx, index, surface_id, geometry, end, &seeds)? else {
         return Ok(None);
     };
     Ok(Some(PcurveEndpointFit {
@@ -4950,6 +4950,7 @@ fn surface_selection_point(
 
 #[cfg(test)]
 fn pcurve_declared_endpoint_fit(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
@@ -4957,10 +4958,10 @@ fn pcurve_declared_endpoint_fit(
     start: Point3,
     end: Point3,
 ) -> Result<Option<f64>, ResourceLimit> {
-    let Some(first_uv) = pcurve_selection_uv(geometry, range[0])? else {
+    let Some(first_uv) = pcurve_selection_uv(ctx, geometry, range[0])? else {
         return Ok(None);
     };
-    let Some(last_uv) = pcurve_selection_uv(geometry, range[1])? else {
+    let Some(last_uv) = pcurve_selection_uv(ctx, geometry, range[1])? else {
         return Ok(None);
     };
     let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else {
@@ -4975,6 +4976,7 @@ fn pcurve_declared_endpoint_fit(
 }
 
 fn pcurve_declared_endpoint_fit_directed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
@@ -4982,10 +4984,10 @@ fn pcurve_declared_endpoint_fit_directed(
     start: Point3,
     end: Point3,
 ) -> Result<Option<f64>, ResourceLimit> {
-    let Some(first_uv) = pcurve_selection_uv(geometry, range[0])? else {
+    let Some(first_uv) = pcurve_selection_uv(ctx, geometry, range[0])? else {
         return Ok(None);
     };
-    let Some(last_uv) = pcurve_selection_uv(geometry, range[1])? else {
+    let Some(last_uv) = pcurve_selection_uv(ctx, geometry, range[1])? else {
         return Ok(None);
     };
     let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else {
@@ -5001,28 +5003,32 @@ fn pcurve_declared_endpoint_fit_directed(
 /// returned as the evaluation reached it; the selection measures read it as a
 /// miss.
 fn pcurve_selection_uv(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &PcurveGeometry,
     parameter: f64,
 ) -> Result<Option<Point2>, ResourceLimit> {
-    match cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, geometry, parameter) {
+    match cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx), geometry, parameter) {
         Ok(uv) => Ok(Some(uv.get())),
         Err(failure) => failure.non_finite(),
     }
 }
 
 fn pcurve_surface_closest(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
     seeds: &[f64],
 ) -> Result<Option<(f64, f64)>, ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     // The minimum is only over the finite seed set. The caller treats the
     // directly evaluated result as a witness and omits the optional relation
     // when no witness meets the tolerance.
     let mut best: Option<(f64, f64)> = None;
     for &seed in seeds {
-        let Some(candidate) = mapped_pcurve_closest(index, surface_id, geometry, target, seed)?
+        ctx.charge_work_limit(1, "step pcurve seed visit")?;
+        let Some(candidate) = mapped_pcurve_closest(ctx, index, surface_id, geometry, target, seed)?
         else {
             continue;
         };
@@ -5039,12 +5045,14 @@ fn pcurve_surface_closest(
 /// is evaluated at the returned parameter and is an admission witness, not a
 /// proof of a global minimum.
 fn mapped_pcurve_closest(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
     seed: f64,
 ) -> Result<Option<(f64, f64)>, ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     if !seed.is_finite() {
         return Ok(None);
     }
@@ -5052,13 +5060,13 @@ fn mapped_pcurve_closest(
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate_point = |parameter: f64| -> Result<Option<Point3>, ResourceLimit> {
-        let Some(uv) = pcurve_selection_uv(geometry, parameter)? else {
+        let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
         surface_selection_point(index, surface_id, uv.u, uv.v)
     };
     let evaluate_tangent = |parameter: f64| -> Result<Option<Vector3>, ResourceLimit> {
-        let Some(uv) = pcurve_selection_uv(geometry, parameter)? else {
+        let Some(uv) = pcurve_selection_uv(ctx, geometry, parameter)? else {
             return Ok(None);
         };
         let tangent_uv = match pcurve_tangent(geometry, parameter) {
@@ -5083,6 +5091,7 @@ fn mapped_pcurve_closest(
     let mut best = f64::INFINITY;
     let mut best_parameter = parameter;
     for _ in 0..32 {
+        ctx.charge_work_limit(1, "step pcurve inverse step")?;
         let Some(point) = evaluate_point(parameter)? else {
             return Ok(None);
         };
@@ -5109,6 +5118,7 @@ fn mapped_pcurve_closest(
         };
         let mut candidate_error = candidate_point.distance(target);
         for _ in 0..12 {
+            ctx.charge_work_limit(1, "step pcurve inverse backtrack")?;
             if candidate_error < error {
                 break;
             }

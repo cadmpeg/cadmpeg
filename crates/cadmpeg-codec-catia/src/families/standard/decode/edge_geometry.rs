@@ -1014,7 +1014,7 @@ pub(super) fn standard_oriented_native_support_pcurves(
         ])
     };
     let Some(native_pair) =
-        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))?
+        standard_native_support_endpoint_pair(ctx, native, points, &endpoint_pair, Some(endpoint_pair))?
     else {
         return Ok(Some(copy_native()?));
     };
@@ -1203,7 +1203,7 @@ pub(super) fn build_standard_edge_curve(
                         let mut range = standard_circle_param_range(ctx, crate::families::standard::decode::edge_geometry::StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, support, center, radius, axis: *candidate_axis.as_raw(), ref_direction: reference, start, end, refusal })?;
                         if range.is_none() {
                             if let Some(native) = native_support {
-                                range = native_support_circle_param_range(
+                                range = native_support_circle_param_range(ctx, 
                                     native,
                                     center,
                                     radius,
@@ -2026,6 +2026,7 @@ pub(super) fn standard_circle_param_range(
 }
 
 pub(super) fn native_support_circle_param_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &StandardEdgeSupport,
     center: Point3,
     radius: f64,
@@ -2034,6 +2035,7 @@ pub(super) fn native_support_circle_param_range(
     start: Point3,
     end: Point3,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
         const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
@@ -2051,7 +2053,7 @@ pub(super) fn native_support_circle_param_range(
             let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
             (carrier_axis.as_raw().dot(axis) >= 0.9999).then_some(())?;
             // A non-finite lift is measured as a finite one is.
-            Some(super::lifted_standard_support_parameters(
+            Some(super::lifted_standard_support_parameters(ctx, 
                 surface, pcurve, parameters,
             ))
         };

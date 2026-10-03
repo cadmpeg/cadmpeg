@@ -37,10 +37,12 @@ const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12: f64 = EPS_SKETCH_VALIDATIO
 const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 
 fn spatial_oriented_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SpatialSketchGeometry,
     reversed: bool,
 ) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit>
 {
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let endpoints = match geometry.definition() {
         SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
@@ -77,12 +79,12 @@ fn spatial_oriented_endpoints(
             let start = curve.knots()[cadmpeg_core::decode::index_from_u32(curve.degree())];
             let end = curve.knots()[curve.pole_count()];
             let Some(start_point) =
-                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, curve, start))?
+                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Decode(ctx), curve, start))?
             else {
                 return Ok(None);
             };
             let Some(end_point) =
-                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Standard, curve, end))?
+                crate::eval::finite_or_refusal(crate::eval::decode::nurbs_curve_point_at(crate::eval::admission::EvaluationAdmission::Decode(ctx), curve, end))?
             else {
                 return Ok(None);
             };
@@ -539,12 +541,12 @@ pub(super) fn check_sketches(
                     let left = &profile.boundary()[index];
                     let right = &profile.boundary()[(index + 1) % profile.boundary().len()];
                     let left_endpoints = match spatial_geometry.get(ctx, left.entity.as_str())? {
-                        Some((_, geometry)) => spatial_oriented_endpoints(geometry, left.reversed)?,
+                        Some((_, geometry)) => spatial_oriented_endpoints(ctx, geometry, left.reversed)?,
                         None => None,
                     };
                     let right_endpoints = match spatial_geometry.get(ctx, right.entity.as_str())? {
                         Some((_, geometry)) => {
-                            spatial_oriented_endpoints(geometry, right.reversed)?
+                            spatial_oriented_endpoints(ctx, geometry, right.reversed)?
                         }
                         None => None,
                     };
