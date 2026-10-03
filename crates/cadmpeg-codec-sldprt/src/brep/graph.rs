@@ -5980,7 +5980,7 @@ fn insert_nurbs_homogeneous_knot(
         || knots.len() != expected_knots
         || !value.is_finite()
         || knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(knots)
+        || !knots_nondecreasing(knots, |count| ctx.charge_work(count, "IR NURBS knot order"))?
     {
         return Ok(None);
     }

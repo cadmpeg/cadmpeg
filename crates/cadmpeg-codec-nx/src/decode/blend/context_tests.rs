@@ -89,7 +89,9 @@ fn closest_pcurve_controls_refuse_one_below_collection_need() {
     .expect_err("two controls exceed one slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "nx blend pcurve controls"));
+            && limit.operation == "IR pcurve control copy"
+            && limit.used == 0
+            && limit.additional == 2));
     let result = crate::test_support::with_decode_context(|ctx| {
         super::closest_pcurve_parameters(ctx, &pcurve, Point2::new(0.5, 0.0), None)
     })

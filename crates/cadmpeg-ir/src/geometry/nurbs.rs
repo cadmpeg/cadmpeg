@@ -1044,12 +1044,14 @@ fn require_finite_scalars<S: NurbsAdmission>(
     prefix: &str,
     values: &[f64],
 ) -> Result<(), S::Error> {
-    admission.work(cadmpeg_core::decode::u64_from_index(values.len()), "IR NURBS knot finiteness")?;
-    if values.iter().all(|value| value.is_finite()) {
-        Ok(())
-    } else {
-        Err(admission.structure(format_args!("{prefix}knots contains a non-finite value"))?)
+    admission.work(0, "IR NURBS knot finiteness")?;
+    for value in values {
+        admission.work(1, "IR NURBS knot finiteness")?;
+        if !value.is_finite() {
+            return Err(admission.structure(format_args!("{prefix}knots contains a non-finite value"))?);
+        }
     }
+    Ok(())
 }
 
 fn require_knot_order<S: NurbsAdmission>(
@@ -1057,8 +1059,7 @@ fn require_knot_order<S: NurbsAdmission>(
     knots: &[f64],
     prefix: &str,
 ) -> Result<(), S::Error> {
-    admission.work(cadmpeg_core::decode::u64_from_index(knots.len()), "IR NURBS knot order")?;
-    if knots_nondecreasing(knots) {
+    if knots_nondecreasing(knots, |count| admission.work(count, "IR NURBS knot order"))? {
         Ok(())
     } else {
         Err(admission.structure(format_args!("{prefix}knots must be non-decreasing"))?)
@@ -1818,12 +1819,20 @@ impl<'de> Deserialize<'de> for NurbsCurve {
     }
 }
 
-/// True when each knot is at least as large as the previous (repeats allowed).
-///
-/// A NaN pair fails this predicate. Prefer this form when the site already
-/// used `windows(2).all(|pair| pair[0] <= pair[1])`.
-pub fn knots_nondecreasing(knots: &[f64]) -> bool {
-    knots.windows(2).all(|pair| pair[0] <= pair[1])
+/// Tests adjacent knot pairs after admitting each comparison.
+/// A NaN pair fails this predicate.
+pub fn knots_nondecreasing<E>(
+    knots: &[f64],
+    mut work: impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
+    work(0)?;
+    for pair in knots.windows(2) {
+        work(1)?;
+        if !matches!(pair[0].partial_cmp(&pair[1]), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// True when each knot is strictly larger than the previous.

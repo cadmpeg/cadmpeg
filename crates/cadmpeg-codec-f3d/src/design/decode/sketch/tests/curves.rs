@@ -365,3 +365,21 @@ fn assert_arc_diagnostic_limit(values: [f64; 12]) {
     assert!(matches!(decode_circular_arc(&ctx, &payload, 17),
         Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
 }
+
+#[test]
+fn sketch_nurbs_decoder_keeps_constructor_refusals_in_the_outer_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    for allowance in 0..=6 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::design::decode::sketch::admit_source_sketch_nurbs(&ctx, 1, 0.0,
+            vec![0.0, 0.0, 1.0, 1.0], vec![], &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0], 0);
+        let Err(CodecError::ResourceLimit(original)) = result else { panic!("constructor refusal must not disappear"); };
+        assert_eq!(original.used, allowance);
+        assert_eq!(original.additional, 1);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    }
+}

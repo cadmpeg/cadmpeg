@@ -51,8 +51,8 @@ fn isocurve_admits_actual_copies_and_constructor_visits_once() {
         let surface = surface(rational);
         // Each of two poles visits once, copies its point and homogeneous sum.
         // Four knots copy eight bytes each, two output poles are converted,
-        // and the four-knot finiteness and order passes use eight visits.
-        let work = 2 * (1 + std::mem::size_of::<Point3>() + std::mem::size_of::<super::super::rational::Homogeneous>()) + 32 + 2 + 8
+        // and four knot-finiteness visits and three adjacent comparisons.
+        let work = 2 * (1 + std::mem::size_of::<Point3>() + std::mem::size_of::<super::super::rational::Homogeneous>()) + 32 + 2 + 7
             + if rational { 22 + 2 } else { 0 };
         for allowance in 0..=work {
             let mut policy = DecodePolicy::service();
