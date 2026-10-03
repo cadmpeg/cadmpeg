@@ -21,6 +21,7 @@ mod flow;
 mod instantiation;
 mod key_work;
 mod scope;
+mod scalar;
 mod serde;
 mod storage;
 mod types;
