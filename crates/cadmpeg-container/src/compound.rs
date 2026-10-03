@@ -349,22 +349,7 @@ impl<'a> CompoundSnapshot<'a> {
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
         for (index, entry) in entries.iter().enumerate() {
-            let component_count = entry.path().split('/').count();
-            let unit_count = entry.path().encode_utf16().count();
-            let key_bytes = component_count
-                .checked_mul(std::mem::size_of::<Vec<u16>>())
-                .and_then(|bytes| {
-                    unit_count
-                        .checked_mul(std::mem::size_of::<u16>())
-                        .and_then(|units| bytes.checked_add(units))
-                })
-                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<(Vec<Vec<u16>>, usize)>()))
-                .ok_or_else(|| CodecError::Malformed("CFB path index size overflow".into()))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(key_bytes),
-                "retain CFB path index",
-            )?;
-            let key = path_key(entry.path());
+            let key = path_key(ctx, entry.path())?;
             if ctx
                 .insert_btree_map(&mut by_path, key, index, "index CFB path")?
                 .is_some()
@@ -408,28 +393,29 @@ impl<'a> CompoundSnapshot<'a> {
     }
 
     /// Finds an entry by a case-insensitive CFB path key.
-    pub fn entry(&self, path: &str) -> Option<&CompoundEntry> {
-        self.by_path
-            .get(&path_key(path))
-            .map(|index| &self.entries[*index])
+    pub fn entry(&self, ctx: &DecodeContext<'_>, path: &str) -> Result<Option<&CompoundEntry>, CodecError> {
+        let (entry, storage) = ctx.with_scoped_storage("CFB path lookup key", || -> Result<_, CodecError> {
+            let key = path_key(ctx, path)?;
+            Ok(ctx.get_btree_map(&self.by_path, &key, "CFB path lookup")?.map(|index| &self.entries[*index]))
+        })?;
+        drop(storage);
+        Ok(entry)
     }
 
     /// Finds a stream by a case-insensitive CFB path key.
-    pub fn stream(&self, path: &str) -> Option<&CompoundStreamEntry> {
-        match self.entry(path) {
+    pub fn stream(&self, ctx: &DecodeContext<'_>, path: &str) -> Result<Option<&CompoundStreamEntry>, CodecError> {
+        Ok(match self.entry(ctx, path)? {
             Some(CompoundEntry::Stream(entry)) => Some(entry),
             Some(CompoundEntry::Storage(_)) | None => None,
-        }
+        })
     }
 
     /// Finds a stream by stable directory identity.
-    pub fn stream_by_id(&self, id: CompoundStreamId) -> Option<&CompoundStreamEntry> {
-        self.streams_by_id
-            .get(&id)
-            .and_then(|index| match &self.entries[*index] {
-                CompoundEntry::Stream(entry) => Some(entry),
-                CompoundEntry::Storage(_) => None,
-            })
+    pub fn stream_by_id(&self, ctx: &DecodeContext<'_>, id: CompoundStreamId) -> Result<Option<&CompoundStreamEntry>, CodecError> {
+        Ok(ctx.get_btree_map(&self.streams_by_id, &id, "CFB stream id lookup")?.and_then(|index| match &self.entries[*index] {
+            CompoundEntry::Stream(entry) => Some(entry),
+            CompoundEntry::Storage(_) => None,
+        }))
     }
 
     /// Opens one stream as a borrowed contiguous run or a budgeted joined view.
@@ -1853,10 +1839,21 @@ fn cfb_name_cmp(left: &str, right: &str) -> Ordering {
     })
 }
 
-fn path_key(path: &str) -> Vec<Vec<u16>> {
-    path.split('/')
-        .map(|component| component.encode_utf16().map(cfb_upper_unit).collect())
-        .collect()
+fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecError> {
+    let mut components = Vec::new();
+    let mut component = Vec::new();
+    for character in ctx.admit_iter(path, "scan CFB path key")? {
+        if character == '/' {
+            ctx.push_vec(&mut components, std::mem::take(&mut component), "CFB path key components")?;
+        } else {
+            let mut encoded = [0_u16; 2];
+            for &unit in ctx.admit_iter(character.encode_utf16(&mut encoded), "encode CFB path units")? {
+                ctx.push_vec(&mut component, cfb_upper_unit(unit), "CFB path key units")?;
+            }
+        }
+    }
+    ctx.push_vec(&mut components, component, "CFB path key components")?;
+    Ok(components)
 }
 
 fn cfb_upper_unit(unit: u16) -> u16 {
@@ -2296,7 +2293,7 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
             let snapshot = CompoundSnapshot::new(&ctx, root).expect("valid allocation");
-            let stream = snapshot.stream("Store/Large").expect("large stream");
+            let stream = snapshot.stream(&ctx, "Store/Large").expect("lookup admission").expect("large stream");
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 0;
             with_context(&[], &policy, |ctx| {
@@ -2447,7 +2444,7 @@ mod tests {
         assert_eq!(snapshot.major_version(), 3);
         assert_eq!(
             snapshot
-                .open(&ctx, snapshot.stream("small").expect("small stream exists"),)
+                .open(&ctx, snapshot.stream(&ctx, "small").expect("lookup admission").expect("small stream exists"),)
                 .expect("small stream opens")
                 .window(),
             b"small"
@@ -2457,7 +2454,7 @@ mod tests {
                 .open(
                     &ctx,
                     snapshot
-                        .stream("Store/Large")
+                        .stream(&ctx, "Store/Large").expect("lookup admission")
                         .expect("regular stream exists"),
                 )
                 .expect("regular stream opens")
@@ -2465,7 +2462,7 @@ mod tests {
             vec![0x5a; 4096]
         );
         assert!(matches!(
-            snapshot.entry("STORE"),
+            snapshot.entry(&ctx, "STORE").expect("lookup admission"),
             Some(CompoundEntry::Storage(_))
         ));
     }
@@ -2501,7 +2498,7 @@ mod tests {
                 let snapshot =
                     CompoundSnapshot::new(&ctx, cfb).expect("CFB parses within child view");
                 let small = snapshot
-                    .open(&ctx, snapshot.stream("Small").expect("small stream"))
+                    .open(&ctx, snapshot.stream(&ctx, "Small").expect("lookup admission").expect("small stream"))
                     .expect("mini or empty stream opens within child view");
                 assert_eq!(small.window(), if empty { &b""[..] } else { &b"small"[..] });
                 assert_eq!(
@@ -2522,7 +2519,7 @@ mod tests {
                 let large = snapshot
                     .open(
                         &ctx,
-                        snapshot.stream("Store/Large").expect("regular stream"),
+                        snapshot.stream(&ctx, "Store/Large").expect("lookup admission").expect("regular stream"),
                     )
                     .expect("regular stream opens within child view");
                 assert_eq!(large.window(), &[0x5a; 4096]);
@@ -2551,7 +2548,7 @@ mod tests {
             let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
                 .expect("empty stream fixture fits policy");
             let snapshot = CompoundSnapshot::new(&ctx, root).expect("empty stream parses");
-            let stream = snapshot.stream("Small").expect("empty stream exists");
+            let stream = snapshot.stream(&ctx, "Small").expect("lookup admission").expect("empty stream exists");
             assert_eq!(stream.start_sector(), marker);
             assert_eq!(stream.logical_size(), 0);
             assert!(snapshot
@@ -2580,7 +2577,7 @@ mod tests {
             .open(
                 &ctx,
                 snapshot
-                    .stream("Store/Large")
+                    .stream(&ctx, "Store/Large").expect("lookup admission")
                     .expect("regular stream exists"),
             )
             .expect("regular stream opens through the partial sector");
@@ -2598,7 +2595,7 @@ mod tests {
             .open(
                 &ctx,
                 snapshot
-                    .stream("Store/Large")
+                    .stream(&ctx, "Store/Large").expect("lookup admission")
                     .expect("regular stream exists")
             )
             .is_err());
@@ -2620,10 +2617,10 @@ mod tests {
             .expect("synthetic CFB fits the decode policy");
         let first = CompoundSnapshot::new(&ctx, root).expect("first CFB snapshot parses");
         let second = CompoundSnapshot::new(&ctx, root).expect("second CFB snapshot parses");
-        let foreign = second.stream("Small").expect("foreign stream exists");
+        let foreign = second.stream(&ctx, "Small").expect("lookup admission").expect("foreign stream exists");
         assert!(first.open(&ctx, foreign).is_err());
 
-        let owned = first.stream("Small").expect("owned stream exists").clone();
+        let owned = first.stream(&ctx, "Small").expect("lookup admission").expect("owned stream exists").clone();
         assert_eq!(
             first
                 .open(&ctx, &owned)
@@ -2753,7 +2750,7 @@ mod tests {
             .expect("synthetic CFB fits the decode policy");
         let snapshot = CompoundSnapshot::new(&ctx, root)
             .expect("root color and black-height metadata do not govern traversal");
-        assert!(snapshot.stream("Store/Large").is_some());
+        assert!(snapshot.stream(&ctx, "Store/Large").expect("lookup admission").is_some());
     }
 
     #[test]
@@ -2768,7 +2765,7 @@ mod tests {
         assert_eq!(snapshot.sector_size(), 4096);
         assert_eq!(
             snapshot
-                .open(&ctx, snapshot.stream("Wide").expect("stream exists"))
+                .open(&ctx, snapshot.stream(&ctx, "Wide").expect("lookup admission").expect("stream exists"))
                 .expect("stream opens")
                 .window(),
             vec![0x6d; 4096]
@@ -2879,10 +2876,31 @@ mod tests {
     }
 
     #[test]
+    fn compound_path_lookup_refuses_before_key_work_or_storage() {
+        let bytes = fixture();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("setup");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let CodecError::ResourceLimit(first) = snapshot.entry(&ctx, "Store").expect_err("lookup work") else { panic!("resource refusal") };
+        assert_eq!(first.operation, "scan CFB path key");
+        let CodecError::ResourceLimit(repeated) = snapshot.stream(&ctx, "Small").expect_err("fused lookup") else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+        policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(matches!(snapshot.entry(&ctx, "Store"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
     fn directory_keys_use_length_preserving_simple_uppercase_units() {
         assert_eq!(cfb_name_cmp("alpha", "ALPHA"), Ordering::Equal);
-        assert_eq!(path_key("Store/alpha"), path_key("store/ALPHA"));
-        assert_ne!(path_key("ß"), path_key("SS"));
+        with_context(&[], &DecodePolicy::service(), |ctx| {
+            assert_eq!(path_key(ctx, "Store/alpha").expect("key"), path_key(ctx, "store/ALPHA").expect("key"));
+            assert_ne!(path_key(ctx, "ß").expect("key"), path_key(ctx, "SS").expect("key"));
+        });
         assert_eq!(cfb_upper_unit(0xd800), 0xd800);
     }
 
@@ -3058,7 +3076,7 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("v3 high word is ignored");
         assert_eq!(
             snapshot
-                .stream("Small")
+                .stream(&ctx, "Small").expect("lookup admission")
                 .expect("stream exists")
                 .logical_size(),
             5

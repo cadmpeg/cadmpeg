@@ -28,7 +28,7 @@ impl<'a> InventorContainer<'a> {
     pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let snapshot = CompoundSnapshot::new(ctx, root)?;
         if !matches!(
-            snapshot.entry("RSeStorage"),
+            snapshot.entry(ctx, "RSeStorage")?,
             Some(CompoundEntry::Storage(_))
         ) {
             return Err(CodecError::Malformed(

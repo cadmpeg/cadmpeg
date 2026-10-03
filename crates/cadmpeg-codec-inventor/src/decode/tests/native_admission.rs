@@ -1717,7 +1717,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     let mut document = UfrxDocument {
         stream: container
             .snapshot
-            .stream("RSeStorage/RSeSegInfo")
+            .stream(&ctx, "RSeStorage/RSeSegInfo").expect("lookup admission")
             .expect("validated fixture stream")
             .id(),
         schema: 15,
