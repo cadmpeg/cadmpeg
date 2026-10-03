@@ -45,8 +45,8 @@ impl<'a> DecodeContext<'a> {
     /// Reads the root input under `max_input_bytes`, copies it into the arena,
     /// registers the root space, establishes input-proportional allowances,
     /// and returns the context and root view.
-    pub fn read_root(
-        reader: &mut dyn ReadSeek,
+    pub fn read_root<R: ReadSeek + ?Sized>(
+        reader: &mut R,
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
         container_only: bool,
