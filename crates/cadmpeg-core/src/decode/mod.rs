@@ -11,6 +11,7 @@ mod context;
 mod deflate;
 mod error;
 mod input;
+pub mod iter_source;
 mod policy;
 mod probe;
 pub mod scan;

@@ -352,6 +352,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
+        if consumers && types::admitted_iterator(self.tcx, value) {
+            return;
+        }
         if name == "count" {
             if let rustc_middle::ty::Adt(definition, arguments) = value.kind() {
                 let path = self.tcx.def_path_str(definition.did());
