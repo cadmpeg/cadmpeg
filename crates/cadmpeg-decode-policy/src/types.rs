@@ -270,7 +270,7 @@ pub(crate) fn admitted_iterator(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
     match name.as_str() {
         "Map" | "Filter" | "FilterMap" | "Enumerate" | "Rev" | "Cloned" | "Copied"
             | "Inspect" | "Take" | "Skip" | "TakeWhile" | "SkipWhile" | "StepBy"
-            | "Peekable" | "Fuse" | "Scan" | "MapWhile" => admitted_iterator(tcx, source),
+            | "Peekable" | "Fuse" | "Scan" | "MapWhile" | "DecodeUtf16" => admitted_iterator(tcx, source),
         "Zip" | "Chain" => admitted_iterator(tcx, source)
             && types.next().is_some_and(|other| admitted_iterator(tcx, other)
                 || iteration(tcx, other) == Shape::Fixed),

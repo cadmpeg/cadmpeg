@@ -23,3 +23,10 @@ pub fn decode(ctx: &DecodeContext, bytes: &[u8], admitted: decode::scan::Admitte
     std::hint::black_box(admitted.map(|byte| *byte).any(|byte| byte == 1));
     for byte in bytes { std::hint::black_box(byte); } // finding: uncharged_decode_work
 }
+
+pub fn utf16(ctx: &DecodeContext, units: &[u16]) {
+    let _ctx = ctx;
+    let source = decode::scan::source(units.iter());
+    for character in char::decode_utf16(source.copied()) { std::hint::black_box(character.is_ok()); }
+    for character in char::decode_utf16(units.iter().copied()) { std::hint::black_box(character.is_ok()); } // finding: uncharged_decode_work
+}
