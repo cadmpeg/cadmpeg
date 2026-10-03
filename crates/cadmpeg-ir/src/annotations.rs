@@ -1226,38 +1226,33 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         let mut total = 0u64;
-        for (bytes, operation) in [
-            (stream.len(), "annotation stream name"),
-            (
-                std::mem::size_of::<super::StreamName>() + 2 * std::mem::size_of::<usize>(),
-                "annotation stream handles",
-            ),
-            (
-                std::mem::size_of::<(String, super::AnnotationProvenance)>(),
-                "collect source provenance",
-            ),
-            (id.len(), "retain source provenance identity"),
-            (tag.len(), "retain source provenance tag"),
-            (id.len(), "retain source exactness identity"),
-            (
-                std::mem::size_of::<(String, super::ExactnessNote)>(),
-                "collect source exactness entities",
-            ),
+        // Each boundary includes the preceding backing-node admissions.
+        for operation in [
+            "annotation stream name",
+            "annotation stream handles",
+            "retain source provenance identity",
+            "collect source provenance",
+            "retain source provenance tag",
+            "retain source exactness identity",
+            "collect source exactness entities",
         ] {
-            total += cadmpeg_core::decode::u64_from_index(bytes);
-            policy.limits.max_retained_bytes = total - 1;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let mut builder = super::AnnotationBuilder::new();
-            let error = builder
-                .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
-                .expect_err("retained value exceeds cap");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation),
-                "{error}"
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                operation,
+                |cap| {
+                    policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty root");
+                    super::AnnotationBuilder::new()
+                        .annotate(&ctx, id, stream, 42, tag, super::Exactness::Derived)
+                },
             );
+            let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
+                panic!("retained boundary must refuse");
+            };
+            assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(resource.operation, operation);
+            total = resource.used + resource.additional;
         }
         policy.limits.max_retained_bytes = total;
         for (limit, operation) in [

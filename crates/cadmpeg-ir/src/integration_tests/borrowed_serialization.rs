@@ -14,14 +14,15 @@ fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 16384;
+    // Structural projection admits backing B-tree nodes for the fixture.
+    policy.limits.max_materialized_bytes = 65536;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let projected =
         crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap();
     assert_eq!(*projected, expected);
     drop(projected);
     let storage = ctx
-        .reserve_scoped(16384, "borrowed owner storage released")
+        .reserve_scoped(65536, "borrowed owner storage released")
         .unwrap();
     drop(storage);
     ctx.finish_session().unwrap();

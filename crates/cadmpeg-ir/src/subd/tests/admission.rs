@@ -110,7 +110,8 @@ fn cage_validation_releases_scoped_members_and_preserves_missing_edge_precedence
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 512;
+    // Membership indexes admit backing B-tree nodes within scoped storage.
+    policy.limits.max_materialized_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
         SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
@@ -119,7 +120,7 @@ fn cage_validation_releases_scoped_members_and_preserves_missing_edge_precedence
         expected
     );
     drop(
-        ctx.reserve_scoped(512, "reuse cage validation storage")
+        ctx.reserve_scoped(4096, "reuse cage validation storage")
             .unwrap(),
     );
     ctx.finish_session().unwrap();
