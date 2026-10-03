@@ -178,6 +178,15 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     }
 }
 
+impl crate::ids::comparison::sealed::TextWork for EvaluationAdmission<'_, '_> {}
+
+impl crate::ids::comparison::TextWork for EvaluationAdmission<'_, '_> {
+    type Error = ResourceLimit;
+    fn comparison_work(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
+        self.work(count, operation)
+    }
+}
+
 impl crate::index::sealed::IndexQuery for EvaluationAdmission<'_, '_> {}
 
 impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
@@ -189,10 +198,7 @@ impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
         EvaluationAdmission::work(*self, u64_from_index(count), operation)
     }
     fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, ResourceLimit> {
-        match self.context() {
-            Some(context) => crate::ids::comparison::equal(context, first, second, operation),
-            None => Ok(first == second),
-        }
+        crate::ids::comparison::equal(self, first, second, operation)
     }
 }
 
@@ -213,6 +219,41 @@ mod tests {
     use crate::eval::EvaluationFailure;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn model_text_comparison_consumes_its_local_slice_and_global_work_once() {
+        for allowance in 0..=6 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 6;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let parent = ctx.work_budget(allowance);
+            let result: Result<bool, EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx).within_work_slice(&parent, |admission| {
+                crate::index::IndexQuery::equal(&admission, "alpha", "alpha", "model text comparison")
+                    .map_err(EvaluationFailure::ResourceLimit)
+            });
+            assert_eq!(parent.consumed(), usize::try_from(allowance).unwrap());
+            if allowance < 6 {
+                let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else { panic!("text comparison must preserve its local refusal"); };
+                assert_eq!(original.dimension, ResourceDimension::Codec("geometry evaluation work slice"));
+                assert_eq!((original.limit, original.used, original.additional), (0, 0, 1));
+                assert_eq!(crate::ids::comparison::equal(&ctx, "", "", "repeated text comparison"), Err(original));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+            } else {
+                assert_eq!(result, Ok(true));
+                let original = ctx.charge_work_limit(1, "next model text comparison").unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!((original.limit, original.used, original.additional), (6, 6, 1));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+            }
+        }
+        let standard = EvaluationAdmission::Standard;
+        assert_eq!(crate::ids::comparison::compare(&standard, "é", "ê", "standard text comparison").unwrap(), std::cmp::Ordering::Less);
+        assert!(crate::ids::comparison::equal(&crate::index::StandardIndex, "alpha", "alpha", "standard text equality").unwrap());
+    }
 
     #[test]
     fn model_lookup_work_refusal_reaches_curve_and_surface_evaluation() {

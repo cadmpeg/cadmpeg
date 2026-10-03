@@ -175,8 +175,8 @@ impl IndexStorage for PublicStorage {
     fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> {
         Ok(())
     }
-    fn equal(&self, first: &str, second: &str, _operation: &'static str) -> Result<bool, Self::Error> {
-        Ok(first == second)
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, Self::Error> {
+        crate::ids::comparison::equal(&StandardIndex, first, second, operation)
     }
 }
 
@@ -414,6 +414,13 @@ pub(crate) mod sealed {
 /// Explicit standard allocation policy for context-free model indexes.
 #[derive(Debug, Clone, Copy)]
 pub struct StandardIndex;
+
+impl crate::ids::comparison::sealed::TextWork for StandardIndex {}
+
+impl crate::ids::comparison::TextWork for StandardIndex {
+    type Error = std::convert::Infallible;
+    fn comparison_work(&self, _count: u64, _operation: &'static str) -> Result<(), Self::Error> { Ok(()) }
+}
 
 /// Work policy for one borrowed model identity query.
 pub trait IndexQuery: sealed::IndexQuery {
