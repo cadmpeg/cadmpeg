@@ -2569,7 +2569,7 @@ fn check_feature_references(
         EdgeSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ScaleCenter,
     };
 
-    if let Err(error) = crate::document::feature_parents::validate(Some(ctx), &[&ir.model])? {
+    if let Err(error) = crate::document::feature_parents::validate(ctx, &[&ir.model])? {
         super::record_finding(
             ctx,
             findings,

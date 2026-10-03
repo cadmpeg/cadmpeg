@@ -878,7 +878,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
-                    Some(admission.context()),
+                    admission.context(),
                     &id,
                     cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                         directrix_id,
@@ -927,7 +927,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 admission.charge()?;
                 let _attached = ir.model.add_procedural_surface(
-                    Some(admission.context()),
+                    admission.context(),
                     &id,
                     ProceduralSurface::new(procedural_id, *definition, None),
                 )?;
@@ -966,7 +966,7 @@ pub(super) fn emit_surfaces(
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
-            Some(admission.context()),
+            admission.context(),
             &surface.try_clone_for_decode(admission.context(), "catia_b5_offset_surface_id")?,
             ProceduralSurface::new(
                 procedural_id,
@@ -1081,7 +1081,7 @@ fn emit_extrusion_procedure(
 
             admission.charge()?;
             let _attached = ir.model.add_procedural_curve(
-                Some(admission.context()),
+                admission.context(),
                 &directrix_id.try_clone_for_decode(
                     admission.context(),
                     "catia_b5_extrusion_procedure_owner_id",
@@ -1181,7 +1181,7 @@ fn emit_extrusion_procedure(
                 Exactness::ByteExact,
             )?;
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(Some(admission.context()),
+            let _attached = ir.model.add_procedural_curve(admission.context(),
                 &directrix_id.try_clone_for_decode(admission.context(), "catia_b5_extrusion_procedure_owner_id")?,
                 ProceduralCurve::new(
                     procedure_id,
@@ -1216,7 +1216,7 @@ fn emit_extrusion_procedure(
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     admission.charge()?;
     let _attached = ir.model.add_procedural_surface(
-        Some(admission.context()),
+        admission.context(),
         surface_id,
         ProceduralSurface::new(
             procedure_id,

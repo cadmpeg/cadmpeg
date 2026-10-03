@@ -1675,7 +1675,7 @@ mod route_tests {
         });
         ir.model
             .add_procedural_curve(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("catia:test:procedural-curve#0")
@@ -1732,7 +1732,7 @@ mod route_tests {
 
         ir.model
             .add_procedural_curve(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
@@ -1753,7 +1753,7 @@ mod route_tests {
             .expect("attach construction to its fixture carrier");
         ir.model
             .add_procedural_surface(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &surface_id,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint(
@@ -1774,7 +1774,7 @@ mod route_tests {
             .expect("attach construction to its fixture carrier");
         ir.model
             .add_procedural_surface(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &offset_id,
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     surface_id,

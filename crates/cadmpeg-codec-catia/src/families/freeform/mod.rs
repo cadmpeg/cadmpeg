@@ -1948,7 +1948,7 @@ pub(super) fn append_freeform_surface_pools(
         )?;
         admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
-            Some(admission.context()),
+            admission.context(),
             &surface_id,
             ProceduralSurface::new(
                 procedural_id,
@@ -2720,7 +2720,7 @@ fn append_resolved_consolidated_surface_curves(
                             admission.context(),
                             "catia_freeform_offset_procedural_owner_id",
                         )?;
-                        let _attached = ir.model.add_procedural_surface(Some(admission.context()), &procedural_owner_id, ProceduralSurface::new(
+                        let _attached = ir.model.add_procedural_surface(admission.context(), &procedural_owner_id, ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(
                                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
@@ -3573,7 +3573,7 @@ fn append_resolved_consolidated_surface_curves(
             )?;
             admission.charge()?;
             let _attached = ir.model.add_procedural_curve(
-                Some(admission.context()),
+                admission.context(),
                 &curve_id,
                 ProceduralCurve::new(procedural_id, definition),
             )?;
@@ -5348,7 +5348,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
@@ -5707,7 +5707,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(

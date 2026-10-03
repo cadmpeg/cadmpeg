@@ -275,7 +275,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
     );
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
@@ -627,7 +627,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
     );
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),

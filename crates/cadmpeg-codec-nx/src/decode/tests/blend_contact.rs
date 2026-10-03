@@ -1216,7 +1216,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             },
         ]);
         let _attached = ir.model.add_procedural_surface(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &support_offset,
             ProceduralSurface::new(
                 support_offset_construction.clone(),
@@ -1278,7 +1278,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             None,
         );
         let _attached = ir.model.add_procedural_curve(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &spine,
             ProceduralCurve::new(
                 spine_procedural,

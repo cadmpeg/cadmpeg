@@ -448,7 +448,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
-            None,
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 procedural_id.clone(),

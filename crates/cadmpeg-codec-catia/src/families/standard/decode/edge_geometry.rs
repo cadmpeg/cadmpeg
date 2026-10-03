@@ -1672,7 +1672,7 @@ pub(super) fn build_standard_edge_curve(
                     },
                 );
                 let _attached = ir.model.add_procedural_curve(
-                    Some(ctx),
+                    ctx,
                     &id.try_clone_for_decode(ctx, "catia_standard_edge_procedural_owner_id")?,
                     procedural,
                 )?;

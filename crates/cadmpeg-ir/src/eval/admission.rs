@@ -600,7 +600,7 @@ mod tests {
         });
         ir.model
             .add_procedural_surface(
-                None,
+                &crate::document::admission::StandardAdmission,
                 &surface,
                 ProceduralSurface::new(
                     crate::ids::ProceduralSurfaceId::mint("test:model:procedural#sweep").unwrap(),
@@ -676,7 +676,7 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                None,
+                &crate::document::admission::StandardAdmission,
                 &id,
                 ProceduralCurve::new(
                     crate::ids::ProceduralCurveId::mint("test:model:procedural#cycle").unwrap(),

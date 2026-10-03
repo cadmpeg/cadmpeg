@@ -187,7 +187,7 @@ fn charted(with_supports: bool) -> CadIr {
     );
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 "test:model:procedural#charted".try_into().unwrap(),

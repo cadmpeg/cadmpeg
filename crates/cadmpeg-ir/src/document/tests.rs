@@ -42,7 +42,7 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("input admitted");
     let (mut model, owner, procedural) = build();
-    let refused = model.add_procedural_curve(Some(&ctx), &owner, procedural);
+    let refused = model.add_procedural_curve(&ctx, &owner, procedural);
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "ir_procedural_curve_construction_id")
@@ -56,7 +56,7 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
         .expect("input admitted");
     let (mut model, owner, procedural) = build();
     assert!(model
-        .add_procedural_curve(Some(&ctx), &owner, procedural)
+        .add_procedural_curve(&ctx, &owner, procedural)
         .expect("service budget admits construction copy")
         .is_ok());
     assert!(matches!(
@@ -98,7 +98,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_surface(
-            None,
+            &crate::document::admission::StandardAdmission,
             &surface_id,
             ProceduralSurface::new(
                 procedural_id,
@@ -142,7 +142,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve_id,
             ProceduralCurve::new(
                 procedural_id,
@@ -508,7 +508,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_surface(
-            None,
+            &crate::document::admission::StandardAdmission,
             &surface,
             ProceduralSurface::new(
                 surface_construction,
@@ -535,7 +535,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 curve_construction,
@@ -596,7 +596,7 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     let mut refused = base.clone();
     let error = refused
         .model
-        .add_procedural_surface(Some(&ctx), &owner, procedural.clone())
+        .add_procedural_surface(&ctx, &owner, procedural.clone())
         .expect_err("owner identity exceeds retained limit");
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
@@ -616,7 +616,7 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     let solved = cached.model.surfaces[0].geometry.clone();
     cached
         .model
-        .add_procedural_surface(Some(&ctx), &owner, procedural.clone())
+        .add_procedural_surface(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     assert_eq!(cached.model.procedural_surfaces.len(), 1);
@@ -628,11 +628,11 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     refused
         .model
-        .add_procedural_surface(Some(&ctx), &owner, procedural.clone())
+        .add_procedural_surface(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     base.model
-        .add_procedural_surface(None, &owner, procedural)
+        .add_procedural_surface(&crate::document::admission::StandardAdmission, &owner, procedural)
         .unwrap()
         .unwrap();
     assert_eq!(refused, base);
@@ -664,7 +664,7 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     let mut refused = base.clone();
     let error = refused
         .model
-        .add_procedural_curve(Some(&ctx), &owner, procedural.clone())
+        .add_procedural_curve(&ctx, &owner, procedural.clone())
         .expect_err("owner identity exceeds retained limit");
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
@@ -685,7 +685,7 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     let solved = cached.model.curves[0].geometry.clone();
     cached
         .model
-        .add_procedural_curve(Some(&ctx), &owner, procedural.clone())
+        .add_procedural_curve(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     assert_eq!(cached.model.procedural_curves.len(), 1);
@@ -697,11 +697,11 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     refused
         .model
-        .add_procedural_curve(Some(&ctx), &owner, procedural.clone())
+        .add_procedural_curve(&ctx, &owner, procedural.clone())
         .unwrap()
         .unwrap();
     base.model
-        .add_procedural_curve(None, &owner, procedural)
+        .add_procedural_curve(&crate::document::admission::StandardAdmission, &owner, procedural)
         .unwrap()
         .unwrap();
     assert_eq!(refused, base);
@@ -1197,7 +1197,7 @@ fn procedural_attachment_admits_owner_identity_bytes_before_comparison() {
         let error = if surface {
             model
                 .add_procedural_surface(
-                    Some(&ctx),
+                    &ctx,
                     &surface_owner,
                     ProceduralSurface::new(
                         "test:model:proceduralsurface#new".try_into().unwrap(),
@@ -1212,7 +1212,7 @@ fn procedural_attachment_admits_owner_identity_bytes_before_comparison() {
         } else {
             model
                 .add_procedural_curve(
-                    Some(&ctx),
+                    &ctx,
                     &curve_owner,
                     ProceduralCurve::new(
                         "test:model:proceduralcurve#new".try_into().unwrap(),

@@ -438,7 +438,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
@@ -1273,7 +1273,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         },
     ];
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &subset_id,
             procedural_surface! {
                 id: subset_construction,
@@ -1284,7 +1284,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         ).unwrap()
         .expect("subset surface exists and has no procedural construction");
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &offset_id,
             procedural_surface! {
                 id: offset_construction,
@@ -1345,7 +1345,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         },
     ];
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &bounded_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
@@ -1418,7 +1418,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
@@ -1605,7 +1605,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
@@ -1682,7 +1682,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
@@ -1735,7 +1735,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
-    ir.model.add_procedural_surface(None,
+    ir.model.add_procedural_surface(&crate::document::admission::StandardAdmission,
         &surface_id,
         procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
@@ -1835,7 +1835,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         source_object: None,
     });
     ir.model
-        .add_procedural_surface(None,
+        .add_procedural_surface(&crate::document::admission::StandardAdmission,
             &surface_id,
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),

@@ -60,22 +60,17 @@ impl ParentError<'_> {
     }
 }
 
-/// Check supplied models as one graph under the caller's allocation policy.
-/// Serde reconstruction passes no context and uses standard allocation.
-pub(crate) fn validate<'a>(
-    ctx: Option<&DecodeContext<'_>>,
-    models: &[&'a Model],
-) -> Result<Result<(), ParentError<'a>>, CodecError> {
-    match ctx {
-        Some(ctx) => {
-            let (result, _storage) = ctx
-                .with_scoped_storage("feature parent validation storage", || {
-                    validate_graph(models, &DecodeStorage(ctx)).map_err(CodecError::from)
-                })?;
-            Ok(result)
-        }
-        None => Ok(public_result(validate_graph(models, &PublicStorage))),
-    }
+/// Check supplied models using the caller context and scoped indexes.
+pub(crate) fn validate<'a>(ctx: &DecodeContext<'_>, models: &[&'a Model]) -> Result<Result<(), ParentError<'a>>, CodecError> {
+    let (result, _storage) = ctx.with_scoped_storage("feature parent validation storage", || {
+        validate_graph(models, &DecodeStorage(ctx)).map_err(CodecError::from)
+    })?;
+    Ok(result)
+}
+
+/// Check reconstructed models with infallible standard index admission.
+pub(crate) fn validate_reconstructed<'a>(models: &[&'a Model]) -> Result<(), ParentError<'a>> {
+    public_result(validate_graph(models, &PublicStorage))
 }
 
 /// Scalar hashes select borrowed facts; full identity comparison resolves collisions.
@@ -255,7 +250,7 @@ mod tests {
                 _ => panic!("test dimension"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let Err(CodecError::ResourceLimit(limit)) = validate(Some(&ctx), &[&model]) else {
+            let Err(CodecError::ResourceLimit(limit)) = validate(&ctx, &[&model]) else {
                 panic!("parent graph must retain the caller refusal");
             };
             assert_eq!(limit.dimension, dimension);
@@ -277,7 +272,7 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        validate(Some(&ctx), &[&model]).unwrap().unwrap();
+        validate(&ctx, &[&model]).unwrap().unwrap();
         let storage = ctx
             .reserve_scoped(4096, "feature parent indexes released")
             .unwrap();

@@ -822,7 +822,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
     });
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#intersection")
@@ -936,7 +936,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
         });
         ir.model
             .add_procedural_curve(
-                None,
+                &crate::document::admission::StandardAdmission,
                 &replica,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(format!("test:model:procedural#replica-{ordinal}"))
@@ -993,7 +993,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_curve(
-            None,
+            &crate::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#replica").expect("valid identity"),
@@ -1012,7 +1012,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_surface(
-            None,
+            &crate::document::admission::StandardAdmission,
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:procedural#ruled").expect("valid identity"),

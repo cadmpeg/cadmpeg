@@ -558,7 +558,7 @@ pub(super) fn emit_topology(
                 });
 
                 let _attached = ir.model.add_procedural_curve(
-                    Some(ctx),
+                    ctx,
                     &carrier.try_clone_for_decode(ctx, "nx parametric construction owner")?,
                     ProceduralCurve::new(
                         construction,

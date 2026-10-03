@@ -3816,7 +3816,7 @@ impl<'a> DecodeContext<'a> {
             candidate
                 .model
                 .add_procedural_surface(
-                    Some(ctx),
+                    ctx,
                     &surface_id,
                     ProceduralSurface::new(
                         procedural_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
@@ -3928,7 +3928,7 @@ impl<'a> DecodeContext<'a> {
                 });
                 candidate
                     .model
-                    .add_procedural_surface(Some(ctx), &surface_id, cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    .add_procedural_surface(ctx, &surface_id, cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                             boundary.directrix.try_clone_for_decode(ctx, "Rhino extrusion directrix identity copy")?,
                             None,
                             extrusion.direction,
@@ -6263,7 +6263,7 @@ fn stage_brep_procedural_surface(
         .draft
         .model_mut()
         .add_procedural_surface(
-            Some(context.ctx),
+            context.ctx,
             &surface_id,
             ProceduralSurface::new(
                 procedural_id.try_clone_for_decode(context.ctx, "Rhino typed identity copy")?,
@@ -6395,7 +6395,7 @@ fn stage_curve_tree(
             .draft
             .model_mut()
             .add_procedural_curve(
-                Some(ctx),
+                ctx,
                 &id,
                 ProceduralCurve::new(procedure_id, definition),
             )?
@@ -7015,7 +7015,7 @@ fn commit_curve_tree(
         );
         ir.model
             .add_procedural_curve(
-                Some(ctx),
+                ctx,
                 &id,
                 ProceduralCurve::new(procedure_id, definition),
             )?

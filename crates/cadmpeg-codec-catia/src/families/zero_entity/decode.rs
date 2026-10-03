@@ -2109,7 +2109,7 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                None,
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
             )

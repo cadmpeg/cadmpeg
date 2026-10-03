@@ -1787,7 +1787,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
-            Some(ctx),
+            ctx,
             &surface_id,
             ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(
@@ -2075,7 +2075,7 @@ pub(super) fn project(
             })?;
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            let _attached = ir.model.add_procedural_surface(Some(ctx), &surface_id, ProceduralSurface::new(
+            let _attached = ir.model.add_procedural_surface(ctx, &surface_id, ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Extrusion(
                         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
@@ -2321,7 +2321,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
-            Some(ctx),
+            ctx,
             &surface_id,
             ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(
@@ -2584,7 +2584,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
-                Some(ctx),
+                ctx,
                 &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
@@ -2863,7 +2863,7 @@ pub(super) fn project(
             );
             let _attached = ir
                 .model
-                .add_procedural_surface(Some(ctx), &surface_id, procedural)?;
+                .add_procedural_surface(ctx, &surface_id, procedural)?;
         }
         ctx.insert_btree_set(
             &mut decoded,
@@ -3435,7 +3435,7 @@ pub(super) fn project(
         let [v_lower, v_upper] = v_range.finite_endpoints();
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        let _attached = ir.model.add_procedural_surface(Some(ctx), &surface_id, ProceduralSurface::new(
+        let _attached = ir.model.add_procedural_surface(ctx, &surface_id, ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
                 ProceduralSurfaceDefinition::Exact(
                     cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::from_legacy_intervals(
@@ -3649,7 +3649,7 @@ pub(super) fn project(
         );
         let _attached = ir
             .model
-            .add_procedural_surface(Some(ctx), &surface_id, procedural)?;
+            .add_procedural_surface(ctx, &surface_id, procedural)?;
         ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
