@@ -74,7 +74,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
-        if self.admitted_source_step(expression, definition) || self.closed_scalar_default(expression) { return true; }
+        if self.admitted_source_step(expression, definition) || self.closed_scalar_default(expression) || self.core_iterator_metadata(expression, definition) { return true; }
         if self
             .implementation(expression, definition)
             .is_some_and(|id| self.checked_body(id))

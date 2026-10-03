@@ -18,8 +18,9 @@ impl DecodeContext<'_> {
     ) -> Result<(HashMap<K, Option<V>>, ScopedReservation<'_>), CodecError> {
         let mut table = HashMap::<K, Option<V>>::new();
         let mut storage = self.reserve_scoped(0, operation)?;
-        for (key, value) in entries {
-            self.charge_work(1, operation)?;
+        let mut entries = entries.into_iter();
+        loop {
+            let Some((key, value)) = self.next_charged(&mut entries, operation)? else { break };
             self.charge_key(&key, 1, operation)?;
             if let Some(previous) = table.get_mut(&key) {
                 *previous = None;

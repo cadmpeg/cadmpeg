@@ -65,6 +65,13 @@ enum VecGrowth {
 }
 
 impl DecodeContext<'_> {
+    /// Charges the next source step before it can yield or run an adapter.
+    /// Callers supply a fixed-step source or adapters over admitted bases.
+    pub(super) fn next_charged<I: Iterator>(&self, values: &mut I, operation: &'static str) -> Result<Option<I::Item>, CodecError> {
+        self.charge_work(1, operation)?;
+        Ok(values.next())
+    }
+
     /// Reserve backing storage without admitting values not yet inserted.
     pub fn reserve_capacity_limit<T>(
         &self,
@@ -405,8 +412,9 @@ impl DecodeContext<'_> {
     ) -> Result<(BTreeMap<K, Vec<V>>, ScopedReservation<'ctx>), CodecError> {
         let mut groups = BTreeMap::new();
         let mut reservation = self.reserve_scoped(0, operation)?;
-        for (key, value) in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some((key, value)) = self.next_charged(&mut input, operation)? else { break };
             self.push_scoped_btree_group(
                 &mut reservation,
                 &mut groups,
@@ -428,7 +436,9 @@ impl DecodeContext<'_> {
         let mut entries = BTreeMap::new();
         let mut reservation = self.reserve_scoped(0, operation)?;
         reservation.with_storage(|| {
-            for (key, value) in values {
+            let mut input = values.into_iter();
+            loop {
+                let Some((key, value)) = self.next_charged(&mut input, operation)? else { break };
                 self.charge_work(
                     u64_from_index(entries.len())
                         .checked_add(1)
@@ -598,8 +608,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let mut out = Vec::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             self.push_vec(&mut out, value, operation)?;
         }
         Ok(out)
@@ -612,8 +623,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, E> {
         let mut out = Vec::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             self.push_vec(&mut out, value?, operation)
                 .map_err(E::from)?;
         }
@@ -672,8 +684,9 @@ impl DecodeContext<'_> {
         additions: impl IntoIterator<Item = T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        for value in additions {
-            self.charge_work(1, operation)?;
+        let mut input = additions.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             self.insert_hash_set(values, value, operation)?;
         }
         Ok(())
@@ -686,8 +699,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<HashSet<T>, CodecError> {
         let mut out = HashSet::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             self.insert_hash_set(&mut out, value, operation)?;
         }
         Ok(out)
@@ -748,8 +762,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<HashMap<K, V>, CodecError> {
         let mut out = HashMap::new();
-        for (key, value) in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some((key, value)) = self.next_charged(&mut input, operation)? else { break };
             self.insert_hash_map(&mut out, key, value, operation)?;
         }
         Ok(out)
@@ -884,12 +899,12 @@ impl DecodeContext<'_> {
         operation: &'static str,
         mut map: impl FnMut(I) -> Result<T, E>,
     ) -> Result<Vec<T>, E> {
-        let values = values.into_iter();
+        let mut values = values.into_iter();
         let (minimum, maximum) = values.size_hint();
         let mut collected = Vec::new();
-        for (index, value) in values.enumerate() {
-            self.charge_work(1, operation)?;
-            if index == 0 && maximum.is_some_and(|maximum: usize| maximum == minimum) {
+        loop {
+            let Some(value) = self.next_charged(&mut values, operation)? else { break };
+            if collected.is_empty() && maximum.is_some_and(|maximum: usize| maximum == minimum) {
                 self.reserve_retained_vec_storage(
                     &mut collected,
                     minimum.max(1),
@@ -932,8 +947,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Option<Vec<T>>, CodecError> {
         let mut collected = Vec::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             let Some(value) = value else { return Ok(None) };
             self.push_vec(&mut collected, value, operation)?;
         }
@@ -947,8 +963,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Option<Vec<T>>, CodecError> {
         let mut collected = Vec::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             let Some(value) = value.map_err(Into::into)? else {
                 return Ok(None);
             };
@@ -964,8 +981,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<HashSet<String>, CodecError> {
         let mut collected = HashSet::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             self.insert_string_set(&mut collected, value, operation)?;
         }
         Ok(collected)
@@ -1196,8 +1214,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<BTreeSet<T>, CodecError> {
         let mut out = BTreeSet::new();
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             self.insert_btree_set(&mut out, value, operation)?;
         }
         Ok(out)
@@ -1326,7 +1345,9 @@ impl DecodeContext<'_> {
         let (mut output, mut reservation) = self.temporary_set(count, operation)?;
         let mut remaining = count;
         reservation.with_storage(|| {
-            for value in values {
+            let mut input = values.into_iter();
+            loop {
+                let Some(value) = self.next_charged(&mut input, operation)? else { break };
                 self.charge_work(
                     u64_from_index(value.len())
                         .checked_mul(2)
@@ -1362,7 +1383,9 @@ impl DecodeContext<'_> {
         reservation.with_storage(|| {
             self.reserve_map(&mut output, count, operation)?;
             let mut remaining = count;
-            for (key, value) in values {
+            let mut input = values.into_iter();
+            loop {
+                let Some((key, value)) = self.next_charged(&mut input, operation)? else { break };
                 self.charge_work(
                     u64_from_index(key.len())
                         .checked_mul(2)
@@ -1527,8 +1550,9 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<String>, CodecError> {
         let mut copies = self.collection_vec(values.len(), operation)?;
-        for value in values {
-            self.charge_work(1, operation)?;
+        let mut input = values.into_iter();
+        loop {
+            let Some(value) = self.next_charged(&mut input, operation)? else { break };
             copies.push(self.copy_retained_text(value, operation)?);
         }
         Ok(copies)
@@ -1602,15 +1626,18 @@ impl DecodeContext<'_> {
             text: String::new(),
             refusal: None,
         };
-        for (index, value) in values.into_iter().enumerate() {
-            self.charge_work(1, operation)?;
-            let written = if index == 0 {
+        let mut values = values.into_iter();
+        let mut first = true;
+        loop {
+            let Some(value) = self.next_charged(&mut values, operation)? else { break };
+            let written = if first {
                 output.write_fmt(format_args!("{value}"))
             } else {
                 output
                     .write_str(separator)
                     .and_then(|()| output.write_fmt(format_args!("{value}")))
             };
+            first = false;
             if written.is_err() {
                 return Err(match output.refusal {
                     Some(error) => error,

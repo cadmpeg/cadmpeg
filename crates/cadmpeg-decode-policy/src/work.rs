@@ -96,7 +96,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return;
         }
         let name = name.as_str();
-        if self.key_work_paid(&operands, name) || self.move_work_paid(&operands, name) { self.record_key_work_proof(expression); return; }
+        if self.key_work_paid(&operands, name) || self.move_work_paid(&operands, name) || self.core_iterator_next(expression) { self.record_key_work_proof(expression); return; }
         if let Some(custom) = self.custom_trait(expression, definition) {
             if self.checked_body(custom) {
                 return;
@@ -523,6 +523,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     return Some(false);
                 }
                 let name = self.tcx.item_name(definition);
+                if name.as_str() == "next_charged" && self.trusted_context_callee(call) { return Some(true); }
                 if matches!(name.as_str(), "charge_work" | "charge_work_limit") {
                     if !self.trusted_context_callee(call) {
                         return None;
