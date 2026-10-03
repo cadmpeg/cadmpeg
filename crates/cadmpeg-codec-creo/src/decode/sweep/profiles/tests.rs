@@ -972,13 +972,14 @@ fn circular_pcurve_refuses_unbounded_span_before_allocation() {
 fn circular_pcurve_refuses_projection_work_before_each_pass() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    // A quarter circle has three poles and six knots. Knot admission scans twice.
+    // Six finite knots and five adjacent comparisons are admitted one item at a time.
     for (budget, used, additional, operation) in [
         (2, 0, 3, "creo circular pcurve pole projection"),
         (8, 3, 6, "creo circular pcurve knot projection"),
         (11, 9, 3, "creo circular pcurve weight scan"),
         (14, 12, 3, "creo circular pcurve weighted pole projection"),
-        (26, 15, 12, "creo circular pcurve knot admission"),
+        (15, 15, 1, "IR NURBS knot finiteness"),
+        (21, 21, 1, "IR NURBS knot order"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1022,7 +1023,7 @@ fn circular_pcurve_refuses_projection_work_before_each_pass() {
     for prior_work in [0, 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 27;
+        policy.limits.max_work_units = 26;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         ctx.charge_work(prior_work, "caller work")
             .expect("caller work admitted");
@@ -1051,7 +1052,7 @@ fn circular_pcurve_refuses_projection_work_before_each_pass() {
         } else {
             assert!(
                 matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "creo circular pcurve knot admission" && limit.used == 16)
+                if limit.operation == "IR NURBS knot order" && limit.used == 26)
             );
         }
     }
