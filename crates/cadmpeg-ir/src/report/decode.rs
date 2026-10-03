@@ -268,7 +268,7 @@ impl TransferLedger {
     /// Verifies every produced target against a finalized model index.
     pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
         for entry in &self.entries {
-            if let Some(target) = entry.target().filter(|target| !index.contains(target)) {
+            if let Some(target) = entry.target().filter(|target| !index.contains(target, crate::index::StandardIndex)) {
                 return Err(format!(
                     "transfer source {:?} targets unresolved identity {:?}",
                     entry.source, target

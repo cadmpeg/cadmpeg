@@ -18,6 +18,68 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 
+/// Borrowed text keys with explicit hashing and collision comparisons.
+struct BorrowedIdentityIndex<'ir, V> {
+    slots: HashMap<u64, Vec<(&'ir str, V)>>,
+}
+
+impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
+    fn new<S: IndexStorage>(storage: &S, operation: &'static str) -> Result<Self, S::Error> {
+        Ok(Self { slots: storage.map(0, operation)? })
+    }
+
+    fn entry<S: IndexStorage>(
+        &mut self, identity: &'ir str, value: impl FnOnce() -> V,
+        storage: &S, operation: &'static str,
+    ) -> Result<&mut V, S::Error> {
+        let (hash, found) = self.position(identity,
+            |count| storage.work(count, operation),
+            |first, second| storage.equal(first, second, operation))?;
+        storage.work(1, operation)?;
+        storage.entry(&mut self.slots, &hash, operation)?;
+        let entries = self.slots.entry(hash).or_default();
+        let position = match found {
+            Some(position) => position,
+            None => {
+                let position = entries.len();
+                storage.work(std::mem::size_of::<(&str, V)>(), operation)?;
+                storage.push(entries, (identity, value()), operation)?;
+                position
+            }
+        };
+        Ok(&mut entries[position].1)
+    }
+
+    fn get<P: IndexQuery>(
+        &self, identity: &str, query: &P, operation: &'static str,
+    ) -> Result<Option<&V>, P::Error> {
+        let (hash, found) = self.position(identity,
+            |count| query.work(count, operation),
+            |first, second| query.equal(first, second, operation))?;
+        Ok(found.map(|position| &self.slots[&hash][position].1))
+    }
+
+    fn position<E>(
+        &self, identity: &str,
+        work: impl Fn(usize) -> Result<(), E>,
+        equal: impl Fn(&str, &str) -> Result<bool, E>,
+    ) -> Result<(u64, Option<usize>), E> {
+        work(identity.len())?;
+        let hash = identity_hash(identity);
+        work(1)?;
+        let Some(entries) = self.slots.get(&hash) else { return Ok((hash, None)); };
+        for (position, (candidate, _)) in entries.iter().enumerate() {
+            work(1)?;
+            if equal(candidate, identity)? { return Ok((hash, Some(position))); }
+        }
+        Ok((hash, None))
+    }
+
+    fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
+        self.slots.values().flat_map(|entries| entries.iter().map(|(identity, _)| *identity))
+    }
+}
+
 /// Collision-safe, allocation-free identity slots for one typed arena.
 ///
 /// The index stores arena positions rather than borrowed keys. This keeps a
@@ -490,7 +552,7 @@ macro_rules! define_model_index {
             $($lookup: OnceLock<IdentityIndex>,)*
             procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
-            identities: HashMap<&'a str, ()>,
+            identities: BorrowedIdentityIndex<'a, ()>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
             native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
@@ -592,7 +654,7 @@ macro_rules! define_model_index {
                     $($lookup: OnceLock::new(),)*
                     procedural_surface_by_surface,
                     procedural_curves_by_curve,
-                    identities: HashMap::new(),
+                    identities: BorrowedIdentityIndex { slots: HashMap::new() },
                     include_native,
                     additional_native_identities,
                     native_unknowns,
@@ -604,30 +666,22 @@ macro_rules! define_model_index {
                 Ok(index)
             }
 
-            fn identity_set(&self) -> &HashMap<&'a str, ()> {
+            fn identity_set(&self) -> &BorrowedIdentityIndex<'a, ()> {
                 &self.identities
             }
 
-            fn build_identity_set<S: IndexStorage>(&self, storage: &S) -> Result<HashMap<&'a str, ()>, S::Error> {
-                let mut native_count = 0;
-                if self.include_native {
-                    self.native_view().visit(|count| storage.work(count, "model native arena scan"), |_, _, records| {
-                        native_count += records.len();
-                        Ok(())
-                    })?;
-                }
-                let count = self.ir.model.entity_count() + native_count + self.additional_native_identities.len();
-                let mut identities = storage.map(count, "model identity universe slots")?;
-                $(for entity in &self.ir.model.$field { storage.work(entity.identity().len(), "model identity universe scan")?; identities.insert(entity.identity(), ()); })*
+            fn build_identity_set<S: IndexStorage>(&self, storage: &S) -> Result<BorrowedIdentityIndex<'a, ()>, S::Error> {
+                let mut identities = BorrowedIdentityIndex::new(storage, "model identity universe slots")?;
+                $(for entity in &self.ir.model.$field { storage.work(1, "model identity universe scan")?; identities.entry(entity.identity(), || (), storage, "model identity universe slots")?; })*
                 if self.include_native {
                     self.native_view().visit(|count| storage.work(count, "model native arena scan"), |_, _, records| {
                         for record in records.records() {
-                            storage.work(record.id().len(), "model native identity scan")?;
-                            identities.insert(record.id(), ());
+                            storage.work(1, "model native identity scan")?;
+                            identities.entry(record.id(), || (), storage, "model identity universe slots")?;
                         }
                         Ok(())
                     })?;
-                    for identity in &self.additional_native_identities { storage.work(identity.len(), "model additional identity scan")?; identities.insert(*identity, ()); }
+                    for identity in &self.additional_native_identities { storage.work(1, "model additional identity scan")?; identities.entry(identity, || (), storage, "model identity universe slots")?; }
                 }
                 Ok(identities)
             }
@@ -638,13 +692,13 @@ macro_rules! define_model_index {
             }
 
             /// Returns whether any neutral or native entity owns `identity`.
-            pub fn contains(&self, identity: &str) -> bool {
-                self.identity_set().contains_key(identity)
+            pub fn contains<P: IndexQuery>(&self, identity: &str, query: P) -> P::Output<bool> {
+                query.finish(self.identity_set().get(identity, &query, "model identity universe query").map(|value| value.is_some()))
             }
 
             /// Iterates every neutral and native identity.
             pub fn identities(&self) -> impl Iterator<Item = &'a str> + '_ {
-                self.identity_set().keys().copied()
+                self.identity_set().identities()
             }
 
             /// Looks up the procedural construction that owns a surface.
@@ -698,6 +752,35 @@ mod tests {
     use serde_json::Map;
 
     #[test]
+fn identity_universe_lookup_preserves_collision_and_resource_results() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let query = "abcd";
+    let hash_work = cadmpeg_core::decode::u64_from_index(query.len());
+    let index = super::BorrowedIdentityIndex {
+        slots: std::collections::HashMap::from([(super::identity_hash(query), vec![("abce", ())])]),
+    };
+    assert!(index.get(query, &crate::index::StandardIndex, "test universe query").unwrap().is_none());
+    for cap in [0, hash_work, hash_work + 1, hash_work + 2, hash_work + 3, hash_work + 5] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first = index.get(query, &&ctx, "test universe query").unwrap_err();
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((first.limit, first.used, first.additional), (cap, cap, if cap == 0 { hash_work } else { 1 }));
+        assert_eq!(index.get("missing", &&ctx, "test universe query"), Err(first));
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+    }
+    let ir = crate::examples::unit_cube().unwrap();
+    let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    assert!(index.contains(ir.model.points[0].id.as_str(), crate::index::StandardIndex));
+    assert!(!index.contains("missing", crate::index::StandardIndex));
+}
+
+#[test]
     fn typed_model_getters_admit_queries_and_preserve_the_first_refusal() {
         let ir = CadIr::empty();
         let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
@@ -918,10 +1001,10 @@ mod tests {
         let full = ModelIndex::new(&ir, crate::index::StandardIndex);
         let model_only = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
 
-        assert!(full.contains(native_id));
-        assert!(full.contains(model_id));
-        assert!(!model_only.contains(native_id));
-        assert!(model_only.contains(model_id));
+        assert!(full.contains(native_id, crate::index::StandardIndex));
+        assert!(full.contains(model_id, crate::index::StandardIndex));
+        assert!(!model_only.contains(native_id, crate::index::StandardIndex));
+        assert!(model_only.contains(model_id, crate::index::StandardIndex));
         assert!(!model_only
             .identities()
             .any(|identity| identity == native_id));
