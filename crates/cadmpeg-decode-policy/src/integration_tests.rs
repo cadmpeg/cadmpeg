@@ -812,3 +812,8 @@ fn zip_raw_metadata_access_has_fixed_cost() {
 fn container_classifiers_keep_their_child_work_and_allocation_obligations() {
     check_fixture("container_callbacks");
 }
+
+#[test]
+fn linear_growth_receipts_bind_the_collection_element_and_returned_count() {
+    check_fixture("work_linear_growth");
+}

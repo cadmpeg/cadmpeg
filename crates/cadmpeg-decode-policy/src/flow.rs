@@ -551,7 +551,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 .flow
                 .storage_slots
                 .iter()
-                .filter(|credit| credit.reserved || admitted_growth)
+                .filter(|credit| (credit.usage == crate::storage::SlotUse::Insertion || admitted_growth)
+                    && (credit.usage != crate::storage::SlotUse::Reserve || reserved && admitted_growth))
                 .cloned()
                 .collect();
             for operand in operands {
