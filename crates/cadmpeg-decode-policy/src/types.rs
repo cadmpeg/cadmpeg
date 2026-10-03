@@ -311,7 +311,7 @@ pub(crate) fn serde_deserialize(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::D
 
 pub(crate) fn cost_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
     tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_core"
-        && tcx.def_path_str(trait_id) == "cadmpeg_core::decode::cost::DecodeCost"
+        && matches!(tcx.def_path_str(trait_id).as_str(), "cadmpeg_core::decode::cost::DecodeCost" | "decode::cost::DecodeCost")
 }
 
 pub(crate) fn cost_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
