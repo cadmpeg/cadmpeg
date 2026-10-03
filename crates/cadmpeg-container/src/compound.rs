@@ -1584,9 +1584,9 @@ fn parse_directory(
     )?;
     let mut entries = ctx.vector_storage(entry_count, "parse CFB directory entries")?;
     for raw in ctx.admit_iter(records, "visit CFB directory records")? {
-        ctx.reserve_capacity(&mut entries, 1, "CFB directory record slot")?;
         let object_type = raw[66];
         if object_type == 0 {
+            ctx.reserve_capacity(&mut entries, 1, "CFB directory record slot")?;
             entries.push(DirectorySlot::Free);
             continue;
         }
@@ -1623,7 +1623,7 @@ fn parse_directory(
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
-        entries.push(DirectorySlot::Live(LiveEntry {
+        let entry = DirectorySlot::Live(LiveEntry {
             name,
             kind,
             color,
@@ -1632,7 +1632,9 @@ fn parse_directory(
             child: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_CHILD / 4]),
             start_sector: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_START_SECTOR / 4]),
             size,
-        }));
+        });
+        ctx.reserve_capacity(&mut entries, 1, "CFB directory record slot")?;
+        entries.push(entry);
     }
     Ok(entries)
 }
