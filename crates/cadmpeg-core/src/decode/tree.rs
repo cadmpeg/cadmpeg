@@ -433,6 +433,29 @@ struct JsonBound {
     bytes: u64,
 }
 
+struct JsonParserAdmission<'input, 'ctx> {
+    text: &'input str,
+    bound: JsonBound,
+    reservation: ScopedReservation<'ctx>,
+    _depth: (Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>),
+}
+
+/// Keeps the parsed source, value and bound in the same storage lifetime.
+struct ParsedJson<'input, 'ctx> {
+    text: &'input str,
+    value: serde_json::Value,
+    bound: JsonBound,
+    reservation: ScopedReservation<'ctx>,
+}
+
+/// Binds a typed validation or conversion to its exact target and source.
+struct TypedJsonAdmission<'ctx, T, S> {
+    source: S,
+    _reservation: ScopedReservation<'ctx>,
+    _depth: (Vec<DepthGuard<'ctx>>, ScopedReservation<'ctx>),
+    _target: std::marker::PhantomData<fn() -> T>,
+}
+
 impl DecodeContext<'_> {
     /// Bounds `serde_json` 1.0.151 trees in one scan. Delimiters '[' '{' ',' ':'
     /// plus one bound value slots. All array capacities together are at most
@@ -516,37 +539,92 @@ impl DecodeContext<'_> {
         })
     }
 
-    fn parse_json_tree(
+    fn json_parser_admission<'input>(
         &self,
-        text: &str,
+        text: &'input str,
         operation: &'static str,
-        interpret_raw: bool,
-    ) -> Result<(serde_json::Value, ScopedReservation<'_>, JsonBound), CodecError> {
+    ) -> Result<JsonParserAdmission<'input, '_>, CodecError> {
         let bound = self.json_bound(text, operation)?;
         self.charge_collection_items(bound.values, operation)?;
         let work = u64_from_index(text.len())
             .checked_mul(
-                bound
-                    .entries
-                    .checked_add(1)
+                bound.entries.checked_add(1)
                     .ok_or_else(|| self.tree_overflow(operation))?,
             )
             .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
             .ok_or_else(|| self.tree_overflow(operation))?;
         self.charge_work(work, operation)?;
         let reservation = self.reserve_scoped(bound.bytes, operation)?;
-        let _depth = enter_tree_depth(self, bound.depth, operation)?;
+        let depth = enter_tree_depth(self, bound.depth, operation)?;
+        Ok(JsonParserAdmission { text, bound, reservation, _depth: depth })
+    }
+
+    fn parse_json_tree<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+        interpret_raw: bool,
+    ) -> Result<ParsedJson<'input, '_>, CodecError> {
+        let admission = self.json_parser_admission(text, operation)?;
         let value = if interpret_raw {
-            serde_json::from_str(text).map_err(|error| self.tree_malformed(error, operation))?
+            serde_json::from_str::<serde_json::Value>(admission.text)
+                .map_err(|error| self.tree_malformed(error, operation))?
         } else {
-            use serde::Deserialize;
-            let mut parser = serde_json::Deserializer::from_str(text);
-            let value = PlainJson::deserialize(&mut parser)
-                .map_err(|error| self.tree_malformed(error, operation))?;
-            parser.end().map_err(|error| self.tree_malformed(error, operation))?;
-            value.0
+            serde_json::from_str::<PlainJson>(admission.text)
+                .map_err(|error| self.tree_malformed(error, operation))?.0
         };
-        Ok((value, reservation, bound))
+        Ok(ParsedJson {
+            text: admission.text,
+            value,
+            reservation: admission.reservation,
+            bound: admission.bound,
+        })
+    }
+
+    fn typed_json_storage<T>(&self, bound: &JsonBound, operation: &'static str) -> Result<u64, CodecError> {
+        bound.bytes.checked_mul(2)
+            .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
+            .ok_or_else(|| self.tree_overflow(operation))
+    }
+
+    fn json_validation_admission<'input, T>(
+        &self,
+        parsed: &ParsedJson<'input, '_>,
+        operation: &'static str,
+    ) -> Result<TypedJsonAdmission<'_, T, &'input str>, CodecError> {
+        let retained = self.typed_json_storage::<T>(&parsed.bound, operation)?;
+        let work = u64_from_index(parsed.text.len())
+            .checked_mul(parsed.bound.values)
+            .and_then(|n| n.checked_mul(parsed.bound.depth.checked_add(1)?))
+            .ok_or_else(|| self.tree_overflow(operation))?;
+        self.charge_work(work, operation)?;
+        self.charge_collection_items(parsed.bound.values, operation)?;
+        let reservation = self.reserve_scoped(retained, operation)?;
+        let depth = enter_tree_depth(self, parsed.bound.depth, operation)?;
+        Ok(TypedJsonAdmission {
+            source: parsed.text,
+            _reservation: reservation,
+            _depth: depth,
+            _target: std::marker::PhantomData,
+        })
+    }
+
+    fn json_conversion_admission<'ctx, T>(
+        &'ctx self,
+        parsed: ParsedJson<'_, 'ctx>,
+        operation: &'static str,
+    ) -> Result<TypedJsonAdmission<'ctx, T, serde_json::Value>, CodecError> {
+        let retained = self.typed_json_storage::<T>(&parsed.bound, operation)?;
+        self.charge_retained(retained, operation)?;
+        self.charge_collection_items(parsed.bound.values, operation)?;
+        self.charge_work(parsed.bound.values, operation)?;
+        let depth = enter_tree_depth(self, parsed.bound.depth, operation)?;
+        Ok(TypedJsonAdmission {
+            source: parsed.value,
+            _reservation: parsed.reservation,
+            _depth: depth,
+            _target: std::marker::PhantomData,
+        })
     }
 
     /// Parses a value tree under collection, work, scoped storage and depth
@@ -557,8 +635,8 @@ impl DecodeContext<'_> {
         text: &str,
         operation: &'static str,
     ) -> Result<(serde_json::Value, ScopedReservation<'_>), CodecError> {
-        let (value, reservation, _) = self.parse_json_tree(text, operation, true)?;
-        Ok((value, reservation))
+        let parsed = self.parse_json_tree(text, operation, true)?;
+        Ok((parsed.value, parsed.reservation))
     }
 
     /// Parses types with derived Deserialize: structs, enums, vectors, maps,
@@ -575,33 +653,16 @@ impl DecodeContext<'_> {
         text: &str,
         operation: &'static str,
     ) -> Result<T, CodecError> {
-        let (_reservation, value, bound) = {
-            let (value, reservation, bound) = self.parse_json_tree(text, operation, false)?;
-            (reservation, value, bound)
-        };
-        let retained = bound
-            .bytes
-            .checked_mul(2)
-            .and_then(|n| n.checked_add(u64_from_index(std::mem::size_of::<T>())))
-            .ok_or_else(|| self.tree_overflow(operation))?;
-        let validation_work = u64_from_index(text.len())
-            .checked_mul(bound.values)
-            .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
-            .ok_or_else(|| self.tree_overflow(operation))?;
-        self.charge_work(validation_work, operation)?;
-        self.charge_collection_items(bound.values, operation)?;
+        let parsed = self.parse_json_tree(text, operation, false)?;
         {
-            let _validation = self.reserve_scoped(retained, operation)?;
-            let _depth = enter_tree_depth(self, bound.depth, operation)?;
-            let validated: T = serde_json::from_str(text)
+            let admission = self.json_validation_admission::<T>(&parsed, operation)?;
+            let validated = serde_json::from_str::<T>(admission.source)
                 .map_err(|error| self.tree_malformed(error, operation))?;
             drop(validated);
         }
-        self.charge_retained(retained, operation)?;
-        self.charge_collection_items(bound.values, operation)?;
-        self.charge_work(bound.values, operation)?;
-        let _depth = enter_tree_depth(self, bound.depth, operation)?;
-        serde_json::from_value(value).map_err(|error| self.tree_malformed(error, operation))
+        let admission = self.json_conversion_admission::<T>(parsed, operation)?;
+        serde_json::from_value::<T>(admission.source)
+            .map_err(|error| self.tree_malformed(error, operation))
     }
 }
 

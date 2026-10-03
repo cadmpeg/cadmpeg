@@ -718,7 +718,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         shrinking
     }
 
-    fn restore_loop(&mut self, mut saved: crate::flow::Flow, bounded_slots: bool) {
+    fn restore_loop(&mut self, mut saved: crate::flow::Flow<'tcx>, bounded_slots: bool) {
         saved.mutated.extend(self.flow.mutated.iter().cloned());
         saved.work.retain(|credit| {
             !credit
