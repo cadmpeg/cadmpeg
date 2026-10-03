@@ -97,18 +97,6 @@ pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     find(haystack, needle).is_some()
 }
 
-/// Offsets of every non-overlapping occurrence of `needle`.
-///
-/// An empty needle yields no offsets.
-pub fn find_iter<'a>(haystack: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item = usize> + 'a {
-    let search = if needle.is_empty() {
-        None
-    } else {
-        Some(memchr::memmem::find_iter(haystack, needle))
-    };
-    search.into_iter().flatten()
-}
-
 #[cfg(test)]
 mod tests {
 
