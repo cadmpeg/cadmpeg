@@ -57,13 +57,8 @@ use super::sketches::locus_entity;
 use crate::index::ModelIndex;
 use crate::sketches::SketchConstraintDefinitionInput as Definition;
 
-fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
-    findings.push(Finding {
-        check: Check::ReferentialIntegrity,
-        severity: Severity::Error,
-        message: format!("references missing {target_kind} `{target}`"),
-        entity: Some(owner.to_string()),
-    });
+fn ref_error(ctx: &DecodeContext<'_>, findings: &mut Vec<Finding>, owner: &str, target_kind: impl fmt::Display, target: &str) -> Result<(), CodecError> {
+    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("references missing {target_kind} `{target}`"))
 }
 
 fn check_law_curves<R, V, P>(ctx: &DecodeContext<'_>, 
@@ -76,7 +71,7 @@ fn check_law_curves<R, V, P>(ctx: &DecodeContext<'_>,
     match expression {
         crate::geometry::LawExpression::Edge { curve, .. } => {
             if ids.curves(curve.id.as_str(), ctx)?.is_none() {
-                ref_error(findings, procedural.id.as_str(), "curve", curve.id.as_str());
+                ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.id.as_str())?;
             }
         }
         crate::geometry::LawExpression::Algebraic { operands, .. } => {
@@ -131,100 +126,100 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     for b in &ir.model.bodies {
         for l in &b.regions {
             if ids.regions(l.as_str(), ctx)?.is_none() {
-                ref_error(findings, b.id.as_str(), "region", l.as_str());
+                ref_error(ctx, findings, b.id.as_str(), "region", l.as_str())?;
             }
         }
     }
     for l in &ir.model.regions {
         if ids.bodies(l.body.as_str(), ctx)?.is_none() {
-            ref_error(findings, l.id.as_str(), "body", l.body.as_str());
+            ref_error(ctx, findings, l.id.as_str(), "body", l.body.as_str())?;
         }
         for s in &l.shells {
             if ids.shells(s.as_str(), ctx)?.is_none() {
-                ref_error(findings, l.id.as_str(), "shell", s.as_str());
+                ref_error(ctx, findings, l.id.as_str(), "shell", s.as_str())?;
             }
         }
     }
     for s in &ir.model.shells {
         if ids.regions(s.region.as_str(), ctx)?.is_none() {
-            ref_error(findings, s.id.as_str(), "region", s.region.as_str());
+            ref_error(ctx, findings, s.id.as_str(), "region", s.region.as_str())?;
         }
         for f in s.faces() {
             if ids.faces(f.as_str(), ctx)?.is_none() {
-                ref_error(findings, s.id.as_str(), "face", f.as_str());
+                ref_error(ctx, findings, s.id.as_str(), "face", f.as_str())?;
             }
         }
         for e in s.wire_edges() {
             if ids.edges(e.as_str(), ctx)?.is_none() {
-                ref_error(findings, s.id.as_str(), "wire edge", e.as_str());
+                ref_error(ctx, findings, s.id.as_str(), "wire edge", e.as_str())?;
             }
         }
         for v in s.free_vertices() {
             if ids.vertices(v.as_str(), ctx)?.is_none() {
-                ref_error(findings, s.id.as_str(), "free vertex", v.as_str());
+                ref_error(ctx, findings, s.id.as_str(), "free vertex", v.as_str())?;
             }
         }
     }
     for f in &ir.model.faces {
         if ids.shells(f.shell.as_str(), ctx)?.is_none() {
-            ref_error(findings, f.id.as_str(), "shell", f.shell.as_str());
+            ref_error(ctx, findings, f.id.as_str(), "shell", f.shell.as_str())?;
         }
         if ids.surfaces(f.surface.as_str(), ctx)?.is_none() {
-            ref_error(findings, f.id.as_str(), "surface", f.surface.as_str());
+            ref_error(ctx, findings, f.id.as_str(), "surface", f.surface.as_str())?;
         }
         for lp in &f.loops {
             if ids.loops(lp.as_str(), ctx)?.is_none() {
-                ref_error(findings, f.id.as_str(), "loop", lp.as_str());
+                ref_error(ctx, findings, f.id.as_str(), "loop", lp.as_str())?;
             }
         }
     }
     for lp in &ir.model.loops {
         if ids.faces(lp.face.as_str(), ctx)?.is_none() {
-            ref_error(findings, lp.id.as_str(), "face", lp.face.as_str());
+            ref_error(ctx, findings, lp.id.as_str(), "face", lp.face.as_str())?;
         }
         match &lp.boundary {
             crate::topology::LoopBoundary::Vertex { vertex, pcurves } => {
                 if ids.vertices(vertex.as_str(), ctx)?.is_none() {
-                    ref_error(findings, lp.id.as_str(), "vertex", vertex.as_str());
+                    ref_error(ctx, findings, lp.id.as_str(), "vertex", vertex.as_str())?;
                 }
                 for pcurve in pcurves {
                     if ids.pcurves(pcurve.pcurve.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             lp.id.as_str(),
                             "pcurve(vertex use)",
                             pcurve.pcurve.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
             crate::topology::LoopBoundary::Ring(ring) => {
                 for ce in ring.coedges() {
                     if ids.coedges(ce.as_str(), ctx)?.is_none() {
-                        ref_error(findings, lp.id.as_str(), "coedge", ce.as_str());
+                        ref_error(ctx, findings, lp.id.as_str(), "coedge", ce.as_str())?;
                     }
                 }
                 for use_ in ring.vertex_uses() {
                     if ids.vertices(use_.vertex.as_str(), ctx)?.is_none() {
-                        ref_error(findings, lp.id.as_str(), "vertex", use_.vertex.as_str());
+                        ref_error(ctx, findings, lp.id.as_str(), "vertex", use_.vertex.as_str())?;
                     }
                     let after = &use_.after;
                     if ids.coedges(after.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             lp.id.as_str(),
                             "coedge(vertex-use after)",
                             after.as_str(),
-                        );
+                        )?;
                     }
                     for pcurve in &use_.pcurves {
                         if ids.pcurves(pcurve.pcurve.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 lp.id.as_str(),
                                 "pcurve(vertex use)",
                                 pcurve.pcurve.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -233,85 +228,86 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     }
     for ce in &ir.model.coedges {
         if ids.loops(ce.owner_loop.as_str(), ctx)?.is_none() {
-            ref_error(findings, ce.id.as_str(), "loop", ce.owner_loop.as_str());
+            ref_error(ctx, findings, ce.id.as_str(), "loop", ce.owner_loop.as_str())?;
         }
         if ids.edges(ce.edge.as_str(), ctx)?.is_none() {
-            ref_error(findings, ce.id.as_str(), "edge", ce.edge.as_str());
+            ref_error(ctx, findings, ce.id.as_str(), "edge", ce.edge.as_str())?;
         }
         if ids.coedges(ce.radial_next.as_str(), ctx)?.is_none() {
-            ref_error(
+            ref_error(ctx, 
                 findings,
                 ce.id.as_str(),
                 "coedge(radial_next)",
                 ce.radial_next.as_str(),
-            );
+            )?;
         }
         for use_ in &ce.pcurves {
             if ids.pcurves(use_.pcurve.as_str(), ctx)?.is_none() {
-                ref_error(findings, ce.id.as_str(), "pcurve", use_.pcurve.as_str());
+                ref_error(ctx, findings, ce.id.as_str(), "pcurve", use_.pcurve.as_str())?;
             }
         }
         if let Some(curve) = &ce.use_curve {
             if ids.curves(curve.curve.as_str(), ctx)?.is_none() {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     ce.id.as_str(),
                     "coedge use curve",
                     curve.curve.as_str(),
-                );
+                )?;
             }
         }
     }
     for e in &ir.model.edges {
         if let Some(c) = e.curve() {
             if ids.curves(c.as_str(), ctx)?.is_none() {
-                ref_error(findings, e.id.as_str(), "curve", c.as_str());
+                ref_error(ctx, findings, e.id.as_str(), "curve", c.as_str())?;
             }
         }
         if ids.vertices(e.start.as_str(), ctx)?.is_none() {
-            ref_error(findings, e.id.as_str(), "vertex(start)", e.start.as_str());
+            ref_error(ctx, findings, e.id.as_str(), "vertex(start)", e.start.as_str())?;
         }
         if ids.vertices(e.end.as_str(), ctx)?.is_none() {
-            ref_error(findings, e.id.as_str(), "vertex(end)", e.end.as_str());
+            ref_error(ctx, findings, e.id.as_str(), "vertex(end)", e.end.as_str())?;
         }
     }
     for v in &ir.model.vertices {
         if ids.points(v.point.as_str(), ctx)?.is_none() {
-            ref_error(findings, v.id.as_str(), "point", v.point.as_str());
+            ref_error(ctx, findings, v.id.as_str(), "point", v.point.as_str())?;
         }
     }
     for binding in &ir.model.appearance_bindings {
         use crate::appearance::AppearanceTarget;
-        let owner = format!("appearance-binding:{}", binding.appearance.as_str());
+        let mut owner_storage = ctx.reserve_scoped(0, "appearance binding finding identity")?;
+        let owner = ctx.format_scoped_text(&mut owner_storage, format_args!("appearance-binding:{}", binding.appearance.as_str()), "appearance binding finding identity")?;
         if ids.appearances(binding.appearance.as_str(), ctx)?.is_none() {
-            ref_error(findings, &owner, "appearance", binding.appearance.as_str());
+            ref_error(ctx, findings, &owner, "appearance", binding.appearance.as_str())?;
         }
         match &binding.target {
             AppearanceTarget::Body(body) if ids.bodies(body.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "body", body.as_str());
+                ref_error(ctx, findings, &owner, "body", body.as_str())?;
             }
             AppearanceTarget::Face(face) if ids.faces(face.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "face", face.as_str());
+                ref_error(ctx, findings, &owner, "face", face.as_str())?;
             }
             AppearanceTarget::Edge(edge) if ids.edges(edge.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "edge", edge.as_str());
+                ref_error(ctx, findings, &owner, "edge", edge.as_str())?;
             }
             AppearanceTarget::Vertex(vertex) if ids.vertices(vertex.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "vertex", vertex.as_str());
+                ref_error(ctx, findings, &owner, "vertex", vertex.as_str())?;
             }
             AppearanceTarget::Surface(surface) if ids.surfaces(surface.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "surface", surface.as_str());
+                ref_error(ctx, findings, &owner, "surface", surface.as_str())?;
             }
             AppearanceTarget::Curve(curve) if ids.curves(curve.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "curve", curve.as_str());
+                ref_error(ctx, findings, &owner, "curve", curve.as_str())?;
             }
             AppearanceTarget::Point(point) if ids.points(point.as_str(), ctx)?.is_none() => {
-                ref_error(findings, &owner, "point", point.as_str());
+                ref_error(ctx, findings, &owner, "point", point.as_str())?;
             }
             AppearanceTarget::Tessellation(tessellation)
                 if ids.tessellations(tessellation, ctx)?.is_none() =>
             {
-                ref_error(findings, &owner, "tessellation", tessellation);
+                ref_error(ctx, findings, &owner, "tessellation", tessellation)?;
             }
             AppearanceTarget::Source { .. } => {}
             _ => {}
@@ -323,19 +319,19 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         match &attribute.target {
             AttributeTarget::Document => {}
             AttributeTarget::Body(id) if ids.bodies(id.as_str(), ctx)?.is_none() => {
-                ref_error(findings, owner, "body", id.as_str());
+                ref_error(ctx, findings, owner, "body", id.as_str())?;
             }
             AttributeTarget::Face(id) if ids.faces(id.as_str(), ctx)?.is_none() => {
-                ref_error(findings, owner, "face", id.as_str());
+                ref_error(ctx, findings, owner, "face", id.as_str())?;
             }
             AttributeTarget::Coedge(id) if ids.coedges(id.as_str(), ctx)?.is_none() => {
-                ref_error(findings, owner, "coedge", id.as_str());
+                ref_error(ctx, findings, owner, "coedge", id.as_str())?;
             }
             AttributeTarget::Edge(id) if ids.edges(id.as_str(), ctx)?.is_none() => {
-                ref_error(findings, owner, "edge", id.as_str());
+                ref_error(ctx, findings, owner, "edge", id.as_str())?;
             }
             AttributeTarget::Vertex(id) if ids.vertices(id.as_str(), ctx)?.is_none() => {
-                ref_error(findings, owner, "vertex", id.as_str());
+                ref_error(ctx, findings, owner, "vertex", id.as_str())?;
             }
             _ => {}
         }
@@ -344,18 +340,18 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         match &s.geometry {
             SurfaceGeometry::Procedural { construction, .. } => {
                 if ids.procedural_surfaces(construction.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         s.id.as_str(),
                         "procedural surface construction",
                         construction.as_str(),
-                    );
+                    )?;
                 }
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(u) })
                 if !ids.contains(u.as_str(), ctx)? =>
             {
-                ref_error(findings, s.id.as_str(), "unknown record", u.as_str());
+                ref_error(ctx, findings, s.id.as_str(), "unknown record", u.as_str())?;
             }
             SurfaceGeometry::Solved(_) => {}
         }
@@ -364,30 +360,30 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         match &curve.geometry {
             CurveGeometry::Procedural { construction, .. } => {
                 if ids.procedural_curves(construction.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         curve.id.as_str(),
                         "procedural curve construction",
                         construction.as_str(),
-                    );
+                    )?;
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown),
             }) => {
                 if !ids.contains(unknown.as_str(), ctx)? {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         curve.id.as_str(),
                         "unknown record",
                         unknown.as_str(),
-                    );
+                    )?;
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 for segment in segments {
                     if ids.curves(segment.curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, curve.id.as_str(), "curve", segment.curve.as_str());
+                        ref_error(ctx, findings, curve.id.as_str(), "curve", segment.curve.as_str())?;
                     }
                 }
             }
@@ -403,12 +399,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 for component in components {
                     if ids.surfaces(component.component.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             component.component.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -416,12 +412,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let support = definition_payload.support();
                 {
                     if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -429,12 +425,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 source: support, ..
             } => {
                 if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "surface",
                         support.as_str(),
-                    );
+                    )?;
                 }
             }
             ProceduralSurfaceDefinition::Taper(definition_payload) => {
@@ -442,20 +438,20 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let reference = definition_payload.reference();
                 {
                     if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.as_str(),
-                        );
+                        )?;
                     }
                     if ids.curves(reference.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "curve",
                             reference.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -472,18 +468,18 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .chain(entry.profile.iter().map(|member| &member.profile.id))
                     {
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                            ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                     }
                     for member in &entry.profile {
                         if let Some(surface) = member.form.surface() {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                     }
@@ -494,7 +490,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                         Ok(())
                 };
@@ -529,12 +525,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -544,7 +540,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                         Ok(())
                 };
@@ -584,12 +580,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         check_curve(&member.curve, findings)?;
                         let surface = &member.data.surface;
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -598,7 +594,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let construction = definition_payload.construction();
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                         Ok(())
                 };
@@ -609,12 +605,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             check_curve(&profile.curve, findings)?;
                             let surface = &profile.data.surface;
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                     }
@@ -658,18 +654,18 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .chain(entry.profile.iter().map(|member| &member.profile.id))
                     {
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                            ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                     }
                     for member in &entry.profile {
                         if let Some(surface) = member.form.surface() {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                     }
@@ -688,12 +684,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     .chain(std::iter::once(&construction.second_exact_surface))
                 {
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             surface.as_str(),
-                        );
+                        )?;
                     }
                 }
                 if let crate::geometry::G2BlendFirstShape::Full {
@@ -701,12 +697,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 } = &construction.first_shape
                 {
                     if ids.surfaces(support.surface.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.surface.as_str(),
-                        );
+                        )?;
                     }
                 }
                 for curve in [
@@ -715,7 +711,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     &construction.center_curve,
                 ] {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
@@ -725,22 +721,22 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in &construction.sides {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                     if let Some(curve) = &side.curve {
                         if ids.curves(curve.curve.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "curve",
                                 curve.curve.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -756,7 +752,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 .flatten()
                 {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
@@ -768,21 +764,21 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         .flat_map(|entry| &entry.profile),
                 ) {
                     if ids.curves(member.profile.id.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "curve",
                             member.profile.id.as_str(),
-                        );
+                        )?;
                     }
                     if let Some(surface) = member.form.surface() {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -801,7 +797,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     .chain(construction.tail().curve())
                 {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
@@ -809,32 +805,32 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in construction.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                     if let Some(curve) = &side.curve {
                         if ids.curves(curve.curve.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "curve",
                                 curve.curve.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
                 if ids.curves(construction.center().as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "curve",
                         construction.center().as_str(),
-                    );
+                    )?;
                 }
             }
             ProceduralSurfaceDefinition::VertexBlend(definition_payload) => {
@@ -845,24 +841,24 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
                             if ids.curves(curve.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "curve",
                                     curve.as_str(),
-                                );
+                                )?;
                             }
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
                             surface, ..
                         } => {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
@@ -873,48 +869,48 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let directrix = definition_payload.directrix();
                 {
                     if ids.curves(directrix.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "curve",
                             directrix.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 if ids.curves(directrix.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "curve",
                         directrix.as_str(),
-                    );
+                    )?;
                 }
             }
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 {
                     if ids.curves(directrix.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "curve",
                             directrix.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
                 let directrix = definition_payload.directrix();
                 if ids.curves(directrix.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "curve",
                         directrix.as_str(),
-                    );
+                    )?;
                 }
             }
             ProceduralSurfaceDefinition::Sweep(definition_payload) => {
@@ -923,7 +919,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let native = definition_payload.native();
                 for curve in [profile, spine] {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
                 if let Some(native) = native {
@@ -940,12 +936,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             guide_curve, ..
                         } => {
                             if ids.curves(guide_curve.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "curve",
                                     guide_curve.as_str(),
-                                );
+                                )?;
                             }
                             Vec::new()
                         }
@@ -955,21 +951,21 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                             ..
                         } => {
                             if ids.surfaces(support_surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     support_surface.as_str(),
-                                );
+                                )?;
                             }
                             if let Some(curve) = auxiliary_curve {
                                 if ids.curves(curve.as_str(), ctx)?.is_none() {
-                                    ref_error(
+                                    ref_error(ctx, 
                                         findings,
                                         procedural.id.as_str(),
                                         "curve",
                                         curve.as_str(),
-                                    );
+                                    )?;
                                 }
                             }
                             Vec::new()
@@ -996,12 +992,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let support = definition_payload.support();
                 {
                     if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -1009,12 +1005,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let support = definition_payload.support();
                 {
                     if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -1022,26 +1018,26 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let support = definition_payload.support();
                 {
                     if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
                 for curve in [first, second] {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
             ProceduralSurfaceDefinition::Sum(definition_payload) => {
                 for curve in [definition_payload.first(), definition_payload.second()] {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
@@ -1052,35 +1048,35 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 for support in supports.iter().flatten() {
                     if ids.surfaces(support.surface.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             support.surface.as_str(),
-                        );
+                        )?;
                     }
                 }
                 if let Some(spine) = spine {
                     if ids.curves(spine.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", spine.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", spine.as_str())?;
                     }
                 }
                 if let Some(native) = native {
                     let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                            ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                         Ok(())
                     };
                     let check_surface =
                         |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| -> Result<(), CodecError> {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         Ok(())
                         };
@@ -1104,12 +1100,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 ..
             } => {
                 if !ids.contains(record.as_str(), ctx)? {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "unknown record",
                         record.as_str(),
-                    );
+                    )?;
                 }
             }
             ProceduralSurfaceDefinition::RollingBallJet(_)
@@ -1124,26 +1120,26 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 ..
             } => {
                 if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "surface",
                         support.as_str(),
-                    );
+                    )?;
                 }
                 for boundary in boundaries {
                     if ids.curves(boundary.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", boundary.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", boundary.as_str())?;
                     }
                 }
                 for pcurve in boundary_pcurves {
                     if ids.pcurves(pcurve.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "pcurve boundary",
                             pcurve.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -1151,12 +1147,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let construction = definition_payload.construction();
 
                 if ids.surfaces(construction.support.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "surface",
                         construction.support.as_str(),
-                    );
+                    )?;
                 }
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
                     surface, curve, ..
@@ -1165,15 +1161,15 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     &construction.data
                 {
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             surface.as_str(),
-                        );
+                        )?;
                     }
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                     }
                 }
             }
@@ -1198,12 +1194,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
                             if ids.curves(curve.id.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "curve",
                                     curve.id.as_str(),
-                                );
+                                )?;
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
@@ -1219,12 +1215,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1239,12 +1235,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 for component in components {
                     if ids.curves(component.component.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "curve",
                             component.component.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -1252,12 +1248,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1270,12 +1266,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
 
                 for surface in supports {
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             surface.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -1286,12 +1282,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1300,12 +1296,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1314,22 +1310,22 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let context = definition_payload.context();
                 let cast_surface = definition_payload.cast_surface();
                 if ids.surfaces(cast_surface.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "surface",
                         cast_surface.as_str(),
-                    );
+                    )?;
                 }
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1339,17 +1335,17 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let base = definition_payload.base();
                 {
                     if ids.curves(base.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", base.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", base.as_str())?;
                     }
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                     }
@@ -1359,12 +1355,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 for side in definition_payload.support_context().sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1375,18 +1371,18 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 {
                     if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                            ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
                         }
                     }
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                     }
@@ -1397,17 +1393,17 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let source = definition_payload.source();
 
                 if ids.curves(source.as_str(), ctx)?.is_none() {
-                    ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                    ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                 }
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 surface.as_str(),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -1418,7 +1414,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let range = definition_payload.range();
                 {
                     if ids.curves(source.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                     }
                     if let crate::geometry::OffsetSide::Direction {
                         support: Some(support),
@@ -1426,12 +1422,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     } = side
                     {
                         if ids.surfaces(support.as_str(), ctx)?.is_none() {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
                                 support.as_str(),
-                            );
+                            )?;
                         }
                     }
                     if let Some(crate::geometry::CurveOffsetRange::Variable {
@@ -1441,7 +1437,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     }) = range
                     {
                         if ids.curves(function.as_str(), ctx)?.is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", function.as_str());
+                            ref_error(ctx, findings, procedural.id.as_str(), "curve", function.as_str())?;
                         }
                     }
                 }
@@ -1450,7 +1446,7 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let source = definition_payload.source();
                 {
                     if ids.curves(source.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                     }
                 }
             }
@@ -1460,12 +1456,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                     for side in context.sides() {
                         if let Some(surface) = &side.surface {
                             if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                                ref_error(
+                                ref_error(ctx, 
                                     findings,
                                     procedural.id.as_str(),
                                     "surface",
                                     surface.as_str(),
-                                );
+                                )?;
                             }
                         }
                     }
@@ -1475,32 +1471,32 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 let source = definition_payload.source();
                 {
                     if ids.curves(source.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                     }
                 }
             }
             ProceduralCurveDefinition::Replica { source, .. } => {
                 if ids.curves(source.as_str(), ctx)?.is_none() {
-                    ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                    ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                 }
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
                 {
                     if ids.curves(source.as_str(), ctx)?.is_none() {
-                        ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
+                        ref_error(ctx, findings, procedural.id.as_str(), "curve", source.as_str())?;
                     }
                 }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
                     if ids.surfaces(surface.as_str(), ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             procedural.id.as_str(),
                             "surface",
                             surface.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -1510,12 +1506,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 ..
             } => {
                 if !ids.contains(record.as_str(), ctx)? {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         procedural.id.as_str(),
                         "unknown record",
                         record.as_str(),
-                    );
+                    )?;
                 }
             }
             ProceduralCurveDefinition::Unknown {
@@ -1548,39 +1544,29 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     for parameter in &ir.model.parameters {
         if let Some(owner) = &parameter.owner {
             if !features.contains(owner.as_str()) {
-                ref_error(findings, parameter.id.as_str(), "feature", owner.as_str());
+                ref_error(ctx, findings, parameter.id.as_str(), "feature", owner.as_str())?;
             }
         }
         if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(parameter.id.as_str()), format_args!(
                     "parameter scope {:?} repeats parameter name `{}`",
                     parameter.owner, parameter.name
-                ),
-                entity: Some(parameter.id.as_str().to_owned()),
-            });
+                ))?;
         }
         if !parameter_ordinals.insert((&parameter.owner, parameter.ordinal)) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(parameter.id.as_str()), format_args!(
                     "parameter scope {:?} repeats parameter ordinal {}",
                     parameter.owner, parameter.ordinal
-                ),
-                entity: Some(parameter.id.as_str().to_owned()),
-            });
+                ))?;
         }
         for dependency in &parameter.dependencies {
             let Some((owner, ordinal)) = parameters.get(dependency) else {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     parameter.id.as_str(),
                     "parameter dependency",
                     dependency.as_str(),
-                );
+                )?;
                 continue;
             };
             let precedes = if *owner == parameter.owner.as_ref() {
@@ -1598,15 +1584,10 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 }
             };
             if !precedes {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
+                super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(parameter.id.as_str()), format_args!(
                         "parameter dependency `{}` does not precede its consumer",
                         dependency.as_str()
-                    ),
-                    entity: Some(parameter.id.as_str().to_owned()),
-                });
+                    ))?;
             }
         }
     }
@@ -1637,33 +1618,33 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
     for sketch in &ir.model.sketches {
         for entity_use in sketch.profiles.iter().flatten() {
             if !sketch_entities.contains(entity_use.entity.as_str()) {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     sketch.id.as_str(),
                     "sketch entity",
                     entity_use.entity.as_str(),
-                );
+                )?;
             }
         }
     }
     for entity in &ir.model.sketch_entities {
         if !sketches.contains(entity.sketch.as_str()) {
-            ref_error(
+            ref_error(ctx, 
                 findings,
                 entity.id().as_str(),
                 "sketch",
                 entity.sketch.as_str(),
-            );
+            )?;
         }
     }
     for constraint in &ir.model.sketch_constraints {
         if !sketches.contains(constraint.sketch.as_str()) {
-            ref_error(
+            ref_error(ctx, 
                 findings,
                 constraint.id.as_str(),
                 "sketch",
                 constraint.sketch.as_str(),
-            );
+            )?;
         }
         let (entities, parameter) = match constraint.definition.kind() {
             Definition::Disabled {} => (Vec::new(), None),
@@ -1935,29 +1916,24 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
         });
         for entity in entities {
             if !sketch_entities.contains(entity.as_str()) {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     constraint.id.as_str(),
                     "sketch entity",
                     entity.as_str(),
-                );
+                )?;
             } else if sketch_entity_owners.get(entity.as_str()).copied()
                 != Some(constraint.sketch.as_str())
             {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
+                super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(constraint.id.as_str()), format_args!(
                         "sketch entity `{}` belongs to a different sketch",
                         entity.as_str()
-                    ),
-                    entity: Some(constraint.id.as_str().to_owned()),
-                });
+                    ))?;
             }
         }
         if let Some(parameter) = parameter {
             if !parameters.contains(parameter) {
-                ref_error(findings, constraint.id.as_str(), "parameter", parameter);
+                ref_error(ctx, findings, constraint.id.as_str(), "parameter", parameter)?;
             }
         }
         if let Definition::RectangularPattern { pattern } = constraint.definition.kind() {
@@ -1973,12 +1949,12 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 .flatten()
             }) {
                 if !parameters.contains(parameter.as_str()) {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         constraint.id.as_str(),
                         "parameter",
                         parameter.as_str(),
-                    );
+                    )?;
                 }
             }
         }
@@ -1988,17 +1964,17 @@ pub(super) fn check_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelI
                 .flatten()
             {
                 if !parameters.contains(parameter.as_str()) {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         constraint.id.as_str(),
                         "parameter",
                         parameter.as_str(),
-                    );
+                    )?;
                 }
             }
         }
     }
-    check_feature_sketch_references(ir, &sketches, findings);
+    check_feature_sketch_references(ctx, ir, &sketches, findings)?;
     check_feature_references(ctx, ir, ids, findings)?;
     Ok(())
 }
@@ -2042,44 +2018,34 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: format!(
+            super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(configuration.id.as_str()), format_args!(
                     "design repeats configuration ordinal {}",
                     configuration.ordinal
-                ),
-                entity: Some(configuration.id.as_str().to_owned()),
-            });
+                ))?;
         }
         if let Some(source_index) = configuration.source_index {
             if !configuration_source_indices.insert(source_index) {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: format!("design repeats configuration source index {source_index}"),
-                    entity: Some(configuration.id.as_str().to_owned()),
-                });
+                super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(configuration.id.as_str()), format_args!("design repeats configuration source index {source_index}"))?;
             }
         }
         for body in configuration.bodies.iter().flatten() {
             if ids.bodies(body.as_str(), ctx)?.is_none() {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     configuration.id.as_str(),
                     "configuration body",
                     body.as_str(),
-                );
+                )?;
             }
         }
         for parameter in configuration.parameter_overrides.keys() {
             if !parameter_ids.contains(parameter.as_str()) {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     configuration.id.as_str(),
                     "configuration parameter override",
                     parameter.as_str(),
-                );
+                )?;
             }
         }
         let suppressed_features = configuration.suppressed_features().collect::<HashSet<_>>();
@@ -2088,35 +2054,28 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 if feature.suppressed.is_some_and(|suppressed| {
                     suppressed_features.contains(&feature.id) != suppressed
                 }) {
-                    findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message:
-                            "active configuration suppression disagrees with current feature state"
-                                .into(),
-                        entity: Some(configuration.id.as_str().to_owned()),
-                    });
+                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!("active configuration suppression disagrees with current feature state"))?;
                 }
             }
         }
         for (parameter, value) in &configuration.parameter_values {
             match parameter_values.get(parameter.as_str()) {
-                None => ref_error(
+                None => ref_error(ctx, 
                     findings,
                     configuration.id.as_str(),
                     "configuration parameter value",
                     parameter.as_str(),
-                ),
+                )?,
                 Some(baseline)
                     if baseline.is_some_and(|baseline| {
                         std::mem::discriminant(baseline) != std::mem::discriminant(value)
                     }) =>
                 {
-                    geometry_error(
+                    geometry_error(ctx, 
                         findings,
                         configuration.id.as_str(),
                         "configuration parameter value is invalid",
-                    );
+                    )?;
                 }
                 Some(_) => {}
             }
@@ -2124,98 +2083,78 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
         for (feature, state) in &configuration.feature_states {
             let feature_ordinal = features.get(feature.as_str()).copied();
             if feature_ordinal.is_none() {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     configuration.id.as_str(),
                     "configuration feature state",
                     feature.as_str(),
-                );
+                )?;
             }
             for dependency in &state.dependencies {
                 match features.get(dependency.as_str()) {
-                    None => ref_error(
+                    None => ref_error(ctx, 
                         findings,
                         configuration.id.as_str(),
                         "configuration feature dependency",
                         dependency.as_str(),
-                    ),
+                    )?,
                     Some(dependency_ordinal)
                         if feature_ordinal.is_some_and(|feature_ordinal| {
                             *dependency_ordinal >= feature_ordinal
                         }) =>
                     {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
+                        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                                 "configuration feature dependency `{}` does not precede `{}`",
                                 dependency.as_str(),
                                 feature.as_str()
-                            ),
-                            entity: Some(configuration.id.as_str().to_owned()),
-                        });
+                            ))?;
                     }
                     Some(_) => {}
                 }
             }
             for reference in regeneration_references(state.definition.operation()) {
                 match features.get(reference.as_str()) {
-                    None => ref_error(
+                    None => ref_error(ctx, 
                         findings,
                         configuration.id.as_str(),
                         "configuration definition feature",
                         reference.as_str(),
-                    ),
+                    )?,
                     Some(reference_ordinal)
                         if feature_ordinal.is_some_and(|feature_ordinal| {
                             *reference_ordinal >= feature_ordinal
                         }) =>
                     {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
+                        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                                 "configuration definition feature `{}` does not precede `{}`",
                                 reference.as_str(),
                                 feature.as_str()
-                            ),
-                            entity: Some(configuration.id.as_str().to_owned()),
-                        });
+                            ))?;
                     }
                     Some(_) if !state.dependencies.contains(reference) => {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
+                        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
                                 feature.as_str(), reference.as_str()
-                            ),
-                            entity: Some(configuration.id.as_str().to_owned()),
-                        });
+                            ))?;
                     }
                     Some(_) => {}
                 }
             }
             for output in state.evaluation.outputs() {
                 if ids.bodies(output.as_str(), ctx)?.is_none() {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         configuration.id.as_str(),
                         "configuration feature output",
                         output.as_str(),
-                    );
+                    )?;
                 }
             }
         }
-        check_configuration_state_closure(configuration, findings);
+        check_configuration_state_closure(ctx, configuration, findings)?;
     }
     if active_configurations > 1 {
-        findings.push(Finding {
-            check: Check::Counts,
-            severity: Severity::Error,
-            message: "design has multiple active configurations".into(),
-            entity: None,
-        });
+        super::record_finding(ctx, findings, Check::Counts, Severity::Error, None, format_args!("design has multiple active configurations"))?;
     }
     let feature_records_storage = ctx.with_scoped_storage("feature reference index", || {
         let mut records = HashMap::new();
@@ -2317,39 +2256,29 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
     let mut topology_owners = HashSet::new();
     for state in &ir.model.feature_input_topologies {
         if !features.contains_key(state.input_of.as_str()) {
-            ref_error(
+            ref_error(ctx, 
                 findings,
                 state.id.as_str(),
                 "input feature",
                 state.input_of.as_str(),
-            );
+            )?;
         }
         if !topology_owners.insert(state.input_of.as_str()) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: "feature has multiple input topology states".into(),
-                entity: Some(state.input_of.as_str().to_owned()),
-            });
+            super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(state.input_of.as_str()), format_args!("feature has multiple input topology states"))?;
         }
     }
     let mut result_owners = HashSet::new();
     for state in &ir.model.feature_result_topologies {
         if !features.contains_key(state.output_of.as_str()) {
-            ref_error(
+            ref_error(ctx, 
                 findings,
                 state.id.as_str(),
                 "result feature",
                 state.output_of.as_str(),
-            );
+            )?;
         }
         if !result_owners.insert(state.output_of.as_str()) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: "feature has multiple result topology states".into(),
-                entity: Some(state.output_of.as_str().to_owned()),
-            });
+            super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(state.output_of.as_str()), format_args!("feature has multiple result topology states"))?;
         }
     }
     let result_topologies_by_feature = ir
@@ -2361,30 +2290,20 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
-            findings.push(Finding {
-                check: Check::Counts,
-                severity: Severity::Error,
-                message: format!("design repeats feature ordinal {}", feature.ordinal),
-                entity: Some(feature.id.as_str().to_owned()),
-            });
+            super::record_finding(ctx, findings, Check::Counts, Severity::Error, Some(feature.id.as_str()), format_args!("design repeats feature ordinal {}", feature.ordinal))?;
         }
         for dependency in &feature.dependencies {
             match features.get(dependency.as_str()) {
-                None => ref_error(
+                None => ref_error(ctx, 
                     findings,
                     feature.id.as_str(),
                     "dependency feature",
                     dependency.as_str(),
-                ),
-                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
+                )?,
+                Some(ordinal) if *ordinal >= feature.ordinal => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                         "dependency feature `{}` does not precede its consumer",
                         dependency.as_str()
-                    ),
-                    entity: Some(feature.id.as_str().to_owned()),
-                }),
+                    ))?,
                 Some(_) => {}
             }
         }
@@ -2394,48 +2313,38 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 FeatureSourceContent::Parameter(parameter) => {
                     match parameters_by_id.get(parameter) {
                         None => {
-                            ref_error(
+                            ref_error(ctx, 
                                 findings,
                                 feature.id.as_str(),
                                 "content parameter",
                                 parameter.as_str(),
-                            );
+                            )?;
                         }
-                        Some(owner) if *owner != Some(&feature.id) => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
+                        Some(owner) if *owner != Some(&feature.id) => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                 "content parameter `{}` belongs to another feature",
                                 parameter.as_str()
-                            ),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        }),
+                            ))?,
                         Some(_) => {}
                     }
                 }
                 FeatureSourceContent::Feature(child) => match features.get(child.as_str()) {
-                    None => ref_error(
+                    None => ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
                         "content child",
                         child.as_str(),
-                    ),
-                    Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
+                    )?,
+                    Some(ordinal) if *ordinal <= feature.ordinal => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "content child `{}` does not follow its parent",
                             child.as_str()
-                        ),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    }),
+                        ))?,
                     Some(_) => {}
                 },
             }
         }
         for body in feature.evaluation.outputs() {
             if ids.bodies(body.as_str(), ctx)?.is_none() {
-                ref_error(findings, feature.id.as_str(), "output body", body.as_str());
+                ref_error(ctx, findings, feature.id.as_str(), "output body", body.as_str())?;
             }
         }
 
@@ -2455,17 +2364,17 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             | FeatureOperation::PlanarPatch { .. } => {}
             FeatureOperation::ReferenceImage { asset, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
                         "reference-image asset",
                         asset.as_str(),
-                    );
+                    )?;
                 }
             }
             FeatureOperation::Decal { asset, faces, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
-                    ref_error(findings, feature.id.as_str(), "decal asset", asset.as_str());
+                    ref_error(ctx, findings, feature.id.as_str(), "decal asset", asset.as_str())?;
                 }
                 face_selections.push(faces);
             }
@@ -2494,12 +2403,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::MeshImport { tessellations } => {
                 for tessellation in tessellations {
                     if ids.tessellations(tessellation, ctx)?.is_none() {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             feature.id.as_str(),
                             "mesh import tessellation",
                             tessellation,
-                        );
+                        )?;
                     }
                 }
             }
@@ -2511,12 +2420,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     .iter()
                     .any(|candidate| candidate.id == *occurrence)
                 {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
                         "inserted component occurrence",
                         occurrence.as_str(),
-                    );
+                    )?;
                 }
             }
             FeatureOperation::AssemblyJoint { joint } => {
@@ -2526,12 +2435,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     .iter()
                     .any(|candidate| candidate.id == *joint)
                 {
-                    ref_error(
+                    ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
                         "assembly joint",
                         joint.as_str(),
-                    );
+                    )?;
                 }
             }
             FeatureOperation::Form { cages } => {
@@ -2564,11 +2473,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     target: crate::features::SheetMetalFlangeHeightTarget::Native(native), ..
                 } if native.is_empty())
                 {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sheet-metal edge-flange height is invalid",
-                    );
+                    geometry_error(ctx, findings, feature.id.as_str(), "sheet-metal edge-flange height is invalid")?;
                 }
             }
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
@@ -2707,13 +2612,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     }
                 }
                 if let Some(pull_plane) = anchor.pull().and_then(|pull| pull.plane.as_ref()) {
-                    check_plane_feature_reference(
+                    check_plane_feature_reference(ctx, 
                         findings,
                         feature,
                         pull_plane,
                         &feature_records,
                         "draft pull plane",
-                    );
+                    )?;
                 }
             }
             FeatureOperation::BoundaryFill { tools, cells } => {
@@ -2728,22 +2633,22 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 face_selections.push(targets);
                 match tool {
                     SplitFaceTool::Path(path) => paths.push(path),
-                    SplitFaceTool::Plane { plane } => check_plane_feature_reference(
+                    SplitFaceTool::Plane { plane } => check_plane_feature_reference(ctx, 
                         findings,
                         feature,
                         plane,
                         &feature_records,
                         "split-face tool plane",
-                    ),
+                    )?,
                     SplitFaceTool::Planes { planes } => {
                         for plane in planes {
-                            check_plane_feature_reference(
+                            check_plane_feature_reference(ctx, 
                                 findings,
                                 feature,
                                 plane,
                                 &feature_records,
                                 "split-face tool plane",
-                            );
+                            )?;
                         }
                     }
                 }
@@ -2773,7 +2678,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
                 });
                 if !center_valid {
-                    feature_geometry_error(findings, feature, "scale transform is invalid");
+                    geometry_error(ctx, findings, feature.id.as_str(), "scale transform is invalid")?;
                 }
             }
             FeatureOperation::Combine { operands, .. } => {
@@ -2797,33 +2702,23 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 for seed in seeds {
                     match seed {
                         PatternSeed::Feature(seed) => match features.get(seed.as_str()) {
-                            None => ref_error(
+                            None => ref_error(ctx, 
                                 findings,
                                 feature.id.as_str(),
                                 "seed feature",
                                 seed.as_str(),
-                            ),
+                            )?,
                             Some(ordinal) if *ordinal >= feature.ordinal => {
-                                findings.push(Finding {
-                                    check: Check::ReferentialIntegrity,
-                                    severity: Severity::Error,
-                                    message: format!(
+                                super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                         "seed feature `{}` does not precede its pattern",
                                         seed.as_str()
-                                    ),
-                                    entity: Some(feature.id.as_str().to_owned()),
-                                });
+                                    ))?;
                             }
                             Some(_) if !feature.dependencies.contains(seed) => {
-                                findings.push(Finding {
-                                    check: Check::ReferentialIntegrity,
-                                    severity: Severity::Error,
-                                    message: format!(
+                                super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                         "pattern omits seed feature `{}` from its dependencies",
                                         seed.as_str()
-                                    ),
-                                    entity: Some(feature.id.as_str().to_owned()),
-                                });
+                                    ))?;
                             }
                             Some(_) => {}
                         },
@@ -2837,12 +2732,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                     .iter()
                                     .any(|candidate| candidate.id == *occurrence)
                                 {
-                                    ref_error(
+                                    ref_error(ctx, 
                                         findings,
                                         feature.id.as_str(),
                                         "seed occurrence",
                                         occurrence.as_str(),
-                                    );
+                                    )?;
                                 }
                             }
                         }
@@ -2852,12 +2747,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             FeatureOperation::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch.id() {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             feature.id.as_str(),
                             "owned sketch",
                             sketch.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -2869,12 +2764,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         .iter()
                         .any(|value| value.id == *sketch)
                     {
-                        ref_error(
+                        ref_error(ctx, 
                             findings,
                             feature.id.as_str(),
                             "owned spatial sketch",
                             sketch.as_str(),
-                        );
+                        )?;
                     }
                 }
             }
@@ -2927,22 +2822,17 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 {
                     if let crate::features::BinderTarget::Feature { feature: target } = target {
                         match features.get(target.as_str()) {
-                            None => ref_error(
+                            None => ref_error(ctx, 
                                 findings,
                                 feature.id.as_str(),
                                 "binder target feature",
                                 target.as_str(),
-                            ),
+                            )?,
                             Some(ordinal) if *ordinal >= feature.ordinal => {
-                                findings.push(Finding {
-                                    check: Check::ReferentialIntegrity,
-                                    severity: Severity::Error,
-                                    message: format!(
+                                super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                         "binder target feature `{}` does not precede its binder",
                                         target.as_str()
-                                    ),
-                                    entity: Some(feature.id.as_str().to_owned()),
-                                });
+                                    ))?;
                             }
                             Some(_) => {}
                         }
@@ -2975,7 +2865,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         .iter()
                         .any(|candidate| candidate.id == *child)
                     {
-                        ref_error(findings, feature.id.as_str(), "tree child", child.as_str());
+                        ref_error(ctx, findings, feature.id.as_str(), "tree child", child.as_str())?;
                     }
                 }
             }
@@ -3017,12 +2907,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     match plane {
                         DatumPlaneReference::Feature { feature: reference } => {
                             match feature_records.get(reference.as_str()) {
-                                None => ref_error(
+                                None => ref_error(ctx, 
                                     findings,
                                     feature.id.as_str(),
                                     "datum-point plane",
                                     reference.as_str(),
-                                ),
+                                )?,
                                 Some(record)
                                     if !matches!(
                                         record.evaluation.definition().operation(),
@@ -3034,29 +2924,16 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                             | FeatureOperation::DatumOffsetPlane { .. }
                                     ) =>
                                 {
-                                    feature_geometry_error(
-                                        findings,
-                                        feature,
-                                        "datum-point plane reference does not name a plane",
-                                    );
+                                    geometry_error(ctx, findings, feature.id.as_str(), "datum-point plane reference does not name a plane")?;
                                 }
                                 Some(record) if record.ordinal >= feature.ordinal => {
-                                    feature_geometry_error(
-                                        findings,
-                                        feature,
-                                        "datum-point plane does not precede the point",
-                                    );
+                                    geometry_error(ctx, findings, feature.id.as_str(), "datum-point plane does not precede the point")?;
                                 }
                                 Some(_) if !feature.dependencies.contains(reference) => {
-                                    findings.push(Finding {
-                                        check: Check::ReferentialIntegrity,
-                                        severity: Severity::Error,
-                                        message: format!(
+                                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                             "datum point omits plane feature `{}` from its dependencies",
                                             reference.as_str()
-                                        ),
-                                        entity: Some(feature.id.as_str().to_owned()),
-                                    });
+                                        ))?;
                                 }
                                 Some(_) => {}
                             }
@@ -3076,17 +2953,13 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
             } => {
                 if let Some(block) = block {
                     match features.get(block.as_str()) {
-                        None => ref_error(
+                        None => ref_error(ctx, 
                             findings,
                             feature.id.as_str(),
                             "sketch block",
                             block.as_str(),
-                        ),
-                        Some(ordinal) if *ordinal >= feature.ordinal => feature_geometry_error(
-                            findings,
-                            feature,
-                            "sketch block does not precede its instance",
-                        ),
+                        )?,
+                        Some(ordinal) if *ordinal >= feature.ordinal => geometry_error(ctx, findings, feature.id.as_str(), "sketch block does not precede its instance")?,
                         Some(_)
                             if !ir.model.features.iter().any(|candidate| {
                                 candidate.id == *block
@@ -3096,52 +2969,33 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                     )
                             }) =>
                         {
-                            feature_geometry_error(
-                                findings,
-                                feature,
-                                "sketch block target is not a block definition",
-                            );
+                            geometry_error(ctx, findings, feature.id.as_str(), "sketch block target is not a block definition")?;
                         }
                         Some(_) if !feature.dependencies.contains(block) => {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message: format!(
+                            super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
                                     block.as_str()
-                                ),
-                                entity: Some(feature.id.as_str().to_owned()),
-                            });
+                                ))?;
                         }
                         Some(_) => {}
                     }
                 }
             }
             FeatureOperation::DerivedGeometry { source } => match features.get(source.as_str()) {
-                None => ref_error(
+                None => ref_error(ctx, 
                     findings,
                     feature.id.as_str(),
                     "source feature",
                     source.as_str(),
-                ),
-                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
+                )?,
+                Some(ordinal) if *ordinal >= feature.ordinal => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                         "source feature `{}` does not precede its derived geometry",
                         source.as_str()
-                    ),
-                    entity: Some(feature.id.as_str().to_owned()),
-                }),
-                Some(_) if !feature.dependencies.contains(source) => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
+                    ))?,
+                Some(_) if !feature.dependencies.contains(source) => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                         "derived geometry omits source feature `{}` from its dependencies",
                         source.as_str()
-                    ),
-                    entity: Some(feature.id.as_str().to_owned()),
-                }),
+                    ))?,
                 Some(_) => {}
             },
             FeatureOperation::ImportedGeometry { .. } => {}
@@ -3151,12 +3005,12 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         DatumPlaneReference::Feature { feature: reference } => {
                             match feature_records.get(reference.as_str()) {
                                 None => {
-                                    ref_error(
+                                    ref_error(ctx, 
                                         findings,
                                         feature.id.as_str(),
                                         "reference plane",
                                         reference.as_str(),
-                                    );
+                                    )?;
                                 }
                                 Some(record)
                                     if !matches!(
@@ -3169,33 +3023,19 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                             | FeatureOperation::DatumOffsetPlane { .. }
                                     ) =>
                                 {
-                                    feature_geometry_error(
-                                        findings,
-                                        feature,
-                                        "datum-plane feature reference does not name a plane",
-                                    );
+                                    geometry_error(ctx, findings, feature.id.as_str(), "datum-plane feature reference does not name a plane")?;
                                 }
                                 Some(record) if record.ordinal >= feature.ordinal => {
-                                    findings.push(Finding {
-                                        check: Check::ReferentialIntegrity,
-                                        severity: Severity::Error,
-                                        message: format!(
+                                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                             "reference plane `{}` does not precede its offset plane",
                                             reference.as_str()
-                                        ),
-                                        entity: Some(feature.id.as_str().to_owned()),
-                                    });
+                                        ))?;
                                 }
                                 Some(_) if !feature.dependencies.contains(reference) => {
-                                    findings.push(Finding {
-                                        check: Check::ReferentialIntegrity,
-                                        severity: Severity::Error,
-                                        message: format!(
+                                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                                             "offset plane omits reference feature `{}` from its dependencies",
                                             reference.as_str()
-                                        ),
-                                        entity: Some(feature.id.as_str().to_owned()),
-                                    });
+                                        ))?;
                                 }
                                 Some(_) => {}
                             }
@@ -3216,7 +3056,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     |identity| Ok(ids.faces(identity, ctx)?.is_some()),
                 )?,
                 PlanarProfileRef::HistoricalFaces { state, faces, .. } => {
-                    check_historical_members(
+                    check_historical_members(ctx, 
                         findings,
                         &feature.id,
                         (
@@ -3232,24 +3072,20 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 .map(crate::ids::HistoricalFaceId::as_str)
                                 .collect()
                         },
-                    );
+                    )?;
                 }
                 PlanarProfileRef::Feature(producer) => match features.get(producer.as_str()) {
-                    None => ref_error(
+                    None => ref_error(ctx, 
                         findings,
                         feature.id.as_str(),
                         "profile feature",
                         producer.as_str(),
-                    ),
+                    )?,
                     Some(ordinal)
                         if *ordinal >= feature.ordinal
                             || !feature.dependencies.contains(producer) =>
                     {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "profile feature is not a preceding dependency",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "profile feature is not a preceding dependency")?;
                     }
                     Some(_) => {}
                 },
@@ -3261,7 +3097,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             || !feature.dependencies.contains(&curve.feature)
                     }) =>
                 {
-                    feature_geometry_error(findings, feature, "generated profile curve is invalid");
+                    geometry_error(ctx, findings, feature.id.as_str(), "generated profile curve is invalid")?;
                 }
                 _ => {}
             }
@@ -3298,7 +3134,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                         .map(crate::sketches::SpatialSketchEntityId::as_str),
                     |identity| Ok(spatial_sketch_entity_owners.contains_key(identity)),
                 )?,
-                PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(
+                PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(ctx, 
                     findings,
                     &feature.id,
                     (
@@ -3314,7 +3150,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             .map(crate::ids::HistoricalEdgeId::as_str)
                             .collect()
                     },
-                ),
+                )?,
                 PathRef::Unresolved(_)
                 | PathRef::Native(_)
                 | PathRef::Sketch(_)
@@ -3364,18 +3200,14 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                     .any(|id| id == vertex.local_id.as_str())
                             })
                     {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            &format!("generated {consumer} vertex is invalid"),
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), format_args!("generated {consumer} vertex is invalid"))?;
                     }
                 }
                 crate::features::VertexSelection::Historical {
                     state,
                     vertex,
                     native: _,
-                } => check_historical_members(
+                } => check_historical_members(ctx, 
                     findings,
                     &feature.id,
                     (state, std::iter::once(vertex.as_str())),
@@ -3388,7 +3220,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             .map(crate::ids::HistoricalVertexId::as_str)
                             .collect()
                     },
-                ),
+                )?,
                 crate::features::VertexSelection::Unresolved
                 | crate::features::VertexSelection::Native(_) => {}
             }
@@ -3402,7 +3234,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 _ => None,
             };
             if let Some((state, selected)) = historical {
-                check_historical_members(
+                check_historical_members(ctx, 
                     findings,
                     &feature.id,
                     (
@@ -3418,7 +3250,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             .map(crate::ids::HistoricalEdgeId::as_str)
                             .collect()
                     },
-                );
+                )?;
             }
             match selection {
                 EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(ctx, 
@@ -3438,11 +3270,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                     !state.edges().iter().any(|id| id == edge.local_id.as_str())
                                 })
                     }) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "generated edge selection is invalid",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "generated edge selection is invalid")?;
                     }
                 }
                 EdgeSelection::All | EdgeSelection::Unresolved | EdgeSelection::Native(_) => {}
@@ -3457,7 +3285,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                 _ => None,
             };
             if let Some((state, selected)) = historical {
-                check_historical_members(
+                check_historical_members(ctx, 
                     findings,
                     &feature.id,
                     (
@@ -3473,7 +3301,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                             .map(crate::ids::HistoricalFaceId::as_str)
                             .collect()
                     },
-                );
+                )?;
             }
             match selection {
                 FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(ctx, 
@@ -3493,11 +3321,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                     !state.faces().iter().any(|id| id == face.local_id.as_str())
                                 })
                     }) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "generated face selection is invalid",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "generated face selection is invalid")?;
                     }
                 }
                 FaceSelection::Unresolved | FaceSelection::Native(_) => {}
@@ -3528,7 +3352,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                     bodies,
                     native: _,
                 } => {
-                    check_historical_members(
+                    check_historical_members(ctx, 
                         findings,
                         &feature.id,
                         (
@@ -3544,10 +3368,10 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 .map(crate::ids::HistoricalBodyId::as_str)
                                 .collect()
                         },
-                    );
+                    )?;
                 }
                 BodySelection::HistoricalSet { state, members } => {
-                    check_historical_members(
+                    check_historical_members(ctx, 
                         findings,
                         &feature.id,
                         (
@@ -3563,7 +3387,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                 .map(crate::ids::HistoricalBodyId::as_str)
                                 .collect()
                         },
-                    );
+                    )?;
                 }
                 BodySelection::Generated { bodies, .. } => {
                     if bodies.iter().any(|body| {
@@ -3574,11 +3398,7 @@ fn check_feature_references(ctx: &DecodeContext<'_>, ir: &CadIr, ids: &ModelInde
                                     !state.bodies().iter().any(|id| id == body.local_id.as_str())
                                 })
                     }) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "generated body selection is invalid",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "generated body selection is invalid")?;
                     }
                 }
                 BodySelection::Local { .. }
@@ -3610,47 +3430,44 @@ fn plane_lookup_work(ctx: &DecodeContext<'_>, count: usize, key_bytes: usize, lo
     ctx.charge_work(work, "datum-plane identity lookup")
 }
 
-fn check_historical_members<'a, I, F>(
+fn check_historical_members<'a, I, F>(ctx: &DecodeContext<'_>, 
     findings: &mut Vec<Finding>,
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I),
     kind: &str,
     states: &HashMap<&str, &crate::features::FeatureInputTopology>,
     members: F,
-) where
+) -> Result<(), CodecError> where
     I: IntoIterator<Item = &'a str>,
     F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
 {
     let (state_id, selected) = selection;
     let Some(state) = states.get(state_id.as_str()) else {
-        ref_error(
+        ref_error(ctx, 
             findings,
             feature.as_str(),
             "feature input topology",
             state_id.as_str(),
-        );
-        return;
+        )?;
+        return Ok(());
     };
     if state.input_of != *feature {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!("historical {kind} selection uses another feature's input topology"),
-            entity: Some(feature.as_str().to_owned()),
-        });
+        super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.as_str()), format_args!("historical {kind} selection uses another feature's input topology"))?;
     }
     let available = members(state).into_iter().collect::<HashSet<_>>();
     let selected = selected.into_iter().collect::<Vec<_>>();
     for id in selected {
         if !available.contains(id) {
-            ref_error(
+            ref_error(ctx, 
                 findings,
                 feature.as_str(),
-                &format!("historical {kind}"),
+                format_args!("historical {kind}"),
                 id,
-            );
+            )?;
         }
     }
+
+    Ok(())
 }
 
 fn regeneration_references(
@@ -3832,12 +3649,12 @@ fn definition_terminations(
     terminations.into_iter()
 }
 
-fn check_configuration_state_closure(
+fn check_configuration_state_closure(ctx: &DecodeContext<'_>, 
     configuration: &crate::features::DesignConfiguration,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     if configuration.feature_states.is_empty() {
-        return;
+        return Ok(());
     }
     let mut closure = configuration
         .feature_states
@@ -3852,41 +3669,36 @@ fn check_configuration_state_closure(
             match configuration.feature_states.get(dependency) {
                 None => {}
                 Some(dependency_state) if dependency_state.evaluation.is_suppressed() => {
-                    findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
+                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
                             "configuration state closure uses suppressed dependency state `{}`",
                             dependency.as_str()
-                        ),
-                        entity: Some(configuration.id.as_str().to_owned()),
-                    });
+                        ))?;
                 }
                 Some(_) if closure.insert(dependency.clone()) => pending.push(dependency.clone()),
                 Some(_) => {}
             }
         }
     }
+
+    Ok(())
 }
 
-fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
-    geometry_error(findings, feature.id.as_str(), message);
-}
 
-fn check_plane_feature_reference(
+
+fn check_plane_feature_reference(ctx: &DecodeContext<'_>, 
     findings: &mut Vec<Finding>,
     feature: &Feature,
     reference: &crate::features::FeatureId,
     feature_records: &HashMap<&str, &Feature>,
     reference_kind: &str,
-) {
+) -> Result<(), CodecError> {
     match feature_records.get(reference.as_str()) {
-        None => ref_error(
+        None => ref_error(ctx, 
             findings,
             feature.id.as_str(),
             reference_kind,
             reference.as_str(),
-        ),
+        )?,
         Some(record)
             if !matches!(
                 record.evaluation.definition().operation(),
@@ -3898,41 +3710,24 @@ fn check_plane_feature_reference(
                     | crate::features::FeatureOperation::DatumOffsetPlane { .. }
             ) =>
         {
-            feature_geometry_error(
-                findings,
-                feature,
-                "feature reference does not name a datum plane",
-            );
+            geometry_error(ctx, findings, feature.id.as_str(), "feature reference does not name a datum plane")?;
         }
-        Some(record) if record.ordinal >= feature.ordinal => findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!(
+        Some(record) if record.ordinal >= feature.ordinal => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                 "{reference_kind} `{}` does not precede its consuming feature",
                 reference.as_str()
-            ),
-            entity: Some(feature.id.as_str().to_owned()),
-        }),
-        Some(_) if !feature.dependencies.contains(reference) => findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!(
+            ))?,
+        Some(_) if !feature.dependencies.contains(reference) => super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                 "feature omits {reference_kind} dependency `{}`",
                 reference.as_str()
-            ),
-            entity: Some(feature.id.as_str().to_owned()),
-        }),
+            ))?,
         Some(_) => {}
     }
+
+    Ok(())
 }
 
-fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
-    findings.push(Finding {
-        check: Check::GeometricConsistency,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(entity.into()),
-    });
+fn geometry_error(ctx: &DecodeContext<'_>, findings: &mut Vec<Finding>, entity: &str, message: impl fmt::Display) -> Result<(), CodecError> {
+    super::record_finding(ctx, findings, Check::GeometricConsistency, Severity::Error, Some(entity), format_args!("{message}"))
 }
 
 fn check_ids<'a>(ctx: &DecodeContext<'_>, 
@@ -3945,18 +3740,18 @@ fn check_ids<'a>(ctx: &DecodeContext<'_>,
     for value in values {
         ctx.charge_work(1, "selected identity validation")?;
         if !valid(value)? {
-            ref_error(findings, owner, kind, value);
+            ref_error(ctx, findings, owner, kind, value)?;
         }
     }
 
     Ok(())
 }
 
-fn check_feature_sketch_references(
+fn check_feature_sketch_references(ctx: &DecodeContext<'_>, 
     ir: &CadIr,
     sketches: &HashSet<&str>,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     use crate::features::{
         FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
         SketchPointSelection,
@@ -3996,12 +3791,7 @@ fn check_feature_sketch_references(
             .insert(sketch, (feature.id.as_str(), feature.ordinal))
             .is_some()
         {
-            findings.push(Finding {
-                check: Check::ReferentialIntegrity,
-                severity: Severity::Error,
-                message: format!("sketch `{sketch}` has multiple owning features"),
-                entity: Some(feature.id.as_str().to_owned()),
-            });
+            super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!("sketch `{sketch}` has multiple owning features"))?;
         }
     }
 
@@ -4060,11 +3850,7 @@ fn check_feature_sketch_references(
             SketchPointSelection::Unresolved => true,
         };
         if !valid {
-            feature_geometry_error(
-                findings,
-                feature,
-                "datum-point sketch-point selection is invalid",
-            );
+            geometry_error(ctx, findings, feature.id.as_str(), "datum-point sketch-point selection is invalid")?;
         }
         let sketch_id = match point {
             SketchPointSelection::Planar { sketch, .. } => Some(sketch.as_str()),
@@ -4074,14 +3860,9 @@ fn check_feature_sketch_references(
         if let Some(sketch_id) = sketch_id {
             if let Some((owner, ordinal)) = owners.get(sketch_id) {
                 if *ordinal >= feature.ordinal {
-                    findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
+                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "sketch owner `{owner}` does not precede its datum-point consumer"
-                        ),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    });
+                        ))?;
                 }
             }
         }
@@ -4170,22 +3951,17 @@ fn check_feature_sketch_references(
                 ProfileRef::Planar(_) => continue,
             };
             if !defined_sketches.contains(sketch) {
-                ref_error(
+                ref_error(ctx, 
                     findings,
                     feature.id.as_str(),
-                    &format!("{sketch_kind} profile"),
+                    format_args!("{sketch_kind} profile"),
                     sketch,
-                );
+                )?;
             } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
-                    findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
+                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "{sketch_kind} owner `{owner}` does not precede its profile consumer"
-                        ),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    });
+                        ))?;
                 }
             }
             match profile {
@@ -4200,11 +3976,7 @@ fn check_feature_sketch_references(
                         .iter()
                         .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= profile_count)
                     {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "spatial sketch profile indices are empty, repeated, or out of range",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "spatial sketch profile indices are empty, repeated, or out of range")?;
                     }
                 }
                 ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
@@ -4217,11 +3989,7 @@ fn check_feature_sketch_references(
                     if profiles.iter().any(|index| {
                         cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count
                     }) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "sketch profile indices are empty, repeated, or out of range",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "sketch profile indices are empty, repeated, or out of range")?;
                     }
                 }
                 ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) => {
@@ -4258,11 +4026,7 @@ fn check_feature_sketch_references(
                         }
                     });
                     if invalid {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "sketch regions have empty, repeated, invalid, or out-of-range boundaries")?;
                     }
                 }
                 ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
@@ -4271,11 +4035,7 @@ fn check_feature_sketch_references(
                             .get(entity.as_str())
                             .is_none_or(|owner| *owner != sketch.as_str())
                     }) {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "sketch profile entities are empty, repeated, missing, or owned by another sketch",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch")?;
                     }
                 }
                 ProfileRef::Planar(
@@ -4299,11 +4059,7 @@ fn check_feature_sketch_references(
                         .is_none_or(|owner| *owner != sketch.as_str())
                 });
                 if invalid {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "sketch path curves are empty, repeated, or owned by another sketch",
-                    );
+                    geometry_error(ctx, findings, feature.id.as_str(), "sketch path curves are empty, repeated, or owned by another sketch")?;
                 }
             }
             let (sketch, known_sketches, description) = match path {
@@ -4318,11 +4074,7 @@ fn check_feature_sketch_references(
                             .is_none_or(|owner| *owner != sketch.as_str())
                     });
                     if invalid {
-                        feature_geometry_error(
-                            findings,
-                            feature,
-                            "spatial sketch path curves are empty, repeated, missing, or owned by another sketch",
-                        );
+                        geometry_error(ctx, findings, feature.id.as_str(), "spatial sketch path curves are empty, repeated, missing, or owned by another sketch")?;
                     }
                     (
                         sketch.as_str(),
@@ -4336,21 +4088,18 @@ fn check_feature_sketch_references(
                 _ => continue,
             };
             if !known_sketches.contains(sketch) {
-                ref_error(findings, feature.id.as_str(), description, sketch);
+                ref_error(ctx, findings, feature.id.as_str(), description, sketch)?;
             } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
-                    findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
+                    super::record_finding(ctx, findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
                             "sketch owner `{owner}` does not precede its path consumer"
-                        ),
-                        entity: Some(feature.id.as_str().to_owned()),
-                    });
+                        ))?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
