@@ -734,8 +734,10 @@ impl CompoundState {
             }
             // `sector_size` is 512 or 4096, both exact multiples of four;
             // the length check above proves this sector has that width.
-            ctx.reserve_capacity(&mut fat, data.len() / 4, "CFB FAT word slots")?;
-            fat.extend(ctx.admit_iter(data.as_chunks::<4>().0, "decode CFB FAT words")?.copied().map(le_u32_array));
+            for &raw in ctx.admit_iter(data.as_chunks::<4>().0, "decode CFB FAT words")? {
+                ctx.reserve_capacity(&mut fat, 1, "CFB FAT word slots")?;
+                fat.push(le_u32_array(raw));
+            }
         }
         if fat.len() < sector_count {
             return malformed("CFB FAT does not address every physical sector");
@@ -821,8 +823,10 @@ impl CompoundState {
         // Every joined sector passed the same exact-width proof above, so the
         // joined mini FAT is an exact sequence of four-byte words.
         let mut mini_fat = ctx.vector_storage(mini_fat_word_count, "retain CFB mini FAT")?;
-        ctx.reserve_capacity(&mut mini_fat, mini_fat_word_count, "CFB mini FAT word slots")?;
-        mini_fat.extend(ctx.admit_iter(mini_fat_bytes.as_chunks::<4>().0, "decode CFB mini FAT words")?.copied().map(le_u32_array));
+        for &raw in ctx.admit_iter(mini_fat_bytes.as_chunks::<4>().0, "decode CFB mini FAT words")? {
+            ctx.reserve_capacity(&mut mini_fat, 1, "CFB mini FAT word slots")?;
+            mini_fat.push(le_u32_array(raw));
+        }
         drop(mini_fat_bytes);
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
@@ -1327,7 +1331,10 @@ impl CompoundPrefixProbe {
                     cadmpeg_core::decode::u64_from_index(raw.len()),
                     "CFB probe FAT words",
                 )?;
-                fat.extend(ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")?.copied().map(le_u32_array));
+                for &word in ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")? {
+                    ctx.reserve_capacity(&mut fat, 1, "CFB probe FAT word slot")?;
+                    fat.push(le_u32_array(word));
+                }
                 loaded_fat_count += 1;
             }
             if ctx.admit_iter(&fat_sectors, "check CFB probe FAT roles")?
