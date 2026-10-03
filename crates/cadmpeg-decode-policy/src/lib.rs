@@ -264,7 +264,7 @@ struct Analysis<'a, 'tcx> {
     typing_owner: LocalDefId,
     arguments: Option<rustc_middle::ty::GenericArgsRef<'tcx>>,
     fixed_parameters: HashSet<rustc_hir::HirId>,
-    flow: flow::Flow,
+    flow: flow::Flow<'tcx>,
     findings: &'a mut Findings,
 }
 

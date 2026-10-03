@@ -47,19 +47,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 && matches!(name.as_str(), "from_str" | "from_slice" | "from_reader" | "from_value" | "to_writer")
                 && !self.tcx.def_path_str(definition).contains("Deserializer");
         if !typed && !raw { return false; }
-        // The core parser owns the precharged tree and typed-conversion bounds.
-        let mut enclosing = self.typing_owner.to_def_id();
-        loop {
-            if self.tcx.crate_name(enclosing.krate).as_str() == "cadmpeg_core"
-                && self.tcx.opt_item_name(enclosing).is_some_and(|name| {
-                    matches!(name.as_str(), "parse_json" | "parse_json_tree")
-                })
-            {
-                return false;
-            }
-            let Some(parent) = self.tcx.opt_parent(enclosing) else { break; };
-            enclosing = parent;
-        }
         if typed && self.call_arguments(expression).and_then(|args| args.types().next())
             .is_some_and(|value| derived_tree(self.tcx, value, &mut Vec::new()))
         {

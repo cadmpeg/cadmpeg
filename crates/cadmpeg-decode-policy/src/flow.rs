@@ -22,7 +22,7 @@ pub(crate) struct ScopedStorage {
 }
 
 #[derive(Clone)]
-pub(crate) struct Flow {
+pub(crate) struct Flow<'tcx> {
     pub(crate) work: Vec<Credit>,
     pub(crate) iterations: u64,
     pub(crate) storage: bool,
@@ -30,12 +30,12 @@ pub(crate) struct Flow {
     pub(crate) storage_extents: Vec<ExtentTerm>,
     pub(crate) scoped_storage: Vec<ScopedStorage>,
     pub(crate) storage_slots: Vec<crate::storage::Slots>,
-    pub(crate) parser_receipts: Vec<crate::parser::ParserReceipt>,
+    pub(crate) parser_receipts: Vec<crate::parser::ParserReceipt<'tcx>>,
     pub(crate) loop_bounds: Vec<Vec<ExtentTerm>>,
     pub(crate) mutated: std::collections::HashSet<String>,
 }
 
-impl Default for Flow {
+impl Default for Flow<'_> {
     fn default() -> Self {
         Self {
             work: Vec::new(),
@@ -603,7 +603,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 }
 
-impl Flow {
+impl Flow<'_> {
     pub(crate) fn with_parameters(parameters: &std::collections::HashSet<HirId>) -> Self {
         Self {
             storage_parameters: parameters

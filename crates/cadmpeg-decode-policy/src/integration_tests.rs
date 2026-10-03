@@ -75,7 +75,7 @@ fn check_fixture(name: &str) {
         std::fs::write(&proofs, output.lines().filter_map(|line| line.strip_prefix("decode_key_work_proof\t")).map(|line| format!("{line}\n")).collect::<String>()).expect("proof file");
         command.env("CADMPEG_POLICY_KEY_WORK_PROOFS", proofs);
     }
-    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission") {
+    if matches!(name, "thirdparty" | "serde" | "zip" | "byte_search" | "parser_admission" | "parser_json") {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
             .ancestors()
@@ -93,26 +93,34 @@ fn check_fixture(name: &str) {
             }
         }
         let mut dependencies = Vec::new();
+        let fingerprint_directory = executable.parent().and_then(|out| out.parent())
+            .expect("test artifact directory").join("fingerprint");
+        let fingerprint: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(fingerprint_directory.join("test-lib-cadmpeg_decode_policy.json"))
+                .expect("test dependency fingerprint"),
+        ).expect("test dependency fingerprint JSON");
         for name in ["roxmltree", "serde_json", "serde", "zip", "memchr"] {
+            let expected = fingerprint["deps"].as_array().expect("dependency fingerprints")
+                .iter().find(|dependency| dependency[1].as_str() == Some(name))
+                .and_then(|dependency| dependency[3].as_u64()).expect("linked dependency fingerprint");
+            let expected = expected.to_le_bytes().iter().map(|byte| format!("{byte:02x}")).collect::<String>();
             let prefix = format!("lib{name}-");
             let library = directories
                 .iter()
-                .filter(|directory| directory.is_dir())
+                .filter(|directory| directory.parent().is_some_and(|artifact| {
+                    std::fs::read_to_string(artifact.join("fingerprint").join(format!("lib-{name}")))
+                        .is_ok_and(|fingerprint| fingerprint.trim() == expected)
+                }))
                 .flat_map(|directory| std::fs::read_dir(directory).expect("dependency listing"))
                 .map(|entry| entry.expect("dependency entry").path())
-                .filter(|path| {
+                .find(|path| {
                     path.file_name()
                         .is_some_and(|file| file.to_string_lossy().starts_with(&prefix))
                         && path
                             .extension()
                             .is_some_and(|extension| extension == "rmeta")
                 })
-                .max_by_key(|path| {
-                    std::fs::metadata(path)
-                        .and_then(|metadata| metadata.modified())
-                        .expect("dependency modification time")
-                })
-                .expect("fixture dependency library");
+                .expect("fixture library matching the linked dependency fingerprint");
             dependencies.push(format!("{name}={}", library.display()));
         }
         command.env("CADMPEG_POLICY_DEPENDENCY", dependencies.join(";"));
@@ -121,7 +129,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if name == "container_callbacks" {
@@ -212,6 +220,7 @@ fn check_fixture(name: &str) {
                     | "dominance"
                     | "thirdparty"
                     | "parser_admission"
+                    | "parser_json"
                     | "byte_search"
                     | "zip"
                     | "boxing"
@@ -831,6 +840,11 @@ fn linear_growth_receipts_bind_the_collection_element_and_returned_count() {
 #[test]
 fn xml_parser_receipts_bind_the_input_and_live_admission_once() {
     check_fixture("parser_admission");
+}
+
+#[test]
+fn json_parser_receipts_bind_the_source_phase_and_target() {
+    check_fixture("parser_json");
 }
 
 #[test]
