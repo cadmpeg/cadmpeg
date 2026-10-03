@@ -7655,12 +7655,10 @@ fn parasolid_topology_attribute_contexts<'a>(
                 "NX Parasolid topology reference groups",
             )
         })?;
-        ctx.charge_collection_items(1, "NX Parasolid topology reference")?;
         let references = references_by_target.entry(key).or_default();
         reservation.with_storage(|| {
-            ctx.reserve_capacity(references, 1, "NX Parasolid topology reference")
+            ctx.push_vec(references, reference, "NX Parasolid topology reference")
         })?;
-        references.push(reference);
     }
     let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
     let mut contexts = Vec::new();

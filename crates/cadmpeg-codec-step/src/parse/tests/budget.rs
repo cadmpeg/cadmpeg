@@ -448,10 +448,11 @@ parser_vector_limit_test!(
     VECTOR_SOURCE,
     "step_parse_section_ids"
 );
+// Map insertion admits node storage and the collection item with one operation.
 parser_vector_limit_test!(
     record_table_refuses_collection_limit,
     VECTOR_SOURCE,
-    "step_parse_record_table_items"
+    "step_parse_record_table_storage"
 );
 parser_vector_limit_test!(
     data_section_vector_refuses_collection_limit,

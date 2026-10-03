@@ -205,7 +205,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         let mut values = Vec::new();
         match self.admission.context() {
             Some(context) => {
-                self.admit(context.reserve_vec_limit(&mut values, source.len(), operation))?
+                self.admit(context.reserve_vec_limit(&mut values, source.len(), operation))?;
             }
             None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
                 &mut values,
