@@ -21,6 +21,7 @@ mod sort;
 mod space;
 pub mod tree;
 pub mod text;
+mod text_queries;
 mod unique;
 mod utf16;
 mod view;
