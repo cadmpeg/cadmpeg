@@ -127,6 +127,9 @@ impl DecodeContext<'_> {
             self.charge_collection_items_limit(u64_from_index(items), operation)?;
         }
         if added != 0 {
+            let moved = values.capacity().checked_mul(std::mem::size_of::<T>())
+                .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
+            self.charge_work_limit(u64_from_index(moved), operation)?;
             values
                 .try_reserve_exact(capacity - values.len())
                 .map_err(|_| {
@@ -304,22 +307,6 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         self.try_collect_retained_with(values, operation, Ok::<T, CodecError>)
-    }
-
-    /// Reserves text bytes charged by aggregate admission.
-    pub(crate) fn reserve_admitted_string(
-        text: &mut String,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        text.try_reserve_exact(additional).map_err(|_| {
-            CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-                ResourceDimension::RetainedBytes,
-                u64::MAX,
-                u64_from_index(additional),
-                operation,
-            ))
-        })
     }
 
     /// Inserts a new scoped tree key after charging lookup work and node storage.
@@ -807,6 +794,9 @@ impl DecodeContext<'_> {
             .checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_retained(u64_from_index(bytes), operation)?;
+        let moved = capacity.checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_work(u64_from_index(moved), operation)?;
         Ok((target - len, bytes))
     }
 
@@ -820,6 +810,12 @@ impl DecodeContext<'_> {
         let (additional, bytes) =
             self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
         self.charge_collection_items(1, operation)?;
+        if additional != 0 {
+            // Wrapped deque growth can move the live slots after reallocation.
+            let moved = values.len().checked_mul(std::mem::size_of::<T>())
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            self.charge_work(u64_from_index(moved), operation)?;
+        }
         values.try_reserve_exact(additional).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
@@ -838,6 +834,12 @@ impl DecodeContext<'_> {
         let (additional, bytes) =
             self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
         self.charge_collection_items(1, operation)?;
+        if additional != 0 {
+            // Wrapped deque growth can move the live slots after reallocation.
+            let moved = values.len().checked_mul(std::mem::size_of::<T>())
+                .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            self.charge_work(u64_from_index(moved), operation)?;
+        }
         values.try_reserve_exact(additional).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
