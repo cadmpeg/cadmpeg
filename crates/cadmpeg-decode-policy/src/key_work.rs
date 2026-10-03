@@ -100,6 +100,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !types::standard(self.tcx, definition) { return false; }
         let (index, moves): (usize, u64) = match name {
             "reverse" | "rotate_left" | "rotate_right" => (0, 3),
+            "fill" => {
+                let Some(receiver) = operands.first() else { return false; };
+                let rustc_middle::ty::Slice(element) = self.expr_ty(receiver).peel_refs().kind() else { return false; };
+                if !self.tcx.type_is_copy_modulo_regions(self.typing_env(), *element) { return false; }
+                (0, 1)
+            }
             "copy_within" => (0, 1),
             "into_boxed_slice" => (0, 1),
             "copy_from_slice" | "extend_from_slice" | "append" => (1, 1),

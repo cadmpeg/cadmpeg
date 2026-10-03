@@ -129,7 +129,7 @@ fn check_fixture(name: &str) {
             std::env::join_paths(directories).expect("dependency paths"),
         );
     }
-    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json" | "parser_zstd" | "reader_callbacks") {
+    if matches!(name, "work_keys" | "work_callbacks" | "work_scalar" | "work_iterators" | "serde" | "boxing" | "text_sources" | "btree_storage" | "parser_admission" | "parser_json" | "parser_zstd" | "reader_callbacks" | "unicode_case") {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
     if matches!(name, "container_callbacks" | "parser_zip") {
@@ -222,6 +222,7 @@ fn check_fixture(name: &str) {
                     | "parser_admission"
                     | "parser_json"
                     | "parser_zip"
+                    | "unicode_case"
                     | "parser_zstd"
                     | "reader_callbacks"
                     | "sealed_traits"
@@ -906,4 +907,9 @@ fn precharged_byte_capacity_receipts_bind_target_extent_and_refusal() {
 #[test]
 fn constant_evaluation_excludes_scans_and_preserves_runtime_callbacks() {
     check_fixture("constant_scope");
+}
+
+#[test]
+fn unicode_case_receipts_require_the_admitted_input_and_live_workspace() {
+    check_fixture("unicode_case");
 }

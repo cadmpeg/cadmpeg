@@ -171,3 +171,10 @@ pub fn stored_keys(ctx: &DecodeContext, hash: &mut std::collections::HashMap<Str
     let _unpaid = tree.get_key_value(key); // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn copy_fill<T: Copy>(ctx: &DecodeContext, values: &mut [T], value: T) -> Result<(), ()> {
+    ctx.admit_moves(values, 1, "fill")?;
+    values.fill(value);
+    values.fill(value); // finding: uncharged_decode_work
+    Ok(())
+}
