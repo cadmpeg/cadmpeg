@@ -62,7 +62,7 @@ impl<T> ExactVec<T> {
 }
 
 #[derive(Clone, Copy)]
-enum VecGrowth {
+pub(super) enum LinearGrowth {
     Exact,
     Amortized,
 }
@@ -82,64 +82,26 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        self.reserve_retained_vec_storage(values, count, VecGrowth::Amortized, None, operation)
+        self.reserve_retained_vec_storage(values, count, LinearGrowth::Amortized, None, operation)
     }
 
     fn reserve_retained_vec_storage<T>(
         &self,
         values: &mut Vec<T>,
         count: usize,
-        growth: VecGrowth,
+        growth: LinearGrowth,
         items: Option<usize>,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        let required = values
-            .len()
-            .checked_add(count)
-            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        let capacity = if std::mem::size_of::<T>() == 0 || required <= values.capacity() {
-            values.capacity()
-        } else if matches!(growth, VecGrowth::Exact) {
-            required
-        } else if values.capacity() == 0 {
-            let minimum = match std::mem::size_of::<T>() {
-                1 => 8,
-                2..=1024 => 4,
-                _ => 1,
-            };
-            required.max(minimum)
-        } else {
-            match values.capacity().checked_mul(2) {
-                Some(grown) if grown > required => grown,
-                _ => required,
-            }
-        };
-        let added = capacity - values.capacity();
-        let bytes = added
-            .checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        let maximum = usize::try_from(isize::MAX)
-            .map_err(|_| self.retained_size_overflow_limit(operation))?;
-        if bytes > maximum {
-            return Err(self
-                .budget
-                .retained_allocation_failed_limit(u64_from_index(bytes), operation));
-        }
-        self.charge_retained_limit(u64_from_index(bytes), operation)?;
+        let (additional, bytes) = self.linear_growth::<T>(
+            values.len(), values.capacity(), count, growth, operation,
+        )?;
         if let Some(items) = items {
             self.charge_collection_items_limit(u64_from_index(items), operation)?;
         }
-        if added != 0 {
-            let moved = values.capacity().checked_mul(std::mem::size_of::<T>())
-                .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
-            self.charge_work_limit(u64_from_index(moved), operation)?;
-            values
-                .try_reserve_exact(capacity - values.len())
-                .map_err(|_| {
-                    self.budget
-                        .retained_allocation_failed_limit(u64_from_index(bytes), operation)
-                })?;
-        }
+        values.try_reserve_exact(additional).map_err(|_| {
+            self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation)
+        })?;
         Ok(())
     }
 
@@ -150,7 +112,7 @@ impl DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.reserve_retained_vec_storage(values, count, VecGrowth::Amortized, None, operation)
+        self.reserve_retained_vec_storage(values, count, LinearGrowth::Amortized, None, operation)
             .map_err(Into::into)
     }
 
@@ -161,7 +123,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
         let mut values = Vec::new();
-        self.reserve_retained_vec_storage(&mut values, count, VecGrowth::Exact, None, operation)?;
+        self.reserve_retained_vec_storage(&mut values, count, LinearGrowth::Exact, None, operation)?;
         Ok(values)
     }
 
@@ -237,7 +199,7 @@ impl DecodeContext<'_> {
             self.reserve_retained_vec_storage(
                 values,
                 count,
-                VecGrowth::Exact,
+                LinearGrowth::Exact,
                 Some(count),
                 operation,
             )
@@ -494,7 +456,7 @@ impl DecodeContext<'_> {
         self.reserve_retained_vec_storage(
             &mut values,
             count,
-            VecGrowth::Exact,
+            LinearGrowth::Exact,
             Some(count),
             operation,
         )?;
@@ -522,7 +484,7 @@ impl DecodeContext<'_> {
         self.reserve_retained_vec_storage(
             values,
             additional,
-            VecGrowth::Amortized,
+            LinearGrowth::Amortized,
             Some(additional),
             operation,
         )
@@ -770,36 +732,44 @@ impl DecodeContext<'_> {
         reservation.with_storage(|| self.copy_retained_text(text, operation))
     }
 
-    fn linear_growth<T>(
+    /// Admits capacity growth and all bytes that reallocation can move.
+    pub(super) fn linear_growth<T>(
         &self,
         len: usize,
         capacity: usize,
         count: usize,
+        growth: LinearGrowth,
         operation: &'static str,
-    ) -> Result<(usize, usize), CodecError> {
-        let required = len
-            .checked_add(count)
+    ) -> Result<(usize, usize), ResourceLimit> {
+        let required = len.checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if std::mem::size_of::<T>() == 0 || required <= capacity {
+            self.charge_retained_limit(0, operation)?;
             return Ok((0, 0));
         }
-        let minimum = match std::mem::size_of::<T>() {
-            1 => 8,
-            2..=1024 => 4,
-            _ => 1,
+        let target = if matches!(growth, LinearGrowth::Exact) {
+            required
+        } else {
+            let minimum = match std::mem::size_of::<T>() {
+                1 => 8,
+                2..=1024 => 4,
+                _ => 1,
+            };
+            capacity.checked_mul(2)
+                .ok_or_else(|| self.retained_size_overflow_limit(operation))?
+                .max(required).max(minimum)
         };
-        let target = capacity
-            .checked_mul(2)
-            .ok_or_else(|| self.retained_size_overflow_limit(operation))?
-            .max(required)
-            .max(minimum);
-        let bytes = (target - capacity)
-            .checked_mul(std::mem::size_of::<T>())
+        let bytes = (target - capacity).checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        self.charge_retained(u64_from_index(bytes), operation)?;
+        let maximum = usize::try_from(isize::MAX)
+            .map_err(|_| self.retained_size_overflow_limit(operation))?;
+        if bytes > maximum {
+            return Err(self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation));
+        }
+        self.charge_retained_limit(u64_from_index(bytes), operation)?;
         let moved = capacity.checked_mul(std::mem::size_of::<T>())
-            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        self.charge_work(u64_from_index(moved), operation)?;
+            .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_work_limit(u64_from_index(moved), operation)?;
         Ok((target - len, bytes))
     }
 
@@ -811,7 +781,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let (additional, bytes) =
-            self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
+            self.linear_growth::<T>(values.len(), values.capacity(), 1, LinearGrowth::Amortized, operation)?;
         self.charge_collection_items(1, operation)?;
         if additional != 0 {
             // Wrapped deque growth can move the live slots after reallocation.
@@ -835,7 +805,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let (additional, bytes) =
-            self.linear_growth::<T>(values.len(), values.capacity(), 1, operation)?;
+            self.linear_growth::<T>(values.len(), values.capacity(), 1, LinearGrowth::Amortized, operation)?;
         self.charge_collection_items(1, operation)?;
         if additional != 0 {
             // Wrapped deque growth can move the live slots after reallocation.
@@ -859,7 +829,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let (additional, bytes) =
-            self.linear_growth::<T>(values.len(), values.capacity(), count, operation)?;
+            self.linear_growth::<T>(values.len(), values.capacity(), count, LinearGrowth::Amortized, operation)?;
         self.charge_collection_items(u64_from_index(count), operation)?;
         values.try_reserve_exact(additional).map_err(|_| {
             self.budget
@@ -913,7 +883,7 @@ impl DecodeContext<'_> {
                 self.reserve_retained_vec_storage(
                     &mut collected,
                     minimum.max(1),
-                    VecGrowth::Exact,
+                    LinearGrowth::Exact,
                     Some(1),
                     operation,
                 )
@@ -922,13 +892,15 @@ impl DecodeContext<'_> {
                 self.reserve_retained_vec_storage(
                     &mut collected,
                     1,
-                    VecGrowth::Amortized,
+                    LinearGrowth::Amortized,
                     Some(1),
                     operation,
                 )
                 .map_err(CodecError::from)?;
             }
-            collected.push(map(value)?);
+            let mapped = map(value)?;
+            self.reserve_capacity(&mut collected, 1, operation).map_err(E::from)?;
+            collected.push(mapped);
         }
         Ok(collected)
     }
@@ -1289,10 +1261,11 @@ impl DecodeContext<'_> {
             self.reserve_capacity(values, additional, operation)?;
             for _ in 0..additional {
                 self.charge_work(1, operation)?;
+                self.reserve_capacity(values, 1, operation)?;
                 values.push(fill);
             }
         } else {
-            values.truncate(length);
+            self.truncate_vec(values, length, operation)?;
         }
         Ok(())
     }
@@ -1557,7 +1530,9 @@ impl DecodeContext<'_> {
         let mut input = values.into_iter();
         loop {
             let Some(value) = self.next_charged(&mut input, operation)? else { break };
-            copies.push(self.copy_retained_text(value, operation)?);
+            let copy = self.copy_retained_text(value, operation)?;
+            self.reserve_capacity(&mut copies, 1, operation)?;
+            copies.push(copy);
         }
         Ok(copies)
     }
