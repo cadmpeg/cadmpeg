@@ -45,6 +45,32 @@ impl<'a, T> AdmittedIter<std::slice::Iter<'a, T>> {
 }
 
 impl DecodeContext<'_> {
+    /// Validates borrowed UTF-8 after admitting every input byte.
+    /// The inner result preserves the standard validation error.
+    pub fn validate_utf8<'bytes>(
+        &self,
+        bytes: &'bytes [u8],
+        operation: &'static str,
+    ) -> Result<Result<&'bytes str, std::str::Utf8Error>, CodecError> {
+        self.charge_work(u64_from_index(bytes.len()), operation)?;
+        Ok(std::str::from_utf8(bytes))
+    }
+
+    /// Compares equal-length text with ASCII case folding after admission.
+    /// Unequal lengths require no scan.
+    pub fn eq_ignore_ascii_case(
+        &self,
+        left: &str,
+        right: &str,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if left.len() != right.len() {
+            return Ok(false);
+        }
+        self.charge_work(u64_from_index(left.len()), operation)?;
+        Ok(left.eq_ignore_ascii_case(right))
+    }
+
     /// Admits the collection traversal before visiting any element. Iterator adapters
     /// run on the admitted result; callbacks admit their own child work.
     pub fn admit_iter<'values, S: IterSource + ?Sized>(
@@ -219,6 +245,42 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+
+    #[test]
+    fn charged_text_validation_preserves_standard_results_and_counts_bytes() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        assert_eq!(ctx.validate_utf8("é".as_bytes(), "UTF-8").expect("admission"), Ok("é"));
+        let invalid = [0xff, b'a'];
+        let invalid_error = ctx.validate_utf8(&invalid, "UTF-8").expect("admission")
+            .expect_err("invalid leading byte");
+        assert_eq!(invalid_error.valid_up_to(), 0);
+        assert_eq!(invalid_error.error_len(), Some(1));
+        assert!(ctx.eq_ignore_ascii_case("Ab", "aB", "ASCII case").expect("admission"));
+        assert!(!ctx.eq_ignore_ascii_case("é", "É", "ASCII case").expect("admission"));
+        assert!(!ctx.eq_ignore_ascii_case("a", "ab", "ASCII case").expect("length mismatch"));
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else {
+            panic!("resource refusal");
+        };
+        // Two two-byte UTF-8 scans and two two-byte ASCII comparisons.
+        assert_eq!(limit.used, 8);
+    }
+
+    #[test]
+    fn charged_text_validation_refuses_before_standard_operation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let error = ctx.validate_utf8(&[0xff, 0xff], "UTF-8").expect_err("work refusal precedes invalid UTF-8");
+        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(limit.operation, "UTF-8");
+        let error = ctx.eq_ignore_ascii_case("ab", "AB", "ASCII case").expect_err("fused refusal");
+        let CodecError::ResourceLimit(repeated) = error else { panic!("resource refusal"); };
+        assert_eq!(repeated, limit);
+    }
 
     #[test]
     fn iteration_charges_before_first_element() {
