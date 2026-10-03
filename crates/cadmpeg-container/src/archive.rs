@@ -533,12 +533,9 @@ fn central_directory_inventory(
             .checked_sub(20)
             .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
         {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(locator_start),
-                "ZIP64 end record search",
-            )?;
-            let record_start = bytes[..locator_start]
-                .windows(4)
+            let record_start = ctx.admit_iter(&bytes[..locator_start], "ZIP64 end record search")?
+                .windows(std::num::NonZeroUsize::new(4)
+                    .ok_or_else(|| CodecError::Malformed("zero ZIP signature width".into()))?)
                 .rposition(|signature| signature == b"PK\x06\x06")
                 .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
             let record_size = View::u64_le_at(bytes, record_start + 4)
@@ -585,16 +582,15 @@ fn central_directory_inventory(
         })?;
         let search_end = usize::try_from(directory_end)
             .map_err(|_| CodecError::Malformed("ZIP directory end does not fit memory".into()))?;
-        let search_len = search_end
-            .checked_sub(search_start)
+        let search = bytes.get(search_start..search_end)
             .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
-        let search_work = cadmpeg_core::decode::u64_from_index(search_len);
-        ctx.charge_work(search_work, "ZIP central header search")?;
-        let start = bytes
-            .get(search_start..search_end)
-            .and_then(|range| range.windows(4).position(|window| window == b"PK\x01\x02"))
-            .and_then(|relative| search_start.checked_add(relative))
+        let relative = ctx.admit_iter(search, "ZIP central header search")?
+            .windows(std::num::NonZeroUsize::new(4)
+                .ok_or_else(|| CodecError::Malformed("zero ZIP signature width".into()))?)
+            .position(|window| window == b"PK\x01\x02")
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
+        let start = search_start.checked_add(relative)
+            .ok_or_else(|| CodecError::Malformed("ZIP central header offset overflow".into()))?;
         cadmpeg_core::decode::u64_from_index(start)
     };
     for _ in 0..count {
