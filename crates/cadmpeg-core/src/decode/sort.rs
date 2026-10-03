@@ -46,14 +46,15 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         let count = u64_from_index(values.len());
         self.charge_work(count, operation)?;
-        let mut bytes = 0_u64;
+        let mut maximum_key_bytes = 0_u64;
         for value in self.admit_iter(values, operation)? {
-            bytes = self.cost_sum(bytes, projection.project(value).decode_cost(self, operation)?, operation)?;
+            maximum_key_bytes = maximum_key_bytes.max(projection.project(value).decode_cost(self, operation)?);
         }
         let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
+        let key_bytes = self.cost_product(count, maximum_key_bytes, operation)?;
         let work = count
             .checked_mul(u64_from_index(std::mem::size_of::<T>()))
-            .and_then(|storage| storage.checked_add(bytes.checked_mul(2)?))
+            .and_then(|storage| storage.checked_add(key_bytes.checked_mul(2)?))
             .and_then(|work| work.checked_mul(levels))
             .and_then(|work| work.checked_mul(8))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
@@ -129,6 +130,43 @@ mod tests {
             Ord::cmp, "test unstable sort")
             .expect("sort is admitted");
         assert_eq!(values, [1, 1, 2, 3]);
+    }
+
+    #[test]
+    fn variable_sort_keys_admit_the_largest_operand_for_every_comparison() {
+        let arena = DecodeArena::new();
+        // Six measuring visits plus three levels of slot moves and two maximum keys per comparison.
+        let total = 6 + (3 * u64::try_from(std::mem::size_of::<&str>()).unwrap() + 2 * 3 * 8) * 3 * 8;
+        for stable in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = total - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut values = ["bbbbbbbb", "a", "c"];
+            let comparisons = std::cell::Cell::new(0);
+            let compare = |left: &&str, right: &&str| {
+                comparisons.set(comparisons.get() + 1);
+                left.cmp(right)
+            };
+            let result = if stable {
+                ctx.stable_sort_by(&mut values, |value| value, compare, "variable keys")
+            } else {
+                ctx.sort_unstable_by(&mut values, |value| value, compare, "variable keys")
+            };
+            let CodecError::ResourceLimit(first) = result.unwrap_err() else { panic!("resource refusal") };
+            assert_eq!(first.used, 6);
+            assert_eq!(first.additional, total - 6);
+            assert_eq!(comparisons.get(), 0);
+            assert_eq!(values, ["bbbbbbbb", "a", "c"]);
+            assert_eq!(ctx.resource_refusal(), Some(first));
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = total;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut values = ["bbbbbbbb", "a", "c"];
+        ctx.sort_unstable_by(&mut values, |value| value, Ord::cmp, "variable keys").unwrap();
+        assert_eq!(values, ["a", "bbbbbbbb", "c"]);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else { panic!("resource refusal") };
+        assert_eq!(limit.used, total);
     }
 
     #[derive(PartialEq, Eq, PartialOrd, Ord)]
