@@ -65,6 +65,8 @@ impl<T> ExactVec<T> {
 pub(super) enum LinearGrowth {
     Exact,
     Amortized,
+    /// Exact byte storage whose input or expanded-byte charge precedes growth.
+    PrechargedBytes,
 }
 
 impl DecodeContext<'_> {
@@ -747,7 +749,7 @@ impl DecodeContext<'_> {
             self.charge_retained_limit(0, operation)?;
             return Ok((0, 0, self.reserve_scoped_limit(0, operation)?));
         }
-        let target = if matches!(growth, LinearGrowth::Exact) {
+        let target = if !matches!(growth, LinearGrowth::Amortized) {
             required
         } else {
             let minimum = match std::mem::size_of::<T>() {
@@ -766,7 +768,9 @@ impl DecodeContext<'_> {
         if bytes > maximum {
             return Err(self.budget.retained_allocation_failed_limit(u64_from_index(bytes), operation));
         }
-        self.charge_retained_limit(u64_from_index(bytes), operation)?;
+        if !matches!(growth, LinearGrowth::PrechargedBytes) {
+            self.charge_retained_limit(u64_from_index(bytes), operation)?;
+        }
         let moved = capacity.checked_mul(std::mem::size_of::<T>())
             .ok_or_else(|| self.refuse_local_limit(operation, u64::MAX, u64::MAX))?;
         self.charge_work_limit(u64_from_index(moved), operation)?;
