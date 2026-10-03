@@ -540,7 +540,7 @@ impl DecodeReport {
         transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
-            classification: FormatIdentity::unclassified(format),
+            classification: FormatIdentity::unclassified(format.into()),
             transfer,
             coverage: Coverage::from_wire(coverage),
             losses,

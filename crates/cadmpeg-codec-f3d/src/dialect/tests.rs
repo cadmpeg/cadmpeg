@@ -302,7 +302,7 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
         cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_CARRIER),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat".to_owned(),
     )]))
-    .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");
+    .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat".to_owned());
 
     let loss = with_context(|ctx| kernel_dialect_loss(ctx, &matched).unwrap())
         .expect("unknown kernel grammar is unverified");
