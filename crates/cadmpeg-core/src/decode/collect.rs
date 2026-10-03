@@ -1184,10 +1184,7 @@ impl DecodeContext<'_> {
         if self.contains_btree_set(values, &value, operation)? {
             return Ok(false);
         }
-        self.charge_retained(
-            self.tree_growth_bytes::<T, ()>(values.len(), operation)?,
-            operation,
-        )?;
+        self.admit_btree_node_storage::<T, ()>(values.len(), operation)?;
         self.charge_collection_items(1, operation)?;
         self.charge_key(&value, self.tree_comparisons(values.len()), operation)?;
         Ok(values.insert(value))
@@ -1313,7 +1310,7 @@ impl DecodeContext<'_> {
         let mut reservation = self.reserve_scoped_limit(0, operation)?;
         let mut values = HashSet::new();
         reservation.with_storage_limit(|| {
-            let bytes = self.charge_hash_growth::<T>(0, 0, count, operation)?;
+            let bytes = self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
             self.charge_collection_items_limit(u64_from_index(count), operation)?;
             values.try_reserve(count).map_err(|_| {
                 self.budget

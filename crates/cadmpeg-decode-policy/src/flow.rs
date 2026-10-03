@@ -307,31 +307,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             match node {
                 Node::Expr(parent) => match parent.kind {
                     ExprKind::Match(_, _, MatchSource::TryDesugar(_)) => return true,
-                    ExprKind::Call(_, _) => {
-                        if self
-                            .call(parent)
-                            .is_none_or(|(id, _)| self.tcx.item_name(id).as_str() != "branch")
-                        {
-                            return false;
-                        }
-                    }
-                    ExprKind::MethodCall(_, _, _, _) => {
-                        let Some((id, args)) = self.call(parent) else {
-                            return false;
-                        };
-                        if self.tcx.item_name(id).as_str() != "map_err" {
-                            return false;
-                        }
-                        let Some(mapper) = args.get(1) else {
-                            return false;
-                        };
-                        let ExprKind::Path(ref path) = mapper.kind else {
-                            return false;
-                        };
-                        if !matches!(self.typeck.qpath_res(path, mapper.hir_id), Res::Def(_, id) if self.tcx.item_name(id).as_str() == "ResourceLimit")
-                        {
-                            return false;
-                        }
+                    ExprKind::Call(_, _) | ExprKind::MethodCall(_, _, _, _) => {
+                        let Some((id, _)) = self.call(parent) else { return false; };
+                        // Standard Result::map_err keeps Err on the refusal path;
+                        // the surrounding try returns before admitted work.
+                        if !types::standard(self.tcx, id)
+                            || !matches!(self.tcx.item_name(id).as_str(), "branch" | "map_err") { return false; }
                     }
                     ExprKind::AddrOf(_, _, _) | ExprKind::DropTemps(_) => (),
                     _ => return false,

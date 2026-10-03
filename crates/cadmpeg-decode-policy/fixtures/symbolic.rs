@@ -233,3 +233,9 @@ pub fn hash_storage_only(ctx: &DecodeContext, set: &mut std::collections::HashSe
     other.insert(1); // finding: unproven_decode_charge
     Ok(())
 }
+
+pub fn mapped_error_keeps_admission<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T) -> Result<(), &'static str> {
+    ctx.reserve_vec(values, 1).map_err(|_| "refusal")?;
+    values.push(value);
+    Ok(())
+}
