@@ -44,3 +44,31 @@ pub fn sorts(ctx: &DecodeContext, values: &mut [u8], other: &mut [u8], flag: boo
     values.sort_unstable(); // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn distinct_windows(ctx: &DecodeContext, values: &[String], other: &[String]) -> Result<(), ()> {
+    ctx.charge_key(&values[..1], 1, "prefix")?;
+    ctx.charge_key(other, 1, "other")?;
+    let _full = values == other; // finding: uncharged_decode_work
+    ctx.charge_key(&values[0], 1, "first child")?;
+    ctx.charge_key(&other[0], 1, "other child")?;
+    let _second = values[1] == other[1]; // finding: uncharged_decode_work
+    let first = &values[0];
+    let second = &other[0];
+    ctx.charge_key(first, 1, "first")?;
+    ctx.charge_key(second, 1, "second")?;
+    let _paid = first == second;
+    Ok(())
+}
+impl DecodeContext {
+    fn admit_moves<T>(&self, _values: &[T], _moves: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+}
+pub fn moves<T: Copy>(ctx: &DecodeContext, target: &mut [T], source: &[T]) -> Result<(), ()> {
+    ctx.admit_moves(source, 1, "copy")?;
+    target.copy_from_slice(source);
+    target.copy_from_slice(source); // finding: uncharged_decode_work
+    ctx.admit_moves(source, 3, "wrong reverse")?;
+    target.reverse(); // finding: uncharged_decode_work
+    ctx.admit_moves(target, 3, "reverse")?;
+    target.reverse();
+    Ok(())
+}
