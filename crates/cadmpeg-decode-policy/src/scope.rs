@@ -4,7 +4,9 @@ mod indirect;
 mod instances;
 mod listing;
 mod objects;
+mod pattern;
 
+use pattern::Pattern;
 use crate::{flow, types, Analysis, Findings};
 use rustc_hir::intravisit::{walk_expr, Visitor};
 use rustc_hir::{def::Res, Expr, ExprKind};
@@ -36,14 +38,16 @@ pub(crate) struct Graph {
     roots: BTreeMap<String, String>,
     edges: BTreeSet<(String, String, EdgeKind)>,
     nodes: BTreeMap<String, String>,
-    addresses: BTreeSet<(String, String)>,
-    pointer_calls: BTreeSet<(String, String)>,
-    trait_calls: BTreeSet<(String, String)>,
-    method_impls: BTreeSet<(String, String)>,
-    objects: BTreeSet<(String, String, String)>,
-    object_calls: BTreeSet<(String, String)>,
+    addresses: BTreeSet<(Pattern, String)>,
+    pointer_calls: BTreeSet<(String, Pattern)>,
+    trait_calls: BTreeSet<(String, String, Pattern)>,
+    symbolic_calls: BTreeSet<(String, String, Pattern)>,
+    method_impls: BTreeSet<(String, Pattern, String)>,
+    objects: BTreeSet<(String, String, Pattern, String)>,
+    object_calls: BTreeSet<(String, String, Pattern)>,
     symbolic_roots: BTreeSet<String>,
     symbolic_instances: BTreeSet<String>,
+    symbolic_candidates: BTreeSet<String>,
     symbolic_edges: BTreeSet<(String, String)>,
     bodies: BTreeMap<String, listing::Body>,
 }
@@ -72,26 +76,32 @@ impl Graph {
         for instance in &self.symbolic_instances {
             println!("decode_symbolic_instance\t{instance}");
         }
+        for candidate in &self.symbolic_candidates {
+            println!("decode_symbolic_candidate\t{candidate}");
+        }
         for (caller, callee) in &self.symbolic_edges {
             println!("decode_symbolic_edge\t{caller}\t{callee}");
         }
         for (signature, callee) in &self.addresses {
-            println!("decode_address\t{signature}\t{callee}");
+            println!("decode_address\t{}\t{callee}", signature.wire());
         }
         for (caller, signature) in &self.pointer_calls {
-            println!("decode_pointer_call\t{caller}\t{signature}");
+            println!("decode_pointer_call\t{caller}\t{}", signature.wire());
         }
-        for (caller, method) in &self.trait_calls {
-            println!("decode_trait_call\t{caller}\t{method}");
+        for (caller, method, signature) in &self.trait_calls {
+            println!("decode_trait_call\t{caller}\t{method}\t{}", signature.wire());
         }
-        for (method, target) in &self.method_impls {
-            println!("decode_method_impl\t{method}\t{target}");
+        for (caller, method, signature) in &self.symbolic_calls {
+            println!("decode_symbolic_call\t{caller}\t{method}\t{}", signature.wire());
         }
-        for (caller, method, target) in &self.objects {
-            println!("decode_object\t{caller}\t{method}\t{target}");
+        for (method, signature, target) in &self.method_impls {
+            println!("decode_method_impl\t{method}\t{}\t{target}", signature.wire());
         }
-        for (caller, method) in &self.object_calls {
-            println!("decode_object_call\t{caller}\t{method}");
+        for (caller, method, signature, target) in &self.objects {
+            println!("decode_object\t{caller}\t{method}\t{}\t{target}", signature.wire());
+        }
+        for (caller, method, signature) in &self.object_calls {
+            println!("decode_object_call\t{caller}\t{method}\t{}", signature.wire());
         }
     }
 
@@ -136,8 +146,8 @@ impl Graph {
                     added |= reached.insert(callee.clone());
                 }
             }
-            for (caller, method, target) in &self.objects {
-                if reached.contains(caller) && self.object_calls.iter().any(|(caller, called)| called == method && reached.contains(caller)) {
+            for (caller, method, signature, target) in &self.objects {
+                if reached.contains(caller) && self.object_calls.iter().any(|(caller, called, called_signature)| called == method && reached.contains(caller) && signature.compatible(called_signature)) {
                     added |= reached.insert(target.clone());
                     if symbolic.contains(caller) {
                         added |= symbolic.insert(target.clone());
@@ -147,17 +157,36 @@ impl Graph {
             for (caller, signature) in &self.pointer_calls {
                 if reached.contains(caller) {
                     for (candidate, target) in &self.addresses {
-                        if candidate == signature {
+                        if signature.compatible(candidate) {
                             added |= reached.insert(target.clone());
+                            if self.symbolic_candidates.contains(target) {
+                                added |= symbolic.insert(target.clone());
+                            }
                         }
                     }
                 }
             }
-            for (caller, method) in &self.trait_calls {
+            for (caller, method, signature) in &self.trait_calls {
                 if reached.contains(caller) {
-                    for (candidate, target) in &self.method_impls {
-                        if candidate == method {
+                    for (candidate, candidate_signature, target) in &self.method_impls {
+                        if candidate == method && signature.compatible(candidate_signature) {
                             added |= reached.insert(target.clone());
+                            if self.symbolic_candidates.contains(target) {
+                                added |= symbolic.insert(target.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            for (caller, method, signature) in &self.symbolic_calls {
+                if symbolic.contains(caller) {
+                    for (candidate, candidate_signature, target) in &self.method_impls {
+                        if candidate == method && signature.compatible(candidate_signature) {
+                            added |= reached.insert(target.clone());
+                            if self.symbolic_candidates.contains(target) {
+                                added |= symbolic.insert(target.clone());
+                            }
+                            added |= symbolic.insert(target.clone());
                         }
                     }
                 }
@@ -245,14 +274,15 @@ pub(crate) fn collect<'tcx>(tcx: TyCtxt<'tcx>, owners: &[LocalDefId]) -> Graph {
         if !crate::production(tcx, owner.to_def_id()) && !derived_operation && !initializer {
             continue;
         }
-        if let Some(method) = tcx
-            .opt_associated_item(owner.to_def_id())
-            .and_then(|item| item.trait_item_def_id())
-        {
-            graph
-                .symbolic_edges
-                .insert((key(tcx, method), key(tcx, owner.to_def_id())));
-            graph.method_impls.insert((key(tcx, method), key(tcx, owner.to_def_id())));
+        if matches!(tcx.def_kind(*owner), rustc_hir::def::DefKind::AssocFn) {
+            let method = tcx.opt_associated_item(owner.to_def_id()).and_then(|item| item.trait_item_def_id()).or_else(|| tcx.trait_of_assoc(owner.to_def_id()).map(|_| owner.to_def_id()));
+            if let Some(method) = method {
+                if ty::GenericArgs::identity_for_item(tcx, *owner).has_non_region_param() {
+                    graph.symbolic_candidates.insert(key(tcx, owner.to_def_id()));
+                }
+                let signature = indirect::method_signature(tcx, ty::TypingEnv::post_analysis(tcx, *owner), owner.to_def_id(), ty::GenericArgs::identity_for_item(tcx, *owner));
+                graph.method_impls.insert((key(tcx, method), signature, key(tcx, owner.to_def_id())));
+            }
         }
         let mut findings = Findings::default();
         Calls {
@@ -300,14 +330,8 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
     fn coercion(&mut self, source: ty::Ty<'tcx>, target: ty::Ty<'tcx>) {
         let mut instances = Vec::new();
         objects::targets(self.analysis.tcx, self.analysis.typing_env(), source, target, &mut instances);
-        for (method, instance) in instances {
-            objects::register(
-                self.analysis.tcx, self.graph, self.pending, method,
-                instances::Concrete {
-                    caller: self.caller.clone(), instance,
-                    environment: self.analysis.typing_env(), depth: 0,
-                },
-            );
+        for target in instances {
+            objects::register(self.analysis.tcx, self.graph, self.pending, &self.caller, target, self.analysis.typing_env(), 0);
         }
     }
 
@@ -316,26 +340,24 @@ impl<'tcx> Calls<'_, '_, 'tcx> {
             self.edge(id);
             return;
         }
-        if self.analysis.tcx.trait_of_assoc(definition).is_none() {
+        if !matches!(self.analysis.tcx.def_kind(definition), rustc_hir::def::DefKind::AssocFn) || self.analysis.tcx.trait_of_assoc(definition).is_none() {
             self.edge(definition);
             return;
         }
-        let object = self.analysis.call_arguments(expression).is_some_and(|args| args.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..))));
-        if object {
-            self.graph.object_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
-        }
-        self.edge_kind(definition, if object { EdgeKind::TraitObjectCall } else { EdgeKind::GenericInstantiation });
-        self.graph
-            .symbolic_edges
-            .insert((self.caller.clone(), key(self.analysis.tcx, definition)));
-        let deferred =
-            ty::GenericArgs::identity_for_item(self.analysis.tcx, self.analysis.typing_owner)
-                .has_non_region_param()
-                && !root(self.analysis.tcx, self.analysis.typing_owner);
-        if deferred && !object {
+        let arguments = self.analysis.call_arguments(expression).unwrap_or_else(|| self.analysis.typeck.node_args(expression.hir_id));
+        if arguments.len() != self.analysis.tcx.generics_of(definition).count() {
             return;
         }
-        self.graph.trait_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition)));
+        let object = arguments.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..)));
+        let signature = indirect::method_signature(self.analysis.tcx, self.analysis.typing_env(), definition, arguments);
+        if object {
+            self.graph.object_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition), signature.clone()));
+        }
+        let deferred = ty::GenericArgs::identity_for_item(self.analysis.tcx, self.analysis.typing_owner).has_non_region_param() && !root(self.analysis.tcx, self.analysis.typing_owner);
+        self.graph.symbolic_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition), signature.clone()));
+        if !deferred || object {
+            self.graph.trait_calls.insert((self.caller.clone(), key(self.analysis.tcx, definition), signature));
+        }
 
     }
 }

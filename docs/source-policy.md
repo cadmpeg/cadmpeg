@@ -162,11 +162,15 @@ trait implementation. Concrete encoder instances do not activate those symbolic
 edges. An unresolved indirect call retains
 `unproven_decode_charge`. A function-pointer call reaches address-taken
 functions and closures with the same signature after lifetime erasure, including
-argument types, result type, safety and ABI. Function addresses retain their
+argument types, result type, safety and ABI. Type and const parameters use
+consistent substitutions across the signature. Function addresses retain their
 resolved implementation and their coerced pointer signatures. A virtual method
 address retains a method-specific dispatch node. Recursive object coercions
 reuse the same concrete method instance. A trait-object call reaches only
-implementations of its called trait method. Unrelated uncertainty does not
+implementations of its called trait method with compatible trait arguments,
+method arguments and result types. Associated types normalize in the caller
+and implementation typing environments. Generic candidate bodies retain their
+symbolic helper calls. Unrelated uncertainty does not
 activate function addresses or object methods. A compatible fallback can reach
 a target whose address was created by an encoder. Definition hashes join
 local and dependency nodes. The driver collects the complete graph before

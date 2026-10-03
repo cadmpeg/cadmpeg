@@ -181,6 +181,7 @@ fn check_fixture(name: &str) {
                     | "coerced_addresses"
                     | "recursive_objects"
                     | "unresolved_objects"
+                    | "generic_candidates"
                     | "symbolic_scope"
                     | "fixed_ranges"
                     | "raw_steps"
@@ -244,6 +245,37 @@ fn check_fixture(name: &str) {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn check_graph_resolution(name: &str) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output_dir = root.join("target/fixtures").join(format!("{name}_graph"));
+    std::fs::create_dir_all(&output_dir).expect("graph comparison directory");
+    let run = |mode: &str| {
+        Command::new(std::env::current_exe().expect("fixture executable"))
+            .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+            .env("CADMPEG_POLICY_FIXTURE", "1")
+            .env(mode, "1")
+            .env("CADMPEG_POLICY_INPUT", root.join("fixtures").join(format!("{name}.rs")))
+            .env("CADMPEG_POLICY_OUTPUT", &output_dir)
+            .output().expect("graph comparison compiler")
+    };
+    let graph = run("CADMPEG_POLICY_GRAPH");
+    assert!(graph.status.success(), "{}", String::from_utf8_lossy(&graph.stderr));
+    let path = output_dir.join("graph.tsv");
+    std::fs::write(&path, graph.stdout).expect("comparison graph rows");
+    let joined = Command::new("python3")
+        .args(["-c", "import runpy,sys; from pathlib import Path; m=runpy.run_path(sys.argv[1]); source=Path(sys.argv[2]).read_text(); reached,_=m['resolve_graph'](source); print('\\n'.join(m['unreachable_bodies'](source,reached)))"])
+        .arg(root.join("../../scripts/check-decode-policy.py")).arg(path)
+        .output().expect("joined graph resolver");
+    assert!(joined.status.success(), "{}", String::from_utf8_lossy(&joined.stderr));
+    let local = run("CADMPEG_POLICY_UNREACHABLE");
+    assert!(local.status.success(), "{}", String::from_utf8_lossy(&local.stderr));
+    let mut local: Vec<_> = String::from_utf8(local.stdout).expect("local scope output").lines()
+        .filter(|line| line.starts_with("unreachable_decode_body\t")).map(str::to_owned).collect();
+    local.sort();
+    let joined: Vec<_> = String::from_utf8(joined.stdout).expect("joined scope output").lines().map(str::to_owned).collect();
+    assert_eq!(local, joined, "{name}");
 }
 
 #[test]
@@ -590,11 +622,13 @@ fn unconstrained_generic_root_reachability() {
 #[test]
 fn called_object_methods_only() {
     check_fixture("method_scope");
+    check_graph_resolution("method_scope");
 }
 
 #[test]
 fn type_compatible_indirect_candidates() {
     check_fixture("pointer_scope");
+    check_graph_resolution("pointer_scope");
 }
 
 #[test]
@@ -654,4 +688,10 @@ fn recursive_object_instances() {
 #[test]
 fn unresolved_object_generic_and_closure_candidates() {
     check_fixture("unresolved_objects");
+}
+
+#[test]
+fn generic_candidate_substitutions() {
+    check_fixture("generic_candidates");
+    check_graph_resolution("generic_candidates");
 }

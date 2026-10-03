@@ -116,11 +116,12 @@ impl<'tcx> Edges<'_, 'tcx> {
                     let value = Ty::new_fn_def(self.tcx, id, ty::Binder::dummy(args));
                     indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
                 }
-                if self.tcx.trait_of_assoc(id).is_some() {
+                if matches!(self.tcx.def_kind(id), rustc_hir::def::DefKind::AssocFn) && self.tcx.trait_of_assoc(id).is_some() {
                     let method = key(self.tcx, id);
-                    self.graph.trait_calls.insert((self.concrete.caller.clone(), method.clone()));
+                    let signature = indirect::method_signature(self.tcx, self.concrete.environment, id, args);
+                    self.graph.trait_calls.insert((self.concrete.caller.clone(), method.clone(), signature.clone()));
                     if args.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..))) {
-                        self.graph.object_calls.insert((self.concrete.caller.clone(), method));
+                        self.graph.object_calls.insert((self.concrete.caller.clone(), method, signature));
                     }
                 }
                 return;
@@ -190,12 +191,8 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                         target,
                         &mut instances,
                     );
-                    for (method, instance) in instances {
-                        objects::register(self.tcx, self.graph, self.pending, method, Concrete {
-                            caller: self.concrete.caller.clone(), instance,
-                            environment: self.concrete.environment,
-                            depth: self.concrete.depth + 1,
-                        });
+                    for target in instances {
+                        objects::register(self.tcx, self.graph, self.pending, &self.concrete.caller, target, self.concrete.environment, self.concrete.depth + 1);
                     }
                 }
             }

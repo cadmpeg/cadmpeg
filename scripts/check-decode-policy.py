@@ -3,6 +3,7 @@
 """Run the pinned compiler's decode allocation and work checks."""
 import argparse
 from collections import deque
+from functools import lru_cache
 import os
 from pathlib import Path
 import subprocess
@@ -11,6 +12,69 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "crates/cadmpeg-decode-policy"
+
+
+@lru_cache(maxsize=None)
+def signature_pattern(source):
+    """Parse the compiler's length-prefixed structural signature."""
+    def read(offset):
+        kind = source[offset]
+        separator = source.index(":", offset + 1)
+        length = int(source[offset + 1:separator])
+        offset = separator + 1
+        name = source[offset:offset + length]
+        offset += length
+        children = []
+        if kind == "r":
+            separator = source.index(":", offset)
+            count = int(source[offset:separator])
+            offset = separator + 1
+            for _ in range(count):
+                child, offset = read(offset)
+                children.append(child)
+        elif kind != "v":
+            raise ValueError("invalid signature pattern")
+        return (kind, name, tuple(children)), offset
+    pattern, end = read(0)
+    if end != len(source):
+        raise ValueError("trailing signature data")
+    return pattern
+
+
+@lru_cache(maxsize=None)
+def compatible(left, right):
+    """Unify signatures with separate, consistent substitutions for each side."""
+    bindings = {}
+    def resolve(term):
+        while term[1][0] == "v" and (term[0], term[1][1]) in bindings:
+            term = bindings[(term[0], term[1][1])]
+        return term
+    def occurs(variable, term):
+        side, pattern = resolve(term)
+        if pattern[0] == "v":
+            return variable == (side, pattern[1])
+        return any(occurs(variable, (side, child)) for child in pattern[2])
+    pending = [((0, left), (1, right))]
+    while pending:
+        left, right = (resolve(term) for term in pending.pop())
+        a, b = left[1], right[1]
+        if a[0] == "v" and b[0] == "v" and left[0] == right[0] and a[1] == b[1]:
+            continue
+        if a[0] == "v":
+            variable = (left[0], a[1])
+            if occurs(variable, right):
+                return False
+            bindings[variable] = right
+        elif b[0] == "v":
+            variable = (right[0], b[1])
+            if occurs(variable, left):
+                return False
+            bindings[variable] = left
+        elif a[:2] != b[:2] or len(a[2]) != len(b[2]):
+            return False
+        else:
+            pending.extend(((left[0], x), (right[0], y)) for x, y in zip(a[2], b[2]))
+    return True
 
 
 class DecodeGraph:
@@ -25,9 +89,11 @@ class DecodeGraph:
         self.addresses = {}
         self.pointer_calls = []
         self.trait_calls = []
+        self.symbolic_calls = []
         self.method_impls = {}
         self.symbolic_roots = set()
         self.symbolic_instances = set()
+        self.symbolic_candidates = set()
         self.symbolic_edges = {}
         self.objects = []
         self.object_calls = []
@@ -48,20 +114,24 @@ class DecodeGraph:
                 self.symbolic_roots.add(fields[1])
             elif len(fields) == 2 and tag == "decode_symbolic_instance":
                 self.symbolic_instances.add(fields[1])
+            elif len(fields) == 2 and tag == "decode_symbolic_candidate":
+                self.symbolic_candidates.add(fields[1])
             elif len(fields) == 3 and tag == "decode_symbolic_edge":
                 self.symbolic_edges.setdefault(fields[1], set()).add(fields[2])
             elif len(fields) == 3 and tag == "decode_address":
-                self.addresses.setdefault(fields[1], set()).add(fields[2])
+                self.addresses.setdefault(signature_pattern(fields[1]), set()).add(fields[2])
             elif len(fields) == 3 and tag == "decode_pointer_call":
-                self.pointer_calls.append(fields[1:])
-            elif len(fields) == 3 and tag == "decode_trait_call":
-                self.trait_calls.append(fields[1:])
-            elif len(fields) == 3 and tag == "decode_method_impl":
-                self.method_impls.setdefault(fields[1], set()).add(fields[2])
-            elif len(fields) == 4 and tag == "decode_object":
-                self.objects.append(fields[1:])
-            elif len(fields) == 3 and tag == "decode_object_call":
-                self.object_calls.append(fields[1:])
+                self.pointer_calls.append((fields[1], signature_pattern(fields[2])))
+            elif len(fields) == 4 and tag == "decode_trait_call":
+                self.trait_calls.append((fields[1], fields[2], signature_pattern(fields[3])))
+            elif len(fields) == 4 and tag == "decode_symbolic_call":
+                self.symbolic_calls.append((fields[1], fields[2], signature_pattern(fields[3])))
+            elif len(fields) == 4 and tag == "decode_method_impl":
+                self.method_impls.setdefault(fields[1], set()).add((signature_pattern(fields[2]), fields[3]))
+            elif len(fields) == 5 and tag == "decode_object":
+                self.objects.append((fields[1], fields[2], signature_pattern(fields[3]), fields[4]))
+            elif len(fields) == 4 and tag == "decode_object_call":
+                self.object_calls.append((fields[1], fields[2], signature_pattern(fields[3])))
 
     def resolve(self):
         reached = set(self.roots)
@@ -76,26 +146,36 @@ class DecodeGraph:
                     reached.update(targets)
                     edges.setdefault(caller, set()).update((target, "generic instantiation") for target in targets)
             called = {}
-            for caller, method in self.object_calls:
+            for caller, method, signature in self.object_calls:
                 if caller in reached:
-                    called.setdefault(method, set()).add(caller)
-            for caller, method, target in self.objects:
-                if caller in reached and method in called:
-                    reached.add(target)
-                    for call in called[method]:
-                        edges.setdefault(call, set()).add((target, "trait-object call"))
-                    if caller in symbolic:
-                        symbolic.add(target)
+                    called.setdefault(method, set()).add((caller, signature))
+            for caller, method, signature, target in self.objects:
+                if caller in reached:
+                    calls = [call for call, call_signature in called.get(method, ()) if compatible(signature, call_signature)]
+                    if calls:
+                        reached.add(target)
+                        for call in calls:
+                            edges.setdefault(call, set()).add((target, "trait-object call"))
+                        if caller in symbolic:
+                            symbolic.add(target)
             for caller, signature in self.pointer_calls:
                 if caller in reached:
-                    targets = self.addresses.get(signature, ())
+                    targets = {target for candidate, bodies in self.addresses.items() if compatible(signature, candidate) for target in bodies}
                     reached.update(targets)
+                    symbolic.update(targets & self.symbolic_candidates)
                     edges.setdefault(caller, set()).update((target, "unresolved-indirect candidate") for target in targets)
-            for caller, method in self.trait_calls:
+            for caller, method, signature in self.trait_calls:
                 if caller in reached:
-                    targets = self.method_impls.get(method, ())
+                    targets = {target for candidate, target in self.method_impls.get(method, ()) if compatible(signature, candidate)}
                     reached.update(targets)
+                    symbolic.update(targets & self.symbolic_candidates)
                     edges.setdefault(caller, set()).update((target, "unresolved-indirect candidate") for target in targets)
+            for caller, method, signature in self.symbolic_calls:
+                if caller in symbolic:
+                    targets = {target for candidate, target in self.method_impls.get(method, ()) if compatible(signature, candidate)}
+                    reached.update(targets)
+                    symbolic.update(targets)
+                    edges.setdefault(caller, set()).update((target, "generic instantiation") for target in targets)
             for caller, targets in edges.items():
                 if caller in reached:
                     reached.update(target for target, _ in targets)
@@ -131,9 +211,10 @@ class DecodeGraph:
             return f"decode_path\t{self.location(target)}\tunreachable\n"
         predecessors = {key: None for key in sorted(self.roots)}
         pending = deque(predecessors)
+        order = {kind: index for index, kind in enumerate(("direct call", "function address", "trait-object call", "generic instantiation", "unresolved-indirect candidate"))}
         while pending and target not in predecessors:
             caller = pending.popleft()
-            for callee, kind in sorted(edges.get(caller, ())):
+            for callee, kind in sorted(edges.get(caller, ()), key=lambda edge: (order[edge[1]], edge[0])):
                 if callee not in predecessors:
                     predecessors[callee] = (caller, kind)
                     pending.append(callee)
