@@ -457,7 +457,9 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
                         },
                         FullRoundSideSelection::Automatic,
                         FullRoundSideSelection::Automatic,
+                        &cadmpeg_test_support::service_decode_context(),
                     )
+                    .expect("operand admission")
                     .unwrap(),
                 ]
                 .try_into()
@@ -587,11 +589,15 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
         &FaceSelection::generated(
             vec![GeneratedFaceRef::new(
                 FeatureId::mint("test:model:feature#source").expect("identity grammar"),
-                "test:model:face#1".into()
+                "test:model:face#1".into(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .unwrap()],
-            "native:generated-face".into()
+            "native:generated-face".into(),
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("selection reference admission")
         .unwrap()
     ));
     assert!(!face_selection_is_resolved(
@@ -600,8 +606,10 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
                 .expect("identity grammar"),
             vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
             vec!["native:missing-face".into()],
-            "native:historical-face".into()
+            "native:historical-face".into(),
+            &cadmpeg_test_support::service_decode_context()
         )
+        .expect("selection storage is admitted")
         .unwrap()
     ));
 }
@@ -1114,9 +1122,11 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         CoilResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
             targets: BodySelection::Bodies(
-                vec![BodyId::mint("test:model:body#1").expect("identity grammar")]
-                    .try_into()
-                    .expect("distinct bodies")
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![BodyId::mint("test:model:body#1").expect("identity grammar")],
+                    &cadmpeg_test_support::service_decode_context()
+                )
+                .expect("distinct bodies")
             ),
         },
     )));
@@ -1378,9 +1388,11 @@ fn body_copy_features_require_resolved_body_selection() {
     use cadmpeg_ir::ids::BodyId;
 
     let resolved = BodySelection::Resolved {
-        bodies: vec![BodyId::mint("test:model:body#result").expect("identity grammar")]
-            .try_into()
-            .expect("distinct bodies"),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![BodyId::mint("test:model:body#result").expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("distinct bodies"),
         native: "native:body-selection".into(),
     };
     assert!(!feature_definition_is_incomplete(
@@ -1408,9 +1420,11 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let resolved_target = BodySelection::Resolved {
-        bodies: vec![BodyId::mint("test:model:body#target").expect("identity grammar")]
-            .try_into()
-            .expect("distinct bodies"),
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+            vec![BodyId::mint("test:model:body#target").expect("identity grammar")],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("distinct bodies"),
         native: "native:target".into(),
     };
     let resolved_tool = FaceSelection::Resolved {

@@ -86,7 +86,7 @@ pub(super) fn transfer_vertex_tolerances(
 /// Emit the points and vertices for every endpoint used by a transferred edge.
 pub(super) fn emit_vertices(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,

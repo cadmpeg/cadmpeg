@@ -195,12 +195,14 @@ fn source_ir() -> CadIr {
         id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
                 None,
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid intersection witness curve"),
         )),
         source_object: None,

@@ -879,7 +879,7 @@ pub(crate) fn project_compact_body_selections(
                         text.push_str(&digits);
                         ids.push(text);
                     }
-                    let Ok(selection) = cadmpeg_ir::features::BodySelection::local_for_decode(
+                    let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
                         ids,
                         compact_body_selection_value_charged(ctx, &selection.local_body_ids)?,
                         ctx,
@@ -980,7 +980,7 @@ pub(crate) fn project_compact_edge_selections(
                     let feature = cadmpeg_ir::features::FeatureId::mint(id_text)
                         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT generated edge feature id"))?;
                     let local_id = compact_edge_path_value_charged(ctx, selection)?;
-                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id) else {
+                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id, ctx,)? else {
                         complete = false;
                         break;
                     };
@@ -991,7 +991,7 @@ pub(crate) fn project_compact_edge_selections(
                     }
                 }
                 if complete && !generated.is_empty() {
-                    EdgeSelection::generated(generated, native)
+                    EdgeSelection::generated(generated, native, ctx,)?
                         .map_err(cadmpeg_core::CodecError::malformed)
                 } else {
                     Ok(EdgeSelection::Native(native))
@@ -1066,7 +1066,7 @@ pub(crate) fn project_compact_edge_selections(
                     let id = cadmpeg_ir::features::FeatureId::mint(id_text)
                         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT edge dependency id"))?;
                     ctx.charge_work(u64_from_index(dependencies.len()), DEPENDENCY_OPERATION)?;
-                    dependencies.insert_for_decode(ctx, id, DEPENDENCY_OPERATION)?;
+                    dependencies.insert(ctx, id, DEPENDENCY_OPERATION)?;
                 }
             }
             Ok(())
@@ -1168,21 +1168,26 @@ fn variable_fillet_radius_groups<'a>(
             selections_copy.extend_from_slice(selections);
             let mut selections = selections_copy;
             ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
-            let points = ordered_parameters
-                .into_iter()
-                .enumerate()
-                .map(|(parameter, (_, radius))| {
-                    Some(VariableRadius {
-                        parameter: f64_from_index(parameter)?,
+            let mut sample_storage =
+                ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+            let mut points = Vec::new();
+            for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
+                ctx.charge_work(1, "SLDPRT variable radius source conversion")?;
+                let Some(parameter) = f64_from_index(parameter) else {
+                    return Ok(None);
+                };
+                ctx.push_scoped_vec(
+                    &mut sample_storage,
+                    &mut points,
+                    VariableRadius {
+                        parameter,
                         radius: Length::from(radius),
-                    })
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(points) = points else {
-                return Ok(None);
-            };
+                    },
+                    "SLDPRT variable radius source samples",
+                )?;
+            }
             let Some(points) =
-                cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()
+                cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
             else {
                 return Ok(None);
             };
@@ -1339,20 +1344,25 @@ fn variable_fillet_radius_groups<'a>(
         selections_copy.extend_from_slice(selections);
         let mut selections = selections_copy;
         ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
-        let points = ordered_parameters
-            .into_iter()
-            .enumerate()
-            .map(|(parameter, (_, radius))| {
-                Some(VariableRadius {
-                    parameter: f64_from_index(parameter)?,
+        let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+        let mut points = Vec::new();
+        for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
+            ctx.charge_work(1, "SLDPRT variable radius source conversion")?;
+            let Some(parameter) = f64_from_index(parameter) else {
+                return Ok(None);
+            };
+            ctx.push_scoped_vec(
+                &mut sample_storage,
+                &mut points,
+                VariableRadius {
+                    parameter,
                     radius: Length::from(radius),
-                })
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(points) = points else {
-            return Ok(None);
-        };
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()
+                },
+                "SLDPRT variable radius source samples",
+            )?;
+        }
+        let Some(points) =
+            cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
         else {
             return Ok(None);
         };
@@ -1449,17 +1459,25 @@ fn variable_fillet_radius_groups<'a>(
     let mut result = Vec::new();
     ctx.reserve_vec(&mut result, groups.len(), OPERATION)?;
     for ((first, second), selections) in groups {
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
-            VariableRadius {
-                parameter: 0.0,
-                radius: Length::from(first),
-            },
-            VariableRadius {
-                parameter: 1.0,
-                radius: Length::from(second),
-            },
-        ])
-        .ok() else {
+        let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
+        let raw_points = sample_storage.with_storage(|| {
+            ctx.collect_retained_vec(
+                [
+                    VariableRadius {
+                        parameter: 0.0,
+                        radius: Length::from(first),
+                    },
+                    VariableRadius {
+                        parameter: 1.0,
+                        radius: Length::from(second),
+                    },
+                ],
+                "SLDPRT variable radius source samples",
+            )
+        })?;
+        let Some(points) =
+            cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx)?.ok()
+        else {
             return Ok(None);
         };
         result.push(RadiusSelectionGroup(
@@ -1575,8 +1593,8 @@ pub(crate) fn project_compact_surface_selections(
                                     let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                     let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
                                         producer_id,
-                                        local_id_text,
-                                    ) else {
+                                        local_id_text, ctx,
+                                    )? else {
                                         let seed = PatternSeed::Faces(
                                             cadmpeg_ir::features::FaceSelection::Native(native),
                                         );
@@ -1602,7 +1620,7 @@ pub(crate) fn project_compact_surface_selections(
                                     }
                                     if !dependencies.contains(producer) {
                                         let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                        dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                        dependencies.insert(ctx, dependency, OPERATION)?;
                                     }
                                     let mut faces = Vec::new();
                                     ctx.reserve_vec(&mut faces, 1, OPERATION)?;
@@ -1611,8 +1629,8 @@ pub(crate) fn project_compact_surface_selections(
                                     PatternSeed::Faces(
                                         cadmpeg_ir::features::FaceSelection::generated(
                                             faces,
-                                            native_copy,
-                                        )
+                                            native_copy, ctx,
+                                        )?
                                         .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
                                     )
                                 }
@@ -1657,8 +1675,8 @@ pub(crate) fn project_compact_surface_selections(
                                 let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                 let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
                                     producer_id,
-                                    local_id_text,
-                                ) else {
+                                    local_id_text, ctx,
+                                )? else {
                                     complete = false;
                                     continue;
                                 };
@@ -1679,13 +1697,13 @@ pub(crate) fn project_compact_surface_selections(
                             {
                                 if !dependencies.contains(producer) {
                                     let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                    dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                    dependencies.insert(ctx, dependency, OPERATION)?;
                                 }
                             }
                         }
                         *targets = if complete && !faces.is_empty() {
                             let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         } else {
                             cadmpeg_ir::features::FaceSelection::Native(native)
@@ -1740,7 +1758,7 @@ pub(crate) fn project_compact_surface_selections(
                             }
                             let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                             let Ok(body) =
-                                cadmpeg_ir::features::GeneratedBodyRef::new(producer_id, local_id)
+                                cadmpeg_ir::features::GeneratedBodyRef::new(producer_id, local_id, ctx,)?
                             else {
                                 break 'feature_edit;
                             };
@@ -1748,11 +1766,11 @@ pub(crate) fn project_compact_surface_selections(
                             ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
                             bodies.push(body);
                             let native_copy = ctx.format_retained(format_args!("{target_native}"), OPERATION)?;
-                            *targets = BodySelection::generated_for_decode(bodies, native_copy, ctx)?
+                            *targets = BodySelection::generated(bodies, native_copy, ctx)?
                                 .unwrap_or(BodySelection::Native(target_native));
                             if !dependencies.contains(producer) {
                                 let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                dependencies.insert(ctx, dependency, OPERATION)?;
                             }
                         }
                         let tool_native = compact_surface_selection_value(ctx, &tool.components)?;
@@ -1769,21 +1787,21 @@ pub(crate) fn project_compact_surface_selections(
                             let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                             let generated_face = cadmpeg_ir::features::GeneratedFaceRef::new(
                                 producer_id,
-                                local_id_text,
-                            );
+                                local_id_text, ctx,
+                            )?;
                             *tools = if let Ok(face) = generated_face {
                                 let mut faces = Vec::new();
                                 ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                 faces.push(face);
                                 let native_copy = ctx.format_retained(format_args!("{tool_native}"), OPERATION)?;
-                                FaceSelection::generated(faces, native_copy)
+                                FaceSelection::generated(faces, native_copy, ctx,)?
                                     .unwrap_or(FaceSelection::Native(tool_native))
                             } else {
                                 FaceSelection::Native(tool_native)
                             };
                             if !dependencies.contains(producer) {
                                 let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                dependencies.insert(ctx, dependency, OPERATION)?;
                             }
                         }
                         break 'feature_edit;
@@ -1820,18 +1838,18 @@ pub(crate) fn project_compact_surface_selections(
                                         if producer != feature_id
                                             && !dependencies.contains(producer)
                                         {
-                                            dependencies.insert_for_decode(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
+                                            dependencies.insert(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
                                         }
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                         match cadmpeg_ir::features::GeneratedFaceRef::new(
-                                            copy_projection_feature_id(ctx, producer, OPERATION)?, local_id_text,
-                                        ) {
+                                            copy_projection_feature_id(ctx, producer, OPERATION)?, local_id_text, ctx,
+                                        )? {
                                             Ok(face) => {
                                                 let mut faces = Vec::new();
                                                 ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                                 faces.push(face);
                                                 let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                                cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                                cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                                     .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                                             }
                                             Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -1846,7 +1864,7 @@ pub(crate) fn project_compact_surface_selections(
                                     .filter(|producer| *producer != feature_id)
                                 {
                                     if !dependencies.contains(producer) {
-                                        dependencies.insert_for_decode(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
+                                        dependencies.insert(ctx, copy_projection_feature_id(ctx, producer, OPERATION)?, OPERATION)?;
                                     }
                                 }
                                 Ok(face)
@@ -1862,8 +1880,8 @@ pub(crate) fn project_compact_surface_selections(
                                     ),
                                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
                                         side_two_faces,
-                                    ),
-                                )
+                                    ), ctx,
+                                )?
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                             ),
                         });
@@ -1888,7 +1906,7 @@ pub(crate) fn project_compact_surface_selections(
                             {
                                 if !dependencies.contains(producer) {
                                     let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                    dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                    dependencies.insert(ctx, dependency, OPERATION)?;
                                 }
                             }
                         }
@@ -1922,17 +1940,17 @@ pub(crate) fn project_compact_surface_selections(
                             Some((producer, local_id)) => {
                                 if !dependencies.contains(producer) {
                                     let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                    dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                                    dependencies.insert(ctx, dependency, OPERATION)?;
                                 }
                                 let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
                                 let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-                                match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                                match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx,)? {
                                     Ok(face) => {
                                         let mut faces = Vec::new();
                                         ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                         faces.push(face);
                                         let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                        cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx,)?
                                             .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                                     }
                                     Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -2034,13 +2052,13 @@ pub(crate) fn project_compact_surface_selections(
                                     Some((feature, local_id)) => {
                                         let producer_id = copy_projection_feature_id(ctx, feature, OPERATION)?;
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-                                        match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                                        match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx,)? {
                                             Ok(face) => {
                                                 let mut generated_faces = Vec::new();
                                                 ctx.reserve_vec(&mut generated_faces, 1, OPERATION)?;
                                                 generated_faces.push(face);
                                                 let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                                cadmpeg_ir::features::FaceSelection::generated(generated_faces, native_copy)
+                                                cadmpeg_ir::features::FaceSelection::generated(generated_faces, native_copy, ctx,)?
                                                     .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                                             }
                                             Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -2068,21 +2086,21 @@ pub(crate) fn project_compact_surface_selections(
                                     Some((feature, local_id)) => {
                                         let producer_id = copy_projection_feature_id(ctx, feature, OPERATION)?;
                                         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-                                        match cadmpeg_ir::features::GeneratedVertexRef::new(producer_id, local_id_text) {
+                                        match cadmpeg_ir::features::GeneratedVertexRef::new(producer_id, local_id_text, ctx,)? {
                                             Ok(generated_vertex) => {
                                                 let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                                                cadmpeg_ir::features::VertexSelection::generated(generated_vertex, native_copy)
-                                                    .unwrap_or_else(|_| {
-                                                        cadmpeg_ir::features::VertexSelection::native(native).unwrap_or(
+                                                match cadmpeg_ir::features::VertexSelection::generated(generated_vertex, native_copy, ctx,)? {
+                                                    Ok(selection) => selection,
+                                                    Err(_) => cadmpeg_ir::features::VertexSelection::native(native, ctx,)?.unwrap_or(
                                                             cadmpeg_ir::features::VertexSelection::Unresolved,
-                                                        )
-                                                    })
+                                                        ),
+                                                }
                                             }
-                                            Err(_) => cadmpeg_ir::features::VertexSelection::native(native)
+                                            Err(_) => cadmpeg_ir::features::VertexSelection::native(native, ctx,)?
                                                 .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
                                         }
                                     }
-                                    None => cadmpeg_ir::features::VertexSelection::native(native)
+                                    None => cadmpeg_ir::features::VertexSelection::native(native, ctx,)?
                                         .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
                                 };
                             }
@@ -2096,7 +2114,7 @@ pub(crate) fn project_compact_surface_selections(
                     {
                         if !dependencies.contains(producer) {
                             let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                            dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                            dependencies.insert(ctx, dependency, OPERATION)?;
                         }
                     }
                 }
@@ -2146,9 +2164,7 @@ pub(crate) fn project_compact_surface_selections(
                 ctx.charge_work(1, ALIAS_OPERATION)?;
                 if producer != &feature.id && !feature.dependencies.contains(producer) {
                     let copy = copy_projection_feature_id(ctx, producer, ALIAS_OPERATION)?;
-                    feature
-                        .dependencies
-                        .insert_for_decode(ctx, copy, ALIAS_OPERATION)?;
+                    feature.dependencies.insert(ctx, copy, ALIAS_OPERATION)?;
                 }
             }
         }
@@ -2423,7 +2439,8 @@ fn draft_face_selection(
         };
         let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
         let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
-        let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text)
+        let Ok(face) =
+            cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text, ctx)?
         else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
@@ -2452,12 +2469,12 @@ fn draft_face_selection(
     } else {
         for dependency in generated_dependencies {
             if !dependencies.contains(&dependency) {
-                dependencies.insert_for_decode(ctx, dependency, OPERATION)?;
+                dependencies.insert(ctx, dependency, OPERATION)?;
             }
         }
         let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
         Ok(
-            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy)
+            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy, ctx)?
                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
         )
     }
@@ -3005,14 +3022,15 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     *face = match cadmpeg_ir::features::GeneratedFaceRef::new(
                         producer_id,
                         local_id_text,
-                    ) {
+                        ctx,
+                    )? {
                         Ok(generated_face) => {
                             let mut faces = Vec::new();
                             ctx.reserve_vec(&mut faces, 1, GENERATED_OPERATION)?;
                             faces.push(generated_face);
                             let native_copy =
                                 ctx.format_retained(format_args!("{native}"), GENERATED_OPERATION)?;
-                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native_copy, ctx)?
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         }
                         Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
@@ -3020,7 +3038,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     if producer != feature_id && !dependencies.contains(producer) {
                         let dependency =
                             copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
-                        dependencies.insert_for_decode(ctx, dependency, GENERATED_OPERATION)?;
+                        dependencies.insert(ctx, dependency, GENERATED_OPERATION)?;
                     }
                     return Ok(());
                 }

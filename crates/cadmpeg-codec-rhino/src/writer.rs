@@ -784,38 +784,38 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
     let fields = record.fields();
-    json_i64(&fields, "archive_index") == Some(0)
-        && json_i64(&fields, "linetype_index") == Some(-1)
-        && json_i64(&fields, "material_index") == Some(-1)
-        && json_str(&fields, "name") == Some("Default")
-        && json_bool(&fields, "visible") == Some(true)
-        && json_bool(&fields, "locked") == Some(false)
-        && json_array_empty(&fields, "rendering_materials")
-        && json_array_empty_or_missing(&fields, "per_viewport_settings")
+    json_i64(fields, "archive_index") == Some(0)
+        && json_i64(fields, "linetype_index") == Some(-1)
+        && json_i64(fields, "material_index") == Some(-1)
+        && json_str(fields, "name") == Some("Default")
+        && json_bool(fields, "visible") == Some(true)
+        && json_bool(fields, "locked") == Some(false)
+        && json_array_empty(fields, "rendering_materials")
+        && json_array_empty_or_missing(fields, "per_viewport_settings")
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
     let fields = record.fields();
-    json_i64(&fields, "layer_index") == Some(0)
-        && json_i64(&fields, "material_index") == Some(-1)
-        && json_i64(&fields, "linetype_index") == Some(-1)
-        && json_i64(&fields, "hatch_pattern_index") == Some(-1)
-        && json_i64(&fields, "object_mode") == Some(0)
-        && json_str(&fields, "name") == Some("")
-        && json_str(&fields, "url") == Some("")
-        && json_bool(&fields, "visible") == Some(true)
-        && json_array_empty(&fields, "group_indexes")
-        && json_array_empty(&fields, "display_materials")
-        && json_array_empty(&fields, "rendering_materials")
-        && json_array_empty_or_missing(&fields, "rendering_mappings")
+    json_i64(fields, "layer_index") == Some(0)
+        && json_i64(fields, "material_index") == Some(-1)
+        && json_i64(fields, "linetype_index") == Some(-1)
+        && json_i64(fields, "hatch_pattern_index") == Some(-1)
+        && json_i64(fields, "object_mode") == Some(0)
+        && json_str(fields, "name") == Some("")
+        && json_str(fields, "url") == Some("")
+        && json_bool(fields, "visible") == Some(true)
+        && json_array_empty(fields, "group_indexes")
+        && json_array_empty(fields, "display_materials")
+        && json_array_empty(fields, "rendering_materials")
+        && json_array_empty_or_missing(fields, "rendering_mappings")
         && fields.get("casts_shadows").is_none()
         && fields.get("receives_shadows").is_none()
         && fields.get("advanced_texture_preview").is_none()
         && fields.get("custom_render_mesh").is_none()
         && fields.get("mesh_modifiers").is_none()
-        && json_array_empty(&fields, "clipping_plane_uuids")
-        && json_array_empty_or_missing(&fields, "user_strings")
-        && json_array_empty_or_missing(&fields, "attribute_user_strings")
+        && json_array_empty(fields, "clipping_plane_uuids")
+        && json_array_empty_or_missing(fields, "user_strings")
+        && json_array_empty_or_missing(fields, "attribute_user_strings")
 }
 
 type NativeFields = serde_json::Map<String, serde_json::Value>;
@@ -1161,6 +1161,10 @@ fn generated_projected_brep_c2_curve(
     v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     use cadmpeg_ir::topology::Sense;
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
 
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
@@ -1184,28 +1188,31 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .try_map_control_points(|_, point| {
-                    let mut point = point.get();
-                    let uv = plane_uv(point, origin, u_axis, v_axis);
-                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                })
+                .try_map_control_points(
+                    |_, point| {
+                        let mut point = point.get();
+                        let uv = plane_uv(point, origin, u_axis, v_axis);
+                        point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                "control_points contains a non-finite point".into(),
+                            )
+                        })
+                    },
+                    &writer_ctx,
+                )?
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
                     CodecError::Malformed("Rhino count exceeds address space".into())
                 })?] + projected.knots()[projected.pole_count()];
-                projected.reverse_parameterization();
+                projected.reverse_parameterization(&writer_ctx)?;
                 projected
-                    .edit_knots(|knots| {
+                    .edit_knots(&writer_ctx, |knots| {
                         for knot in knots {
                             *knot += sum;
                         }
-                    })
+                    })?
                     .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
@@ -1221,15 +1228,25 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), CodecError> {
+    // Native-canonical writer checks state an independent construction policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let order = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
         + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
-    let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
-        .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
+    let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, &stored, order, count)
+        .map_err(|error| match error {
+            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
+                CodecError::ResourceLimit(limit)
+            }
+            error => CodecError::NotImplemented(format!("curve {id}: {error}")),
+        })?;
     curve
-        .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
+        .edit_knots(&writer_ctx, |knots| knots.copy_from_slice(&reconstructed))?
         .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     Ok(())
 }
@@ -1324,7 +1341,6 @@ fn validate_nurbs_trim(
     sense: cadmpeg_ir::topology::Sense,
     explicit: &WritablePcurve<'_>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
     use cadmpeg_ir::topology::Sense;
 
     let u_count = surface.u_count();
@@ -1406,7 +1422,11 @@ fn validate_nurbs_trim(
                 .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
             let parameter = sample.get();
             // A non-finite pcurve point is refused by the domain test.
-            let uv = match pcurve_uv(&pcurve.geometry, parameter) {
+            let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                parameter,
+            ) {
                 Ok(uv) => uv.get(),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1422,7 +1442,12 @@ fn validate_nurbs_trim(
                 )));
             }
             // A non-finite surface point is measured as a finite one is.
-            let mapped = match nurbs_surface_point(surface, uv.u, uv.v) {
+            let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                surface,
+                uv.u,
+                uv.v,
+            ) {
                 Ok(point) => point.get(),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1900,15 +1925,25 @@ fn check_knot_roundtrip(
     count: usize,
     declared_periodic: bool,
 ) -> Result<(), CodecError> {
+    // Native-canonical writer checks state an independent construction policy.
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (writer_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
         return Err(CodecError::NotImplemented(format!(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
-    let reconstructed = crate::surfaces::reconstruct_knots(stored, order, count)
-        .map_err(|error| CodecError::NotImplemented(format!("{direction} {id}: {error}")))?;
-    let periodic = crate::surfaces::periodic_knots(stored, order, count);
+    let reconstructed = crate::surfaces::reconstruct_knots(&writer_ctx, stored, order, count)
+        .map_err(|error| match error {
+            crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
+                CodecError::ResourceLimit(limit)
+            }
+            error => CodecError::NotImplemented(format!("{direction} {id}: {error}")),
+        })?;
+    let periodic = crate::surfaces::periodic_knots(&writer_ctx, stored, order, count)?;
     if reconstructed != full || periodic != declared_periodic {
         return Err(CodecError::NotImplemented(format!(
             "{direction} {id} knot endpoints or periodic flag are not native-canonical"

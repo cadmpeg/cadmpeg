@@ -704,7 +704,6 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let sections_are_resolved = !shape.any_section_is_unresolved()
                 && shape
                     .referenced_profiles()
-                    .into_iter()
                     .all(planar_profile_ref_is_resolved);
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
@@ -4486,8 +4485,15 @@ fn decode_result(
     )?;
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
-    ir.finalize();
-    let hash = document_local_sha256_with_source(&ir, &source)?;
+    ir.finalize(ctx)?;
+    let hash = cadmpeg_ir::hash::document_local_sha256(
+        ctx,
+        &ir,
+        Some(&source),
+        "f3d",
+        crate::ids::FILE_SOURCE_IMAGE_ID,
+        "record F3D document digest",
+    )?;
     ctx.insert_btree_map(
         &mut source.attributes,
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
@@ -4519,26 +4525,19 @@ pub(crate) fn preserve_source_image(
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(
+        &ctx,
         ir,
+        ir.source.as_ref(),
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?)
-}
-
-/// Computes the digest for a document whose source metadata is still local to
-/// its author. The digest covers that metadata without its own digest
-/// attribute, as defined by [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256_with_source(
-    ir: &CadIr,
-    source: &cadmpeg_ir::SourceMeta,
-) -> Result<String, CodecError> {
-    Ok(cadmpeg_ir::hash::document_local_sha256_with_source(
-        ir,
-        source,
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?)
+        "record F3D document digest",
+    )?;
+    ctx.finish_session()?;
+    Ok(digest)
 }
 
 fn annotation_stream(
@@ -4547,7 +4546,7 @@ fn annotation_stream(
 ) -> Result<StreamHandle, CodecError> {
     let name = crate::ids::native_scope_charged(ctx, entry_name)?;
     let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
-    StreamHandle::new_for_decode(ctx, name, "allocate annotation stream handle")
+    StreamHandle::new(ctx, name, "allocate annotation stream handle")
 }
 
 fn note_native_annotation(
@@ -4557,7 +4556,7 @@ fn note_native_annotation(
     id: &str,
     tag: &str,
 ) -> Result<(), CodecError> {
-    annotations.note_for_decode(ctx, id, stream, trailing_offset(id), Some(tag))
+    annotations.note(ctx, id, stream, trailing_offset(id), Some(tag))
 }
 
 fn populate_annotations(
@@ -4574,7 +4573,7 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(ctx, stream_name)?;
         for record in records {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 &record.id,
                 &stream,
@@ -4582,7 +4581,7 @@ fn populate_annotations(
                 Some(record.tag.as_str()),
             )?;
             for field in &record.derived_fields {
-                annotations.derived_for_decode(ctx, &record.id, field)?;
+                annotations.derived(ctx, &record.id, field)?;
             }
         }
     }
@@ -4621,7 +4620,7 @@ fn populate_annotations(
         "index F3D annotation spatial sketches",
     )?;
 
-    let native_stream = StreamHandle::new_for_decode(
+    let native_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("f3d:native"),
         "allocate annotation stream handle",
@@ -4803,7 +4802,7 @@ fn populate_annotations(
         .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
-            annotations.note_for_decode(
+            annotations.note(
                 ctx,
                 appearance.id.as_str(),
                 &stream,
@@ -4813,7 +4812,7 @@ fn populate_annotations(
         }
     }
     for binding in &ir.model.appearance_bindings {
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             binding.id.as_str(),
             &native_stream,
@@ -4825,7 +4824,7 @@ fn populate_annotations(
         if let Some(fallback) = container::select_fallback_brep(scan) {
             let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
-                annotations.note_for_decode(
+                annotations.note(
                     ctx,
                     unknown.id().as_str(),
                     &stream,

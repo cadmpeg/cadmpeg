@@ -151,7 +151,10 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
                     reversed: false,
                 })
                 .collect(),
+            &cadmpeg_test_support::service_decode_context(),
+            "spatial profile uniqueness",
         )
+        .expect("fixture collection admission")
         .unwrap()]
     } else {
         Vec::new()

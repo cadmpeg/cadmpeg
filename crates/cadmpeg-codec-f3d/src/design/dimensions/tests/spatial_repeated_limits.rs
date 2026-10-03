@@ -57,7 +57,10 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 boundary,
+                &cadmpeg_test_support::service_decode_context(),
+                "spatial profile uniqueness",
             )
+            .expect("fixture collection admission")
             .unwrap(),
         );
     }

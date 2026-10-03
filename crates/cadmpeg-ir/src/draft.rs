@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Atomic staging for neutral entity transfer.
 
+use std::borrow::BorrowMut;
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceLimit, ScopedReservation,
-};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use crate::annotations::{AnnotationBuilder, Annotations};
@@ -17,7 +16,7 @@ use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
-use crate::index::{identity_hash, public_result, DecodeStorage, IndexStorage, PublicStorage};
+use crate::index::{identity_hash, DecodeStorage, IndexStorage};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::provenance::Exactness;
@@ -46,20 +45,15 @@ pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
 }
 
 /// Registry-complete arena lengths captured at a model transaction boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ModelCheckpoint {
     lengths: [usize; EntityKind::ALL.len()],
     feature_parents: crate::document::FeatureRegenerationParents,
 }
 
 impl ModelCheckpoint {
-    /// Captures every neutral arena length.
-    pub fn capture(model: &Model) -> Self {
-        Self::with_parents(model, model.feature_regeneration_parents.clone())
-    }
-
     /// Capture a decoded model with a live reservation for the copied parent table.
-    pub fn capture_for_decode<'ctx>(
+    pub fn capture<'ctx>(
         model: &Model,
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
@@ -105,12 +99,8 @@ impl ModelCheckpoint {
     /// This is an append-only checkpoint, not a snapshot of existing entities.
     /// Between capture and discard, callers must not remove, reorder, or modify
     /// entities that preceded the checkpoint.
-    pub fn discard_appended(&self, model: &mut Model) {
-        self.restore(model, self.feature_parents.clone());
-    }
-
-    /// Restore decoded parent relations after admitting their owned copies.
-    pub fn discard_appended_for_decode(
+    /// Parent-table copies and arena truncation use the caller's context.
+    pub fn discard_appended(
         &self,
         model: &mut Model,
         ctx: &DecodeContext<'_>,
@@ -118,8 +108,27 @@ impl ModelCheckpoint {
         let parents = self
             .feature_parents
             .try_clone_for_decode(ctx, "model checkpoint restored parents")?;
+        macro_rules! admit_truncation {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                let removed = model.$field.len().checked_sub(self.length::<$ty>()).ok_or_else(|| CodecError::malformed("checkpoint cannot restore removed entities"))?;
+                ctx.charge_work(u64_from_index(removed), "discard checkpoint appends")?;
+            )*};
+        }
+        crate::document::arena_registry!(admit_truncation);
         self.restore(model, parents);
         Ok(())
+    }
+
+    /// Compare captured state after admitting the parent-table comparisons.
+    pub fn same_state(&self, other: &Self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        ctx.charge_work(
+            u64_from_index(self.lengths.len()),
+            "compare model checkpoint lengths",
+        )?;
+        if self.lengths != other.lengths {
+            return Ok(false);
+        }
+        self.feature_parents.equivalent(&other.feature_parents, ctx)
     }
 
     fn restore(&self, model: &mut Model, parents: crate::document::FeatureRegenerationParents) {
@@ -183,7 +192,7 @@ fn index_model_identities<'a>(
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (slot_index, entity) in model.$field.iter().enumerate() {
                 ctx.charge_work(u64_from_index(entity.identity().len()), "draft identity scan")?;
-                if identity_index_contains(model, &identity_index, entity.identity()) {
+                if identity_index_contains(model, &identity_index, entity.identity(), ctx)? {
                     return Ok(Err(entity.identity()));
                 }
                 insert_identity(&mut identity_index, identity_hash(entity.identity()), IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: slot_index }, &storage, "draft identity slots")?;
@@ -194,12 +203,38 @@ fn index_model_identities<'a>(
     Ok(Ok(identity_index))
 }
 
-fn identity_index_contains(model: &Model, index: &IdentityIndex, identity: &str) -> bool {
-    index
-        .get(&identity_hash(identity))
-        .into_iter()
-        .flatten()
-        .any(|slot| model.identity_at(slot.kind, slot.index) == Some(identity))
+fn identity_index_contains(
+    model: &Model,
+    index: &IdentityIndex,
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(u64_from_index(identity.len()), "hash draft identity lookup")?;
+    let hash = identity_hash(identity);
+    ctx.charge_work(1, "draft identity bucket lookup")?;
+    for slot in index.get(&hash).into_iter().flatten() {
+        ctx.charge_work(1, "draft identity collision scan")?;
+        if let Some(candidate) = model.identity_at(slot.kind, slot.index) {
+            if identities_equal(ctx, candidate, identity, "compare draft identities")? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn identities_equal(
+    ctx: &DecodeContext<'_>,
+    left: &str,
+    right: &str,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(1, operation)?;
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    ctx.charge_work(u64_from_index(left.len()), operation)?;
+    Ok(left == right)
 }
 
 /// Error returned before an atomic draft commit mutates its destination.
@@ -230,15 +265,6 @@ pub enum DraftError {
         /// The violated graph invariant and affected identities.
         message: String,
     },
-    /// A staged entity cannot state its own typed references.
-    #[error("staged entity {owner} cannot state its typed references: {source}")]
-    ReferenceWalk {
-        /// Staged entity whose schema walk failed.
-        owner: String,
-        /// Walk failure raised by the entity's own serialization.
-        #[source]
-        source: crate::schema::ReferenceWalkError,
-    },
 }
 
 impl From<CodecError> for DraftError {
@@ -248,14 +274,6 @@ impl From<CodecError> for DraftError {
             error => Self::Admission(error.to_string()),
         }
     }
-}
-
-fn default_context<T>(
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, DraftError>,
-) -> Result<T, DraftError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    run(&ctx)
 }
 
 /// Transactional collection of staged model entities.
@@ -295,8 +313,10 @@ impl ModelDraft {
     /// Accounted drafts cannot use a model-only commit:
     ///
     /// ```compile_fail
+    /// let arena = cadmpeg_core::decode::DecodeArena::new();
+    /// let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).unwrap();
     /// let draft = cadmpeg_ir::draft::ModelDraft::new().with_accounting();
-    /// draft.commit_model(&mut cadmpeg_ir::CadIr::empty()).unwrap();
+    /// draft.commit_model(&mut cadmpeg_ir::CadIr::empty(), &ctx).unwrap();
     /// ```
     ///
     /// A commit session also requires a draft with no accounting:
@@ -304,7 +324,9 @@ impl ModelDraft {
     /// ```compile_fail
     /// let draft = cadmpeg_ir::draft::ModelDraft::new().with_accounting();
     /// let mut document = cadmpeg_ir::CadIr::empty();
-    /// cadmpeg_ir::draft::CommitSession::new(&mut document).commit_model(draft).unwrap();
+    /// let arena = cadmpeg_core::decode::DecodeArena::new();
+    /// let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).unwrap();
+    /// cadmpeg_ir::draft::CommitSession::new(&mut document, &ctx, None).unwrap().commit_model(draft).unwrap();
     /// ```
     pub fn with_accounting(self) -> ModelDraft<DraftAccounting> {
         ModelDraft {
@@ -313,29 +335,19 @@ impl ModelDraft {
         }
     }
 
-    /// Commit a draft that carries model entities only.
-    pub fn commit_model(self, base: &mut CadIr) -> Result<(), DraftError> {
-        default_context(|ctx| self.commit_model_for_decode(base, ctx)?)
-    }
-
     /// Validate and append one decoded draft through the charged session owner.
-    pub fn commit_model_for_decode(
+    pub fn commit_model(
         self,
         base: &mut CadIr,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        CommitSession::new(base).commit_model_for_decode(self, ctx)
+        CommitSession::new(base, ctx, None)?.commit_model(self)
     }
 }
 
 impl<A> ModelDraft<A> {
-    /// Inserts one entity, rejecting draft-local identity collisions immediately.
-    pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
-        default_context(|ctx| self.insert_for_decode(entity, ctx))
-    }
-
     /// Admit the entity's arena storage and check its identity before insertion.
-    pub fn insert_for_decode<T: ArenaEntity>(
+    pub fn insert<T: ArenaEntity>(
         &mut self,
         entity: T,
         ctx: &DecodeContext<'_>,
@@ -345,7 +357,7 @@ impl<A> ModelDraft<A> {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for existing in &self.model.$field {
                     ctx.charge_work(1, "draft insertion identity scan")?;
-                    if existing.identity() == identity { return Err(DraftError::IdentityCollision(ctx.copy_retained_text(identity, "draft identity collision")?)); }
+                    if identities_equal(ctx, existing.identity(), identity, "compare draft insertion identities")? { return Err(DraftError::IdentityCollision(ctx.copy_retained_text(identity, "draft identity collision")?)); }
                 })*
             };
         }
@@ -376,14 +388,13 @@ impl<A> ModelDraft<A> {
     fn validate_with_contains(
         &mut self,
         base: &Model,
-        contains: impl Fn(&str) -> bool,
+        contains: impl Fn(&str) -> Result<bool, CodecError>,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        let (identity_index, _storage) = ctx
-            .with_scoped_storage("draft identity storage", || {
-                index_model_identities(&self.model, ctx)
-            })?;
-        let identity_index = match identity_index {
+        let indexed = ctx.with_scoped_storage("draft identity storage", || {
+            index_model_identities(&self.model, ctx)
+        })?;
+        let identity_index = match &indexed.0 {
             Ok(index) => index,
             Err(identity) => {
                 return Ok(Err(DraftError::IdentityCollision(
@@ -394,8 +405,8 @@ impl<A> ModelDraft<A> {
         macro_rules! check_external_identities {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(for entity in &self.model.$field {
-                    ctx.charge_work(u64_from_index(entity.identity().len()), "draft external identity scan")?;
-                    if contains(entity.identity()) {
+                    ctx.charge_work(1, "draft external identity scan")?;
+                    if contains(entity.identity())? {
                         let identity = ctx.copy_retained_text(entity.identity(), "draft external identity collision")?;
                         return Ok(Err(DraftError::IdentityCollision(identity)));
                     }
@@ -408,27 +419,15 @@ impl<A> ModelDraft<A> {
                 $(for entity in &self.model.$field {
                     let owner = entity.identity();
                     let mut missing = None;
-                    let mut refusal = None;
-                    let walk = entity.visit_reference_ids(&mut |target| {
-                        if let Err(error) = ctx.charge_work(u64_from_index(target.len()), "draft reference scan") { refusal = Some(error); return; }
-                        if missing.is_none()
-                            && refusal.is_none()
-                            && !contains(target)
-                            && !identity_index_contains(&self.model, &identity_index, target)
-                        {
-                            match ctx.copy_retained_text(target, "draft missing reference") {
-                                Ok(target) => missing = Some(target),
-                                Err(error) => refusal = Some(error),
-                            }
+                    entity.visit_references(ctx, &mut |target| {
+                        if missing.is_some() {
+                            return Ok(());
                         }
-                    });
-                    if let Some(error) = refusal {
-                        return Err(error);
-                    }
-                    if let Err(source) = walk {
-                        let owner = ctx.copy_retained_text(owner, "draft reference walk owner")?;
-                        return Ok(Err(DraftError::ReferenceWalk { owner, source }));
-                    }
+                        if !contains(target)? && !identity_index_contains(&self.model, identity_index, target, ctx)? {
+                            missing = Some(ctx.copy_retained_text(target, "draft missing reference")?);
+                        }
+                        Ok(())
+                    })?;
                     if let Some(target) = missing {
                         let owner = ctx.copy_retained_text(owner, "draft missing reference owner")?;
                         return Ok(Err(DraftError::UnresolvedReference { owner, target }));
@@ -439,11 +438,14 @@ impl<A> ModelDraft<A> {
         crate::document::arena_registry!(validate_arenas);
         if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
             if let Err(error) =
-                crate::document::validate_feature_parents_for_decode(&[base, &self.model], ctx)?
+                crate::document::feature_parents::validate(ctx, &[base, &self.model])?
             {
                 return Ok(Err(DraftError::FeatureParents {
-                    owner: error.owner,
-                    message: error.message,
+                    owner: error
+                        .owner()
+                        .try_clone_for_decode(ctx, "feature parent diagnostic owner")?,
+                    message: ctx
+                        .format_retained(format_args!("{error}"), "feature parent diagnostic")?,
                 }));
             }
         }
@@ -452,18 +454,8 @@ impl<A> ModelDraft<A> {
 }
 
 impl ModelDraft<DraftAccounting> {
-    /// Records sparse exactness for a staged entity.
-    pub fn exactness(&mut self, identity: impl Into<String>, exactness: Exactness) {
-        let identity = identity.into();
-        if exactness == Exactness::ByteExact {
-            self.accounting.exactness.remove(&identity);
-        } else {
-            self.accounting.exactness.insert(identity, exactness);
-        }
-    }
-
     /// Record staged exactness after admitting the retained key and record.
-    pub fn exactness_for_decode(
+    pub fn exactness(
         &mut self,
         ctx: &DecodeContext<'_>,
         identity: impl std::fmt::Display,
@@ -475,169 +467,392 @@ impl ModelDraft<DraftAccounting> {
             format_args!("{identity}"),
             "draft exactness lookup",
         )?;
+        let work = u64_from_index(self.accounting.exactness.len())
+            .checked_add(1)
+            .and_then(|count| count.checked_mul(u64_from_index(identity.len())))
+            .and_then(|count| count.checked_mul(2))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("draft exactness comparisons", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "draft exactness comparisons")?;
         let identity = if exactness != Exactness::ByteExact
             && !self.accounting.exactness.contains_key(&identity)
         {
-            ctx.charge_collection_items(1, "draft exactness records")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Exactness)>()),
+            ctx.charge_work(1, "draft exactness records")?;
+            ctx.admit_btree_entry(
+                &self.accounting.exactness,
+                &identity,
                 "draft exactness records",
             )?;
             ctx.copy_retained_text(&identity, "draft exactness identity")?
         } else {
             identity
         };
-        self.exactness(identity, exactness);
+        if exactness == Exactness::ByteExact {
+            self.accounting.exactness.remove(&identity);
+        } else {
+            self.accounting.exactness.insert(identity, exactness);
+        }
         Ok(())
     }
 
     /// Retains exactness notes selected by identity.
-    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.accounting
-            .exactness
-            .retain(|identity, _| keep(identity));
-    }
-
-    /// Validates and atomically extends a document and its exactness annotations.
-    pub fn commit(self, base: &mut CadIr, annotations: &mut Annotations) -> Result<(), DraftError> {
-        default_context(|ctx| self.commit_for_decode(base, annotations, ctx)?)
+    pub fn retain_exactness(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        keep: impl FnMut(&str) -> Result<bool, CodecError>,
+    ) -> Result<(), CodecError> {
+        crate::annotations::retain_identity_entries(
+            ctx,
+            &mut self.accounting.exactness,
+            keep,
+            "draft exactness decisions",
+            "draft exactness predicate scan",
+            "draft exactness retention scan",
+        )
     }
 
     /// Commit decoded entities and transfer their owned exactness entries.
-    pub fn commit_for_decode(
-        mut self,
+    pub fn commit(
+        self,
         base: &mut CadIr,
         annotations: &mut Annotations,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        let accounting = std::mem::take(&mut self.accounting);
-        let draft = ModelDraft {
-            model: self.model,
-            accounting: (),
-        };
-        // Admit annotation destination storage before the model becomes visible.
-        let (merged, storage) = ctx.with_scoped_storage("draft annotation transaction", || {
-            let mut merged = AnnotationBuilder::resume(
-                annotations.try_clone_for_decode(ctx, "draft annotation transaction")?,
-            );
-            for (identity, exactness) in accounting.exactness {
-                merged.exactness_owned_for_decode(ctx, identity, exactness)?;
-            }
-            Ok::<_, CodecError>(merged.build())
-        })?;
-        storage.commit()?;
-        if let Err(error) = draft.commit_model_for_decode(base, ctx)? {
-            return Ok(Err(error));
-        }
-        *annotations = merged;
-        Ok(Ok(()))
+        CommitSession::new(base, ctx, None)?.commit(self, annotations)
     }
 }
 
 #[derive(Debug)]
 enum CommittedIdentity {
     Neutral(IdentitySlot),
-    Native(String),
+    Native {
+        namespace_hash: u64,
+        arena_hash: u64,
+        record: usize,
+    },
+    StagedUnknown(usize),
 }
 
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 
-/// An exclusive document borrow for a sequence of checked draft commits.
+/// A document owner or exclusive borrow with a caller-owned identity cache.
 ///
-/// The identity index is built on the first lookup or commit. The document is
-/// available only for shared reads until the session ends, so another writer
-/// cannot invalidate the cached identities.
+/// The cache is built on the first lookup or commit. The context stays borrowed
+/// until the session ends. Each successful commit extends the existing cache.
 ///
 /// ```compile_fail
+/// use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 /// use cadmpeg_ir::{document::CadIr, draft::CommitSession};
+/// let arena = DecodeArena::new();
+/// let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
 /// let mut ir = CadIr::empty();
-/// let mut session = CommitSession::new(&mut ir);
+/// let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 /// ir.model.points.clear();
-/// session.contains("test:model:point#1");
+/// session.contains("test:model:point#1").unwrap();
 /// ```
 ///
 /// ```compile_fail
+/// use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 /// use cadmpeg_ir::{document::CadIr, draft::CommitSession};
+/// let arena = DecodeArena::new();
+/// let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
 /// let mut ir = CadIr::empty();
-/// let session = CommitSession::new(&mut ir);
+/// let session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 /// session.document().model.points.clear();
 /// ```
 #[derive(Debug)]
-pub struct CommitSession<'a> {
-    base: &'a mut CadIr,
-    identities: Option<CommittedIdentityIndex>,
-}
-
-/// Exclusive document session with a live reservation for temporary identity caches.
-pub struct DecodeCommitSession<'ctx, 'doc> {
-    session: CommitSession<'doc>,
+pub struct CommitSession<'ctx, D: BorrowMut<CadIr>> {
+    state: CommitState<'ctx, D>,
+    ctx: &'ctx DecodeContext<'ctx>,
     storage: ScopedReservation<'ctx>,
 }
 
-impl DecodeCommitSession<'_, '_> {
-    /// Read the committed document without releasing its cache reservation.
-    pub fn document(&self) -> &CadIr {
-        self.session.document()
+#[derive(Debug)]
+struct CommitState<'ctx, D: BorrowMut<CadIr>> {
+    base: D,
+    unknowns: Vec<crate::unknown::UnknownRecord>,
+    unknown_namespace: Option<&'ctx str>,
+    identities: Option<CommittedIdentityIndex>,
+}
+
+impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
+    /// Hold the document and caller's context without scanning identity arenas.
+    pub fn new(
+        base: D,
+        ctx: &'ctx DecodeContext<'ctx>,
+        unknown_namespace: Option<&'ctx str>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            state: CommitState {
+                base,
+                unknowns: Vec::new(),
+                unknown_namespace,
+                identities: None,
+            },
+            ctx,
+            storage: ctx.reserve_scoped(0, "committed identity storage")?,
+        })
     }
 
-    /// Validate and commit through the shared charged transaction owner.
-    pub fn commit_model_for_decode(
+    /// Read the committed document while its cache reservation remains live.
+    pub fn document(&self) -> &CadIr {
+        self.state.base.borrow()
+    }
+
+    /// Invalidate cached positions before exposing the document for mutation.
+    pub fn document_mut(&mut self) -> Result<&mut CadIr, CodecError> {
+        let storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
+        self.state.identities = None;
+        self.storage = storage;
+        Ok(self.state.base.borrow_mut())
+    }
+
+    /// Release the cache and transfer the document and staged source records.
+    pub fn into_parts(self) -> (D, Vec<crate::unknown::UnknownRecord>) {
+        let Self {
+            state,
+            ctx: _,
+            storage,
+        } = self;
+        let CommitState {
+            base,
+            unknowns,
+            unknown_namespace: _,
+            identities,
+        } = state;
+        drop(identities);
+        drop(storage);
+        (base, unknowns)
+    }
+
+    /// Borrow staged source records without constructing native product records.
+    pub fn unknowns(&self) -> &[crate::unknown::UnknownRecord] {
+        &self.state.unknowns
+    }
+
+    /// Mutate outgoing links while keeping cached identity positions stable.
+    pub fn unknown_links_mut(&mut self, index: usize) -> Option<(&str, &mut Vec<String>)> {
+        self.state
+            .unknowns
+            .get_mut(index)
+            .map(crate::unknown::UnknownRecord::id_and_links_mut)
+    }
+
+    /// Move an owned source population into the session and invalidate cached positions.
+    pub fn replace_unknowns(
+        &mut self,
+        records: Vec<crate::unknown::UnknownRecord>,
+    ) -> Result<(), CodecError> {
+        let storage = self.ctx.reserve_scoped(0, "committed identity storage")?;
+        self.ctx.charge_work(
+            u64_from_index(self.state.unknowns.len()),
+            "replace source record scan",
+        )?;
+        self.state.identities = None;
+        self.storage = storage;
+        self.state.unknowns = records;
+        Ok(())
+    }
+
+    /// Admit a moved source record and extend a previously built identity cache.
+    pub fn push_unknown(
+        &mut self,
+        record: crate::unknown::UnknownRecord,
+    ) -> Result<(), CodecError> {
+        self.ctx
+            .reserve_vec(&mut self.state.unknowns, 1, "staged unknown record slots")?;
+        if let Some(index) = &mut self.state.identities {
+            self.ctx.charge_work(
+                u64_from_index(record.id().as_str().len()),
+                "hash staged unknown identity",
+            )?;
+            self.storage.with_storage_limit(|| {
+                insert_identity(
+                    index,
+                    identity_hash(record.id().as_str()),
+                    CommittedIdentity::StagedUnknown(self.state.unknowns.len()),
+                    &DecodeStorage(self.ctx),
+                    "committed identity slots",
+                )
+            })?;
+        }
+        self.state.unknowns.push(record);
+        Ok(())
+    }
+
+    /// Validate and commit one model draft under this session's context.
+    pub fn commit_model(
         &mut self,
         draft: ModelDraft,
-        ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        let result = self
-            .session
-            .commit_with_storage(draft, ctx, &mut self.storage);
-        if result.is_err() {
-            self.session.identities = None;
-        }
-        result
+        self.state
+            .commit_with_storage(draft, self.ctx, &mut self.storage, || Ok(()))
     }
 
-    /// Look up an identity after admitting cache storage and comparison work.
-    pub fn contains_for_decode(
+    /// Admit an accounted draft and its annotation transfer before either is applied.
+    pub fn commit(
         &mut self,
-        identity: &str,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<bool, CodecError> {
-        let result = self
-            .session
-            .lookup_with_storage(identity, ctx, &mut self.storage);
-        if result.is_err() {
-            self.session.identities = None;
+        draft: ModelDraft<DraftAccounting>,
+        annotations: &mut Annotations,
+    ) -> Result<Result<(), DraftError>, CodecError> {
+        let ctx = self.ctx;
+        let transaction = annotations.copy_transaction(ctx, "draft annotation transaction")?;
+        let ModelDraft { model, accounting } = draft;
+        let ((), transaction) = transaction.update(|annotations| {
+            let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+            for (identity, exactness) in accounting.exactness {
+                builder.exactness_owned(ctx, identity, exactness)?;
+            }
+            *annotations = builder.build();
+            Ok::<_, CodecError>(())
+        })?;
+        match self.state.commit_with_storage(
+            ModelDraft {
+                model,
+                accounting: (),
+            },
+            ctx,
+            &mut self.storage,
+            || transaction.into_retained(),
+        )? {
+            Ok(merged) => {
+                *annotations = merged;
+                Ok(Ok(()))
+            }
+            Err(error) => Ok(Err(error)),
         }
-        result
+    }
+
+    /// Append a candidate under read-only admission and extend only accepted cache positions.
+    pub fn try_append<T, E>(
+        &mut self,
+        model: Model,
+        native: crate::native::Native,
+        admit: impl FnOnce(&CadIr, &[crate::unknown::UnknownRecord]) -> Result<Result<T, E>, CodecError>,
+    ) -> Result<Result<T, E>, CodecError> {
+        let ctx = self.ctx;
+        self.storage
+            .with_storage(|| self.state.ensure_identities(ctx))?;
+        let index = self
+            .state
+            .identities
+            .as_mut()
+            .ok_or_else(|| CodecError::malformed("committed identity index is absent"))?;
+        let staged = ctx.with_scoped_storage("candidate committed identity staging", || {
+            stage_committed_identities(
+                self.state.base.borrow(),
+                &model,
+                Some(&native),
+                self.state.unknown_namespace,
+                ctx,
+            )
+        })?;
+        reserve_committed_identities(index, &staged.0, ctx, &mut self.storage)?;
+        let unknowns = &self.state.unknowns;
+        let result = self
+            .state
+            .base
+            .borrow_mut()
+            .try_append(ctx, model, native, |combined| admit(combined, unknowns))?;
+        if result.is_ok() {
+            for (hash, group) in staged.0 {
+                index.entry(hash).or_default().extend(group);
+            }
+        }
+        Ok(result)
+    }
+
+    /// Look up an identity through the live caller-accounted cache.
+    pub fn contains(&mut self, identity: &str) -> Result<bool, CodecError> {
+        self.state
+            .lookup_with_storage(identity, self.ctx, &mut self.storage)
     }
 }
 
-fn index_committed_identities<S: IndexStorage>(
+fn index_committed_identities(
     base: &CadIr,
-    storage: &S,
-    copy_native: impl Fn(&str) -> Result<String, S::Error>,
-) -> Result<CommittedIdentityIndex, S::Error> {
+    unknowns: &[crate::unknown::UnknownRecord],
+    unknown_namespace: Option<&str>,
+    ctx: &DecodeContext<'_>,
+) -> Result<CommittedIdentityIndex, CodecError> {
+    let storage = DecodeStorage(ctx);
     let mut identities = CommittedIdentityIndex::new();
     macro_rules! collect_model_identities {
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.model.$field.iter().enumerate() {
                 storage.work(entity.identity().len(), "committed identity scan")?;
-                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }), storage, "committed identity slots")?;
+                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }), &storage, "committed identity slots")?;
             })*
         };
     }
     crate::document::arena_registry!(collect_model_identities);
-    for record in base
-        .native
-        .0
-        .values()
-        .flat_map(|namespace| namespace.arenas().values().flatten())
-    {
-        storage.work(record.id().len(), "committed native identity scan")?;
+    for (format, records) in &base.native.0 {
+        let replaces_unknowns = match unknown_namespace {
+            Some(replacement) => {
+                ctx.charge_work(
+                    u64_from_index(format.len()),
+                    "compare committed unknown namespace",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(replacement.len()),
+                    "compare committed unknown namespace",
+                )?;
+                format == replacement
+            }
+            None => false,
+        };
+        ctx.charge_work(
+            u64_from_index(format.len()).checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("hash committed native namespace", u64::MAX - 1, u64::MAX)
+            })?,
+            "hash committed native namespace",
+        )?;
+        let namespace = identity_hash(format);
+        for (arena, records) in records.arenas() {
+            if replaces_unknowns {
+                ctx.charge_work(
+                    u64_from_index(arena.len()),
+                    "compare committed unknown arena",
+                )?;
+                ctx.charge_work(7, "compare committed unknown arena")?;
+                if arena == "unknowns" {
+                    continue;
+                }
+            }
+            ctx.charge_work(
+                u64_from_index(arena.len()).checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("hash committed native arena", u64::MAX - 1, u64::MAX)
+                })?,
+                "hash committed native arena",
+            )?;
+            let arena = identity_hash(arena);
+            for (record, value) in records.iter().enumerate() {
+                storage.work(value.id().len(), "committed native identity scan")?;
+                insert_identity(
+                    &mut identities,
+                    identity_hash(value.id()),
+                    CommittedIdentity::Native {
+                        namespace_hash: namespace,
+                        arena_hash: arena,
+                        record,
+                    },
+                    &storage,
+                    "committed identity slots",
+                )?;
+            }
+        }
+    }
+    for (index, record) in unknowns.iter().enumerate() {
+        storage.work(
+            record.id().as_str().len(),
+            "committed unknown identity scan",
+        )?;
         insert_identity(
             &mut identities,
-            identity_hash(record.id()),
-            CommittedIdentity::Native(copy_native(record.id())?),
-            storage,
+            identity_hash(record.id().as_str()),
+            CommittedIdentity::StagedUnknown(index),
+            &storage,
             "committed identity slots",
         )?;
     }
@@ -646,130 +861,258 @@ fn index_committed_identities<S: IndexStorage>(
 
 fn committed_identity_contains(
     base: &CadIr,
+    unknowns: &[crate::unknown::UnknownRecord],
     identities: &CommittedIdentityIndex,
     identity: &str,
-) -> bool {
-    identities
-        .get(&identity_hash(identity))
-        .into_iter()
-        .flatten()
-        .any(|owner| match owner {
-            CommittedIdentity::Neutral(slot) => {
-                base.model.identity_at(slot.kind, slot.index) == Some(identity)
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(u64_from_index(identity.len()), "committed identity lookup")?;
+    let hash = identity_hash(identity);
+    ctx.charge_work(1, "committed identity bucket lookup")?;
+    for owner in identities.get(&hash).into_iter().flatten() {
+        ctx.charge_work(1, "committed identity collision scan")?;
+        let candidate = match owner {
+            CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
+            CommittedIdentity::StagedUnknown(index) => {
+                unknowns.get(*index).map(|record| record.id().as_str())
             }
-            CommittedIdentity::Native(candidate) => candidate == identity,
-        })
-}
-
-impl<'a> CommitSession<'a> {
-    /// Exclusively borrows a document without scanning its identity arenas yet.
-    pub fn new(base: &'a mut CadIr) -> Self {
-        Self {
-            base,
-            identities: None,
+            CommittedIdentity::Native {
+                namespace_hash,
+                arena_hash,
+                record,
+            } => {
+                for (format, native) in &base.native.0 {
+                    ctx.charge_work(
+                        u64_from_index(format.len()).checked_add(1).ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "find committed native namespace",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
+                        "find committed native namespace",
+                    )?;
+                    if identity_hash(format) != *namespace_hash {
+                        continue;
+                    }
+                    for (name, records) in native.arenas() {
+                        ctx.charge_work(
+                            u64_from_index(name.len()).checked_add(1).ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "find committed native arena",
+                                    u64::MAX - 1,
+                                    u64::MAX,
+                                )
+                            })?,
+                            "find committed native arena",
+                        )?;
+                        if identity_hash(name) != *arena_hash {
+                            continue;
+                        }
+                        ctx.charge_work(1, "borrow committed native identity")?;
+                        if let Some(candidate) = records.get(*record) {
+                            if identities_equal(
+                                ctx,
+                                candidate.id(),
+                                identity,
+                                "compare committed identities",
+                            )? {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                }
+                None
+            }
+        };
+        if let Some(candidate) = candidate {
+            if identities_equal(ctx, candidate, identity, "compare committed identities")? {
+                return Ok(true);
+            }
         }
     }
+    Ok(false)
+}
 
-    /// Reads the current document, including every successful session commit.
-    pub fn document(&self) -> &CadIr {
-        self.base
+fn stage_committed_identities(
+    base: &CadIr,
+    model: &Model,
+    native: Option<&crate::native::Native>,
+    unknown_namespace: Option<&str>,
+    ctx: &DecodeContext<'_>,
+) -> Result<CommittedIdentityIndex, CodecError> {
+    let mut staged = CommittedIdentityIndex::new();
+    macro_rules! stage_model {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+            for (offset, entity) in model.$field.iter().enumerate() {
+                ctx.charge_work(u64_from_index(entity.identity().len()), "hash staged committed identity")?;
+                let index = base.model.$field.len().checked_add(offset).ok_or_else(|| ctx.refuse_codec_limit("staged committed identity position", u64::MAX - 1, u64::MAX))?;
+                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }), &DecodeStorage(ctx), "draft committed identity slots")?;
+            }
+        )*};
     }
-
-    /// Reports whether any neutral or native arena owns `identity`.
-    pub fn contains(&mut self, identity: &str) -> bool {
-        let identities = self.identities.get_or_insert_with(|| {
-            public_result(index_committed_identities(
-                self.base,
-                &PublicStorage,
-                |id| Ok(id.to_owned()),
-            ))
-        });
-        committed_identity_contains(self.base, identities, identity)
+    crate::document::arena_registry!(stage_model);
+    if let Some(native) = native {
+        for (format, namespace) in &native.0 {
+            ctx.charge_work(
+                u64_from_index(format.len()).checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("hash staged native namespace", u64::MAX - 1, u64::MAX)
+                })?,
+                "hash staged native namespace",
+            )?;
+            let namespace_hash = identity_hash(format);
+            let replaces_unknowns = match unknown_namespace {
+                Some(replacement) => {
+                    identities_equal(ctx, format, replacement, "compare staged unknown namespace")?
+                }
+                None => false,
+            };
+            for (arena, records) in namespace.arenas() {
+                if replaces_unknowns
+                    && identities_equal(ctx, arena, "unknowns", "compare staged unknown arena")?
+                {
+                    continue;
+                }
+                ctx.charge_work(
+                    u64_from_index(arena.len()).checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("hash staged native arena", u64::MAX - 1, u64::MAX)
+                    })?,
+                    "hash staged native arena",
+                )?;
+                let arena_hash = identity_hash(arena);
+                let mut start = 0;
+                for (existing_format, existing_namespace) in &base.native.0 {
+                    if !identities_equal(
+                        ctx,
+                        existing_format,
+                        format,
+                        "find staged native namespace",
+                    )? {
+                        continue;
+                    }
+                    for (existing_arena, existing_records) in existing_namespace.arenas() {
+                        if identities_equal(ctx, existing_arena, arena, "find staged native arena")?
+                        {
+                            start = existing_records.len();
+                            break;
+                        }
+                    }
+                    break;
+                }
+                for (offset, record) in records.iter().enumerate() {
+                    ctx.charge_work(
+                        u64_from_index(record.id().len()),
+                        "hash staged native identity",
+                    )?;
+                    let record_position = start.checked_add(offset).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "staged native identity position",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                    insert_identity(
+                        &mut staged,
+                        identity_hash(record.id()),
+                        CommittedIdentity::Native {
+                            namespace_hash,
+                            arena_hash,
+                            record: record_position,
+                        },
+                        &DecodeStorage(ctx),
+                        "draft committed identity slots",
+                    )?;
+                }
+            }
+        }
     }
+    Ok(staged)
+}
 
-    /// Borrow a decoded document and hold cache storage until the session ends.
-    pub fn new_for_decode<'ctx>(
-        base: &'a mut CadIr,
-        ctx: &'ctx DecodeContext<'_>,
-    ) -> Result<DecodeCommitSession<'ctx, 'a>, CodecError> {
-        Ok(DecodeCommitSession {
-            session: Self::new(base),
-            storage: ctx.reserve_scoped(0, "committed identity storage")?,
-        })
+fn reserve_committed_identities(
+    identities: &mut CommittedIdentityIndex,
+    staged: &CommittedIdentityIndex,
+    ctx: &DecodeContext<'_>,
+    cache: &mut ScopedReservation<'_>,
+) -> Result<(), CodecError> {
+    let storage = DecodeStorage(ctx);
+    for (hash, group) in staged {
+        ctx.charge_work(2, "committed identity transfer lookup")?;
+        ctx.charge_work(
+            u64_from_index(group.len())
+                .checked_mul(u64_from_index(std::mem::size_of::<CommittedIdentity>()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "committed identity transfer moves",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+            "committed identity transfer moves",
+        )?;
+        cache.with_storage_limit(|| storage.entry(identities, hash, "committed identity slots"))?;
+        ctx.reserve_scoped_vec(
+            cache,
+            identities.entry(*hash).or_default(),
+            group.len(),
+            "committed identity slots",
+        )?;
     }
+    Ok(())
+}
 
-    /// Check membership using temporary cache storage for this operation.
-    pub fn contains_for_decode(
-        &mut self,
-        identity: &str,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<bool, CodecError> {
-        let mut storage = ctx.reserve_scoped(0, "committed identity storage")?;
-        let result = self.lookup_with_storage(identity, ctx, &mut storage);
-        self.identities = None;
-        result
-    }
-
+impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
     fn lookup_with_storage(
         &mut self,
         identity: &str,
         ctx: &DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
     ) -> Result<bool, CodecError> {
-        ctx.charge_work(u64_from_index(identity.len()), "committed identity lookup")?;
         storage.with_storage(|| self.ensure_identities(ctx))?;
-        Ok(self
-            .identities
-            .as_ref()
-            .is_some_and(|index| committed_identity_contains(self.base, index, identity)))
+        match &self.identities {
+            Some(index) => committed_identity_contains(
+                self.base.borrow(),
+                &self.unknowns,
+                index,
+                identity,
+                ctx,
+            ),
+            None => Err(CodecError::malformed("committed identity index is absent")),
+        }
     }
 
     fn ensure_identities(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         if self.identities.is_none() {
             self.identities = Some(index_committed_identities(
-                self.base,
-                &DecodeStorage(ctx),
-                |id| ctx.copy_retained_text_limit(id, "committed native identity"),
+                self.base.borrow(),
+                &self.unknowns,
+                self.unknown_namespace,
+                ctx,
             )?);
         }
         Ok(())
-    }
-
-    /// Validate and commit one model draft through the charged owner.
-    pub fn commit_model(&mut self, draft: ModelDraft) -> Result<(), DraftError> {
-        default_context(|ctx| self.commit_model_for_decode(draft, ctx)?)
-    }
-
-    /// Commit a decoded draft while retaining only live temporary cache storage.
-    pub fn commit_model_for_decode(
-        &mut self,
-        draft: ModelDraft,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), DraftError>, CodecError> {
-        let mut storage = ctx.reserve_scoped(0, "committed identity storage")?;
-        let result = self.commit_with_storage(draft, ctx, &mut storage);
-        self.identities = None;
-        result
     }
 
     /// Validates and commits a model draft with allocation admission.
     ///
     /// The outer result reports a resource refusal. The inner result reports
     /// a rejected candidate without changing the committed model.
-    fn commit_with_storage(
+    fn commit_with_storage<T>(
         &mut self,
         mut draft: ModelDraft,
         ctx: &DecodeContext<'_>,
         cache: &mut ScopedReservation<'_>,
-    ) -> Result<Result<(), DraftError>, CodecError> {
+        before_apply: impl FnOnce() -> Result<T, CodecError>,
+    ) -> Result<Result<T, DraftError>, CodecError> {
         cache.with_storage(|| self.ensure_identities(ctx))?;
+        let base = self.base.borrow_mut();
         let identities = self
             .identities
             .as_mut()
             .ok_or_else(|| CodecError::Malformed("committed identity index is absent".into()))?;
         if let Err(error) = draft.validate_with_contains(
-            &self.base.model,
-            |identity| committed_identity_contains(self.base, identities, identity),
+            &base.model,
+            |identity| committed_identity_contains(base, &self.unknowns, identities, identity, ctx),
             ctx,
         )? {
             return Ok(Err(error));
@@ -777,51 +1120,34 @@ impl<'a> CommitSession<'a> {
         macro_rules! reserve_arenas {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(if !draft.model.$field.is_empty() {
-                    ctx.reserve_vec(&mut self.base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
+                    ctx.reserve_vec(&mut base.model.$field, draft.model.$field.len(), "committed model arena slots")?;
                 })*
             };
         }
         crate::document::arena_registry!(reserve_arenas);
-        self.base
-            .model
+        base.model
             .feature_regeneration_parents
             .reserve_append(&draft.model.feature_regeneration_parents, ctx)?;
-        let (staged, _staged_storage) = ctx.with_scoped_storage("draft committed identity staging", || {
-            let mut staged = CommittedIdentityIndex::new();
-            macro_rules! stage_identities {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                    $(for (offset, entity) in draft.model.$field.iter().enumerate() {
-                        insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: self.base.model.$field.len() + offset }), &DecodeStorage(ctx), "draft committed identity slots")?;
-                    })*
-                };
-            }
-            crate::document::arena_registry!(stage_identities);
-            Ok::<_, CodecError>(staged)
+        let staged = ctx.with_scoped_storage("draft committed identity staging", || {
+            stage_committed_identities(base, &draft.model, None, self.unknown_namespace, ctx)
         })?;
-        cache.with_storage(|| {
-            let storage = DecodeStorage(ctx);
-            for (hash, group) in &staged {
-                storage.entry(identities, hash, "committed identity slots")?;
-                ctx.reserve_vec(
-                    identities.entry(*hash).or_default(),
-                    group.len(),
-                    "committed identity slots",
-                )?;
-            }
-            Ok::<_, CodecError>(())
-        })?;
-        for (hash, group) in staged {
+        reserve_committed_identities(identities, &staged.0, ctx, cache)?;
+        let transferred = before_apply()?;
+        for (hash, group) in staged.0 {
             identities.entry(hash).or_default().extend(group);
         }
-        self.base.model.append(draft.model);
-        Ok(Ok(()))
+        base.model.append(draft.model);
+        Ok(Ok(transferred))
     }
 }
 
 #[cfg(test)]
 mod tests {
     mod accounting;
+    mod checkpoints;
     mod feature_parents;
+    mod native_identity_slots;
+    mod owned_session;
 
     use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
     use crate::annotations::Annotations;
@@ -844,20 +1170,72 @@ mod tests {
 
     fn point_draft(id: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
-        draft.insert(point(id)).expect("insert point into draft");
+        draft
+            .insert(point(id), &cadmpeg_test_support::service_decode_context())
+            .expect("insert point into draft");
         draft
     }
 
     fn vertex_draft(id: &str, point: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
         draft
-            .insert(Vertex {
-                id: id.try_into().expect("valid identity"),
-                point: point.try_into().expect("valid identity"),
-                tolerance: None,
-            })
+            .insert(
+                Vertex {
+                    id: id.try_into().expect("valid identity"),
+                    point: point.try_into().expect("valid identity"),
+                    tolerance: None,
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .expect("insert vertex into draft");
         draft
+    }
+
+    #[test]
+    fn draft_and_committed_identity_collisions_admit_string_comparison_work() {
+        let candidate = "test:model:point#one";
+        let target = "test:model:point#two";
+        assert_eq!(candidate.len(), target.len());
+        for committed in [false, true] {
+            let mut ir = CadIr::empty();
+            ir.model.points.push(point(candidate));
+            let slot = super::IdentitySlot {
+                kind: crate::schema::EntityKind::Point,
+                index: 0,
+            };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // The target hash, bucket lookup, slot scan and length comparison fit.
+            policy.limits.max_work_units = u64::try_from(target.len()).unwrap() + 3;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let hash = crate::index::identity_hash(target);
+            let error = if committed {
+                let index = std::collections::HashMap::from([(
+                    hash,
+                    vec![super::CommittedIdentity::Neutral(slot)],
+                )]);
+                super::committed_identity_contains(&ir, &[], &index, target, &ctx).unwrap_err()
+            } else {
+                let index = std::collections::HashMap::from([(hash, vec![slot])]);
+                super::identity_index_contains(&ir.model, &index, target, &ctx).unwrap_err()
+            };
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("comparison admission must retain its refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.additional, u64::try_from(target.len()).unwrap());
+            assert_eq!(
+                limit.operation,
+                if committed {
+                    "compare committed identities"
+                } else {
+                    "compare draft identities"
+                }
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
+        }
     }
 
     #[test]
@@ -872,8 +1250,9 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
-        let result =
-            CommitSession::new(&mut ir).commit_model_for_decode(directly_staged_point(), &ctx);
+        let result = CommitSession::new(&mut ir, &ctx, None)
+            .unwrap()
+            .commit_model(directly_staged_point());
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -886,8 +1265,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        CommitSession::new(&mut ir)
-            .commit_model_for_decode(directly_staged_point(), &ctx)
+        CommitSession::new(&mut ir, &ctx, None)
+            .unwrap()
+            .commit_model(directly_staged_point())
             .unwrap()
             .unwrap();
         assert_eq!(ir.model.points.len(), 1);
@@ -901,8 +1281,9 @@ mod tests {
         policy.limits.max_retained_bytes = u64::try_from(missing.len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
-        let result = CommitSession::new(&mut ir)
-            .commit_model_for_decode(vertex_draft("test:model:vertex#new", missing), &ctx);
+        let result = CommitSession::new(&mut ir, &ctx, None)
+            .unwrap()
+            .commit_model(vertex_draft("test:model:vertex#new", missing));
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
@@ -914,8 +1295,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let result = CommitSession::new(&mut ir)
-            .commit_model_for_decode(vertex_draft("test:model:vertex#new", missing), &ctx)
+        let result = CommitSession::new(&mut ir, &ctx, None)
+            .unwrap()
+            .commit_model(vertex_draft("test:model:vertex#new", missing))
             .unwrap();
         assert!(matches!(
             result,
@@ -931,7 +1313,10 @@ mod tests {
         let mut model = crate::document::Model::default();
         model.points.push(point("test:checkpoint:point#existing"));
         let original = model.clone();
-        let checkpoint = ModelCheckpoint::capture(&model);
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let checkpoint = ModelCheckpoint::capture(&model, &ctx).unwrap();
         model.assets.push(Asset {
             id: "test:checkpoint:asset#new".try_into().unwrap(),
             name: None,
@@ -960,11 +1345,12 @@ mod tests {
         }
         model
             .set_feature_regeneration_parent(
-                "test:checkpoint:feature#child".try_into().unwrap(),
-                "test:checkpoint:feature#parent".try_into().unwrap(),
+                &cadmpeg_test_support::service_decode_context(),
+                &("test:checkpoint:feature#child".try_into().unwrap()),
+                &("test:checkpoint:feature#parent".try_into().unwrap()),
             )
             .unwrap();
-        checkpoint.discard_appended(&mut model);
+        checkpoint.0.discard_appended(&mut model, &ctx).unwrap();
         assert_eq!(model, original);
     }
 
@@ -974,11 +1360,8 @@ mod tests {
             let draft = feature_parents::parent_draft();
             let expected = draft.model().clone();
             let mut ir = CadIr::empty();
-            let mut session = CommitSession::new_for_decode(&mut ir, ctx).unwrap();
-            session
-                .commit_model_for_decode(draft, ctx)
-                .unwrap()
-                .unwrap();
+            let mut session = CommitSession::new(&mut ir, ctx, None).unwrap();
+            session.commit_model(draft).unwrap().unwrap();
             assert_eq!(session.document().model, expected);
             Ok(())
         })
@@ -995,9 +1378,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = CommitSession::new_for_decode(&mut ir, &ctx)
+        let result = CommitSession::new(&mut ir, &ctx, None)
             .unwrap()
-            .commit_model_for_decode(draft, &ctx);
+            .commit_model(draft);
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
         );
@@ -1011,32 +1394,42 @@ mod tests {
         let mut draft = ModelDraft::new();
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             draft
-                .insert(Feature {
-                    id: format!("test:draft:feature#{key}").try_into().unwrap(),
-                    ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
-                    name: None,
-                    suppressed: None,
-                    dependencies: crate::features::DistinctMembers::default(),
-                    source_properties: std::collections::BTreeMap::default(),
-                    source_tag: None,
-                    source_text: None,
-                    source_content: crate::features::FeatureContent::default(),
-                    evaluation: crate::features::FeatureEvaluation::from_definition(
-                        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                    ),
-                    native_ref: None,
-                })
+                .insert(
+                    Feature {
+                        id: format!("test:draft:feature#{key}").try_into().unwrap(),
+                        ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
+                        name: None,
+                        suppressed: None,
+                        dependencies: crate::features::DistinctMembers::default(),
+                        source_properties: std::collections::BTreeMap::default(),
+                        source_tag: None,
+                        source_text: None,
+                        source_content: crate::features::FeatureContent::default(),
+                        evaluation: crate::features::FeatureEvaluation::from_definition(
+                            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                        ),
+                        native_ref: None,
+                    },
+                    &cadmpeg_test_support::service_decode_context(),
+                )
                 .unwrap();
         }
         let child = "test:draft:feature#child".try_into().unwrap();
         let parent = "test:draft:feature#parent".try_into().unwrap();
         draft
             .model_mut()
-            .set_feature_regeneration_parent(child, parent)
+            .set_feature_regeneration_parent(
+                &cadmpeg_test_support::service_decode_context(),
+                &(child),
+                &(parent),
+            )
             .unwrap();
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();
-        draft.commit_model(&mut ir).unwrap();
+        draft
+            .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .unwrap();
         assert_eq!(ir.model, expected);
         let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(
@@ -1053,12 +1446,21 @@ mod tests {
         ir.model.points.push(point("test:model:point#1"));
         let mut draft = ModelDraft::new().with_accounting();
         draft
-            .insert(point("test:model:point#1"))
+            .insert(
+                point("test:model:point#1"),
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .expect("insert point into empty draft");
         let mut annotations = Annotations::default();
 
         assert!(matches!(
-            draft.commit(&mut ir, &mut annotations),
+            draft
+                .commit(
+                    &mut ir,
+                    &mut annotations,
+                    &cadmpeg_test_support::service_decode_context()
+                )
+                .unwrap(),
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(ir.model.points.len(), 1);
@@ -1074,7 +1476,9 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            draft.commit_model(&mut ir),
+            draft
+                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
         assert!(ir.model.points.is_empty());
@@ -1093,7 +1497,9 @@ mod tests {
         let mut ir = CadIr::empty();
 
         assert_eq!(
-            draft.commit_model(&mut ir),
+            draft
+                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .unwrap(),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
                 target: target.into(),
@@ -1105,38 +1511,53 @@ mod tests {
     #[test]
     fn commit_session_matches_sequential_model_commits() {
         let mut session_ir = CadIr::empty();
-        let mut session = CommitSession::new(&mut session_ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut session_ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft("test:model:point#1"))
+            .unwrap()
             .expect("first session commit");
         session
             .commit_model(point_draft("test:model:point#2"))
+            .unwrap()
             .expect("second session commit");
 
         let mut sequential_ir = CadIr::empty();
         point_draft("test:model:point#1")
-            .commit_model(&mut sequential_ir)
+            .commit_model(
+                &mut sequential_ir,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap()
             .expect("first sequential commit");
         point_draft("test:model:point#2")
-            .commit_model(&mut sequential_ir)
+            .commit_model(
+                &mut sequential_ir,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap()
             .expect("second sequential commit");
 
+        drop(session);
         assert_eq!(session_ir, sequential_ir);
     }
 
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         let identity = "test:model:point#cross-draft";
         session
             .commit_model(point_draft(identity))
+            .unwrap()
             .expect("first session commit");
 
         assert_eq!(
-            session.commit_model(point_draft(identity)),
+            session.commit_model(point_draft(identity)).unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
+        drop(session);
         assert_eq!(ir.model.points.len(), 1);
     }
 
@@ -1145,12 +1566,14 @@ mod tests {
         let identity = "test:model:point#existing";
         let mut ir = CadIr::empty();
         ir.model.points.push(point(identity));
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
-            session.commit_model(point_draft(identity)),
+            session.commit_model(point_draft(identity)).unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
+        drop(session);
         assert_eq!(ir.model.points.len(), 1);
     }
 
@@ -1166,12 +1589,14 @@ mod tests {
             )
             .expect("valid native identity")],
         );
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
-            session.commit_model(point_draft(identity)),
+            session.commit_model(point_draft(identity)).unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
+        drop(session);
         assert!(ir.model.points.is_empty());
     }
 
@@ -1180,15 +1605,17 @@ mod tests {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
-            session.commit_model(vertex_draft(owner, target)),
+            session.commit_model(vertex_draft(owner, target)).unwrap(),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
                 target: target.into(),
             })
         );
+        drop(session);
         assert!(ir.model.vertices.is_empty());
     }
 
@@ -1196,14 +1623,18 @@ mod tests {
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft(point_id))
+            .unwrap()
             .expect("point commit");
         session
             .commit_model(vertex_draft("test:model:vertex#later", point_id))
+            .unwrap()
             .expect("reference into committed draft resolves");
 
+        drop(session);
         assert_eq!(ir.model.points.len(), 1);
         assert_eq!(ir.model.vertices.len(), 1);
     }
@@ -1213,19 +1644,23 @@ mod tests {
         let rejected_identity = "test:model:vertex#rejected";
         let mut ir = CadIr::empty();
         let before = ir.clone();
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(session
             .commit_model(vertex_draft(
                 rejected_identity,
                 "test:model:point#never-committed",
             ))
+            .unwrap()
             .is_err());
         assert_eq!(session.document(), &before);
 
         session
             .commit_model(point_draft(rejected_identity))
+            .unwrap()
             .expect("rejected identity was not absorbed into the session");
+        drop(session);
         assert_eq!(ir.model.points.len(), 1);
     }
 
@@ -1234,26 +1669,31 @@ mod tests {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&mut ir);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
-        assert!(!session.contains(committed_identity));
+        assert!(!session.contains(committed_identity).unwrap());
         session
             .commit_model(point_draft(committed_identity))
+            .unwrap()
             .expect("point commit");
-        assert!(session.contains(committed_identity));
+        assert!(session.contains(committed_identity).unwrap());
 
         let mut rejected = ModelDraft::new();
         rejected
-            .insert(Vertex {
-                id: rejected_identity.try_into().expect("valid identity"),
-                point: "test:model:point#missing"
-                    .try_into()
-                    .expect("valid identity"),
-                tolerance: None,
-            })
+            .insert(
+                Vertex {
+                    id: rejected_identity.try_into().expect("valid identity"),
+                    point: "test:model:point#missing"
+                        .try_into()
+                        .expect("valid identity"),
+                    tolerance: None,
+                },
+                &cadmpeg_test_support::service_decode_context(),
+            )
             .expect("insert rejected vertex");
-        assert!(!session.contains(rejected_identity));
-        assert!(session.commit_model(rejected).is_err());
-        assert!(!session.contains(rejected_identity));
+        assert!(!session.contains(rejected_identity).unwrap());
+        assert!(session.commit_model(rejected).unwrap().is_err());
+        assert!(!session.contains(rejected_identity).unwrap());
     }
 }

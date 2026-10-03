@@ -1120,7 +1120,10 @@ pub(crate) fn scan_curve_carriers(
         if control.len() != expected_control_values {
             continue;
         }
-        if !unique_knots.iter().all(|value| value.is_finite()) || !knots_nondecreasing(unique_knots)
+        if !unique_knots.iter().all(|value| value.is_finite())
+            || !knots_nondecreasing(unique_knots, |count| {
+                ctx.charge_work(count, "IR NURBS knot order")
+            })?
         {
             continue;
         }
@@ -1164,7 +1167,7 @@ pub(crate) fn scan_curve_carriers(
         if knots.len() != expected {
             continue;
         }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             descriptor.degree,
             knots,
@@ -1432,8 +1435,12 @@ pub(crate) fn scan_surface_carriers(
         }
         if !u_unique.iter().all(|value| value.is_finite())
             || !v_unique.iter().all(|value| value.is_finite())
-            || !knots_nondecreasing(&u_unique)
-            || !knots_nondecreasing(&v_unique)
+            || !knots_nondecreasing(&u_unique, |count| {
+                ctx.charge_work(count, "IR NURBS knot order")
+            })?
+            || !knots_nondecreasing(&v_unique, |count| {
+                ctx.charge_work(count, "IR NURBS knot order")
+            })?
         {
             continue;
         }
@@ -1522,7 +1529,7 @@ pub(crate) fn scan_surface_carriers(
         } else {
             None
         };
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,

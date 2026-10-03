@@ -39,7 +39,7 @@ use crate::families::standard::records::SurfacePrefix;
 use crate::test_support::test_b5::{append_b5_record, b5_closed_triangle_stream};
 use crate::test_support::test_bytes::le_f64;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::surface_point;
+
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
@@ -510,7 +510,14 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid ConeSurface fixture"),
     ));
-    let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point").get();
+    let cone_point = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &cone,
+        0.5,
+        1.0,
+    )
+    .expect("cone point")
+    .get();
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
     assert!((cone_uv.u - 0.5).abs() < 1.0e-12);
     assert_eq!(cone_uv.v, 1.0);
@@ -524,9 +531,14 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid SphereSurface fixture"),
     ));
-    let sphere_point = surface_point(&sphere, 0.5, 0.25)
-        .expect("sphere point")
-        .get();
+    let sphere_point = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &sphere,
+        0.5,
+        0.25,
+    )
+    .expect("sphere point")
+    .get();
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
     assert!(sphere_uv.u.is_finite());
     assert!((sphere_uv.v - 0.25).abs() < 1.0e-12);
@@ -540,11 +552,20 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid SphereSurface fixture"),
     ));
-    let signed_sphere_point = surface_point(&signed_sphere, 0.5, 0.25)
-        .expect("signed sphere point")
-        .get();
+    let signed_sphere_point = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &signed_sphere,
+        0.5,
+        0.25,
+    )
+    .expect("signed sphere point")
+    .get();
     assert_eq!(
-        point_on_surface(signed_sphere_point, &signed_sphere),
+        point_on_surface(
+            &cadmpeg_test_support::service_decode_context(),
+            signed_sphere_point,
+            &signed_sphere
+        ),
         Ok(true)
     );
 
@@ -558,8 +579,22 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid TorusSurface fixture"),
     ));
-    let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point").get();
-    assert_eq!(point_on_surface(torus_point, &torus), Ok(true));
+    let torus_point = cadmpeg_ir::eval::decode::surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &torus,
+        0.5,
+        0.25,
+    )
+    .expect("torus point")
+    .get();
+    assert_eq!(
+        point_on_surface(
+            &cadmpeg_test_support::service_decode_context(),
+            torus_point,
+            &torus
+        ),
+        Ok(true)
+    );
 }
 
 #[test]
@@ -785,6 +820,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
         };
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -815,6 +851,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
                 ),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid bilinear NURBS"),
         ))
     };
@@ -1224,8 +1261,14 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     };
 
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            None
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
     assert_eq!(
@@ -1255,8 +1298,14 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         ])
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2]))
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            Some([0, 2])
+        )
+        .expect("evaluator allocation succeeds"),
         None
     );
 
@@ -1269,8 +1318,14 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None)
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &reversed,
+            &points,
+            &[0, 1],
+            None
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
 
@@ -1281,8 +1336,14 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         None,
     ));
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None)
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1, 2],
+            None
+        )
+        .expect("evaluator allocation succeeds"),
         None
     );
 
@@ -1295,22 +1356,44 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None)
-            .expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &disagreeing,
+            &points,
+            &[0, 1],
+            None
+        )
+        .expect("evaluator allocation succeeds"),
         None
     );
+    crate::test_support::with_work_limit(0, |ctx| {
+        let limit = standard_native_support_endpoint_pair(ctx, &native, &points, &[0, 1], None)
+            .expect_err("candidate inspection charges work");
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+        assert_eq!(limit.operation, "catia native support endpoint candidate");
+        assert_eq!(
+            ctx.charge_work_limit(0, "observe candidate refusal"),
+            Err(limit)
+        );
+    });
 }
 
 #[test]
 fn native_support_pcurve_copy_refuses_retained_and_collection_limits() {
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .expect("valid linear pcurve"),
     };
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
@@ -1384,7 +1467,13 @@ fn standard_native_reverse_label_refuses_materialized_limit() {
         parameter_range: [1.0, 4.0],
     };
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 1])),
+        standard_native_support_endpoint_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &native,
+            &points,
+            &[0, 1],
+            Some([0, 1])
+        ),
         Ok(Some([0, 1]))
     );
     let limited = crate::test_support::with_materialized_limit(0, |ctx| {
@@ -1421,12 +1510,14 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
             .collect::<Vec<_>>()
     };
     let curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         5,
         [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
         [line_span(0.0), line_span(1e-3)].concat(),
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid degree-5 NURBS");
 
     assert_eq!(
@@ -1479,6 +1570,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         geometry: StandardCurveGeometry::Bspline,
     };
     let limit_curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         5,
         vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         (0..6)
@@ -1487,6 +1579,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid degree-5 NURBS");
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -1622,12 +1715,14 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
         geometry: StandardCurveGeometry::Bspline,
     };
     let limit_curve = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("valid linear NURBS");
     let mut limited_ir = ir.clone();
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
@@ -1820,117 +1915,6 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
-#[test]
-fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
-    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            1.0,
-        )
-        .expect("valid CylinderSurface fixture"),
-    ));
-    let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-        )
-        .expect("valid LinePcurve fixture"),
-    );
-    let native = StandardEdgeSupport {
-        surface_object_ids: [20, 21],
-        carriers: [
-            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(cylinder.clone()),
-            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(cylinder),
-        ],
-        pcurves: [pcurve.clone(), pcurve],
-        parameter_range: [0.0, 1.5 * std::f64::consts::PI],
-    };
-    let start = Point3::new(1.0, 0.0, 0.0);
-    let end = Point3::new(0.0, -1.0, 0.0);
-    assert_eq!(
-        native_support_circle_param_range(
-            &native,
-            Point3::new(0.0, 0.0, 0.0),
-            1.0,
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            start,
-            end
-        )
-        .expect("evaluator allocation succeeds"),
-        Some([0.0, 1.5 * std::f64::consts::PI])
-    );
-    let mut disagreeing = native.clone();
-    disagreeing.pcurves[1] = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 1.0),
-            Point2::new(1.0, 0.0),
-        )
-        .expect("valid LinePcurve fixture"),
-    );
-    assert!(native_support_circle_param_range(
-        &disagreeing,
-        Point3::new(0.0, 0.0, 0.0),
-        1.0,
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        start,
-        end
-    )
-    .expect("evaluator allocation succeeds")
-    .is_none());
-    assert!(native_support_circle_param_range(
-        &native,
-        Point3::new(0.0, 0.0, 0.0),
-        1.0,
-        Vector3::new(0.0, 0.0, -1.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        start,
-        end
-    )
-    .expect("evaluator allocation succeeds")
-    .is_none());
-
-    let mut ir = CadIr::empty();
-    for (index, position) in [start, end].into_iter().enumerate() {
-        ir.model.points.push(Point::new(
-            PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
-                .expect("a finite position is a point"),
-            None,
-        ));
-    }
-    let support = StandardCurveSupport {
-        pos: 12,
-        tag: 7,
-        faces: [0, 0],
-        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0),
-    };
-    let (_, range) = crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        build_standard_edge_curve(
-            ctx,
-            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
-                ir: &mut ir,
-                annotations: &mut AnnotationBuilder::new(),
-                bindings: &[],
-                surface_indices: &HashMap::new(),
-                brep: &[],
-                support: &support,
-                points: [0, 1],
-                native_support: Some(&native),
-                limit_curve: None,
-                refusal: &mut crate::nurbs::LaneRefusals::new(),
-                admission: &mut admission,
-            },
-        )
-    })
-    .expect("valid source object identity");
-    assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));
-}
-
 mod face_evidence;
 mod surface_intersections;
 
@@ -1944,3 +1928,5 @@ fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
 }
 
 mod overflowing_support;
+
+mod circle_ranges;

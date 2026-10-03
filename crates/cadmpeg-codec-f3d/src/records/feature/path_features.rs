@@ -169,3 +169,5 @@ pub(crate) struct DesignPipeConstruction {
     /// Byte offsets of the scalar values in lane order.
     pub(crate) value_offsets: [u64; 4],
 }
+
+mod identity_rewrite;

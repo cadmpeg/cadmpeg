@@ -20,6 +20,7 @@ const POINTS: [[f64; 3]; 2] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
 fn plane() -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -34,6 +35,7 @@ fn plane() -> SurfaceGeometry {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("bilinear plane"),
     ))
 }

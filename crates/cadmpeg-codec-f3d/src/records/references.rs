@@ -538,3 +538,5 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

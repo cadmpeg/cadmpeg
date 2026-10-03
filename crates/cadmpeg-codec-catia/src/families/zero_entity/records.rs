@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
+    nurbs::NurbsCurve,
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
@@ -985,7 +985,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
                 });
                 if let Some((pcurve, parameter)) = midpoint_input {
                     if let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-                        cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?,
+                        cadmpeg_ir::eval::decode::outer_refusal(
+                            cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter),
+                        )?,
                     )? {
                         support.model_midpoint =
                             zero_entity_surface_point(ctx, &carrier_geometry, [uv.u, uv.v])?;
@@ -1673,27 +1675,19 @@ fn zero_entity_support_pcurve(
         } else {
             None
         };
-        if weight_start.is_some() {
-            if let Err(error) = ctx.charge_collection_items(
-                u64_from_index(control_count),
-                "catia_zero_support_weighted_poles",
-            ) {
-                return Some(Err(error));
-            }
-        }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(control_count),
-            "catia_zero_support_checked_poles",
-        ) {
-            return Some(Err(error));
-        }
         let nurbs = match crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_checked_lanes(
+            match PcurveNurbs::from_checked_lanes(
+                ctx,
+                degree,
+                knots,
                 control_points,
                 weights,
-            )
-            .and_then(|poles| PcurveNurbs::new(degree, knots, poles, false)),
+                false,
+            ) {
+                Ok(result) => result,
+                Err(error) => return Some(Err(error)),
+            },
             refusal,
             format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
         ) {
@@ -1787,20 +1781,16 @@ pub(super) fn zero_entity_neutral_pcurve(
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
-    let count = u64_from_index(nurbs.pole_rows().count());
-    if weights.is_some() {
-        ctx.charge_collection_items(count, "catia_zero_neutral_weighted_poles")?;
-    }
-    ctx.charge_collection_items(count, "catia_zero_neutral_checked_poles")?;
     crate::nurbs::note_refusal(
         ctx,
         PcurveNurbs::from_checked_lanes(
+            ctx,
             nurbs.degree(),
             knots,
             control_points,
             weights,
             nurbs.periodic(),
-        ),
+        )?,
         refusal,
         format_args!("zero-entity pcurve scaled onto its surface parameters: {record}"),
     )
@@ -2045,7 +2035,7 @@ fn zero_entity_model_curve(
             {
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        match zero_entity_surface_isocurve(
+                        match cadmpeg_ir::eval::nurbs_surface_isocurve(
                             ctx,
                             surface,
                             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
@@ -2053,7 +2043,7 @@ fn zero_entity_model_curve(
                         ) {
                             Ok(Some(curve)) => curve,
                             Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
+                            Err(error) => return Some(Err(error.into())),
                         },
                     )),
                     uv_endpoints.map(|uv| uv[1]),
@@ -2064,7 +2054,7 @@ fn zero_entity_model_curve(
             {
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        match zero_entity_surface_isocurve(
+                        match cadmpeg_ir::eval::nurbs_surface_isocurve(
                             ctx,
                             surface,
                             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
@@ -2072,7 +2062,7 @@ fn zero_entity_model_curve(
                         ) {
                             Ok(Some(curve)) => curve,
                             Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
+                            Err(error) => return Some(Err(error.into())),
                         },
                     )),
                     uv_endpoints.map(|uv| uv[0]),
@@ -2118,77 +2108,25 @@ fn zero_entity_lift_pcurve(
                 "catia_zero_lifted_pcurve_weights",
             )?;
             weights.extend(source.iter().map(|pole| pole.weight));
-            ctx.charge_collection_items(
-                u64_from_index(source.len()),
-                "catia_zero_lifted_rational_poles",
-            )?;
             Some(weights)
         }
     };
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
-    ctx.charge_collection_items(
-        u64_from_index(nurbs.pole_rows().count()),
-        "catia_zero_lifted_checked_poles",
-    )?;
     crate::nurbs::note_refusal(
         ctx,
-        NurbsCurve::from_checked_lanes(nurbs.degree(), knots, points, weights, nurbs.periodic()),
+        NurbsCurve::from_checked_lanes(
+            ctx,
+            nurbs.degree(),
+            knots,
+            points,
+            weights,
+            nurbs.periodic(),
+        )?,
         refusal,
         format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
     )
-}
-
-fn zero_entity_surface_isocurve(
-    ctx: &DecodeContext<'_>,
-    surface: &NurbsSurface,
-    axis: SurfaceParameterAxis,
-    parameter: f64,
-) -> Result<Option<NurbsCurve>, CodecError> {
-    let (fixed_degree, varying_count, knots) = match axis {
-        SurfaceParameterAxis::U => (surface.u_degree(), surface.v_count(), surface.v_knots()),
-        SurfaceParameterAxis::V => (surface.v_degree(), surface.u_count(), surface.u_knots()),
-    };
-    let Some(basis_count) = usize::try_from(fixed_degree)
-        .ok()
-        .and_then(|degree| degree.checked_add(1))
-    else {
-        return Err(ctx.refuse_codec_limit("catia_zero_isocurve_basis", u64::MAX, u64::MAX));
-    };
-    for (count, operation) in [
-        (basis_count, "catia_zero_isocurve_basis"),
-        (varying_count, "catia_zero_isocurve_poles"),
-        (varying_count, "catia_zero_isocurve_sums"),
-        (knots.len(), "catia_zero_isocurve_knots"),
-    ] {
-        ctx.charge_collection_items(u64_from_index(count), operation)?;
-    }
-    if let cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
-        ctx.charge_collection_items(
-            u64_from_index(rows.len()),
-            "catia_zero_isocurve_weight_rows",
-        )?;
-        for row in rows {
-            ctx.charge_collection_items(
-                u64_from_index(row.len()),
-                "catia_zero_isocurve_weight_values",
-            )?;
-        }
-        ctx.charge_collection_items(
-            u64_from_index(varying_count),
-            "catia_zero_isocurve_curve_weights",
-        )?;
-        ctx.charge_collection_items(
-            u64_from_index(varying_count),
-            "catia_zero_isocurve_weighted_poles",
-        )?;
-    }
-    ctx.charge_collection_items(
-        u64_from_index(varying_count),
-        "catia_zero_isocurve_checked_poles",
-    )?;
-    cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter).map_err(Into::into)
 }
 
 fn zero_entity_model_curve_construction(
@@ -2357,9 +2295,9 @@ fn zero_entity_surface_point(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return cadmpeg_ir::eval::finite_or_refusal(
-                cadmpeg_ir::eval::decode::nurbs_surface_point_for_decode(ctx, surface, u, v)?,
-            );
+            return cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, surface, u, v),
+            )?);
         }
         _ => return Ok(None),
     };
@@ -2674,7 +2612,7 @@ fn zero_entity_nurbs_surface(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.v_degree, v_knots, false),
@@ -2958,8 +2896,16 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)
-                .unwrap(),
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                points,
+                None,
+                false,
+            )
+            .expect("fixture pcurve construction admission")
+            .unwrap(),
         }
     }
 
@@ -3478,7 +3424,6 @@ mod tests {
 
     #[test]
     fn negative_cone_latitude_radius_flips_the_circle_reference_direction() {
-        use cadmpeg_ir::eval::curve_point;
         use cadmpeg_ir::math::Vector3;
 
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
@@ -3508,7 +3453,12 @@ mod tests {
         )
         .expect("cone latitude");
         for index in 0..2 {
-            let curve_point = curve_point(&curve, parameters[index].get()).expect("circle point");
+            let curve_point = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                parameters[index].get(),
+            )
+            .expect("circle point");
             let surface_point = crate::test_support::with_service_context(|ctx| {
                 zero_entity_surface_point(ctx, &surface, endpoints[index])
             })
@@ -3586,7 +3536,7 @@ mod tests {
         let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
             panic!("isocurve basis must refuse the collection limit");
         };
-        assert_eq!(error.operation, "catia_zero_isocurve_basis");
+        assert_eq!(error.operation, "IR B-spline basis");
     }
 
     #[test]

@@ -1550,3 +1550,5 @@ cadmpeg_core::named_optional_field!(
     u64,
     "external_version_urn_offset"
 );
+
+mod identity_rewrite;

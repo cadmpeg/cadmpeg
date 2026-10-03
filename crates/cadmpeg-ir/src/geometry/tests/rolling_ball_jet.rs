@@ -33,7 +33,9 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
         crate::geometry::RollingBallJetStations::try_new(
             5,
             vec![station(2.0, 6), station(4.0, 3), station(8.0, 6)],
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
     let wire = serde_json::to_value(&definition).unwrap();
@@ -69,7 +71,13 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
 
     let valid = || vec![station(2.0, 6), station(8.0, 6)];
     for degree in [0, u32::MAX] {
-        assert!(RollingBallJetStations::try_new(degree, valid()).is_err());
+        assert!(RollingBallJetStations::try_new(
+            degree,
+            valid(),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("fixture rolling-ball admission")
+        .is_err());
     }
     for stations in [
         Vec::new(),
@@ -82,34 +90,84 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
         vec![station(2.0, 6), station(4.0, 0), station(8.0, 6)],
         vec![station(2.0, 6), station(4.0, 7), station(8.0, 6)],
     ] {
-        assert!(RollingBallJetStations::try_new(5, stations).is_err());
+        assert!(RollingBallJetStations::try_new(
+            5,
+            stations,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("fixture rolling-ball admission")
+        .is_err());
     }
     let mut stations = valid();
     stations[0].site.first_derivative.angle = f64::INFINITY;
-    assert!(RollingBallJetStations::try_new(5, stations).is_err());
+    assert!(RollingBallJetStations::try_new(
+        5,
+        stations,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("fixture rolling-ball admission")
+    .is_err());
     let mut stations = valid();
     stations[0].site.center.x = f64::NAN;
-    assert!(RollingBallJetStations::try_new(5, stations).is_err());
+    assert!(RollingBallJetStations::try_new(
+        5,
+        stations,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("fixture rolling-ball admission")
+    .is_err());
     let mut stations = valid();
     stations[0].site.first_limit = stations[0].site.center;
-    assert!(RollingBallJetStations::try_new(5, stations).is_err());
+    assert!(RollingBallJetStations::try_new(
+        5,
+        stations,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("fixture rolling-ball admission")
+    .is_err());
     let mut stations = valid();
     stations[0].site.first_limit.x = 2.0;
-    assert!(RollingBallJetStations::try_new(5, stations).is_err());
+    assert!(RollingBallJetStations::try_new(
+        5,
+        stations,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("fixture rolling-ball admission")
+    .is_err());
 
-    assert!(RollingBallJetStations::try_new(1, vec![station(2.0, 2), station(8.0, 2)]).is_ok());
+    assert!(RollingBallJetStations::try_new(
+        1,
+        vec![station(2.0, 2), station(8.0, 2)],
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("fixture rolling-ball admission")
+    .is_ok());
     assert!(RollingBallJetStations::try_new(
         u32::MAX - 1,
         vec![station(2.0, u32::MAX), station(8.0, u32::MAX)],
+        &cadmpeg_test_support::service_decode_context()
     )
+    .expect("fixture rolling-ball admission")
     .is_ok());
     let mut varying_radius = valid();
     varying_radius[1].site.first_limit.x = 2.0;
     varying_radius[1].site.second_limit.y = 2.0;
-    assert!(RollingBallJetStations::try_new(5, varying_radius).is_ok());
+    assert!(RollingBallJetStations::try_new(
+        5,
+        varying_radius,
+        &cadmpeg_test_support::service_decode_context()
+    )
+    .expect("fixture rolling-ball admission")
+    .is_ok());
 
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        RollingBallJetStations::try_new(5, valid()).unwrap(),
+        RollingBallJetStations::try_new(
+            5,
+            valid(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture rolling-ball admission")
+        .unwrap(),
     );
     let wire = serde_json::to_value(definition).unwrap();
     for (field, value) in [("degree", json!(0)), ("degree", json!(u32::MAX))] {
@@ -162,8 +220,18 @@ fn admitted_rolling_ball_stations_keep_the_refusals_of_raw_stations() {
         (5, unequal_radii),
     ] {
         assert_eq!(
-            RollingBallJetStations::from_parts(degree, admit(stations.clone())),
-            RollingBallJetStations::try_new(degree, stations)
+            RollingBallJetStations::from_parts(
+                degree,
+                admit(stations.clone()),
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("fixture rolling-ball admission"),
+            RollingBallJetStations::try_new(
+                degree,
+                stations,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("fixture rolling-ball admission")
         );
     }
 }
@@ -183,7 +251,7 @@ fn rolling_ball_jet_decode_refuses_work_and_retained_rows() {
             policy.limits.max_retained_bytes = 0;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::geometry::RollingBallJetStations::try_new_for_decode(
+        let result = crate::geometry::RollingBallJetStations::try_new(
             5,
             vec![station(2.0, 6), station(8.0, 6)],
             &ctx,
@@ -192,4 +260,79 @@ fn rolling_ball_jet_decode_refuses_work_and_retained_rows() {
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
         );
     }
+}
+
+#[test]
+fn rolling_ball_constructors_preserve_first_and_later_caller_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for typed in [false, true] {
+        for (cap, operation) in [
+            (0, "rolling-ball jet multiplicities"),
+            (1, "rolling-ball jet multiplicities"),
+            (2, "rolling-ball jet knots"),
+            (3, "rolling-ball jet knots"),
+            (4, "rolling-ball jet station controls"),
+            (5, "rolling-ball jet station controls"),
+        ] {
+            let raw = vec![station(2.0, 6), station(8.0, 6)];
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if typed {
+                let rows = raw
+                    .into_iter()
+                    .map(|row| RollingBallJetStation {
+                        knot: crate::scalar::FiniteReal::new(row.knot).unwrap(),
+                        multiplicity: row.multiplicity,
+                        site: row.site.admit().unwrap(),
+                    })
+                    .collect();
+                crate::geometry::RollingBallJetStations::from_parts(5, rows, &ctx)
+            } else {
+                crate::geometry::RollingBallJetStations::try_new(5, raw, &ctx)
+            };
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("station admission must refuse");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, operation);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            );
+        }
+    }
+}
+
+#[test]
+fn rolling_ball_typed_constructor_moves_owned_rows_without_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let rows = [station(2.0, 6), station(8.0, 6)]
+        .into_iter()
+        .map(|row| RollingBallJetStation {
+            knot: crate::scalar::FiniteReal::new(row.knot).unwrap(),
+            multiplicity: row.multiplicity,
+            site: row.site.admit().unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let pointer = rows.as_ptr();
+    let expected = rows.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let jet = crate::geometry::RollingBallJetStations::from_parts(5, rows, &ctx)
+        .unwrap()
+        .unwrap();
+    assert_eq!(jet.stations().as_ptr(), pointer);
+    assert_eq!(jet.stations(), expected);
+    ctx.finish_session().unwrap();
+    let wire = serde_json::to_value(&jet).unwrap();
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::RollingBallJetStations>(wire).unwrap(),
+        jet
+    );
 }

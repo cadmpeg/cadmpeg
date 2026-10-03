@@ -90,6 +90,7 @@ fn bounded_plane_identity_copies_refuse_before_retaining_text() {
 #[test]
 fn plane_nurbs_boundary_points_refuse_collection_limit() {
     let nurbs = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
         vec![
@@ -102,6 +103,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -359,7 +361,7 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
         .unwrap(),
         self_intersect: Some(false),
     };
-    let index = ModelIndex::new(&ir);
+    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -506,11 +508,13 @@ fn bounded_plane_polyline_proofs_propagate_work_refusals() {
                 points: points.try_into().unwrap(),
             },
             0.0,
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("polyline construction admission")
         .unwrap(),
     );
     let ir = CadIr::empty();
-    let index = ModelIndex::new(&ir);
+    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     for operation in [
         "iges closed polyline duplicate comparisons",
         "iges planar self-intersection comparisons",

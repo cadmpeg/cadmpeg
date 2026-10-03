@@ -289,6 +289,7 @@ fn decoded_unknown_limit_error(
 ) -> cadmpeg_core::CodecError {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.set_native_unknowns(
+        &cadmpeg_test_support::service_decode_context(),
         "nx",
         &[cadmpeg_ir::NativeUnknownRecord {
             id: cadmpeg_ir::ids::UnknownId::mint("test:model:entity#prior")

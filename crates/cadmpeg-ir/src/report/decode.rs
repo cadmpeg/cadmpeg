@@ -268,7 +268,10 @@ impl TransferLedger {
     /// Verifies every produced target against a finalized model index.
     pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
         for entry in &self.entries {
-            if let Some(target) = entry.target().filter(|target| !index.contains(target)) {
+            if let Some(target) = entry
+                .target()
+                .filter(|target| !index.contains(target, crate::index::StandardIndex))
+            {
                 return Err(format!(
                     "transfer source {:?} targets unresolved identity {:?}",
                     entry.source, target
@@ -426,12 +429,8 @@ impl Coverage {
             *value = count;
             return Ok(());
         }
-        ctx.charge_collection_items(1, "decode coverage nodes")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, usize)>()),
-            "decode coverage nodes",
-        )?;
-        self.entries.insert(name, count);
+        ctx.charge_work(1, "decode coverage nodes")?;
+        ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
         Ok(())
     }
 

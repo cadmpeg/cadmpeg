@@ -617,3 +617,5 @@ mod tests {
         assert_eq!(overflow.scaled_translation(scale), None);
     }
 }
+
+mod identity_rewrite;

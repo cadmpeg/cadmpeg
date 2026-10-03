@@ -162,14 +162,14 @@ pub(crate) fn push_loss(
 
 pub(crate) fn derived_annotation(
     ctx: &DecodeContext<'_>,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     field: &str,
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(field.len()), operation)?;
     annotations
-        .derived_for_decode(ctx, id, field)
+        .derived(ctx, id, field)
         .map_err(CodecError::from)?;
     Ok(())
 }

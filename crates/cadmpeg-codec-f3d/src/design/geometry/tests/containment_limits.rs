@@ -11,6 +11,7 @@ fn fixture(limit: u64, operation: &'static str) {
         SketchId::mint("synthetic:test:sketch#containment").unwrap(),
         SketchGeometry::nurbs(
             PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -21,6 +22,7 @@ fn fixture(limit: u64, operation: &'static str) {
                 Some(vec![1.0, 0.5, 1.0]),
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         ),
     );

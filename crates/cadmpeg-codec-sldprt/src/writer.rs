@@ -49,6 +49,9 @@ pub(crate) fn write_semantic_with_records(
     retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
 ) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
+    let digest_arena = DecodeArena::new();
+    let (digest_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
     let mut native = ir
         .native
         .namespace("sldprt")
@@ -158,8 +161,8 @@ pub(crate) fn write_semantic_with_records(
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials_payload(ir)?;
-    let (objects, units) = metadata_payloads(ir, length_scale)?;
+    let materials = materials_payload(&digest_ctx, ir)?;
+    let (objects, units) = metadata_payloads(&digest_ctx, ir, length_scale)?;
     let mut retained_swobjects = retained_swobjects_sections(retained_records, annotations)?;
     let replay_swobjects = if retained_swobjects.is_empty() {
         false
@@ -168,7 +171,7 @@ pub(crate) fn write_semantic_with_records(
             .source
             .as_ref()
             .and_then(|source| source.attributes.get(SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE));
-        let current = swobjects_local_sha256(ir)?;
+        let current = swobjects_local_sha256(&digest_ctx, ir)?;
         if baseline != Some(&current) {
             let material_baseline = ir.source.as_ref().and_then(|source| {
                 source
@@ -180,8 +183,9 @@ pub(crate) fn write_semantic_with_records(
                     .attributes
                     .get(SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE)
             });
-            if material_baseline != Some(&swobjects_material_local_sha256(ir)?)
-                || identity_baseline != Some(&swobjects_metadata_identity_local_sha256(ir)?)
+            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
+                || identity_baseline
+                    != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
             {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
@@ -189,6 +193,7 @@ pub(crate) fn write_semantic_with_records(
                 ));
             }
             patch_retained_swobjects_metadata(
+                &digest_ctx,
                 ir,
                 annotations,
                 &mut retained_swobjects,
@@ -941,7 +946,13 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
-    subset.model.finalize();
+    let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &ordering_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    subset.model.finalize(&ordering_ctx)?;
     Ok(subset)
 }
 
@@ -1050,6 +1061,7 @@ fn retained_swobjects_sections(
 }
 
 fn patch_retained_swobjects_metadata(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     sections: &mut [(String, Vec<u8>)],
@@ -1057,7 +1069,7 @@ fn patch_retained_swobjects_metadata(
 ) -> Result<(), CodecError> {
     use std::cmp::Reverse;
 
-    let mut attributes = metadata_attributes(ir)
+    let mut attributes = metadata_attributes(ctx, ir)?
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
         .map(|attribute| {
@@ -1073,7 +1085,12 @@ fn patch_retained_swobjects_metadata(
             Ok((provenance.stream().to_owned(), provenance.offset, attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
+    ctx.stable_sort_by(
+        &mut attributes,
+        |left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))),
+        |attribute| attribute.0.len(),
+        "SLDPRT retained metadata patch order",
+    )?;
 
     for (stream, offset, attribute) in attributes {
         let payload = sections
@@ -1665,21 +1682,43 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 ///
 /// Arena order is by identifier name; writing that order would move every
 /// record and rename attributes minted from byte offsets.
-fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
-    let mut attributes = ir
-        .model
-        .attributes
-        .iter()
-        .filter(|attribute| attribute.id.as_str().starts_with("sldprt:"))
-        .collect::<Vec<_>>();
-    attributes.sort_by_key(|attribute| {
-        let position = metadata_source_position(attribute.id.as_str());
-        (position.is_none(), position)
-    });
-    attributes
+fn metadata_attributes<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Vec<&'ir cadmpeg_ir::attributes::SourceAttribute>, CodecError> {
+    let mut positioned = Vec::new();
+    for attribute in &ir.model.attributes {
+        let work = cadmpeg_core::decode::u64_from_index(attribute.id.as_str().len())
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(8))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT metadata positions", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "scan SLDPRT metadata positions")?;
+        if attribute.id.as_str().starts_with("sldprt:") {
+            let position = metadata_source_position(attribute.id.as_str());
+            ctx.push_vec(
+                &mut positioned,
+                ((position.is_none(), position), attribute),
+                "collect SLDPRT metadata positions",
+            )?;
+        }
+    }
+    ctx.stable_sort_by(
+        &mut positioned,
+        |left, right| left.0.cmp(&right.0),
+        |_| 3,
+        "sort SLDPRT metadata positions",
+    )?;
+    ctx.try_collect_retained_with(
+        positioned,
+        "collect SLDPRT metadata attributes",
+        |(_, attribute)| Ok(attribute),
+    )
 }
 
 fn metadata_payloads(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
@@ -1687,7 +1726,7 @@ fn metadata_payloads(
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in metadata_attributes(ir) {
+    for attribute in metadata_attributes(ctx, ir)? {
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer does not support entity attributes".into(),
@@ -1764,30 +1803,72 @@ fn metadata_payloads(
     Ok((objects, units))
 }
 
-pub(crate) fn swobjects_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let attributes = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .collect::<Vec<_>>();
-    let materials = swobjects_materials(ir)?;
-    Ok(cadmpeg_ir::hash::canonical_json_sha256(&(
-        attributes, materials,
-    ))?)
-}
-
-pub(crate) fn swobjects_material_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn swobjects_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    let views = ctx.with_scoped_storage("SLDPRT SWObjects digest views", || {
+        let mut attributes = metadata_attributes(ctx, ir)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(attributes.len())
+                .checked_mul(24)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "filter SLDPRT metadata digest attributes",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+            "filter SLDPRT metadata digest attributes",
+        )?;
+        attributes.retain(|attribute| attribute.name != "source_linear_unit_code");
+        Ok::<_, CodecError>((attributes, swobjects_materials(ctx, ir)?))
+    })?;
     Ok(cadmpeg_ir::hash::canonical_json_sha256(
-        &swobjects_materials(ir)?,
+        ctx,
+        &views.0,
+        "hash SLDPRT SWObjects semantics",
     )?)
 }
 
-pub(crate) fn swobjects_metadata_identity_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let identities = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .map(|attribute| (&attribute.id, attribute.name.as_str()))
-        .collect::<Vec<_>>();
-    Ok(cadmpeg_ir::hash::canonical_json_sha256(&identities)?)
+pub(crate) fn swobjects_material_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    let materials = ctx.with_scoped_storage("SLDPRT material digest views", || {
+        swobjects_materials(ctx, ir)
+    })?;
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(
+        ctx,
+        &materials.0,
+        "hash SLDPRT SWObjects materials",
+    )?)
+}
+
+pub(crate) fn swobjects_metadata_identity_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    let identities = ctx.with_scoped_storage("SLDPRT metadata identity digest views", || {
+        let attributes = metadata_attributes(ctx, ir)?;
+        let mut identities = Vec::new();
+        for attribute in attributes {
+            ctx.charge_work(24, "filter SLDPRT metadata digest identities")?;
+            if attribute.name != "source_linear_unit_code" {
+                ctx.push_vec(
+                    &mut identities,
+                    (&attribute.id, attribute.name.as_str()),
+                    "collect SLDPRT metadata digest identities",
+                )?;
+            }
+        }
+        Ok::<_, CodecError>(identities)
+    })?;
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(
+        ctx,
+        &identities.0,
+        "hash SLDPRT metadata identities",
+    )?)
 }
 
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
@@ -2310,28 +2391,69 @@ fn descriptor(
     Ok(())
 }
 
-fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
-    let appearances = ir
-        .model
-        .appearances
-        .iter()
-        .map(|appearance| (&appearance.id, appearance))
-        .collect::<HashMap<_, _>>();
-    let mut selected: Option<(String, Color)> = None;
+fn body_material<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Option<(&'ir str, Color)>, CodecError> {
+    let mut appearances = HashMap::new();
+    for appearance in &ir.model.appearances {
+        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
+            .checked_add(2)
+            .and_then(|count| {
+                count.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(appearance.id.as_str().len())
+                        .checked_add(1)?,
+                )
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("index SLDPRT material appearances", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "index SLDPRT material appearances")?;
+        ctx.insert_hash_map(
+            &mut appearances,
+            &appearance.id,
+            appearance,
+            "index SLDPRT material appearances",
+        )
+        .map(|_| ())?;
+    }
+    let mut selected: Option<(&str, Color)> = None;
     for binding in &ir.model.appearance_bindings {
+        ctx.charge_work(1, "scan SLDPRT body material bindings")?;
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
+        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
+            .checked_add(2)
+            .and_then(|count| {
+                count.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
+                        .checked_add(1)?,
+                )
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "find SLDPRT body material appearance",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+        ctx.charge_work(work, "find SLDPRT body material appearance")?;
         let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
             CodecError::Malformed("body binding references missing appearance".into())
         })?;
         let color = appearance.base_color.ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT body appearance has no base color".into())
         })?;
-        let material = (
-            appearance.name.clone().unwrap_or_else(|| "Material".into()),
-            color,
-        );
+        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(material.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("compare SLDPRT body materials", u64::MAX - 1, u64::MAX)
+                })?,
+            "compare SLDPRT body materials",
+        )?;
         if selected
             .as_ref()
             .is_some_and(|current| current != &material)
@@ -2344,11 +2466,23 @@ fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
     }
     if selected.is_none() {
         for body in &ir.model.bodies {
-            let Some(color) = body.color else { continue };
-            let material = (
-                body.name.clone().unwrap_or_else(|| "Material".into()),
-                color,
-            );
+            ctx.charge_work(1, "scan SLDPRT body display materials")?;
+            let Some(color) = body.color else {
+                continue;
+            };
+            let material = (body.name.as_deref().unwrap_or("Material"), color);
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(material.0.len())
+                    .checked_add(5)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "compare SLDPRT body materials",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+                "compare SLDPRT body materials",
+            )?;
             if selected
                 .as_ref()
                 .is_some_and(|current| current != &material)
@@ -2363,20 +2497,28 @@ fn body_material(ir: &CadIr) -> Result<Option<(String, Color)>, CodecError> {
     Ok(selected)
 }
 
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
+fn materials_payload(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<u8>, CodecError> {
     let mut payload = Vec::new();
-    for (name, color) in swobjects_materials(ir)? {
-        payload.extend(material_payload(&name, color)?);
+    for (name, color) in swobjects_materials(ctx, ir)? {
+        payload.extend(material_payload(name, color)?);
     }
     Ok(payload)
 }
 
-fn swobjects_materials(ir: &CadIr) -> Result<Vec<(String, Color)>, CodecError> {
-    let mut materials = Vec::<(String, Color)>::new();
-    if let Some(material) = body_material(ir)? {
-        materials.push(material);
+fn swobjects_materials<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Vec<(&'ir str, Color)>, CodecError> {
+    let mut materials = Vec::new();
+    if let Some(material) = body_material(ctx, ir)? {
+        ctx.push_vec(
+            &mut materials,
+            material,
+            "collect SLDPRT SWObjects materials",
+        )?;
     }
     for appearance in &ir.model.appearances {
+        ctx.charge_work(24, "scan SLDPRT SWObjects material schemas")?;
         if appearance.schema.as_deref() != Some("moVisualProperties_c") {
             continue;
         }
@@ -2385,12 +2527,24 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(String, Color)>, CodecError> {
                 "SLDPRT material appearance has no base color".into(),
             ));
         };
-        let material = (
-            appearance.name.clone().unwrap_or_else(|| "Material".into()),
-            color,
-        );
+        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
+        let work = cadmpeg_core::decode::u64_from_index(materials.len())
+            .checked_add(1)
+            .and_then(|count| {
+                count.checked_mul(
+                    cadmpeg_core::decode::u64_from_index(material.0.len()).checked_add(5)?,
+                )
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("compare SLDPRT SWObjects materials", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(work, "compare SLDPRT SWObjects materials")?;
         if !materials.contains(&material) {
-            materials.push(material);
+            ctx.push_vec(
+                &mut materials,
+                material,
+                "collect SLDPRT SWObjects materials",
+            )?;
         }
     }
     Ok(materials)
@@ -4004,6 +4158,7 @@ mod nurbs_write_tests {
         )
         .unwrap();
         let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -4015,6 +4170,7 @@ mod nurbs_write_tests {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
@@ -4048,6 +4204,7 @@ mod nurbs_write_tests {
         )
         .unwrap();
         let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -4067,6 +4224,7 @@ mod nurbs_write_tests {
             ),
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();

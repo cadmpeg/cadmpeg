@@ -74,7 +74,12 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .unwrap();
         let mut off_support_ir = ir.clone();
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let stream = StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("nx:test"),
+            "fixture stream handle",
+        )
+        .unwrap();
 
         attach_tolerant_edge_intersections(
             geometry_ctx,
@@ -166,7 +171,12 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .expect("a finite position is a point"),
         );
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let stream = StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("nx:test"),
+            "fixture stream handle",
+        )
+        .unwrap();
         attach_tolerant_edge_intersections(
             geometry_ctx,
             &mut off_support_ir,
@@ -201,7 +211,12 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         })
         .unwrap();
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-        let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
+        let source_stream = StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("nx:test"),
+            "fixture stream handle",
+        )
+        .unwrap();
 
         attach_tolerant_edge_intersections(
             geometry_ctx,
@@ -247,12 +262,21 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         };
         assert!(nurbs.control_points().len() > 2);
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, parameter)
-                .unwrap()
-                .get();
-            let point = cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v)
-                .unwrap()
-                .get();
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                parameter,
+            )
+            .unwrap()
+            .get();
+            let point = cadmpeg_ir::eval::decode::surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &ir.model.surfaces[1].geometry,
+                uv.u,
+                uv.v,
+            )
+            .unwrap()
+            .get();
             let angle = std::f64::consts::TAU * parameter;
             assert!((point.x - 10.0 * angle.cos()).abs() < 0.01);
             assert!((point.y - 10.0 * angle.sin()).abs() < 0.01);
@@ -326,6 +350,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let source_pcurve = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -336,6 +361,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
                 None,
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .expect("valid blend-contact pcurve"),
         };
         let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
@@ -361,12 +387,20 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
         let target_pcurve = context.sides()[1].pcurve.as_ref().unwrap();
         assert!(nurbs.control_points().len() > 2);
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let source_uv = cadmpeg_ir::eval::pcurve_uv(&source_pcurve.geometry, parameter)
-                .unwrap()
-                .get();
-            let target_uv = cadmpeg_ir::eval::pcurve_uv(&target_pcurve.geometry, parameter)
-                .unwrap()
-                .get();
+            let source_uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &source_pcurve.geometry,
+                parameter,
+            )
+            .unwrap()
+            .get();
+            let target_uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &target_pcurve.geometry,
+                parameter,
+            )
+            .unwrap()
+            .get();
             assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
             assert_eq!(source_uv.v, target_uv.v);
         }
@@ -715,12 +749,14 @@ fn blend_contact_transfer_fixture(
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture pcurve construction admission")
         .expect("valid contact pcurve"),
     };
     let contact_surface = if contact_on_source_support {
@@ -729,6 +765,7 @@ fn blend_contact_transfer_fixture(
         other_support.clone()
     };
     let _attached = ir.model.add_procedural_curve(
+        &cadmpeg_ir::document::admission::StandardAdmission,
         &spine,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
@@ -822,7 +859,14 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.model.add_procedural_curve(&curve, procedural).unwrap();
+        ir.model
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve,
+                procedural,
+            )
+            .unwrap()
+            .unwrap();
     }
     ir
 }
@@ -931,6 +975,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1022,6 +1067,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 id: nurbs.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
+                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -1041,6 +1087,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                         ),
                         false,
                     )
+                    .expect("fixture constructor admission")
                     .expect("valid boundary surface"),
                 )),
                 source_object: None,
@@ -1067,17 +1114,20 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
         });
         let _attached = ir.model.add_procedural_curve(
+            &cadmpeg_ir::document::admission::StandardAdmission,
             &curve,
             ProceduralCurve::new(
                 construction,
@@ -1181,13 +1231,15 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 .procedural_curve_owner(&ir.model.procedural_curves[0].id)
                 .expect("tolerant intersection owner");
             let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
                 owner,
                 parameter,
             )
             .expect("charted tolerant intersection evaluates");
             let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
                 owner,
                 evaluated.get(),
                 parameter,
@@ -1196,18 +1248,27 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             .expect("charted tolerant intersection inverts");
             assert!((inverted.get() - parameter).abs() < 1.0e-8);
             let points: [Point3; 2] = std::array::from_fn(|side| {
-                let uv = cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter)
-                    .unwrap()
-                    .get();
+                let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &parameterization.pcurves[side],
+                    parameter,
+                )
+                .unwrap()
+                .get();
                 let surface = ir
                     .model
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == supports[side])
                     .unwrap();
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v)
-                    .unwrap()
-                    .get()
+                cadmpeg_ir::eval::decode::surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &surface.geometry,
+                    uv.u,
+                    uv.v,
+                )
+                .unwrap()
+                .get()
             });
             assert!((points[0].x - 10.0 * parameter).abs() < 1.0e-8);
             assert_eq!(evaluated, points[0]);
@@ -1268,12 +1329,14 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -1351,7 +1414,14 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 ),
             },
         );
-        ir.model.add_procedural_curve(&curve, procedural).unwrap();
+        ir.model
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve,
+                procedural,
+            )
+            .unwrap()
+            .unwrap();
 
         crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
             geometry_ctx,

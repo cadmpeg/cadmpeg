@@ -1771,6 +1771,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             let mut winners = Vec::new();
             for surface in &surfaces {
                 if let Some(offset) = nurbs_carrier_offset_surface(
+                    ctx,
                     &surface.geometry,
                     &partner_points,
                     &anchor_points,
@@ -1919,7 +1920,9 @@ fn resolve_side_support(
     for sphere in carriers.spheres {
         let geometry = b2_sphere_geometry(sphere);
         if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-            match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, &geometry, u, v)? {
+            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
+                ctx, &geometry, u, v,
+            ))? {
                 Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
             }
@@ -1943,7 +1946,9 @@ fn resolve_side_support(
     for plane in carriers.planes {
         if let Some(geometry) = b2_plane_geometry(plane) {
             if pcurve_endpoints_match(pcurve, points, |[u, v]| {
-                match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, &geometry, u, v)? {
+                match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                )? {
                     Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 }
@@ -2054,11 +2059,13 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    match cadmpeg_ir::eval::decode::surface_point_for_decode(
-                        ctx,
-                        &b2_sphere_geometry(carrier),
-                        u,
-                        v,
+                    match cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::surface_point(
+                            ctx,
+                            &b2_sphere_geometry(carrier),
+                            u,
+                            v,
+                        ),
                     )? {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
@@ -2089,8 +2096,9 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    match cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, &geometry, u, v)?
-                    {
+                    match cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                    )? {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
@@ -2110,7 +2118,7 @@ fn support_points(
             ctx.collect_fallible_options(
                 pcurve.sites.iter().map(|site| {
                     let [u, v] = site.point.get();
-                    let partials = match nurbs_surface_partials(surface, u, v) {
+                    let partials = match nurbs_surface_partials(ctx, surface, u, v) {
                         Ok(partials) => partials,
                         Err(failure) => return failure.non_finite(),
                     };
@@ -2139,12 +2147,12 @@ fn b2_torus_point(
     torus: &B2Torus,
     [u, v]: [f64; 2],
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    match cadmpeg_ir::eval::decode::surface_point_for_decode(
+    match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
         ctx,
         &b2_torus_geometry(torus),
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
-    )? {
+    ))? {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
@@ -2152,27 +2160,32 @@ fn b2_torus_point(
 
 #[cfg(test)]
 fn nurbs_carrier_offset(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SurfaceGeometry,
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface offset boundary")?;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
         return Ok(None);
     };
-    nurbs_carrier_offset_surface(surface, parameters, anchors)
+    nurbs_carrier_offset_surface(ctx, surface, parameters, anchors)
 }
 
 fn nurbs_carrier_offset_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     parameters: &[[f64; 2]],
     anchors: &[Point3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface offset boundary")?;
     if parameters.len() != anchors.len() || parameters.is_empty() {
         return Ok(None);
     }
     let mut first = None::<FiniteReal>;
     for (&[u, v], &anchor) in parameters.iter().zip(anchors) {
-        let partials = match nurbs_surface_partials(surface, u, v) {
+        ctx.charge_work_limit(1, "catia surface offset sample")?;
+        let partials = match nurbs_surface_partials(ctx, surface, u, v) {
             Ok(partials) => partials,
             Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
             Err(_) => return Ok(None),
@@ -2412,6 +2425,7 @@ mod tests {
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2431,10 +2445,12 @@ mod tests {
                 ),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("valid unit-square surface"),
         ));
         let tiny = 1e-200;
         let offset = nurbs_carrier_offset(
+            &cadmpeg_test_support::service_decode_context(),
             &surface,
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
@@ -2445,6 +2461,7 @@ mod tests {
 
         assert_eq!(
             nurbs_carrier_offset(
+                &cadmpeg_test_support::service_decode_context(),
                 &surface,
                 &[[0.25, 0.25], [0.75, 0.75]],
                 &[
@@ -2456,13 +2473,19 @@ mod tests {
             None
         );
         assert_eq!(
-            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],)
-                .expect("evaluator allocation succeeds"),
+            nurbs_carrier_offset(
+                &cadmpeg_test_support::service_decode_context(),
+                &surface,
+                &[[0.0, 0.0]],
+                &[Point3::new(tiny, 0.0, tiny)],
+            )
+            .expect("evaluator allocation succeeds"),
             None
         );
         for invalid in [f64::NAN, f64::INFINITY] {
             assert_eq!(
                 nurbs_carrier_offset(
+                    &cadmpeg_test_support::service_decode_context(),
                     &surface,
                     &[[0.25, 0.25], [0.75, 0.75]],
                     &[

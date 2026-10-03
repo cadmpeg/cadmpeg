@@ -30,8 +30,9 @@ fn predecessor_document() -> CadIr {
     }
     ir.model
         .set_feature_regeneration_parent(
-            "test:parent-wire:feature#1-child".try_into().unwrap(),
-            "test:parent-wire:feature#0-parent".try_into().unwrap(),
+            &cadmpeg_test_support::service_decode_context(),
+            &("test:parent-wire:feature#1-child".try_into().unwrap()),
+            &("test:parent-wire:feature#0-parent".try_into().unwrap()),
         )
         .unwrap();
     ir
@@ -48,7 +49,9 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
         let mut ir = predecessor_document();
         let before = ir.to_canonical_json().unwrap();
         assert_eq!(CadIr::from_json(&before).unwrap(), ir);
-        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
         match mutation {
             "missing parent" => {
                 ir.model.features.remove(0);
@@ -67,6 +70,7 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
                         children: TreeChildren::new(
                             vec!["test:parent-wire:feature#1-child".try_into().unwrap()],
                             None,
+                            &cadmpeg_test_support::service_decode_context(),
                         )
                         .unwrap(),
                     }));
@@ -117,6 +121,57 @@ fn complete_cadir_admission_checks_the_predecessor_against_current_feature_rows(
         assert!(
             error.contains("test:parent-wire:feature#1-child"),
             "{mutation}: {error}"
+        );
+    }
+}
+
+#[test]
+fn regeneration_parent_setter_preserves_the_model_on_caller_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::RetainedBytes,
+    ] {
+        let mut ir = predecessor_document();
+        ir.model.feature_regeneration_parents.0.clear();
+        let before = ir.clone();
+        let parent = ir.model.features[0].id.clone();
+        let child = ir.model.features[1].id.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 4,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(child.as_str().len() + parent.as_str().len()).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = ir
+            .model
+            .set_feature_regeneration_parent(&ctx, &child, &parent)
+        else {
+            panic!("setter must retain the caller refusal");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(
+            limit.operation,
+            "install decoded feature regeneration parent"
+        );
+        if dimension == ResourceDimension::WorkUnits {
+            assert_eq!(limit.used, 4);
+            assert_eq!(
+                limit.additional,
+                u64::try_from(child.as_str().len().min(parent.as_str().len())).unwrap()
+            );
+        }
+        assert_eq!(ir, before);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
         );
     }
 }

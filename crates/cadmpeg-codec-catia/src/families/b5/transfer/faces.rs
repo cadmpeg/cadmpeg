@@ -472,7 +472,7 @@ pub(super) struct EmittedFaceInputs<'a> {
 /// face with its loops and coedges, closing radial-next rings by shared edge.
 pub(super) fn emit_faces(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     plan: &TransferPlan,
     emitted: &EmittedFaceInputs<'_>,
@@ -788,12 +788,9 @@ pub(super) fn emit_faces(
                     "catia_b5_loop_annotation",
                 )?;
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
-                admission.context(),
-                coedge_ids,
-                vertex_uses,
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            let Ok(ring) =
+                cadmpeg_ir::topology::LoopRing::new(admission.context(), coedge_ids, vertex_uses)
+                    .map_err(cadmpeg_core::CodecError::from)?
             else {
                 return Ok(false);
             };

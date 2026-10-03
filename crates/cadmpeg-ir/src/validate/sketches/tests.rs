@@ -33,17 +33,21 @@ fn trimmed_concentric_arcs_validate_as_offsets() {
     let disjoint_result = arc(5.0, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
 
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &trimmed_result,
         -3.0,
-        1.0e-6,
-    ));
+        TEST_LINEAR_TOLERANCE,
+    )
+    .expect("offset walk is admitted"));
     assert!(!sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &disjoint_result,
         -3.0,
-        1.0e-6,
-    ));
+        TEST_LINEAR_TOLERANCE,
+    )
+    .expect("offset walk is admitted"));
 }
 
 #[test]
@@ -64,23 +68,29 @@ fn full_concentric_circles_validate_as_offsets() {
     .unwrap();
 
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &result,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    )
+    .expect("offset walk is admitted"));
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &result,
         &source,
         -1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    )
+    .expect("offset walk is admitted"));
     assert!(!sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &source,
         &displaced,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    )
+    .expect("offset walk is admitted"));
 }
 
 #[test]
@@ -106,23 +116,29 @@ fn mixed_full_circle_arc_validate_as_offsets() {
     .unwrap();
 
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &circle,
         &arc,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    )
+    .expect("offset walk is admitted"));
     assert!(sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &arc,
         &circle,
         -1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    )
+    .expect("offset walk is admitted"));
     assert!(!sketch_curve_offset_matches(
+        &cadmpeg_test_support::service_decode_context(),
         &circle,
         &displaced,
         1.5,
         TEST_LINEAR_TOLERANCE,
-    ));
+    )
+    .expect("offset walk is admitted"));
 }
 
 #[test]
@@ -161,6 +177,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             sketch.clone(),
             SketchGeometry::nurbs(
                 crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -171,6 +188,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         ),
@@ -179,6 +197,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             sketch.clone(),
             SketchGeometry::nurbs(
                 crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
@@ -190,6 +209,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     None,
                     false,
                 )
+                .expect("fixture pcurve construction admission")
                 .unwrap(),
             ),
         ),
@@ -221,7 +241,8 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let source_ordinal = ir
         .model
         .sketch_entities
@@ -256,17 +277,21 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     unreachable!("test result is a NURBS")
                 };
-                curve.reverse_parameterization();
+                curve
+                    .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
+                    .expect("signed reversal admission");
             };
             definition.try_into()
         },
     )
     .unwrap();
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
+        &cadmpeg_test_support::service_decode_context(),
         &ir.model.sketch_entities[source_ordinal].geometry,
         &ir.model.sketch_entities[result_ordinal].geometry,
         ir.tolerances.linear.get(),
     )
+    .expect("offset walk is admitted")
     .expect("reversed fitted offset frame")
     .get();
     assert!(
@@ -286,17 +311,23 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     unreachable!("test result is a NURBS")
                 };
-                curve.reverse_parameterization();
+                curve
+                    .reverse_parameterization(&cadmpeg_test_support::service_decode_context())
+                    .expect("signed reversal admission");
                 let last = curve.pole_rows().count() - 1;
                 curve
-                    .try_map_control_points(|pole_index, point| {
-                        let point = point.get();
-                        crate::units::FinitePoint2::new(crate::math::Point2::new(
-                            point.u + if pole_index == last { 0.01 } else { 0.0 },
-                            point.v,
-                        ))
-                        .ok_or(())
-                    })
+                    .try_map_control_points(
+                        |pole_index, point| {
+                            let point = point.get();
+                            crate::units::FinitePoint2::new(crate::math::Point2::new(
+                                point.u + if pole_index == last { 0.01 } else { 0.0 },
+                                point.v,
+                            ))
+                            .ok_or(())
+                        },
+                        &cadmpeg_test_support::service_decode_context(),
+                    )
+                    .expect("pole edit admission")
                     .unwrap();
             };
             definition.try_into()
@@ -402,7 +433,8 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         metadata: None,
         native_ref: None,
     });
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.as_str())
@@ -602,7 +634,8 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
             native_ref: None,
         });
     }
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     for (name, _, refusal) in cases {
@@ -875,7 +908,15 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "invalid-profile-index",
         1,
-        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap()),
+        ProfileRef::Planar(
+            PlanarProfileRef::sketch_profiles(
+                sketch_id.clone(),
+                vec![0],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("profile membership admission")
+            .unwrap(),
+        ),
     ));
     ir.model.features.push(feature(
         "invalid-region",
@@ -883,7 +924,13 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ProfileRef::Planar(
             PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
-                vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
+                vec![SketchProfileRegion::loops(
+                    0,
+                    Vec::new(),
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("fixture loop-region admission")
+                .unwrap()],
             )
             .unwrap(),
         ),
@@ -893,7 +940,13 @@ fn sketch_profile_subselections_are_bounds_checked() {
         "repeated-profile-entity",
         3,
         ProfileRef::Planar(
-            PlanarProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
+            PlanarProfileRef::sketch_entities(
+                sketch_id.clone(),
+                vec![selected_entity],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("profile membership admission")
+            .unwrap(),
         ),
     ));
 
@@ -1062,5 +1115,55 @@ fn extreme_lines_preserve_parallelism_and_span_separation() {
         super::planar_parallel_line_span_distance(&horizontal, &overlapping, TEST_LINEAR_TOLERANCE)
             .map(crate::scalar::FiniteReal::get),
         Some(1.0)
+    );
+}
+
+mod admission;
+
+#[test]
+fn spatial_sketch_endpoint_helper_preserves_session_depth_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("constructor admission")
+    .expect("valid curve");
+    let geometry = crate::sketches::SpatialSketchGeometry::try_from(
+        crate::sketches::SpatialSketchGeometryDefinition::Nurbs {
+            curve: curve.try_into().expect("valid spatial NURBS"),
+        },
+    )
+    .expect("valid spatial geometry");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(
+        super::spatial_oriented_endpoints(&ctx, &geometry, false),
+        Ok(Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0)
+        )))
+    );
+    let original = ctx
+        .enter_nested_limit("spatial endpoint test outer frame")
+        .expect_err("outer frame refuses");
+    let limit = super::spatial_oriented_endpoints(&ctx, &geometry, false)
+        .expect_err("first evaluator frame refuses");
+    assert_eq!(limit, original);
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+    assert_eq!(
+        ctx.charge_work_limit(0, "observe endpoint refusal"),
+        Err(limit)
+    );
+    assert_eq!(
+        super::spatial_oriented_endpoints(&ctx, &geometry, true),
+        Err(limit)
     );
 }

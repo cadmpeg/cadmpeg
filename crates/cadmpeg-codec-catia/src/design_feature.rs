@@ -160,7 +160,7 @@ impl DesignFeatureTransfer {
         }
         for (child, parent) in parents {
             ir.model
-                .set_feature_regeneration_parent_for_decode(ctx, &child, &parent)?;
+                .set_feature_regeneration_parent(ctx, &child, &parent)?;
         }
         Ok(())
     }
@@ -319,7 +319,7 @@ impl DesignFeatureTransfer {
                     dependencies.len(),
                     "catia_feature_dependency_values",
                 )?;
-                feature.dependencies.extend_for_decode(
+                feature.dependencies.append(
                     ctx,
                     dependencies,
                     "catia_feature_dependency_values",

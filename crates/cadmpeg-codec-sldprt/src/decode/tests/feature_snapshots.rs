@@ -61,18 +61,24 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: vec![dependency.clone()].try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![dependency.clone()],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: FeatureContent::default(),
             evaluation: FeatureEvaluation::new(
                 definition,
-                vec![cadmpeg_ir::ids::BodyId::mint(format!(
-                    "synthetic:test:id#snapshot-body-{ordinal}"
-                ))
-                .unwrap()]
-                .try_into()
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![cadmpeg_ir::ids::BodyId::mint(format!(
+                        "synthetic:test:id#snapshot-body-{ordinal}"
+                    ))
+                    .unwrap()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
                 .unwrap(),
             ),
             native_ref: None,

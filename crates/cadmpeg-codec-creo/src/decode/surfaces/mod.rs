@@ -156,7 +156,7 @@ mod tests {
         collection_limit: u64,
         retained_limit: u64,
         with_body: bool,
-    ) -> cadmpeg_core::CodecError {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = collection_limit;
@@ -181,42 +181,12 @@ mod tests {
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-        .expect_err("product exceeds the configured resource limit")
-    }
-
-    fn product_identity_and_annotation_bytes() -> u64 {
-        let product_id_len = cadmpeg_core::decode::u64_from_index(
-            cadmpeg_ir::ids::ProductDefinitionId::compose(
-                &crate::identity::MODEL_PRODUCT_DEFINITION,
-                cadmpeg_ir::identity_key!("root"),
-            )
-            .as_str()
-            .len(),
-        );
-        let occurrence_id_len = cadmpeg_core::decode::u64_from_index(
-            cadmpeg_ir::ids::OccurrenceId::compose(
-                &crate::identity::MODEL_OCCURRENCE,
-                cadmpeg_ir::identity_key!("root"),
-            )
-            .as_str()
-            .len(),
-        );
-        product_id_len * 2
-            + occurrence_id_len * 3
-            + cadmpeg_core::decode::u64_from_index("creo:archive_header".len() * 2)
-            + cadmpeg_core::decode::u64_from_index("part_product".len())
-            + cadmpeg_core::decode::u64_from_index("part_product_occurrence".len())
-            + 2 * cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<cadmpeg_ir::StreamName>()
-                    + 2 * std::mem::size_of::<usize>()
-                    + std::mem::size_of::<(String, cadmpeg_ir::AnnotationProvenance)>()
-                    + std::mem::size_of::<(String, cadmpeg_ir::annotations::ExactnessNote)>(),
-            )
     }
 
     #[test]
     fn part_product_refuses_before_model_vector_growth() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, false);
+        let error = limited_product(&named_scan(), 6, u64::MAX, false)
+            .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -226,33 +196,18 @@ mod tests {
 
     #[test]
     fn part_product_name_copies_refuse_before_each_retained_growth() {
-        let product_id_len = cadmpeg_core::decode::u64_from_index(
-            cadmpeg_ir::ids::ProductDefinitionId::compose(
-                &crate::identity::MODEL_PRODUCT_DEFINITION,
-                cadmpeg_ir::identity_key!("root"),
-            )
-            .as_str()
-            .len(),
-        );
-        for (limit, operation) in [
-            (0, "creo product definition reference"),
-            (product_id_len, "creo product source name"),
-            (product_id_len + 5, "creo product label"),
-            (product_id_len + 10, "creo product part number"),
-            (
-                product_id_len
-                    + 15
-                    + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        cadmpeg_ir::products::ProductDefinition,
-                    >()),
-                "creo occurrence name",
-            ),
+        // Each copy boundary includes the preceding annotation backing nodes.
+        for operation in [
+            "creo product definition reference",
+            "creo product source name",
+            "creo product label",
+            "creo product part number",
+            "creo occurrence name",
         ] {
-            let error = limited_product(
-                &named_scan(),
-                u64::MAX,
-                product_identity_and_annotation_bytes() + limit,
-                false,
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                operation,
+                |cap| limited_product(&named_scan(), u64::MAX, cap, false),
             );
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -265,7 +220,8 @@ mod tests {
 
     #[test]
     fn part_product_identities_refuse_before_allocation() {
-        let error = limited_product(&named_scan(), u64::MAX, 0, false);
+        let error = limited_product(&named_scan(), u64::MAX, 0, false)
+            .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -294,21 +250,19 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_body_reference_rows_and_ids() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, true);
+        let error = limited_product(&named_scan(), 6, u64::MAX, true)
+            .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo product body references"),
             "{error:?}"
         );
-        let error = limited_product(
-            &named_scan(),
-            u64::MAX,
-            product_identity_and_annotation_bytes()
-                + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    cadmpeg_ir::ids::BodyId,
-                >()),
-            true,
+        // Admit annotation and body-reference slots before refusing the copied body identity.
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "creo product body IDs",
+            |cap| limited_product(&named_scan(), u64::MAX, cap, true),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -328,17 +282,11 @@ mod tests {
             .as_str()
             .len(),
         );
-        let before_transfer = product_identity_and_annotation_bytes()
-            + product_id_len
-            + 20
-            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                cadmpeg_ir::products::ProductDefinition,
-            >());
-        let error = limited_product(
-            &named_scan(),
-            u64::MAX,
-            before_transfer + product_id_len - 1,
-            false,
+        // Identity retention follows annotation nodes and product-vector capacity.
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "creo product identity",
+            |cap| limited_product(&named_scan(), u64::MAX, cap, false),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

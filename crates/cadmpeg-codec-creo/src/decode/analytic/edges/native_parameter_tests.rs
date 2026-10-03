@@ -44,7 +44,12 @@ fn ellipse() -> CurveGeometry {
 }
 
 fn evaluated(geometry: &CurveGeometry, parameter: f64) -> [f64; 3] {
-    let point = cadmpeg_ir::eval::curve_point(geometry, parameter).expect("conic point");
+    let point = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        geometry,
+        parameter,
+    )
+    .expect("conic point");
     [point.x, point.y, point.z]
 }
 
@@ -56,8 +61,16 @@ fn nurbs_curve(
     periodic: bool,
 ) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
-            .expect("cardinality-valid test curve"),
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        )
+        .expect("fixture constructor admission")
+        .expect("cardinality-valid test curve"),
     ))
 }
 
@@ -673,6 +686,7 @@ fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let nurbs = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -683,6 +697,7 @@ fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
         None,
         false,
     )
+    .expect("fixture constructor admission")
     .expect("quadratic spline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
     let arena = DecodeArena::new();

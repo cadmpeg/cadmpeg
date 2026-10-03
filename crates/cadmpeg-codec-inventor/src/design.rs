@@ -582,11 +582,7 @@ pub(crate) fn project_parameters(
             dependencies.len(),
             "collect Inventor parameter dependencies",
         )?;
-        dependency_members.extend_for_decode(
-            ctx,
-            dependencies,
-            "collect Inventor parameter dependencies",
-        )?;
+        dependency_members.append(ctx, dependencies, "collect Inventor parameter dependencies")?;
         projected.push(DesignParameter {
             id,
             owner: None,
@@ -2343,7 +2339,11 @@ mod tests {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: (dependencies).try_into().expect("valid test fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2390,12 +2390,11 @@ mod tests {
             expression: name.into(),
             display: None,
             value: None,
-            dependencies: dependency
-                .into_iter()
-                .map(id)
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("valid dependency fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependency.into_iter().map(id).collect::<Vec<_>>(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("valid dependency fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2428,12 +2427,11 @@ mod tests {
             expression: name.into(),
             display: None,
             value: None,
-            dependencies: dependency
-                .into_iter()
-                .map(id)
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("valid dependency fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependency.into_iter().map(id).collect::<Vec<_>>(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("valid dependency fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2471,7 +2469,11 @@ mod tests {
             expression: "a".into(),
             display: None,
             value: None,
-            dependencies: Vec::new().try_into().expect("empty dependencies"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("empty dependencies"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -2500,7 +2502,11 @@ mod tests {
             expression: "a".into(),
             display: None,
             value: None,
-            dependencies: Vec::new().try_into().expect("empty dependencies"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("empty dependencies"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,

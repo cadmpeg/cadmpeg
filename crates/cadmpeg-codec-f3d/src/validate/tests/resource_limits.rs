@@ -470,7 +470,8 @@ fn validation_native_arena_reload_releases_scoped_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 4096;
+    // Reload admits the native object backing nodes within scoped storage.
+    policy.limits.max_materialized_bytes = 16384;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (records, storage) = super::super::reload_native_arena::<
         crate::history_records::AsmBulletinBoard,

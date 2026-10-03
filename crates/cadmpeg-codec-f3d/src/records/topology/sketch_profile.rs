@@ -408,3 +408,5 @@ cadmpeg_core::named_optional_field!(
 
 #[cfg(test)]
 mod tests;
+
+mod identity_rewrite;

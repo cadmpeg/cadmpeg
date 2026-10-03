@@ -1364,25 +1364,41 @@ fn predefined_associativity_valid(
     }
 }
 
-fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> {
-    let vertex = index.vertices(vertex.as_str())?;
-    index
-        .points(vertex.point.as_str())
-        .map(|point| point.position().get())
+fn vertex_position(
+    index: &ModelIndex<'_>,
+    vertex: &VertexId,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Point3>, CodecError> {
+    let Some(vertex) = index.vertices(vertex.as_str(), ctx)? else {
+        return Ok(None);
+    };
+    Ok(index
+        .points(vertex.point.as_str(), ctx)?
+        .map(|point| point.position().get()))
 }
 
-fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
+fn plane_carrier(
+    index: &ModelIndex<'_>,
+    sequence: u32,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(Point3, Vector3)>, CodecError> {
     let mut key_storage = [0_u8; 64];
-    let key = crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage)?;
-    let surface = index.surfaces(key)?;
-    match surface.geometry.solved() {
+    let Some(key) =
+        crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage)
+    else {
+        return Ok(None);
+    };
+    let Some(surface) = index.surfaces(key, ctx)? else {
+        return Ok(None);
+    };
+    Ok(match surface.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
             Some((origin, *normal))
         }
         _ => None,
-    }
+    })
 }
 
 fn planes_are_coplanar(
@@ -1432,9 +1448,9 @@ fn linear_nurbs_boundary_points(
         "iges plane NURBS boundary points",
     )?;
     for parameter in parameters {
-        let Some(point) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, nurbs, parameter)?,
-        )?
+        let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
+        )?)?
         else {
             return Ok(None);
         };
@@ -1526,7 +1542,7 @@ fn bounded_plane_curve_is_simple(
                 return Ok(false);
             }
             for segment in segments {
-                let Some(curve) = context.index.curves(segment.curve.as_str()) else {
+                let Some(curve) = context.index.curves(segment.curve.as_str(), context.ctx)? else {
                     return Ok(false);
                 };
                 if active.contains(&segment.curve) {
@@ -1701,12 +1717,16 @@ fn plane_boundary_edge(
     let key =
         crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
             .ok_or(PlaneBoundaryError::MissingEdge)?;
-    let source_edge = index.edges(key).ok_or(PlaneBoundaryError::MissingEdge)?;
+    let source_edge = index
+        .edges(key, ctx)
+        .map_err(CodecError::from)?
+        .ok_or(PlaneBoundaryError::MissingEdge)?;
     let curve_id = source_edge
         .curve()
         .ok_or(PlaneBoundaryError::MissingCurve)?;
     let curve = index
-        .curves(curve_id.as_str())
+        .curves(curve_id.as_str(), ctx)
+        .map_err(CodecError::from)?
         .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
     let Some(geometry) = curve.geometry.solved() else {
         return Err(PlaneBoundaryError::MissingCurveCarrier);
@@ -1747,8 +1767,9 @@ fn plane_boundary_edge(
         return Err(PlaneBoundaryError::NotCoplanar);
     }
     let start =
-        vertex_position(index, &source_edge.start).ok_or(PlaneBoundaryError::MissingStart)?;
-    let end = vertex_position(index, &source_edge.end).ok_or(PlaneBoundaryError::MissingEnd)?;
+        vertex_position(index, &source_edge.start, ctx)?.ok_or(PlaneBoundaryError::MissingStart)?;
+    let end =
+        vertex_position(index, &source_edge.end, ctx)?.ok_or(PlaneBoundaryError::MissingEnd)?;
     if start.distance(end) > resolution {
         return Err(PlaneBoundaryError::NotClosed);
     }
@@ -1810,14 +1831,13 @@ fn plane_face_draft(
         });
         let mut ring_coedges = ctx.collection_vec(1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
-        let ring =
-            match cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, ring_coedges, Vec::new())
-                .map_err(cadmpeg_core::CodecError::from)
-            {
-                Ok(Ok(ring)) => ring,
-                Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
-                Err(error) => return Err(error.into()),
-            };
+        let ring = match cadmpeg_ir::topology::LoopRing::new(ctx, ring_coedges, Vec::new())
+            .map_err(cadmpeg_core::CodecError::from)
+        {
+            Ok(Ok(ring)) => ring,
+            Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
+            Err(error) => return Err(error.into()),
+        };
         ctx.reserve_vec(
             &mut candidate.model_mut().loops,
             1,
@@ -1900,7 +1920,7 @@ fn plane_face_draft(
         color: None,
         visible: None,
     });
-    candidate.model_mut().finalize();
+    candidate.model_mut().finalize(ctx)?;
     Ok(candidate)
 }
 
@@ -1996,8 +2016,8 @@ fn legacy_single_parent_face(
                 .ok_or("legacy single-parent plane has an invalid boundary pointer")?,
         );
     }
-    let index = ModelIndex::new_model_only_for_decode(ir, ctx).map_err(CodecError::from)?;
-    let parent_plane = plane_carrier(&index, parent_sequence)
+    let index = ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?;
+    let parent_plane = plane_carrier(&index, parent_sequence, ctx)?
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
     let mut boundary_edges =
@@ -2007,7 +2027,7 @@ fn legacy_single_parent_face(
         .zip(boundary_sequences.iter().copied())
         .enumerate()
     {
-        let plane = plane_carrier(&index, plane_sequence)
+        let plane = plane_carrier(&index, plane_sequence, ctx)?
             .ok_or("legacy single-parent child plane was not projected")?;
         if !planes_are_coplanar(parent_plane, plane, resolution) {
             return Err("legacy single-parent plane boundaries are not coplanar".into());
@@ -3065,7 +3085,7 @@ pub(super) fn project(
         }
     }
 
-    let index = ModelIndex::new_model_only_for_decode(ir, ctx).map_err(CodecError::from)?;
+    let index = ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?;
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1 | 1))
@@ -3076,7 +3096,7 @@ pub(super) fn project(
         let Some(record) = records.get(&entry.sequence).copied() else {
             continue;
         };
-        let Some(plane) = plane_carrier(&index, entry.sequence) else {
+        let Some(plane) = plane_carrier(&index, entry.sequence, ctx)? else {
             continue;
         };
         let Some(boundary_sequence) = existing_pointer(record, 5, &entries) else {
@@ -3170,12 +3190,9 @@ pub(super) fn project(
     }
 
     drop(index);
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate) in legacy_face_candidates {
-        if commit_session
-            .commit_model_for_decode(candidate, ctx)?
-            .is_err()
-        {
+        if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

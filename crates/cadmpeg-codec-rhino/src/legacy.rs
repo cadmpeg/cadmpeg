@@ -790,11 +790,7 @@ fn legacy_spline(
         stored_knots[0] = -stored_knots[0];
         stored_knots[1] = -stored_knots[1];
     }
-    let reconstructed = knot_count.checked_add(2).ok_or_else(|| {
-        CodecError::NotImplemented("Rhino V1 spline knot count exceeds address space".to_string())
-    })?;
-    admit_v1_values::<f64>(ctx, reconstructed, "Rhino V1 spline reconstructed knots")?;
-    let knots = crate::surfaces::reconstruct_knots(&stored_knots, order, cv_count)
+    let knots = crate::surfaces::reconstruct_knots(ctx, &stored_knots, order, cv_count)
         .map_err(geometry_error)?;
     let mut control_points = ctx.collection_vec::<Point3>(cv_count, "Rhino V1 spline poles")?;
     let mut weights = if rational != 0 {
@@ -829,28 +825,15 @@ fn legacy_spline(
             ));
         }
     }
-    if rational != 0 {
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>(
-            ctx,
-            cv_count,
-            "Rhino V1 spline weighted poles",
-        )?;
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
-            ctx,
-            cv_count,
-            "Rhino V1 spline admitted poles",
-        )?;
-    } else {
-        admit_v1_values::<FinitePoint3>(ctx, cv_count, "Rhino V1 spline admitted poles")?;
-    }
     NurbsCurve::from_checked_lanes(
+        ctx,
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
         control_points,
         weights,
         closed == 2,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -1581,11 +1564,9 @@ fn legacy_surface(
     for _ in 0..v_count {
         stored_v.push(reader.f64().map_err(|error| malformed(&error))?);
     }
-    admit_v1_values::<f64>(ctx, u_count + 2, "Rhino V1 surface U knots")?;
-    admit_v1_values::<f64>(ctx, v_count + 2, "Rhino V1 surface V knots")?;
-    let u_knots = crate::surfaces::reconstruct_knots(&stored_u, orders[0], counts[0])
+    let u_knots = crate::surfaces::reconstruct_knots(ctx, &stored_u, orders[0], counts[0])
         .map_err(geometry_error)?;
-    let v_knots = crate::surfaces::reconstruct_knots(&stored_v, orders[1], counts[1])
+    let v_knots = crate::surfaces::reconstruct_knots(ctx, &stored_v, orders[1], counts[1])
         .map_err(geometry_error)?;
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())
@@ -1633,31 +1614,9 @@ fn legacy_surface(
     if weights.is_some() {
         admit_v1_values::<Vec<NonZeroReal>>(ctx, counts[0], "Rhino V1 surface weight rows")?;
         admit_v1_values::<NonZeroReal>(ctx, pole_count, "Rhino V1 surface weight grid")?;
-        admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>>(
-            ctx,
-            counts[0],
-            "Rhino V1 surface weighted rows",
-        )?;
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>(
-            ctx,
-            pole_count,
-            "Rhino V1 surface weighted poles",
-        )?;
-        admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>>(
-            ctx,
-            counts[0],
-            "Rhino V1 surface admitted rows",
-        )?;
-        admit_v1_values::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>(
-            ctx,
-            pole_count,
-            "Rhino V1 surface admitted poles",
-        )?;
-    } else {
-        admit_v1_values::<Vec<FinitePoint3>>(ctx, counts[0], "Rhino V1 surface admitted rows")?;
-        admit_v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface admitted poles")?;
     }
     NurbsSurface::from_checked_lanes(
+        ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(orders[0] - 1)
                 .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
@@ -1675,7 +1634,7 @@ fn legacy_surface(
             weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )
+    )?
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -2415,42 +2374,16 @@ fn append_legacy_brep(
                         }
                     }
                 }
-                if pcurve_weights.is_some() {
-                    admit_v1_values::<
-                        cadmpeg_ir::geometry::pcurve::WeightedPole2<
-                            cadmpeg_ir::units::FinitePoint2,
-                        >,
-                    >(
-                        ctx,
-                        trim.pcurve.pole_count(),
-                        "Rhino V1 pcurve weighted poles",
-                    )?;
-                    admit_v1_values::<
-                        cadmpeg_ir::geometry::pcurve::WeightedPole2<
-                            cadmpeg_ir::units::FinitePoint2,
-                        >,
-                    >(
-                        ctx,
-                        trim.pcurve.pole_count(),
-                        "Rhino V1 pcurve admitted poles",
-                    )?;
-                } else {
-                    admit_v1_values::<cadmpeg_ir::units::FinitePoint2>(
-                        ctx,
-                        trim.pcurve.pole_count(),
-                        "Rhino V1 pcurve admitted poles",
-                    )?;
-                }
                 model.pcurves.push(Pcurve {
                     id: pcurve_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     geometry: PcurveGeometry::Nurbs {
-                        nurbs: PcurveNurbs::from_checked_lanes(
+                        nurbs: PcurveNurbs::from_checked_lanes(ctx,
                             trim.pcurve.degree(),
                             pcurve_knots,
                             pcurve_points,
                             pcurve_weights,
                             trim.pcurve.periodic(),
-                        )
+                        )?
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -2507,7 +2440,7 @@ fn append_legacy_brep(
                 });
                 global_trim += 1;
             }
-            let ring = cadmpeg_ir::topology::LoopRing::new_for_decode(ctx, coedge_ids, Vec::new())
+            let ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
@@ -2616,9 +2549,7 @@ fn append_legacy_brep(
         color: None,
         visible: None,
     });
-    draft
-        .commit_model_for_decode(ir, ctx)?
-        .map_err(CodecError::malformed)
+    draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
 
 fn legacy_trim(
@@ -3589,7 +3520,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
-    ir.model.finalize();
+    ir.model.finalize(ctx)?;
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
         .iter()
@@ -3936,7 +3867,7 @@ mod tests {
         assert!(
             matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "Rhino V1 spline admitted poles"
+                && limit.operation == "IR NURBS admitted poles"
                 && limit.used == 8)
         );
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -4011,7 +3942,9 @@ mod tests {
         let surface =
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 surface wrapper");
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 22;
+        // Stored knots use four slots, reconstructed knots eight, and flat poles four.
+        // The next allocation is the two-row grid that the constructor takes by move.
+        policy.limits.max_collection_items = 16;
         let limited_arena = cadmpeg_core::decode::DecodeArena::new();
         let (limited_ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
@@ -4022,13 +3955,25 @@ mod tests {
             surface.body(),
             super::MillimeterScale::IDENTITY,
         )
-        .expect_err("the constructor needs admitted surface rows");
+        .expect_err("the source grid needs two admitted row slots before construction");
         assert!(
             matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "Rhino V1 surface admitted rows"
-                && limit.used == 22)
+                && limit.operation == "Rhino V1 surface pole rows"
+                && limit.used == 16)
         );
+        policy.limits.max_collection_items = 22;
+        let exact_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (exact_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &exact_arena, &policy)
+                .expect("V1 surface input admitted");
+        let exact = super::legacy_surface(
+            &exact_ctx, &data, surface.body(), super::MillimeterScale::IDENTITY,
+        ).expect("four stored knots, eight expanded knots, four flat poles, two rows and four grid poles");
+        assert_eq!(exact.pole_grid().u_count(), 2);
+        exact_ctx
+            .finish_session()
+            .expect("construction does not allocate admitted rows again");
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
         let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &data,

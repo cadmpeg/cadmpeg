@@ -20,7 +20,9 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         ],
         vec![[0, 1, 2]],
         0.01,
+        &cadmpeg_test_support::service_decode_context(),
     )
+    .expect("polygonal construction admission")
     .unwrap();
     let mut placed = SolvedSurfaceGeometry::Polygonal(polygonal);
     for _ in 0..2 {
@@ -53,11 +55,13 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         ];
         let weights = rational.then(|| vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
         let geometry = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             axis(),
             axis(),
             NurbsSurfaceLanes::new(poles, weights),
             false,
         )
+        .expect("fixture constructor admission")
         .unwrap();
         ir.model.surfaces.push(Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
@@ -220,7 +224,11 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: dependencies.try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependencies,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -236,7 +244,11 @@ fn datum_model() -> cadmpeg_ir::CadIr {
             evaluation: ConfigurationEvaluation::Active {
                 outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: vec![plane].try_into().unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                vec![plane],
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: None,
                 distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
@@ -265,11 +277,13 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = vec![
-        FeatureId::mint("synthetic:test:id#plane").unwrap(),
-        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-    ]
-    .try_into()
+    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+        vec![
+            FeatureId::mint("synthetic:test:id#plane").unwrap(),
+            FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+        ],
+        &cadmpeg_test_support::service_decode_context(),
+    )
     .unwrap();
     super::inherit_configuration_reference_plane_states(&ctx, &mut ir)?;
     assert_eq!(ir, expected);
@@ -386,11 +400,13 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         }),
         distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
     });
-    state.dependencies = vec![
-        FeatureId::mint("synthetic:test:id#plane").unwrap(),
-        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
-    ]
-    .try_into()
+    state.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+        vec![
+            FeatureId::mint("synthetic:test:id#plane").unwrap(),
+            FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+        ],
+        &cadmpeg_test_support::service_decode_context(),
+    )
     .unwrap();
     let losses = project_configuration_sketch_states(
         &ctx,
@@ -773,7 +789,13 @@ fn profile_termination_operands() -> (
         PlanarProfileRef::SketchRegions {
             sketch: sketch.clone(),
             regions: vec![
-                SketchProfileRegion::loops(0, vec![1, 3]).unwrap(),
+                SketchProfileRegion::loops(
+                    0,
+                    vec![1, 3],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("fixture loop-region admission")
+                .unwrap(),
                 SketchProfileRegion::trimmed(
                     vec![boundary.clone()],
                     vec![vec![boundary.clone()], vec![boundary]],
@@ -853,7 +875,9 @@ fn profile_termination_operands() -> (
                     local_id: "generated vertex".to_string().try_into().unwrap(),
                 },
                 "vertex native".into(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
@@ -862,12 +886,18 @@ fn profile_termination_operands() -> (
                 state,
                 HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(),
                 "historical vertex".into(),
+                &cadmpeg_test_support::service_decode_context(),
             )
-            .unwrap()
+            .expect("selection reference admission")
             .unwrap(),
         },
         LinearTermination::ToVertex {
-            vertex: VertexSelection::native("native vertex".into()).unwrap(),
+            vertex: VertexSelection::native(
+                "native vertex".into(),
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .expect("selection reference admission")
+            .unwrap(),
         },
     ];
     (planar, terminations)
@@ -988,9 +1018,11 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
             dependencies: if index == 0 {
                 cadmpeg_ir::features::DistinctMembers::default()
             } else {
-                vec![ParameterId::mint("synthetic:test:id#parameter-0").unwrap()]
-                    .try_into()
-                    .unwrap()
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![ParameterId::mint("synthetic:test:id#parameter-0").unwrap()],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap()
             },
             properties: std::collections::BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("property"),

@@ -128,7 +128,7 @@ fn closed_wire_loop_members<'a>(
 fn append_oriented_wire_curve(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     curve_id: CurveId,
     geometry: CurveGeometry,
     source_pos: usize,
@@ -290,7 +290,7 @@ fn source_wire_procedural(
 fn transfer_closed_wire_loops(
     admission: &mut FamilyEntityAdmission<'_, '_>,
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
@@ -1337,7 +1337,7 @@ pub(in crate::families) fn try_decode_zero_entity(
 
     let topology_counts = {
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
-        let mut candidate_annotations = admitted!(annotations.try_clone_for_decode(ctx, "catia_zero_topology_annotations"));
+        let mut candidate_annotations = admitted!(annotations.copy_transaction(ctx, "catia_zero_topology_annotations"));
         let topology_budget = ctx.work_budget(
             u64_from_index(crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS),
         );
@@ -1355,16 +1355,16 @@ pub(in crate::families) fn try_decode_zero_entity(
             refusal,
         );
         let admissible = match &counts {
-            Ok(Some(_)) => match neutral_model_is_admissible(&mut candidate_ir, &unknowns) {
+            Ok(Some(_)) => match neutral_model_is_admissible(ctx, &mut candidate_ir, &unknowns) {
                 Ok(admissible) => admissible,
-                Err(limit) => return Some(Err(limit.into())),
+                Err(limit) => return Some(Err(limit)),
             },
             _ => false,
         };
         match counts {
             Ok(Some(counts)) if admissible => {
                 ir = candidate_ir;
-                annotations = candidate_annotations;
+                annotations = admitted!(candidate_annotations.into_retained());
                 Some(counts)
             }
             Err(error) => return Some(Err(error)),
@@ -1621,12 +1621,14 @@ mod tests {
     #[test]
     fn zero_entity_wire_nurbs_copy_refuses_collection_limit() {
         let nurbs = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
+        .expect("fixture constructor admission")
         .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
@@ -1651,12 +1653,14 @@ mod tests {
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![first, corner],
                     None,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid linear NURBS"),
             )),
             source_object: None,
@@ -1934,8 +1938,12 @@ mod tests {
                     .expect("identity grammar")
             )
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -2056,8 +2064,12 @@ mod tests {
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, chord])
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -2097,9 +2109,11 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
                 &curve_id,
                 ProceduralCurve::new(construction_id.clone(), definition.clone()),
             )
+            .unwrap()
             .unwrap();
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
@@ -2211,8 +2225,12 @@ mod tests {
                 .definition(),
             &definition
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
-            .expect("resource allocation did not fail"));
+        assert!(crate::assemble::neutral_model_is_admissible(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("resource allocation did not fail"));
     }
 
     #[test]

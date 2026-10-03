@@ -148,8 +148,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 id: loops[index].clone(),
                 face: faces[index].clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(
+                        &cadmpeg_test_support::service_decode_context(),
+                        vec![coedges[index].clone()],
+                        Vec::new(),
+                    )
+                    .expect("fixture ring admission")
+                    .expect("valid loop ring"),
                 ),
             });
             ir.model.coedges.push(Coedge {
@@ -227,13 +232,15 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         );
         assert_eq!(
             cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
                 &surfaces[0],
                 5.0,
                 0.0
             ),
             cadmpeg_ir::eval::model_surface_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
                 &surfaces[1],
                 5.0,
                 0.0
@@ -297,7 +304,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap(),
         );
         let endpoints = range.map(|parameter| {
-            let uv = cadmpeg_ir::eval::pcurve_uv(&canonical, parameter).unwrap();
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &canonical,
+                parameter,
+            )
+            .unwrap();
             Point3::new(uv.u, uv.v, 0.0)
         });
         for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
@@ -474,7 +486,12 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         )
         .expect("reversed lanes pair")
         .expect("carrier tangent selects one closed-branch orientation");
-        let uv = cadmpeg_ir::eval::pcurve_uv(&oriented, std::f64::consts::FRAC_PI_2).unwrap();
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &oriented,
+            std::f64::consts::FRAC_PI_2,
+        )
+        .unwrap();
         assert!((uv.u - 0.0).abs() < 1.0e-12);
         assert!((uv.v - 2.0).abs() < 1.0e-12);
     });

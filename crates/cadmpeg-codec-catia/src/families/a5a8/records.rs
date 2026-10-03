@@ -650,7 +650,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     );
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             A5FreeformCurve::DEGREE,
             knots,
@@ -887,7 +887,7 @@ fn parse_a5_nurbs_curve(
     }
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes_for_decode(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             degree,
             knots,
@@ -1127,15 +1127,13 @@ pub(in crate::families) fn rolling_ball_jet_definition(
                 ),
             }),
     );
-    Ok(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts_for_decode(
-            A8FreeformCurve::DEGREE,
-            stations,
-            ctx,
-        )?
-        .ok()
-        .map(ProceduralSurfaceDefinition::RollingBallJet),
-    )
+    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
+        A8FreeformCurve::DEGREE,
+        stations,
+        ctx,
+    )?
+    .ok()
+    .map(ProceduralSurfaceDefinition::RollingBallJet))
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -1752,23 +1750,13 @@ fn a8_surface_from_external_grid(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
-            .and_then(|poles| {
-                NurbsSurface::new(
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        header.u_degree,
-                        u_knots,
-                        false,
-                    ),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        header.v_degree,
-                        v_knots,
-                        false,
-                    ),
-                    poles,
-                    false,
-                )
-            }),
+        NurbsSurface::from_checked_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+            false,
+        )?,
         refusal,
         format_args!(
             "a8 NURBS surface record #{} at byte {}",
@@ -2114,15 +2102,11 @@ fn a5_surface(
         return Ok(None);
     };
     at += 1;
-    ctx.charge_work(
-        u64_from_index(u_distinct.len()),
-        "catia_a5_surface_knot_order_scan",
-    )?;
-    ctx.charge_work(
-        u64_from_index(v_distinct.len()),
-        "catia_a5_surface_knot_order_scan",
-    )?;
-    if !knots_strictly_increasing(&u_distinct) || !knots_strictly_increasing(&v_distinct) {
+    if !knots_strictly_increasing(&u_distinct, |count| {
+        ctx.charge_work(count, "catia_a5_surface_knot_order_scan")
+    })? || !knots_strictly_increasing(&v_distinct, |count| {
+        ctx.charge_work(count, "catia_a5_surface_knot_order_scan")
+    })? {
         return Ok(None);
     }
     let Some((u_knots, u_count)) = a5_knots(ctx, &u_distinct, u_degree)? else {
@@ -2178,15 +2162,13 @@ fn a5_surface(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
-            .and_then(|poles| {
-                NurbsSurface::new(
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                    poles,
-                    false,
-                )
-            }),
+        NurbsSurface::from_checked_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+            false,
+        )?,
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
     )
@@ -2522,15 +2504,13 @@ fn a8_surface_from_parsed(
         .transpose()?;
     crate::nurbs::note_refusal(
         ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
-            .and_then(|poles| {
-                NurbsSurface::new(
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                    poles,
-                    false,
-                )
-            }),
+        NurbsSurface::from_checked_lanes(
+            ctx,
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+            false,
+        )?,
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
     )

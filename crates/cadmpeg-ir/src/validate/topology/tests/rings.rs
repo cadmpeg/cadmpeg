@@ -154,7 +154,8 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 
     ir.model.shells[0].add_free_vertex(ir.model.edges[0].start.clone());
     ir.model.bodies[0].kind = crate::topology::BodyKind::Wire;
-    ir.finalize();
+    ir.finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
 
     let findings = validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
@@ -248,7 +249,9 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         .chain(std::iter::once(loop_id.clone()))
         .collect();
     ir.model.faces[0].loops = crate::topology::FaceLoops::unspecified(face_loops);
-    ir.model.finalize();
+    ir.model
+        .finalize(&cadmpeg_test_support::service_decode_context())
+        .expect("fixture ordering is admitted");
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }

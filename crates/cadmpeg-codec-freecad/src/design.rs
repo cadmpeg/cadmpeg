@@ -498,15 +498,7 @@ pub(crate) fn transfer(
             dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
-        dependency_members.extend_for_decode(
-            ctx,
-            dependencies,
-            "fcstd distinct feature dependencies",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(outputs.len()),
-            "fcstd distinct feature outputs",
-        )?;
+        dependency_members.append(ctx, dependencies, "fcstd distinct feature dependencies")?;
         ctx.reserve_vec(&mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
@@ -522,9 +514,8 @@ pub(crate) fn transfer(
             source_content: FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                outputs
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                    .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref: Some(
                 ctx.copy_retained_text(object.id(), "fcstd feature native reference")?,
@@ -621,7 +612,7 @@ fn body_definition(
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
-        match cadmpeg_ir::features::TreeChildren::new_for_decode(children, active_child, ctx) {
+        match cadmpeg_ir::features::TreeChildren::new(children, active_child, ctx) {
             Ok(children) => Some(children),
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                 return Err(limit.into())
@@ -2111,20 +2102,15 @@ fn sketch_nurbs(
     let Some(lanes) = sketch_nurbs_lanes(ctx, kind, node)? else {
         return Ok(None);
     };
-    if lanes.weights.is_some() {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(lanes.control_points.len()),
-            "fcstd sketch NURBS weighted pole pairs",
-        )?;
-    }
     Ok(Some(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+            ctx,
             lanes.degree,
             lanes.knots,
             lanes.control_points,
             lanes.weights,
             lanes.periodic,
-        )?,
+        )??,
     )))
 }
 
@@ -2256,11 +2242,7 @@ fn sketch_nurbs_lanes(
     } else {
         None
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(expanded_count),
-        "fcstd sketch NURBS knot conversion",
-    )?;
-    let Some(knots) = KnotVector::from_finite_lanes(full_knots).ok() else {
+    let Some(knots) = KnotVector::from_finite_lanes(ctx, full_knots)?.ok() else {
         return Ok(None);
     };
     Ok(Some(SketchNurbsLanes {
@@ -3153,7 +3135,7 @@ fn bind_parameter_dependencies(
             let mut members =
                 ctx.collection_vec(dependencies.len(), "fcstd parameter dependency members")?;
             members.extend(dependencies);
-            DistinctMembers::try_from_for_decode(members, ctx).map_err(CodecError::from)?
+            DistinctMembers::try_from(members, ctx).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
@@ -6073,7 +6055,7 @@ fn section_shape_definition(
         BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
     let tool =
         BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
-    cadmpeg_ir::features::SectionOperands::new(base, tool)
+    cadmpeg_ir::features::SectionOperands::new(base, tool, ctx)?
         .ok()
         .map(|operands| -> Result<_, CodecError> {
             Ok(FeatureDefinition::Operation(
@@ -6762,7 +6744,8 @@ fn boolean_definition(
             )?),
         )
     };
-    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools).ok() else {
+    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?.ok()
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(

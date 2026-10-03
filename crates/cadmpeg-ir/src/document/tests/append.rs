@@ -43,8 +43,9 @@ fn staged_document() -> CadIr {
     }
     ir.model
         .set_feature_regeneration_parent(
-            "test:append:feature#child".try_into().unwrap(),
-            "test:append:feature#parent".try_into().unwrap(),
+            &cadmpeg_test_support::service_decode_context(),
+            &("test:append:feature#child".try_into().unwrap()),
+            &("test:append:feature#parent".try_into().unwrap()),
         )
         .unwrap();
     for (format, arena, key) in [
@@ -80,21 +81,26 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
     ir.native.namespace_mut("empty");
     let before = ir.clone();
     let staged = staged_document();
-    let result = ir.try_append(staged.model, staged.native, |combined| {
-        assert_eq!(combined.model.points.len(), before.model.points.len() + 1);
-        assert_eq!(combined.model.assets.len(), 1);
-        assert!(combined
-            .model
-            .feature_regeneration_parent(&"test:append:feature#child".try_into().unwrap())
-            .is_some());
-        assert_eq!(
-            combined.native.namespace("test").unwrap().arenas()["existing"].len(),
-            2
-        );
-        assert!(combined.native.namespace("other").is_some());
-        Err::<(), _>("independent rejection")
-    });
-    assert_eq!(result, Err("independent rejection"));
+    let result = ir.try_append(
+        &cadmpeg_test_support::service_decode_context(),
+        staged.model,
+        staged.native,
+        |combined| {
+            assert_eq!(combined.model.points.len(), before.model.points.len() + 1);
+            assert_eq!(combined.model.assets.len(), 1);
+            assert!(combined
+                .model
+                .feature_regeneration_parent(&"test:append:feature#child".try_into().unwrap())
+                .is_some());
+            assert_eq!(
+                combined.native.namespace("test").unwrap().arenas()["existing"].len(),
+                2
+            );
+            assert!(combined.native.namespace("other").is_some());
+            Ok(Err::<(), _>("independent rejection"))
+        },
+    );
+    assert_eq!(result.unwrap(), Err("independent rejection"));
     assert_eq!(ir, before);
 }
 
@@ -102,9 +108,13 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
 fn accepted_append_preserves_all_staged_records_and_parent_relations() {
     let mut ir = CadIr::empty();
     let staged = staged_document();
-    ir.try_append(staged.model.clone(), staged.native.clone(), |_| {
-        Ok::<_, ()>(())
-    })
+    ir.try_append(
+        &cadmpeg_test_support::service_decode_context(),
+        staged.model.clone(),
+        staged.native.clone(),
+        |_| Ok(Ok::<_, ()>(())),
+    )
+    .unwrap()
     .unwrap();
     assert_eq!(ir.model, staged.model);
     assert_eq!(ir.native, staged.native);
@@ -122,15 +132,83 @@ fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
         points: vec![ir.model.points[0].clone()],
         ..Model::default()
     };
-    let result = ir.try_append(model, Native::default(), |combined| {
-        let report = crate::admit(combined, crate::DRAFT_CORE_CHECKS, Vec::new())
+    let result = ir.try_append(
+        &cadmpeg_test_support::service_decode_context(),
+        model,
+        Native::default(),
+        |combined| {
+            let report = crate::admit(
+                &cadmpeg_test_support::service_decode_context(),
+                combined,
+                crate::DRAFT_CORE_CHECKS,
+                Vec::new(),
+            )
             .expect("resource allocation did not fail");
-        if report.is_ok() {
-            Ok(())
-        } else {
-            Err(report)
-        }
-    });
-    assert!(result.is_err());
+            if report.is_ok() {
+                Ok(Ok(()))
+            } else {
+                Ok(Err(report))
+            }
+        },
+    );
+    assert!(result.unwrap().is_err());
     assert_eq!(ir, before);
+}
+
+#[test]
+fn resource_refused_append_restores_neutral_native_and_parent_state() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let before = ir.clone();
+    let staged = staged_document();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let result = ir.try_append(&ctx, staged.model, staged.native, |_| {
+        ctx.charge_work(u64::MAX / 2, "test append callback refusal")?;
+        Ok(Ok::<(), ()>(()))
+    });
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("callback resource refusal must stay outer");
+    };
+    assert_eq!(limit.operation, "test append callback refusal");
+    assert_eq!(ir, before);
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+}
+
+#[test]
+fn append_storage_refusal_precedes_visible_mutation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
+        let mut ir = crate::examples::unit_cube().unwrap();
+        ir.native
+            .namespace_mut("test")
+            .arenas_mut()
+            .insert("existing".into(), Vec::new());
+        let before = ir.clone();
+        let staged = staged_document();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = ir.try_append(&ctx, staged.model, staged.native, |_| Ok(Ok::<(), ()>(())));
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("append storage must refuse");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(ir, before);
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
+    }
 }

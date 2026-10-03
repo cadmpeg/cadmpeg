@@ -378,12 +378,16 @@ fn build_result(
     let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
     ctx.charge_work(annotation_count, "scan SAT annotation records")?;
     for record in annotation_records {
-        let stream = StreamHandle::new_for_decode(
+        let stream = StreamHandle::new(
             ctx,
-            cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream),
+            cadmpeg_ir::stream_name!("sat:").with_suffix(
+                ctx,
+                &record.stream,
+                "compose annotation stream name",
+            )?,
             "allocate annotation stream handle",
         )?;
-        annotations.note_for_decode(
+        annotations.note(
             ctx,
             &record.id,
             &stream,
@@ -392,7 +396,7 @@ fn build_result(
         )?;
         for field in record.derived_fields {
             annotations
-                .derived_for_decode(ctx, &record.id, field)
+                .derived(ctx, &record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

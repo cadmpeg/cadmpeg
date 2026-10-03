@@ -600,3 +600,5 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");
 cadmpeg_core::named_optional_field!(deserialize_selection_style, String, "selection_style");
 cadmpeg_core::named_optional_field!(deserialize_description, String, "description");
+
+mod identity_rewrite;

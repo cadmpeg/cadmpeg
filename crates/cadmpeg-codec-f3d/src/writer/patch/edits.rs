@@ -3835,8 +3835,16 @@ mod tests {
         weights: Option<Vec<f64>>,
     ) -> SolvedCurveGeometry {
         SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(1, knots, poles(pole_count), weights, false)
-                .expect("degree, knots and control points agree"),
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                knots,
+                poles(pole_count),
+                weights,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degree, knots and control points agree"),
         )
     }
 
@@ -3849,11 +3857,13 @@ mod tests {
     ) -> SolvedSurfaceGeometry {
         SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(1, u_knots, false),
                 NurbsSurfaceAxis::new(1, v_knots, false),
                 NurbsSurfaceLanes::new((0..u_count).map(|_| poles(v_count)).collect(), weights),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("degrees, knots and control grid agree"),
         )
     }
@@ -3934,8 +3944,16 @@ mod tests {
     #[test]
     fn a_same_kind_nurbs_curve_edit_that_leaves_the_writable_degree_range_is_malformed() {
         let degree_zero = SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(0, vec![0.0, 0.0, 1.0], poles(2), None, false)
-                .expect("degree, knots and control points agree"),
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                0,
+                vec![0.0, 0.0, 1.0],
+                poles(2),
+                None,
+                false,
+            )
+            .expect("fixture constructor admission")
+            .expect("degree, knots and control points agree"),
         );
         let error = validate_curve_edits(
             &curve(
@@ -4022,12 +4040,14 @@ mod tests {
             "f3d:brep:entity#7",
             SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 5.0, 0.0)],
                     weights,
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("degree, knots and control points agree"),
             ),
         );
@@ -4186,11 +4206,13 @@ mod tests {
     fn a_same_kind_nurbs_surface_edit_that_leaves_the_writable_u_degree_range_is_malformed() {
         let u_degree_zero = SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(0, vec![0.0, 0.0, 1.0], false),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceLanes::new((0..2).map(|_| poles(2)).collect(), None),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("degrees, knots and control grid agree"),
         );
         let error = validate_surface_edits(
@@ -4219,11 +4241,13 @@ mod tests {
     fn a_same_kind_nurbs_surface_edit_that_leaves_the_writable_v_degree_range_is_malformed() {
         let v_degree_zero = SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                 NurbsSurfaceAxis::new(0, vec![0.0, 0.0, 1.0], false),
                 NurbsSurfaceLanes::new((0..2).map(|_| poles(2)).collect(), None),
                 false,
             )
+            .expect("fixture constructor admission")
             .expect("degrees, knots and control grid agree"),
         );
         let error = validate_surface_edits(
@@ -4367,11 +4391,13 @@ mod tests {
             "f3d:brep:entity#9",
             SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                     NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
                     NurbsSurfaceLanes::new(moved, Some(weight_grid(2, 2, -1.0))),
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("degrees, knots and control grid agree"),
             ),
         );

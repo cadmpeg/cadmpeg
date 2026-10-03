@@ -190,6 +190,11 @@ impl UnknownRecord {
         &self.links
     }
 
+    /// Borrow immutable identity text and mutable outgoing links as disjoint fields.
+    pub(crate) fn id_and_links_mut(&mut self) -> (&str, &mut Vec<String>) {
+        (self.id.as_str(), &mut self.links)
+    }
+
     /// Returns the related entity IDs for reference resolution.
     #[must_use]
     pub fn links_mut(&mut self) -> &mut Vec<String> {
@@ -381,3 +386,5 @@ mod tests {
         );
     }
 }
+
+mod identity_rewrite;

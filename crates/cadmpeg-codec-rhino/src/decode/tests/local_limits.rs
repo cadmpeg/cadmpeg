@@ -28,7 +28,7 @@ fn point_commit_propagates_local_entity_limit() {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino instance entity limit" && refusal.limit == 4 && refusal.additional == 1)
         );
-        assert!(context.ir.model.points.is_empty());
+        assert!(context.session.document().model.points.is_empty());
     });
 }
 
@@ -61,7 +61,7 @@ fn candidate_propagates_local_entity_limit() {
             matches!(error, CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.operation == "Rhino instance entity limit" && refusal.limit == 0 && refusal.additional == 1)
         );
-        assert!(context.ir.model.points.is_empty());
+        assert!(context.session.document().model.points.is_empty());
     });
 }
 
@@ -85,7 +85,7 @@ fn brep_commit_propagates_local_entity_limit() {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino instance entity limit" && refusal.limit == 0)
         );
-        assert!(context.ir.model.bodies.is_empty());
+        assert!(context.session.document().model.bodies.is_empty());
     });
 }
 
@@ -134,7 +134,7 @@ fn instance_selection_key_refuses_scoped_storage_before_formatting() {
         },
     );
     with_expand(&scan, |expand| {
-        let (selection, _bytes) = super::super::InstanceSelection::new(
+        let selection = super::super::InstanceSelection::new(
             expand.ctx(),
             0,
             &["root".to_string(), "child".to_string()],
@@ -171,6 +171,8 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
         1,
         POINT_CLASS,
     )]);
+    let record_storage =
+        u64::try_from(std::mem::size_of::<cadmpeg_ir::unknown::UnknownRecord>()).unwrap();
     with_transaction_limits(
         &scan,
         100,
@@ -182,7 +184,8 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
                     + 4 * std::mem::size_of::<usize>()
                     + 8 * std::mem::size_of::<Option<super::super::GeometryOutcome>>(),
             )
-            .expect("transaction lookup layout"),
+            .expect("transaction lookup layout")
+                + record_storage,
         ),
         |expand| {
             let context = DecodeContext::new(&scan, expand).expect("transaction");
@@ -211,23 +214,31 @@ fn transformed_instance_links_refuse_scoped_slots_before_copy() {
     let scan = scan_with_objects(&[]);
     with_transaction_limits(&scan, 100, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
-        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(&context.ir.model);
-        context.ir.model.bodies.push(cadmpeg_ir::topology::Body {
-            id: "rhino:test:body#one".try_into().expect("id"),
-            name: None,
-            kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
-            color: None,
-            visible: None,
-            transform: None,
-        });
+        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &context.session.document().model,
+            expand.ctx(),
+        )
+        .unwrap();
+        context
+            .ir_mut()
+            .model
+            .bodies
+            .push(cadmpeg_ir::topology::Body {
+                id: "rhino:test:body#one".try_into().expect("id"),
+                name: None,
+                kind: cadmpeg_ir::topology::BodyKind::Solid,
+                regions: Vec::new(),
+                color: None,
+                visible: None,
+                transform: None,
+            });
         let mut scratch = expand
             .ctx()
             .reserve_scoped(0, "Rhino instance link scratch")
             .expect("empty scope");
         let error = context
             .transform_new_entities(
-                &before,
+                &before.0,
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
@@ -247,23 +258,31 @@ fn transformed_instance_identity_refuses_scoped_text_before_copy() {
     let slot_bytes = u64::try_from(4 * std::mem::size_of::<String>()).expect("size");
     with_transaction_limits(&scan, 100, None, Some(slot_bytes), |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
-        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(&context.ir.model);
-        context.ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-            id: "rhino:test:curve#one".try_into().expect("id"),
-            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
-                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(super::line_nurbs(
-                    0.0, 1.0, false,
-                )),
-            ),
-            source_object: None,
-        });
+        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &context.session.document().model,
+            expand.ctx(),
+        )
+        .unwrap();
+        context
+            .ir_mut()
+            .model
+            .curves
+            .push(cadmpeg_ir::geometry::Curve {
+                id: "rhino:test:curve#one".try_into().expect("id"),
+                geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(super::line_nurbs(
+                        0.0, 1.0, false,
+                    )),
+                ),
+                source_object: None,
+            });
         let mut scratch = expand
             .ctx()
             .reserve_scoped(0, "Rhino instance link scratch")
             .expect("empty scope");
         let error = context
             .transform_new_entities(
-                &before,
+                &before.0,
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
@@ -281,8 +300,12 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
     let scan = scan_with_objects(&[]);
     with_transaction_limits(&scan, 100, None, Some(0), |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
-        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(&context.ir.model);
-        context.ir.model.points.push(Point::new(
+        let before = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &context.session.document().model,
+            expand.ctx(),
+        )
+        .unwrap();
+        context.ir_mut().model.points.push(Point::new(
             "rhino:test:point#one".try_into().expect("id"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("point"),
             None,
@@ -293,7 +316,7 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
             .expect("empty scope");
         let error = context
             .transform_new_entities(
-                &before,
+                &before.0,
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
@@ -332,8 +355,8 @@ fn point_cloud_commit_propagates_local_entity_limit() {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino instance entity limit" && refusal.limit == 6 && refusal.additional == 1)
         );
-        assert!(context.ir.model.bodies.is_empty());
-        assert!(context.ir.model.vertices.is_empty());
+        assert!(context.session.document().model.bodies.is_empty());
+        assert!(context.session.document().model.vertices.is_empty());
         assert!(context.report.phase_warnings.is_empty());
     });
 }

@@ -11,9 +11,9 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
-use cadmpeg_ir::eval::{
-    curve_point, finite_or_refusal, model_surface_point, pcurve_uv, EvaluationFailure,
-};
+use cadmpeg_ir::eval::finite_or_refusal;
+use cadmpeg_ir::eval::model_surface_point;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface},
@@ -2348,7 +2348,11 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
             {
                 continue;
             }
-            let evaluated_start = finite_or_refusal(curve_point(&curve.geometry, range[0]))?;
+            let evaluated_start = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve.geometry,
+                range[0],
+            ))?;
             let (Some(start), Some(evaluated_start)) =
                 (vertex_position(ir, &edge.start), evaluated_start)
             else {
@@ -2361,7 +2365,11 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
             ) {
                 continue;
             }
-            let evaluated_end = finite_or_refusal(curve_point(&curve.geometry, range[1]))?;
+            let evaluated_end = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve.geometry,
+                range[1],
+            ))?;
             let (Some(end), Some(evaluated_end)) = (vertex_position(ir, &edge.end), evaluated_end)
             else {
                 continue;
@@ -3651,7 +3659,7 @@ fn oriented_curve_entity(
             version,
         )?,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, nurbs, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3687,7 +3695,7 @@ fn oriented_curve_entity(
                     "IGES reversed circular edge span is not convertible ({span:?})"
                 ))
             })?;
-            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &reversed, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3725,7 +3733,7 @@ fn oriented_curve_entity(
                     "IGES reversed elliptical edge span is not convertible ({span:?})"
                 ))
             })?;
-            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &reversed, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3761,7 +3769,7 @@ fn oriented_curve_entity(
                     "IGES reversed parabolic edge span is not convertible ({span:?})"
                 ))
             })?;
-            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &reversed, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3776,14 +3784,15 @@ fn oriented_curve_entity(
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             let values = polyline_parameters(polyline)?;
             let original = NurbsCurve::from_lanes(
+                ctx,
                 1,
                 polyline_knots(&values),
                 polyline.points().collect(),
                 None,
                 false,
-            )
+            )?
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
-            let (reversed, range) = reverse_nurbs(&original, span.range)?;
+            let (reversed, range) = reverse_nurbs(ctx, &original, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
@@ -3965,6 +3974,11 @@ fn pcurve_support_surfaces(ir: &CadIr, pcurve_id: &cadmpeg_ir::ids::PcurveId) ->
 }
 
 fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+
     let mut parameter_map = None;
     for surface_id in pcurve_support_surfaces(ir, &pcurve.id) {
         let candidate =
@@ -3985,16 +3999,19 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
         return Ok(pcurve);
     };
     nurbs
-        .try_map_control_points(|_, point| {
-            let point = point.get();
-            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-                point.u.mul_add(u_factor, u_offset),
-                point.v.mul_add(v_factor, v_offset),
-            ))
-            .ok_or_else(|| {
-                NurbsError::Structure("control_points contains a non-finite point".into())
-            })
-        })
+        .try_map_control_points(
+            |_, point| {
+                let point = point.get();
+                cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                    point.u.mul_add(u_factor, u_offset),
+                    point.v.mul_add(v_factor, v_offset),
+                ))
+                .ok_or_else(|| {
+                    NurbsError::Structure("control_points contains a non-finite point".into())
+                })
+            },
+            &ctx,
+        )?
         .map_err(|error| {
             CodecError::malformed(format_args!(
                 "pcurve {} parameter mapping: {error}",
@@ -4025,11 +4042,12 @@ fn oriented_pcurve_entity(
     let nurbs = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
-    let (reversed, range) = reverse_nurbs(&nurbs, range)?;
+    let (reversed, range) = reverse_nurbs(ctx, &nurbs, range)?;
     encode_nurbs(ctx, &reversed, range, "PCURVE")
 }
 
 fn reverse_nurbs(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsCurve,
     range: FiniteVector<2>,
 ) -> Result<(NurbsCurve, FiniteVector<2>), CodecError> {
@@ -4054,7 +4072,7 @@ fn reverse_nurbs(
     let reversed_range = FiniteVector::from([reflect(range_end)?, reflect(range_start)?]);
     let mut poles = nurbs.pole_rows().clone();
     poles.reverse();
-    let reversed = NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic())
+    let reversed = NurbsCurve::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
         .map_err(|error| CodecError::malformed(format_args!("reversed NURBS: {error}")))?;
     Ok((reversed, reversed_range))
 }
@@ -4280,7 +4298,11 @@ impl PcurveOrientationContext<'_> {
             }
             // A non-finite pcurve point is evaluated on the support as a finite
             // one is.
-            let pcurve_point = |parameter, position| match pcurve_uv(&pcurve.geometry, parameter) {
+            let pcurve_point = |parameter, position| match cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                parameter,
+            ) {
                 Ok(uv) => Ok(uv.get()),
                 Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -4291,8 +4313,20 @@ impl PcurveOrientationContext<'_> {
             };
             let start_uv = pcurve_point(range[0], "start")?;
             let end_uv = pcurve_point(range[1], "end")?;
-            let start = model_surface_point(self.ir, self.surface, start_uv.u, start_uv.v);
-            let end = model_surface_point(self.ir, self.surface, end_uv.u, end_uv.v);
+            let start = model_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                self.ir,
+                self.surface,
+                start_uv.u,
+                start_uv.v,
+            );
+            let end = model_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                self.ir,
+                self.surface,
+                end_uv.u,
+                end_uv.v,
+            );
             // Both ends are refused outside the support before either is
             // refused as non-finite.
             for (point, position) in [(&start, "start"), (&end, "end")] {
@@ -4497,7 +4531,11 @@ fn generated_endpoint_coordinate_scale(ir: &CadIr) -> Result<f64, CodecError> {
             continue;
         };
         for parameter in range {
-            if let Some(point) = finite_or_refusal(curve_point(&curve.geometry, parameter))? {
+            if let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve.geometry,
+                parameter,
+            ))? {
                 scale = scale.max(point_coordinate_scale(point));
             }
         }
@@ -5245,7 +5283,11 @@ fn extrusion_surface_entities(
         };
         // A directrix end outside the finite range is refused as the composite
         // directrix's non-finite end is.
-        let directrix_end = |parameter, label: &str| match curve_point(&geometry, parameter) {
+        let directrix_end = |parameter, label: &str| match cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &geometry,
+            parameter,
+        ) {
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(_)) => Err(non_finite_point(label)),
             Err(EvaluationFailure::NoValue) => Err(CodecError::malformed(format_args!(
@@ -5428,14 +5470,23 @@ fn revolution_surface_entities(
     } else {
         [start_parameter, terminate_parameter]
     };
-    let start =
-        curve_point(&geometry, evaluation_interval[0]).map_err(|failure| match failure {
-            EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
-                CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
-            }
-        })?;
-    let end = curve_point(&geometry, evaluation_interval[1]).map_err(|failure| match failure {
+    let start = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        evaluation_interval[0],
+    )
+    .map_err(|failure| match failure {
+        EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+            CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
+        }
+    })?;
+    let end = cadmpeg_ir::eval::decode::curve_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &geometry,
+        evaluation_interval[1],
+    )
+    .map_err(|failure| match failure {
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
         EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
             CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
@@ -5776,13 +5827,21 @@ fn nurbs_surface_closed_u(
     v_range: [f64; 2],
 ) -> Result<bool, CodecError> {
     for v in [v_range[0], v_range[0].midpoint(v_range[1]), v_range[1]] {
-        let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[0], v))?
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            u_range[0],
+            v,
+        ))?
         else {
             return Ok(false);
         };
-        let Some(end) =
-            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v))?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            u_range[1],
+            v,
+        ))?
         else {
             return Ok(false);
         };
@@ -5799,13 +5858,21 @@ fn nurbs_surface_closed_v(
     v_range: [f64; 2],
 ) -> Result<bool, CodecError> {
     for u in [u_range[0], u_range[0].midpoint(u_range[1]), u_range[1]] {
-        let Some(start) =
-            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[0]))?
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            u,
+            v_range[0],
+        ))?
         else {
             return Ok(false);
         };
-        let Some(end) =
-            finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]))?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            nurbs,
+            u,
+            v_range[1],
+        ))?
         else {
             return Ok(false);
         };
@@ -6166,18 +6233,25 @@ fn curve_reference_span_inner(
                     let range = default_range(geometry.solved().ok_or_else(|| {
                         CodecError::NotImplemented("IGES carrier has no solved geometry".into())
                     })?)?;
-                    let start =
-                        curve_point(geometry, range[0]).map_err(|failure| match failure {
-                            EvaluationFailure::ResourceLimit(limit) => {
-                                CodecError::ResourceLimit(limit)
-                            }
-                            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
-                                CodecError::NotImplemented(format!(
-                                    "IGES composite child curve {curve_id} has no evaluable start"
-                                ))
-                            }
-                        })?;
-                    let end = curve_point(geometry, range[1]).map_err(|failure| match failure {
+                    let start = cadmpeg_ir::eval::decode::curve_point(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        geometry,
+                        range[0],
+                    )
+                    .map_err(|failure| match failure {
+                        EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+                        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+                            CodecError::NotImplemented(format!(
+                                "IGES composite child curve {curve_id} has no evaluable start"
+                            ))
+                        }
+                    })?;
+                    let end = cadmpeg_ir::eval::decode::curve_point(
+                        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                        geometry,
+                        range[1],
+                    )
+                    .map_err(|failure| match failure {
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
                         EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
                             CodecError::NotImplemented(format!(
@@ -6305,7 +6379,12 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
                 | SolvedCurveGeometry::Polyline(_)
         )
     ) {
-        let evaluated_start = curve_point(geometry, range[0]).map_err(|failure| match failure {
+        let evaluated_start = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            geometry,
+            range[0],
+        )
+        .map_err(|failure| match failure {
             EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
             EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
                 CodecError::malformed(format_args!(
@@ -6314,7 +6393,12 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
                 ))
             }
         })?;
-        let evaluated_end = curve_point(geometry, range[1]).map_err(|failure| match failure {
+        let evaluated_end = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            geometry,
+            range[1],
+        )
+        .map_err(|failure| match failure {
             EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
             EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::malformed(
                 format_args!("IGES edge {} end cannot be evaluated on its curve", edge.id),
@@ -6642,12 +6726,13 @@ fn curve_entity(
         SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline)?;
             let nurbs = NurbsCurve::from_lanes(
+                ctx,
                 1,
                 polyline_knots(&values),
                 polyline.points().collect(),
                 None,
                 false,
-            )
+            )?
             .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(ctx, &nurbs, range, "POLYLINE")
         }
@@ -6802,11 +6887,19 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> Result<bool, CodecError> {
-    let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[0]))?
+    let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        nurbs,
+        domain[0],
+    ))?
     else {
         return Ok(false);
     };
-    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[1]))?
+    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        nurbs,
+        domain[1],
+    ))?
     else {
         return Ok(false);
     };
@@ -6839,6 +6932,11 @@ fn apply_rigid_transform(
     geometry: CurveGeometry,
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<CurveGeometry, CodecError> {
+    let writer_arena = cadmpeg_core::decode::DecodeArena::new();
+    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
+
     let point = |value: FinitePoint3| -> Result<FinitePoint3, CodecError> {
         transform.apply_point(value.get()).ok_or_else(|| {
             CodecError::malformed("transformed curve point has a non-finite coordinate")
@@ -6973,14 +7071,17 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .try_map_control_points(|_, control_point| {
-                    transform.apply_point(control_point.get()).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "transformed NURBS curve control point has a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })
-                })
+                .try_map_control_points(
+                    |_, control_point| {
+                        transform.apply_point(control_point.get()).ok_or_else(|| {
+                            NurbsError::EditRefused(
+                                "transformed NURBS curve control point has a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })
+                    },
+                    &ctx,
+                )?
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::malformed(message),
                     error => {

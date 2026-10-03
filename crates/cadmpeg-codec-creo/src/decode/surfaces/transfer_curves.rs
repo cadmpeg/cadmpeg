@@ -904,6 +904,7 @@ mod tests {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -923,6 +924,7 @@ mod tests {
                     ),
                     false,
                 )
+                .expect("fixture constructor admission")
                 .expect("valid test surface"),
             )),
             source_object: None,

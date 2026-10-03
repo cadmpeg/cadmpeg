@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::collections::{HashMap, HashSet};
+pub(crate) mod assembly_graph;
 
 use cadmpeg_core::text::NonBlankString;
 
@@ -286,7 +286,7 @@ pub enum LinkMember {
 }
 
 /// `FreeCAD` `App::Link`-specific occurrence state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
 #[serde(try_from = "LinkStateWire", into = "LinkStateWire")]
@@ -349,35 +349,6 @@ impl TryFrom<LinkStateWire> for LinkState {
             }
         }
         Ok(state)
-    }
-}
-
-impl From<LinkState> for LinkStateWire {
-    fn from(state: LinkState) -> Self {
-        Self {
-            members: state
-                .linked_subelements
-                .into_iter()
-                .map(|subelement| LinkMember::LinkedSubelement { subelement })
-                .chain(
-                    state
-                        .element_component
-                        .map(|component| LinkMember::ElementComponent { component }),
-                )
-                .chain(
-                    state
-                        .claim_child
-                        .map(|claim| LinkMember::ClaimChild { claim }),
-                )
-                .chain(
-                    state
-                        .copy_on_change
-                        .map(|copy_on_change| LinkMember::CopyOnChange {
-                            state: copy_on_change,
-                        }),
-                )
-                .collect(),
-        }
     }
 }
 
@@ -523,7 +494,7 @@ impl std::error::Error for AssemblyGraphError {
 
 /// Validated lookup view over a canonical occurrence tree.
 pub struct AssemblyGraph<'a> {
-    occurrences: HashMap<&'a str, &'a Occurrence>,
+    occurrences: assembly_graph::Facts<'a>,
 }
 
 #[cfg(test)]
@@ -743,18 +714,17 @@ mod tests {
         );
         child.linked_prototype = Some(translation(10.0));
         let occurrences = [child, root];
-        let graph = AssemblyGraph::new(&occurrences).expect("valid graph");
+        let mut graph = AssemblyGraph::new(&occurrences).expect("valid graph");
         assert_eq!(
-            super::resolve_occurrence(
+            crate::index::public_result(super::assembly_graph::resolve_occurrence(
                 graph
                     .occurrence(
                         &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
                     )
                     .unwrap(),
-                &graph.occurrences,
-                &mut std::collections::HashMap::new(),
-                &mut std::collections::HashSet::new()
-            )
+                &mut graph.occurrences,
+                &crate::index::PublicStorage
+            ))
             .expect("resolved child")
             .rows()[0][3],
             13.0
@@ -996,63 +966,38 @@ mod tests {
 impl<'a> AssemblyGraph<'a> {
     /// Validates parent links and every composed occurrence transform.
     pub fn new(occurrences: &'a [Occurrence]) -> Result<Self, AssemblyGraphError> {
-        let mut by_id = HashMap::with_capacity(occurrences.len());
-        for occurrence in occurrences {
-            if by_id.insert(occurrence.id.as_str(), occurrence).is_some() {
-                return Err(AssemblyGraphError::DuplicateOccurrence(
-                    occurrence.id.clone(),
-                ));
+        crate::index::public_result(assembly_graph::build(
+            occurrences,
+            &crate::index::PublicStorage,
+        ))
+        .map(|occurrences| Self { occurrences })
+        .map_err(|error| match error {
+            assembly_graph::GraphError::Duplicate(id) => {
+                AssemblyGraphError::DuplicateOccurrence(id.clone())
             }
-        }
-        let mut resolved = HashMap::with_capacity(occurrences.len());
-        for occurrence in occurrences {
-            resolve_occurrence(occurrence, &by_id, &mut resolved, &mut HashSet::new())?;
-        }
-        Ok(Self { occurrences: by_id })
+            assembly_graph::GraphError::Missing { occurrence, parent } => {
+                AssemblyGraphError::MissingParent {
+                    occurrence: occurrence.clone(),
+                    parent: parent.clone(),
+                }
+            }
+            assembly_graph::GraphError::Cycle(id) => AssemblyGraphError::ParentCycle(id.clone()),
+            assembly_graph::GraphError::Transform { occurrence, source } => {
+                AssemblyGraphError::Transform {
+                    occurrence: occurrence.clone(),
+                    source,
+                }
+            }
+        })
     }
 
     /// Returns an occurrence by identity.
     pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
-        self.occurrences.get(id.as_str()).copied()
+        crate::index::public_result(
+            self.occurrences
+                .occurrence(id, &crate::index::PublicStorage),
+        )
     }
-}
-
-fn resolve_occurrence<'a>(
-    occurrence: &'a Occurrence,
-    occurrences: &HashMap<&'a str, &'a Occurrence>,
-    resolved: &mut HashMap<&'a str, Transform>,
-    active: &mut HashSet<&'a str>,
-) -> Result<Transform, AssemblyGraphError> {
-    if let Some(transform) = resolved.get(occurrence.id.as_str()) {
-        return Ok(*transform);
-    }
-    if !active.insert(occurrence.id.as_str()) {
-        return Err(AssemblyGraphError::ParentCycle(occurrence.id.clone()));
-    }
-    let parent = match &occurrence.parent {
-        OccurrenceParent::Root {} => Transform::identity(),
-        OccurrenceParent::Occurrence {
-            occurrence: parent_id,
-        } => {
-            let Some(parent_occurrence) = occurrences.get(parent_id.as_str()).copied() else {
-                return Err(AssemblyGraphError::MissingParent {
-                    occurrence: occurrence.id.clone(),
-                    parent: parent_id.clone(),
-                });
-            };
-            resolve_occurrence(parent_occurrence, occurrences, resolved, active)?
-        }
-    };
-    let transform = occurrence
-        .effective_transform()
-        .and_then(|local| parent.compose(local))
-        .map_err(|source| AssemblyGraphError::Transform {
-            occurrence: occurrence.id.clone(),
-            source,
-        })?;
-    active.remove(occurrence.id.as_str());
-    resolved.insert(occurrence.id.as_str(), transform);
-    Ok(transform)
 }
 
 /// Container that owns a joint operand object.
@@ -1680,3 +1625,7 @@ cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "an
 cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
+
+mod identity_rewrite;
+
+mod serialization;

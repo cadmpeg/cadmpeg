@@ -35,8 +35,8 @@ pub(super) fn standard_pcurve_geometry(
     ) {
         return Ok(None);
     }
-    let on_start = point_on_surface(start, surface)?;
-    let on_end = point_on_surface(end, surface)?;
+    let on_start = point_on_surface(ctx, start, surface)?;
+    let on_end = point_on_surface(ctx, end, surface)?;
     if !on_start || !on_end {
         return Ok(None);
     }
@@ -100,7 +100,7 @@ pub(super) fn standard_pcurve_geometry(
         let center = center.get();
         let radius = radius.get();
         let normal = plane_surface.frame().axis().as_raw();
-        let contained_carrier = point_on_surface(center, surface)?
+        let contained_carrier = point_on_surface(ctx, center, surface)?
             && (start.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
             && (end.distance(center) - radius).abs() <= CIRCLE_TOLERANCE
             && edge_curve.is_none_or(|curve| {
@@ -142,11 +142,8 @@ pub(super) fn standard_pcurve_geometry(
     let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
     let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
     let Some(midpoint) =
-        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point_for_decode(
-            ctx,
-            surface,
-            midpoint_uv.u,
-            midpoint_uv.v,
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::surface_point(ctx, surface, midpoint_uv.u, midpoint_uv.v),
         )?)?
     else {
         return Ok(None);
@@ -236,12 +233,12 @@ pub(super) fn witnessed_surface_circle_end(
             candidate.v = selected;
         }
         let Some(midpoint) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
                 surface,
                 0.5 * (uv[0].u + candidate.u),
                 0.5 * (uv[0].v + candidate.v),
-            )?,
+            ))?,
         )?
         else {
             continue;
@@ -343,17 +340,20 @@ pub(super) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
 }
 
 pub(super) fn point_on_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
     surface: &SurfaceGeometry,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    Ok(point_on_surface_if_supported(point, surface)?.unwrap_or(false))
+    Ok(point_on_surface_if_supported(ctx, point, surface)?.unwrap_or(false))
 }
 
 pub(super) fn point_on_surface_if_supported(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
     surface: &SurfaceGeometry,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 1e-3;
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -392,7 +392,7 @@ pub(super) fn point_on_surface_if_supported(
             ((radial - major_radius).hypot(axial) - minor_radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            return point_on_nurbs_surface(point, surface);
+            return point_on_nurbs_surface(ctx, point, surface);
         }
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Polygonal(_)
@@ -405,6 +405,7 @@ pub(super) fn point_on_surface_if_supported(
 }
 
 pub(super) fn standard_spline_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -412,6 +413,7 @@ pub(super) fn standard_spline_line(
     points: [usize; 2],
 ) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 2e-3;
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
 
     let surfaces = support
         .faces
@@ -431,10 +433,10 @@ pub(super) fn standard_spline_line(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
     {
         return Ok(None);
     }
@@ -503,12 +505,14 @@ pub(super) fn standard_spline_line(
 }
 
 pub(super) fn standard_spline_circle(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -569,10 +573,10 @@ pub(super) fn standard_spline_circle(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
         || (start.distance(section_center) - section_radius).abs()
             > SPHERE_SECTION_ENDPOINT_TOLERANCE
         || (end.distance(section_center) - section_radius).abs() > SPHERE_SECTION_ENDPOINT_TOLERANCE
@@ -593,12 +597,14 @@ pub(super) fn standard_spline_circle(
 }
 
 pub(super) fn standard_spline_cylinder_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -650,10 +656,10 @@ pub(super) fn standard_spline_cylinder_plane(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
     {
         return Ok(None);
     }
@@ -730,12 +736,14 @@ pub(super) fn standard_spline_cylinder_plane(
 }
 
 pub(super) fn standard_spline_perpendicular_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -809,10 +817,10 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     else {
         return Ok(None);
     };
-    if !point_on_surface(start, &left.geometry)?
-        || !point_on_surface(start, &right.geometry)?
-        || !point_on_surface(end, &left.geometry)?
-        || !point_on_surface(end, &right.geometry)?
+    if !point_on_surface(ctx, start, &left.geometry)?
+        || !point_on_surface(ctx, start, &right.geometry)?
+        || !point_on_surface(ctx, end, &left.geometry)?
+        || !point_on_surface(ctx, end, &right.geometry)?
     {
         return Ok(None);
     }
@@ -878,16 +886,19 @@ pub(super) fn standard_native_support_witness(
         else {
             return Ok(None);
         };
-        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::pcurve_uv_for_decode(ctx, pcurve, parameter)?,
-        )?
+        let Some(uv) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter),
+            )?)?
         else {
             return Ok(None);
         };
-        Ok(cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::decode::surface_point_for_decode(ctx, surface, uv.u, uv.v)?,
-        )?
-        .map(cadmpeg_ir::features::FinitePoint3::get))
+        Ok(
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v),
+            )?)?
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+        )
     };
     let Some(first) = lift(&native.carriers[0], &native.pcurves[0])? else {
         return Ok(None);
@@ -1013,8 +1024,13 @@ pub(super) fn standard_oriented_native_support_pcurves(
                 .try_clone_for_decode(ctx, "catia_standard_native_support_pcurve_copy")?,
         ])
     };
-    let Some(native_pair) =
-        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))?
+    let Some(native_pair) = standard_native_support_endpoint_pair(
+        ctx,
+        native,
+        points,
+        &endpoint_pair,
+        Some(endpoint_pair),
+    )?
     else {
         return Ok(Some(copy_native()?));
     };
@@ -1065,9 +1081,10 @@ pub(super) struct BuildStandardEdgeCurveInputs<
     'input9,
     'input10,
     'input11,
+    AnnotationAccount,
 > {
     pub(super) ir: &'input0 mut CadIr,
-    pub(super) annotations: &'input1 mut AnnotationBuilder,
+    pub(super) annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
     pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
     pub(super) brep: &'input4 [u8],
@@ -1081,7 +1098,21 @@ pub(super) struct BuildStandardEdgeCurveInputs<
 
 pub(super) fn build_standard_edge_curve(
     ctx: &DecodeContext<'_>,
-    inputs: BuildStandardEdgeCurveInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
+    inputs: BuildStandardEdgeCurveInputs<
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        impl cadmpeg_ir::annotations::AnnotationStorage,
+    >,
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let BuildStandardEdgeCurveInputs {
         ir,
@@ -1205,13 +1236,13 @@ pub(super) fn build_standard_edge_curve(
                         if range.is_none() {
                             if let Some(native) = native_support {
                                 range = native_support_circle_param_range(
+                                    ctx,
                                     native,
                                     center,
                                     radius,
                                     *candidate_axis.as_raw(),
                                     reference,
-                                    start,
-                                    end,
+                                    [start, end],
                                 )?;
                             }
                         }
@@ -1286,10 +1317,11 @@ pub(super) fn build_standard_edge_curve(
                     Some(parameter_range),
                 )
             } else {
-                match standard_spline_line(ir, bindings, surface_indices, support, points)? {
+                match standard_spline_line(ctx, ir, bindings, surface_indices, support, points)? {
                     Some((geometry, range)) => (geometry, Some(range)),
                     None => {
                         match standard_spline_circle(
+                            ctx,
                             ir,
                             bindings,
                             surface_indices,
@@ -1298,6 +1330,7 @@ pub(super) fn build_standard_edge_curve(
                         )? {
                             Some(geometry) => (geometry, None),
                             None => match standard_spline_cylinder_plane(
+                                ctx,
                                 ir,
                                 bindings,
                                 surface_indices,
@@ -1306,6 +1339,7 @@ pub(super) fn build_standard_edge_curve(
                             )? {
                                 Some(geometry) => (geometry, None),
                                 None => match standard_spline_perpendicular_cylinders(
+                                    ctx,
                                     ir,
                                     bindings,
                                     surface_indices,
@@ -1637,7 +1671,7 @@ pub(super) fn build_standard_edge_curve(
                         cache: None,
                     },
                 );
-                let _attached = ir.model.add_procedural_curve_for_decode(
+                let _attached = ir.model.add_procedural_curve(
                     ctx,
                     &id.try_clone_for_decode(ctx, "catia_standard_edge_procedural_owner_id")?,
                     procedural,
@@ -1651,7 +1685,7 @@ pub(super) fn build_standard_edge_curve(
 
 pub(super) fn ensure_native_edge_support_surface(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -2027,14 +2061,16 @@ pub(super) fn standard_circle_param_range(
 }
 
 pub(super) fn native_support_circle_param_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     support: &StandardEdgeSupport,
     center: Point3,
     radius: f64,
     axis: Vector3,
     ref_direction: Vector3,
-    start: Point3,
-    end: Point3,
+    endpoints: [Point3; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let [start, end] = endpoints;
+    ctx.charge_work_limit(0, "geometry helper boundary")?;
     (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
         const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
@@ -2053,7 +2089,7 @@ pub(super) fn native_support_circle_param_range(
             (carrier_axis.as_raw().dot(axis) >= 0.9999).then_some(())?;
             // A non-finite lift is measured as a finite one is.
             Some(super::lifted_standard_support_parameters(
-                surface, pcurve, parameters,
+                ctx, surface, pcurve, parameters,
             ))
         };
         let [first_start, first_middle, first_end] =
@@ -2104,7 +2140,7 @@ pub(super) fn native_support_circle_param_range(
 
 pub(super) fn attach_standard_circles(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -2366,7 +2402,7 @@ pub(super) fn close_squared_lengths(left: f64, right: f64) -> bool {
 
 pub(super) fn attach_standard_lines(
     ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     admission: &mut FamilyEntityAdmission<'_, '_>,

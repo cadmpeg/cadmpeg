@@ -39,8 +39,10 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
                     "nx:om-body-object#94".to_string(),
                     "nx:om-body-object#122".to_string(),
                 ],
-                "nx:om-object-indices#94,122".to_string()
+                "nx:om-object-indices#94,122".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap()
         );
         assert!(matches!(
@@ -70,8 +72,10 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             .expect("resource admission"),
             BodySelection::local(
                 vec!["nx:om-body-object#94".to_string()],
-                "nx:om-object-indices#94,150".to_string()
+                "nx:om-object-indices#94,150".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap()
         );
         let bindings = BTreeMap::from([(94, vec![first.clone()])]);
@@ -100,7 +104,11 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             .into_selection(ctx)
             .expect("resource admission"),
             BodySelection::Resolved {
-                bodies: vec![first.clone()].try_into().expect("distinct bodies"),
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![first.clone()],
+                    &cadmpeg_test_support::service_decode_context()
+                )
+                .expect("distinct bodies"),
                 native: "nx:om-object-index#94".to_string(),
             }
         );
@@ -200,8 +208,10 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
                 .expect("resource admission"),
             BodySelection::local(
                 vec!["nx:om-data-blocks-3:block#94".to_string()],
-                "nx:om-object-index#94".to_string()
+                "nx:om-object-index#94".to_string(),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("body selection admission")
             .unwrap()
         );
     });
@@ -386,7 +396,12 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("nx:container"),
+        "fixture stream handle",
+    )
+    .unwrap();
 
     let id = crate::test_support::with_decode_context(|ctx| {
         attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream)
@@ -406,7 +421,11 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         *ir.model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved {
-                bodies: vec![bound.clone()].try_into().expect("distinct bodies"),
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![bound.clone()],
+                    &cadmpeg_test_support::service_decode_context()
+                )
+                .expect("distinct bodies"),
                 native: "nx:segment-body-bindings".to_string(),
             },
         })
@@ -438,7 +457,12 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("nx:container"),
+        "fixture stream handle",
+    )
+    .unwrap();
 
     assert!(
         crate::test_support::with_decode_context(|ctx| attach_initial_segment_bodies(
@@ -479,7 +503,12 @@ fn retained_history_input_result(
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let stream = StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("nx:container"),
+        "fixture stream handle",
+    )
+    .unwrap();
 
     crate::test_support::with_decode_context_over(
         &[],
@@ -562,15 +591,23 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Resolved {
-                        bodies: vec![body.clone()].try_into().expect("distinct bodies"),
+                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
+                            vec![body.clone()],
+                            &cadmpeg_test_support::service_decode_context()
+                        )
+                        .expect("distinct bodies"),
                         native: "nx:om-object-index#94".to_string(),
                     },
                     BodySelection::local(
                         vec!["nx:om-body-object#122".to_string()],
-                        "nx:om-object-indices#122".to_string()
+                        "nx:om-object-indices#122".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
                     )
-                    .unwrap()
+                    .expect("body selection admission")
+                    .unwrap(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("operand admission")
                 .unwrap(),
 
                 op: BooleanKind::Cut,
@@ -590,7 +627,11 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                (vec![body]).try_into().unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(
+                    vec![body],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap(),
             ),
             native_ref: None,
         };
@@ -633,18 +674,24 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::local(
                         vec!["nx:om-data-blocks-3:block#401".to_string()],
-                        "nx:om-object-index#401".to_string()
+                        "nx:om-object-index#401".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
                     )
+                    .expect("body selection admission")
                     .unwrap(),
                     BodySelection::local(
                         vec![
                             "nx:om-data-blocks-3:block#402".to_string(),
                             "nx:om-data-blocks-3:block#403".to_string(),
                         ],
-                        "nx:om-object-indices#402,403".to_string()
+                        "nx:om-object-indices#402,403".to_string(),
+                        &cadmpeg_test_support::service_decode_context(),
                     )
-                    .unwrap()
+                    .expect("body selection admission")
+                    .unwrap(),
+                    &cadmpeg_test_support::service_decode_context(),
                 )
+                .expect("operand admission")
                 .unwrap(),
 
                 op: BooleanKind::Join,
@@ -722,7 +769,9 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#401".to_string()),
                 BodySelection::Native("nx:om-object-indices#402".to_string()),
+                &cadmpeg_test_support::service_decode_context(),
             )
+            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Join,

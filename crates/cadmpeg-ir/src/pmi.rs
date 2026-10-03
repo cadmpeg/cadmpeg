@@ -247,7 +247,7 @@ pub struct DatumReference {
 }
 
 /// Ordered datum references with consistent precedence compartments.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Vec<DatumReference>", into = "Vec<DatumReference>")]
 pub struct DatumReferences(Vec<DatumReference>);
@@ -345,7 +345,7 @@ pub enum DimensionTolerance {
 }
 
 /// One admitted dimensional characteristic and its compatible quantities.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "PmiDimensionWire", into = "PmiDimensionWire")]
 pub struct PmiDimension {
     kind: DimensionKind,
@@ -490,16 +490,6 @@ impl PmiDimension {
         };
         self.tolerance = Some(merged);
         Ok(true)
-    }
-}
-
-impl From<PmiDimension> for PmiDimensionWire {
-    fn from(value: PmiDimension) -> Self {
-        Self {
-            dimension: value.kind,
-            nominal: value.nominal,
-            tolerance: value.tolerance,
-        }
     }
 }
 
@@ -690,7 +680,8 @@ mod tests {
                 .expect("valid datum compartments"),
             },
         });
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
 
         assert!(validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail")
@@ -931,7 +922,8 @@ mod tests {
                 .expect("compatible dimension"),
             ),
         });
-        ir.finalize();
+        ir.finalize(&cadmpeg_test_support::service_decode_context())
+            .expect("fixture ordering is admitted");
 
         assert!(validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail")
@@ -1169,3 +1161,7 @@ cadmpeg_core::named_optional_field!(deserialize_text, String, "text");
 cadmpeg_core::named_optional_field!(deserialize_placement, Transform, "placement");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+
+mod identity_rewrite;
+
+mod serialization;

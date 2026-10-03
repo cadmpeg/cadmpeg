@@ -147,7 +147,8 @@ fn mutated_semantic_write_round_trips() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written triangle should decode");
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert_eq!(round_trip.ir().model.bodies.len(), expected_bodies);
     assert_eq!(round_trip.ir().model.faces.len(), expected_faces);
@@ -191,7 +192,8 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written translated triangle should decode");
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(
         floats_agree(

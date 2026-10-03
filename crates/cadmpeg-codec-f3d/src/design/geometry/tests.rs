@@ -59,12 +59,14 @@ fn positive_radius(value: f64) -> PositiveLength {
 fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
     let sketch_id = SketchId::mint("synthetic:test:id#wide-profile").unwrap();
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#wide-profile-curve").unwrap(),
@@ -84,12 +86,14 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
 #[test]
 fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .expect("wide finite NURBS pcurve");
     let tubes = crate::test_support::with_decode_context(|decode_ctx| {
         super::certified_nurbs_tubes(&curve, 0.5, decode_ctx)
@@ -112,16 +116,18 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
 #[test]
 fn certified_nurbs_tubes_refuse_collection_limit() {
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    // The four knots exhaust admission before endpoint evaluation or tube growth.
+    // Two pole items exhaust admission before the first certified output tube.
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let Err(error) = super::certified_nurbs_tubes(&curve, 0.5, &ctx) else {
@@ -130,7 +136,7 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d nurbs tube input")
+            && limit.operation == "f3d certified nurbs tube")
     );
 }
 
@@ -139,12 +145,14 @@ fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
     let sketch_id = SketchId::mint("synthetic:test:id#high-domain-profile").unwrap();
     let lower = f64::MAX * 0.5;
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![lower, lower, f64::MAX, f64::MAX],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#high-domain-profile-curve").unwrap(),
@@ -332,7 +340,15 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
+        Some(
+            SketchProfileRegion::loops(
+                0,
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("fixture loop-region admission")
+            .unwrap()
+        )
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -450,7 +466,11 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+        Some(
+            SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context())
+                .expect("fixture loop-region admission")
+                .unwrap()
+        )
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -461,7 +481,11 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
+        Some(
+            SketchProfileRegion::loops(1, vec![2], &cadmpeg_test_support::service_decode_context())
+                .expect("fixture loop-region admission")
+                .unwrap()
+        )
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -472,7 +496,15 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
+        Some(
+            SketchProfileRegion::loops(
+                2,
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("fixture loop-region admission")
+            .unwrap()
+        )
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -483,7 +515,11 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+        Some(
+            SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context())
+                .expect("fixture loop-region admission")
+                .unwrap()
+        )
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -514,6 +550,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         .unwrap(),
         SketchGeometry::nurbs(
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -524,6 +561,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
                 Some(vec![1.0, 0.75, 1.0]),
                 false,
             )
+            .expect("fixture pcurve construction admission")
             .unwrap(),
         ),
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -593,7 +631,11 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+        Some(
+            SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context())
+                .expect("fixture loop-region admission")
+                .unwrap()
+        )
     );
 }
 
@@ -900,7 +942,10 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         .unwrap(),
         native_ref: None,
     };
-    let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
+    let expected =
+        SketchProfileRegion::loops(0, vec![1], &cadmpeg_test_support::service_decode_context())
+            .expect("fixture loop-region admission")
+            .unwrap();
 
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
@@ -922,7 +967,15 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
             decode_ctx
         ))
         .unwrap(),
-        Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
+        Some(
+            SketchProfileRegion::loops(
+                1,
+                Vec::new(),
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .expect("fixture loop-region admission")
+            .unwrap()
+        )
     );
 }
 
@@ -1280,6 +1333,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1290,6 +1344,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
             Some(vec![1.0, 0.5, 1.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap(),
     ));
     assert!(
@@ -1316,6 +1371,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let control_points = curve.pole_rows().raw_points();
     let weights = curve.pole_rows().weights();
     let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
+        &cadmpeg_test_support::service_decode_context(),
         curve.degree(),
         curve.knots(),
         &control_points,
@@ -1587,14 +1643,20 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
 fn numerical_followup_profile_speed_bound_retains_common_weights() {
     for weight in [1.0, 1e-200, 1e200] {
         let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 1., 1.],
             vec![Point2::new(0., 0.), Point2::new(1., 0.)],
             Some(vec![weight; 2]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap();
-        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
+        assert_eq!(
+            super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
+                .expect("speed bound admission"),
+            Some(1.0)
+        );
     }
 }
 
@@ -1602,24 +1664,30 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
 fn implicit_profile_unit_weights_match_explicit_units() {
     let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     let implicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         points.clone(),
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .expect("polynomial pcurve");
     let explicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         points,
         Some(vec![1.0, 1.0]),
         false,
     )
+    .expect("fixture pcurve construction admission")
     .expect("unit-weight pcurve");
     assert_eq!(
-        super::nurbs_speed_bound(&implicit),
-        super::nurbs_speed_bound(&explicit)
+        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &implicit)
+            .expect("speed bound admission"),
+        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &explicit)
+            .expect("speed bound admission")
     );
 }
 

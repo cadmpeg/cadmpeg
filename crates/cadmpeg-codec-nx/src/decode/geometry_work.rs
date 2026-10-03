@@ -63,11 +63,7 @@ impl<'a> GeometryWorkBudget<'a> {
     }
 
     pub(super) fn exhausted(&self) -> bool {
-        let exhausted = self.work.exhausted();
-        if exhausted {
-            let _resource_refusal = self.resource_refusal();
-        }
-        exhausted
+        self.resource_refusal().is_some()
     }
 
     pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'_> {

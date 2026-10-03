@@ -433,15 +433,16 @@ fn select_composite_edge(
             ) else {
                 continue;
             };
-            let Some(evaluated_start) = finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[0])?,
-            )?
+            let Some(evaluated_start) =
+                finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]),
+                )?)?
             else {
                 continue;
             };
-            let Some(evaluated_end) = finite_or_refusal(
-                cadmpeg_ir::eval::decode::curve_point_solved_for_decode(ctx, geometry, range[1])?,
-            )?
+            let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]),
+            )?)?
             else {
                 continue;
             };
@@ -660,6 +661,7 @@ impl<T> ConcatenatedSegments<T> {
 /// read are the child's own stated degree, knots and interval, so a reader that
 /// cannot reflect them states which of them it refused.
 fn reverse_nurbs(
+    ctx: &DecodeContext<'_>,
     curve: NurbsCurve,
     interval: [f64; 2],
 ) -> Result<(NurbsCurve, [f64; 2]), CompositeCurveError> {
@@ -710,6 +712,13 @@ fn reverse_nurbs(
     let reversed_range = [reflect(finite_end)?, reflect(finite_start)?];
     let (source_degree, admitted_knots, mut poles, periodic) = curve.into_parts();
     let mut knots = admitted_knots.into_values();
+    for (count, operation) in [
+        (knots.len(), "iges reversed NURBS knot reversal"),
+        (knots.len(), "iges reversed NURBS knot reflection"),
+        (poles.count(), "iges reversed NURBS pole reversal"),
+    ] {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
+    }
     knots.reverse();
     for knot in &mut knots {
         let finite = FiniteReal::new(*knot).ok_or(
@@ -721,7 +730,7 @@ fn reverse_nurbs(
         *knot = reflect(finite)?;
     }
     poles.reverse();
-    let reversed = NurbsCurve::new(source_degree, knots, poles, periodic)?;
+    let reversed = NurbsCurve::new(ctx, source_degree, knots, poles, periodic)??;
     Ok((reversed, reversed_range))
 }
 
@@ -858,12 +867,13 @@ fn trim_nurbs_to_interval(
         })
         .transpose()?;
     Ok(Some(NurbsCurve::from_checked_lanes(
+        ctx,
         curve.degree(),
         trimmed_knots,
         control_points,
         weights,
         false,
-    )?))
+    )??))
 }
 
 type TrimmedLanes = (Vec<FinitePoint3>, Option<Vec<PositiveReal>>, Vec<f64>);
@@ -1409,6 +1419,7 @@ fn elevate_nurbs_to_degree(
         ctx.reserve_vec(&mut pieces, 1, "iges composite elevated span")
             .map_err(DegreeElevationError::Allocation)?;
         let piece = NurbsCurve::from_checked_lanes(
+            ctx,
             u32::try_from(target_degree).map_err(|_| DegreeElevationError::TargetDegree {
                 degree: stated_target,
                 bound: MAX_COMPOSITE_DEGREE,
@@ -1417,7 +1428,8 @@ fn elevate_nurbs_to_degree(
             control_points,
             weights,
             false,
-        )?;
+        )
+        .map_err(DegreeElevationError::Allocation)??;
         pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
@@ -1433,7 +1445,8 @@ fn elevate_nurbs_to_degree(
     elevated_knots[..=target_degree].fill(interval[0]);
     let end_start = elevated_knots.len() - target_degree - 1;
     elevated_knots[end_start..].fill(interval[1]);
-    let elevated = NurbsCurve::new(elevated_degree, elevated_knots, poles, false)?;
+    let elevated = NurbsCurve::new(ctx, elevated_degree, elevated_knots, poles, false)
+        .map_err(DegreeElevationError::Allocation)??;
     *curve = elevated;
     Ok(())
 }
@@ -1648,13 +1661,13 @@ fn concatenate_nurbs<T>(
             points: control_points,
         }
     };
-    let nurbs = NurbsCurve::new(degree, knots, poles, false)?;
+    let nurbs = NurbsCurve::new(ctx, degree, knots, poles, false)??;
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
-        finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(
-            ctx, &nurbs, t,
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, t),
         )?)
         .map_err(CodecError::from)?
         .ok_or(CompositeCurveError::EndpointEvaluation { t })
@@ -1766,7 +1779,7 @@ fn bounded_nurbs_for_id(
             let (curve, range) = if segment.same_sense {
                 child
             } else {
-                reverse_nurbs(child.0, child.1)?
+                reverse_nurbs(ctx, child.0, child.1)?
             };
             children.push((curve, range, ()));
         }
@@ -1803,7 +1816,7 @@ fn bounded_nurbs_for_id(
             let mut points = ctx.collection_vec(2, "iges composite line points")?;
             points.extend([start, end]);
             Some((
-                NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false)?,
+                NurbsCurve::new(ctx, 1, knots, NurbsPoles3::Polynomial { points }, false)??,
                 [0.0, 1.0],
             ))
         }
@@ -2023,15 +2036,15 @@ fn anchor_analytic_nurbs_endpoint_poles(
     ) else {
         return Ok(None);
     };
-    let Some(evaluated_start) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[0])?,
-    )?
+    let Some(evaluated_start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, interval[0]),
+    )?)?
     else {
         return Ok(None);
     };
-    let Some(evaluated_end) = finite_or_refusal(
-        cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, interval[1])?,
-    )?
+    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, interval[1]),
+    )?)?
     else {
         return Ok(None);
     };
@@ -2045,16 +2058,19 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let mut nurbs = nurbs;
     Ok(nurbs
-        .try_map_control_points(|index, point| {
-            let mapped = if index == last {
-                end
-            } else if index == 0 {
-                start
-            } else {
-                point
-            };
-            Ok::<_, ()>(mapped)
-        })
+        .try_map_control_points(
+            |index, point| {
+                let mapped = if index == last {
+                    end
+                } else if index == 0 {
+                    start
+                } else {
+                    point
+                };
+                Ok::<_, ()>(mapped)
+            },
+            ctx,
+        )?
         .ok()
         .map(|()| nurbs))
 }
@@ -2696,9 +2712,9 @@ fn project_with_type_130_policy(
             continue;
         };
         let cursor = segments.end();
-        let Some(start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, 0.0)?,
-        )?
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, 0.0),
+        )?)?
         else {
             let edge = project_degraded_composite(
                 ir,
@@ -2721,9 +2737,9 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Some(end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::nurbs_curve_point_at_for_decode(ctx, &nurbs, cursor)?,
-        )?
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, &nurbs, cursor),
+        )?)?
         else {
             let edge = project_degraded_composite(
                 ir,
@@ -2849,7 +2865,7 @@ fn project_with_type_130_policy(
         }
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        let _attached = ir.model.add_procedural_curve_for_decode(
+        let _attached = ir.model.add_procedural_curve(
             ctx,
             &curve_id,
             ProceduralCurve::new(

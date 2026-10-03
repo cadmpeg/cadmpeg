@@ -55,7 +55,9 @@ fn embedded_brep_snapshot_refuses_retained_limit() {
     let semantic = cadmpeg_test_support::service_decode_context();
     let expected = crate::wire::admitted_json(
         &semantic,
-        &model.geometry_snapshot("brep"),
+        &model
+            .geometry_snapshot(&semantic, "brep")
+            .expect("snapshot admission"),
         "Rhino embedded Brep JSON",
     )
     .expect("service profile admits snapshot");
@@ -66,7 +68,9 @@ fn embedded_brep_snapshot_refuses_retained_limit() {
         .expect("empty root admitted");
     let refusal = crate::wire::admitted_json(
         &ctx,
-        &model.geometry_snapshot("brep"),
+        &model
+            .geometry_snapshot(&ctx, "brep")
+            .expect("snapshot admission"),
         "Rhino embedded Brep JSON",
     )
     .expect_err("snapshot text exceeds retained limit");
@@ -161,6 +165,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
+            &cadmpeg_test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -181,7 +186,12 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     let links = staged.links.clone();
     staged
         .draft
-        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .commit(
+            &mut candidate,
+            &mut cadmpeg_ir::Annotations::default(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap()
         .expect("commit fallback carrier");
     append_record_links(&mut candidate, &unknown, &links);
     assert_eq!(
@@ -216,7 +226,12 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
     staged.draft.model_mut().curves.push(curve);
     assert!(staged
         .draft
-        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .commit(
+            &mut candidate,
+            &mut cadmpeg_ir::Annotations::default(),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .unwrap()
         .is_err());
     assert_eq!(candidate, live);
     assert_eq!(live.model.curves.len(), 1);
@@ -305,6 +320,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
+            &cadmpeg_test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -314,7 +330,12 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .expect("required invariant");
     staged
         .draft
-        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .commit(
+            &mut candidate,
+            &mut cadmpeg_ir::Annotations::default(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap()
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
@@ -377,6 +398,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
+            &cadmpeg_test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown,
@@ -386,7 +408,12 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         .expect("required invariant");
     staged
         .draft
-        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .commit(
+            &mut candidate,
+            &mut cadmpeg_ir::Annotations::default(),
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap()
         .expect("commit Brep with an isolated vertex");
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
         .expect("resource allocation did not fail");

@@ -521,7 +521,9 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         .expect("generated history decode");
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let expected = f3d_native(&source_less).asm_histories[0].clone();
 
     let mut encoded = Vec::new();
@@ -591,14 +593,16 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("generated history decode");
     let mut orphaned = decoded.ir().clone();
     orphaned.source = None;
-    orphaned.set_native_unknowns("f3d", &[]).unwrap();
+    orphaned
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let orphan = &mut orphaned
         .native
         .namespace_mut("f3d")
         .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
-    let mut orphan_fields = orphan.fields();
+    let mut orphan_fields = orphan.fields().clone();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
     *orphan = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
@@ -615,7 +619,9 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
     let mut duplicate = decoded.ir().clone();
     duplicate.source = None;
-    duplicate.set_native_unknowns("f3d", &[]).unwrap();
+    duplicate
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     let states = duplicate
         .native
         .namespace_mut("f3d")
@@ -633,7 +639,9 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
     let (mut broken_chain, _, _) = decoded.into_parts();
     broken_chain.source = None;
-    broken_chain.set_native_unknowns("f3d", &[]).unwrap();
+    broken_chain
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
     let error = F3dCodec
         .plan(

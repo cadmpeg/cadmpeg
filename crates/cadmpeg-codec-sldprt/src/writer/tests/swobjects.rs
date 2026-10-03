@@ -510,7 +510,11 @@ fn encoder_writes_source_less_line_sketches() {
         native_ref: None,
     });
     ir.model
-        .set_feature_regeneration_parent(extrude_feature_id, sketch_feature_id)
+        .set_feature_regeneration_parent(
+            &cadmpeg_test_support::service_decode_context(),
+            &(extrude_feature_id),
+            &(sketch_feature_id),
+        )
         .unwrap();
 
     let mut encoded = Vec::new();
@@ -985,7 +989,9 @@ fn patched_retained_metadata(
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
+    let context_bytes = payload.clone();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&context_bytes, &arena, &policy)?;
     crate::annotations::note(
         &ctx,
         &mut annotations,
@@ -996,7 +1002,7 @@ fn patched_retained_metadata(
         cadmpeg_ir::Exactness::ByteExact,
     )?;
     let mut sections = vec![("SWObjects".to_owned(), payload)];
-    crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 1.0)?;
+    crate::writer::patch_retained_swobjects_metadata(&ctx, &ir, &annotations, &mut sections, 1.0)?;
     Ok(sections.remove(0).1)
 }
 

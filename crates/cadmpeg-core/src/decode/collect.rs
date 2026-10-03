@@ -355,18 +355,14 @@ impl DecodeContext<'_> {
 
     /// Admits tree-record storage, owned bytes, one slot and one work unit.
     ///
-    /// The collection-item ceiling bounds the insertion path when the caller
-    /// does not supply the current tree length. Charge the node-split bound at
-    /// that ceiling, including a possible new root.
+    /// Without the current tree length, each record admits one backing node.
     pub fn admit_retained_btree_record<K, V>(
         &self,
         owned_bytes: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let count = usize::try_from(self.policy().limits.max_collection_items)
-            .map_err(|_| self.retained_size_overflow_limit(operation))?;
         let bytes = self
-            .tree_growth_bytes::<K, V>(count, operation)?
+            .tree_growth_bytes::<K, V>(0, operation)?
             .checked_add(u64_from_index(owned_bytes))
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.charge_collection_items(1, operation)?;
@@ -1228,8 +1224,10 @@ impl DecodeContext<'_> {
     // A B-tree node stores at most 11 key/value lanes, 12 child pointers,
     // and a parent pointer plus length/index metadata. The bound includes
     // four pointer-width metadata slots and padding for both lane arrays.
-    // An insertion can split each node on its path and add a new root;
-    // the path has at most log2(len) + 1 nodes since each level branches.
+    // A tree built by insertion has at most (n - 1) / 5 + 1 nodes for n > 0,
+    // and none when empty: every node except the root keeps at least five keys.
+    // Admit the increase of that bound before each insertion. Since insertion
+    // frees no nodes, cumulative admission bounds the live node storage.
     fn tree_growth_bytes<K, V>(
         &self,
         len: usize,
@@ -1238,13 +1236,11 @@ impl DecodeContext<'_> {
         let alignment = std::mem::align_of::<K>()
             .max(std::mem::align_of::<V>())
             .max(std::mem::align_of::<usize>());
-        let nodes = if len == 0 {
-            1
-        } else {
-            usize::try_from(len.ilog2())
-                .map_err(|_| self.retained_size_overflow_limit(operation))?
-                + 2
-        };
+        let next = len
+            .checked_add(1)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let before = if len == 0 { 0 } else { (len - 1) / 5 + 1 };
+        let nodes = (next - 1) / 5 + 1 - before;
         std::mem::size_of::<K>()
             .checked_add(std::mem::size_of::<V>())
             .and_then(|bytes| bytes.checked_mul(11))

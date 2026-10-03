@@ -256,9 +256,22 @@ pub(crate) fn bind_sketch_profiles(
     sketches.retain(|sketch| !superseded.contains(sketch.id.as_str()));
     sketch_entities.retain(|entity| !superseded.contains(entity.sketch.as_str()));
     sketch_constraints.retain(|constraint| !superseded.contains(constraint.sketch.as_str()));
-    annotations.provenance.retain(|id, _| !removed.contains(id));
+    let mut keep = |id: &str| {
+        let work = removed
+            .len()
+            .checked_add(1)
+            .and_then(|count| {
+                id.len()
+                    .checked_add(1)
+                    .and_then(|bytes| count.checked_mul(bytes))
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(u64_from_index(work), OPERATION)?;
+        Ok(!removed.contains(id))
+    };
+    annotations.retain_provenance(ctx, &mut keep)?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.retain_exactness(|id| !removed.contains(id));
+    builder.retain_exactness(ctx, keep)?;
     *annotations = builder.build();
     bind_circular_profile_by_dimension(ctx, features, sketches, sketch_entities, parameters)?;
     Ok(())
@@ -3256,9 +3269,10 @@ fn transform_sketch_block_geometry(
         SketchGeometryDefinition::Nurbs { curve } => {
             let mut copied = curve.try_clone_for_decode(ctx, OPERATION)?;
             if copied
-                .try_map_control_points_in_place(|pole| {
-                    point(pole.get()).and_then(FinitePoint2::new).ok_or(())
-                })
+                .try_map_control_points_in_place(
+                    |pole| point(pole.get()).and_then(FinitePoint2::new).ok_or(()),
+                    ctx,
+                )?
                 .is_err()
             {
                 return Ok(None);
@@ -4223,9 +4237,21 @@ mod detached_legacy_sketch_tests {
         };
         let sketch = sketch();
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
-        let stream =
-            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-        builder.note(sketch.id.as_str(), &stream, 1).tag("profile");
+        let stream = cadmpeg_ir::annotations::StreamHandle::new(
+            &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::stream_name!("test:profile"),
+            "fixture stream handle",
+        )
+        .unwrap();
+        builder
+            .note(
+                &cadmpeg_test_support::service_decode_context(),
+                sketch.id.as_str(),
+                &stream,
+                1,
+                Some("profile"),
+            )
+            .unwrap();
         let annotations = builder.build();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -5252,12 +5278,14 @@ mod detached_legacy_sketch_tests {
         .try_into()
         .unwrap();
         let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
             Some(vec![1.0, 2.0]),
             false,
         )
+        .expect("fixture pcurve construction admission")
         .unwrap();
         let entities = [
             SketchEntity::new(curve_id, source_id.clone(), SketchGeometry::nurbs(curve)),

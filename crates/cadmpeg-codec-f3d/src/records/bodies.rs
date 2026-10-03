@@ -647,6 +647,37 @@ mod tests {
 
     use super::{DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire};
 
+    #[test]
+    fn native_reference_walk_visits_typed_body_without_copying_plain_text() {
+        use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+        let value = super::BodyVisibility::try_from(super::BodyVisibilityWire {
+            id: "f3d:Design/BulkStream.dat:body-visibility#1".to_owned(),
+            body: super::BodyId::mint("f3d:model:body#1").unwrap(),
+            stream: "Design/BulkStream.dat".to_owned(),
+            byte_offset: 0,
+            asm_body_key_offset: 0,
+            asm_body_key: 1,
+            entity_suffix: 1,
+            visible: true,
+        })
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut references = Vec::new();
+        value
+            .visit_identity_references(&ctx, &mut |id| {
+                references.push(id.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(references, ["f3d:model:body#1"]);
+        ctx.finish_session().unwrap();
+    }
+
     fn bounds_fixture() -> DesignBodyBounds {
         serde_json::from_value(serde_json::json!({
             "id": "f3d:native:design-body-bounds#0",
@@ -865,3 +896,5 @@ mod tests {
         }
     }
 }
+
+mod identity_rewrite;

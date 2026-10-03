@@ -1283,9 +1283,8 @@ pub(crate) fn bind_feature_outputs(
                 resolved.push(id);
             }
             feature.evaluation.set_outputs(
-                resolved
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::features::DistinctMembers::try_from(resolved, ctx)
+                    .map_err(cadmpeg_core::CodecError::from)?,
             );
             bind_base_feature_output_selection(ctx, feature)?;
         }
@@ -1316,9 +1315,8 @@ fn bind_base_feature_output_selection(
         selected.push(id);
     }
     let bodies = cadmpeg_ir::features::BodySelection::Resolved {
-        bodies: selected
-            .try_into()
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx)
+            .map_err(cadmpeg_core::CodecError::from)?,
         native: ctx.copy_retained_text(native, "copy F3D BaseFeature native selection")?,
     };
     feature
@@ -1629,7 +1627,7 @@ pub(crate) fn bind_feature_body_selections(
                         let native_id = admitted!(ctx.copy_retained_text(native, "copy F3D Combine target identity"));
                         let mut target_bodies = admitted!(ctx.collection_vec(1, "validate F3D Combine target body"));
                         target_bodies.push(body_id);
-                        if let Ok(historical) = admitted!(cadmpeg_ir::features::BodySelection::historical_for_decode(admitted!(crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)), target_bodies, native_id, ctx).map_err(cadmpeg_core::CodecError::from)) {
+                        if let Ok(historical) = admitted!(cadmpeg_ir::features::BodySelection::historical(admitted!(crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)), target_bodies, native_id, ctx).map_err(cadmpeg_core::CodecError::from)) {
                             *target = historical;
                         }
                         let Some(stream) = crate::ids::native_stream(&scope.id) else {
@@ -1715,10 +1713,8 @@ pub(crate) fn bind_feature_body_selections(
                             direct_tool_rows.push(row);
                         }
                         if historical_tool_rows.len() == native_tools.len() {
-                            admitted!(charge_combine_body_members(ctx, historical_tool_rows.len()));
-                            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(
-                                historical_tool_rows,
-                            ) else {
+                            let Ok(members) = admitted!(cadmpeg_ir::features::BodyMembers::try_from_rows(
+                                historical_tool_rows, ctx).map_err(cadmpeg_core::CodecError::from)) else {
                                 return;
                             };
                             *tools = BodySelection::HistoricalSet {
@@ -1731,7 +1727,7 @@ pub(crate) fn bind_feature_body_selections(
                                 let (body, native) = admitted!(row.into_parts(ctx));
                                 let mut selected = admitted!(ctx.collection_vec(1, "validate F3D Combine resolved body"));
                                 selected.push(body);
-                                let bodies = match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(selected, ctx) {
+                                let bodies = match cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx) {
     Ok(value) => value,
     Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return,
     Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => { edit_result = Err(limit.into()); return; },
@@ -1741,10 +1737,8 @@ pub(crate) fn bind_feature_body_selections(
                                     native,
                                 }
                             } else {
-                                admitted!(charge_combine_body_members(ctx, direct_tool_rows.len()));
-                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(
-                                    direct_tool_rows,
-                                ) else {
+                                let Ok(members) = admitted!(cadmpeg_ir::features::BodyMembers::try_from_rows(
+                                    direct_tool_rows, ctx).map_err(cadmpeg_core::CodecError::from)) else {
                                     return;
                                 };
                                 BodySelection::ResolvedSet { members }
@@ -1768,9 +1762,8 @@ pub(crate) fn bind_feature_body_selections(
                                     native_tools)) else {
                                     return;
                                 };
-                                admitted!(charge_combine_body_members(ctx, rows.len()));
                                 let Ok(members) =
-                                    cadmpeg_ir::features::BodyMembers::try_from_rows(rows)
+                                    admitted!(cadmpeg_ir::features::BodyMembers::try_from_rows(rows, ctx).map_err(cadmpeg_core::CodecError::from))
                                 else {
                                     return;
                                 };
@@ -1799,9 +1792,8 @@ pub(crate) fn bind_feature_body_selections(
                                         native_tools)) else {
                                         return;
                                     };
-                                    admitted!(charge_combine_body_members(ctx, rows.len()));
                                     let Ok(members) =
-                                        cadmpeg_ir::features::BodyMembers::try_from_rows(rows)
+                                        admitted!(cadmpeg_ir::features::BodyMembers::try_from_rows(rows, ctx).map_err(cadmpeg_core::CodecError::from))
                                     else {
                                         return;
                                     };
@@ -1967,7 +1959,7 @@ pub(crate) fn bind_feature_body_selections(
                 }
             };
             selected.push(body_id);
-            match cadmpeg_ir::features::BodySelection::historical_for_decode(state_id, selected, native, ctx) {
+            match cadmpeg_ir::features::BodySelection::historical(state_id, selected, native, ctx) {
                 Ok(Ok(historical)) => *bodies = historical,
                 Ok(Err(_)) => {},
                 Err(limit) => { edit_result = Err(limit.into()); break 'feature_edit; },
@@ -1978,18 +1970,6 @@ pub(crate) fn bind_feature_body_selections(
     }
 
     Ok(())
-}
-
-fn charge_combine_body_members(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    count: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let count = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit("validate F3D Combine body members", 0, u64::MAX))?;
-    let items = count
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("validate F3D Combine body members", 0, u64::MAX))?;
-    ctx.charge_collection_items(items, "validate F3D Combine body members")
 }
 
 fn combine_historical_rows(
@@ -2227,7 +2207,7 @@ fn combine_external_local_tools(
         bodies.push(id);
     }
     let native = ctx.copy_retained_text(&scope.id, "copy F3D Combine scope identity")?;
-    Ok(cadmpeg_ir::features::BodySelection::local_for_decode(bodies, native, ctx)?.ok())
+    Ok(cadmpeg_ir::features::BodySelection::local(bodies, native, ctx)?.ok())
 }
 
 fn historical_body_slot(id: &str) -> Option<i64> {
@@ -2492,7 +2472,7 @@ fn bind_body_recipe_body_selection(
     let state = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
     let native = ctx.copy_retained_text(&group.id, "copy F3D body recipe group identity")?;
     if let Ok(historical) =
-        cadmpeg_ir::features::BodySelection::historical_for_decode(state, body_ids, native, ctx)?
+        cadmpeg_ir::features::BodySelection::historical(state, body_ids, native, ctx)?
     {
         *selection = historical;
     }
@@ -2579,14 +2559,13 @@ fn bind_direct_body_recipe_body_selection(
                 )?;
                 selected.push(body);
             }
-            let bodies =
-                match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(selected, ctx) {
-                    Ok(value) => value,
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(()),
-                    Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                        return Err(limit.into())
-                    }
-                };
+            let bodies = match cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx) {
+                Ok(value) => value,
+                Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(()),
+                Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
+                    return Err(limit.into())
+                }
+            };
             let native =
                 ctx.copy_retained_text(&group.id, "copy F3D direct body recipe group identity")?;
             *selection = BodySelection::Resolved { bodies, native };
@@ -2659,10 +2638,7 @@ fn bind_direct_body_recipe_body_selection(
         ctx.reserve_vec(&mut rows, 1, "collect F3D direct body recipe rows")?;
         rows.push(row);
     }
-    let count = u64::try_from(rows.len())
-        .map_err(|_| ctx.refuse_codec_limit("validate F3D direct body recipe rows", 0, u64::MAX))?;
-    ctx.charge_collection_items(count, "validate F3D direct body recipe rows")?;
-    if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) {
+    if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows, ctx)? {
         *selection = BodySelection::ResolvedSet { members };
     }
     Ok(())
@@ -3469,13 +3445,13 @@ fn bind_entity_face_groups(
                 face.try_clone_for_decode(ctx, "copy F3D historical topology face identity")?;
             topology
                 .faces
-                .insert_for_decode(ctx, retained, "index F3D historical entity faces")?;
+                .insert(ctx, retained, "index F3D historical entity faces")?;
         }
     }
     let native =
         ctx.copy_retained_text(native_id, "copy F3D historical face selection identity")?;
     if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical_for_decode(state_id, faces, native, ctx)?
+        cadmpeg_ir::features::FaceSelection::historical(state_id, faces, native, ctx)?
     {
         *selection = historical;
     }
@@ -3545,13 +3521,13 @@ fn bind_hole_face_selection(
         let retained = face.try_clone_for_decode(ctx, "copy F3D historical hole topology face")?;
         topology
             .faces
-            .insert_for_decode(ctx, retained, "index F3D historical hole face")?;
+            .insert(ctx, retained, "index F3D historical hole face")?;
     }
     let native = ctx.copy_retained_text(native_id, "copy F3D historical hole identity")?;
     let mut selected = ctx.collection_vec(1, "validate F3D historical hole face")?;
     selected.push(face);
     if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical_for_decode(state_id, selected, native, ctx)?
+        cadmpeg_ir::features::FaceSelection::historical(state_id, selected, native, ctx)?
     {
         *selection = historical;
     }
@@ -3735,7 +3711,7 @@ fn bind_entity_selection_path(
     }
     let state = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
     let native = ctx.copy_retained_text(&group.id, "copy F3D path group identity")?;
-    if let Ok(historical) = PathRef::historical_edges_for_decode(state, edge_ids, native, ctx)? {
+    if let Ok(historical) = PathRef::historical_edges(state, edge_ids, native, ctx)? {
         *path = historical;
     }
     Ok(())
@@ -3854,7 +3830,7 @@ fn project_input_members<T: Eq + std::hash::Hash>(
         members.push(id(slot)?);
     }
     Ok(Some(
-        match cadmpeg_ir::features::DistinctMembers::try_from_for_decode(members, ctx) {
+        match cadmpeg_ir::features::DistinctMembers::try_from(members, ctx) {
             Ok(value) => value,
             Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => return Ok(None),
             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {

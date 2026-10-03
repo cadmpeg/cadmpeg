@@ -202,8 +202,12 @@ fn source_edge_for_vertices<'a>(
             continue;
         };
         let Some(start) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[0])
-                .map_err(SourceEdgeSelectionError::ResourceLimit)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx,
+                curve_geometry,
+                range[0],
+            ))
+            .map_err(SourceEdgeSelectionError::ResourceLimit)?,
         )
         .map_err(SourceEdgeSelectionError::ResourceLimit)?
         else {
@@ -215,8 +219,12 @@ fn source_edge_for_vertices<'a>(
             continue;
         }
         let Some(end) = finite_or_refusal(
-            cadmpeg_ir::eval::decode::curve_point_for_decode(ctx, curve_geometry, range[1])
-                .map_err(SourceEdgeSelectionError::ResourceLimit)?,
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx,
+                curve_geometry,
+                range[1],
+            ))
+            .map_err(SourceEdgeSelectionError::ResourceLimit)?,
         )
         .map_err(SourceEdgeSelectionError::ResourceLimit)?
         else {
@@ -315,9 +323,7 @@ fn resolve_pcurve_uses<'a>(
         return Ok(Some(Vec::new()));
     }
     if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(
-            source, ctx,
-        )?);
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
     }
     let Some(index) = model_index.as_ref() else {
         return Ok(None);
@@ -341,24 +347,32 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
-                ctx, &geometry, range[0],
+            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
             )?)
             .map_err(CodecError::from)?
             .map(|uv| {
                 surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    index, support.id, uv.u, uv.v,
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                    index,
+                    support.id,
+                    uv.u,
+                    uv.v,
                 ))
             })
             .transpose()?
             .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv_for_decode(
-                ctx, &geometry, range[1],
+            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
             )?)
             .map_err(CodecError::from)?
             .map(|uv| {
                 surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    index, support.id, uv.u, uv.v,
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                    index,
+                    support.id,
+                    uv.u,
+                    uv.v,
                 ))
             })
             .transpose()?
@@ -1069,7 +1083,7 @@ pub(super) fn project(
 
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
-    let mut commit_session = CommitSession::new_for_decode(ir, ctx)?;
+    let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;
@@ -1564,12 +1578,9 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new_for_decode(
-                            ctx,
-                            coedge_ids,
-                            vertex_uses,
-                        )
-                        .map_err(cadmpeg_core::CodecError::from)?
+                        let Ok(ring) =
+                            cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, vertex_uses)
+                                .map_err(cadmpeg_core::CodecError::from)?
                         else {
                             super::push_entity_loss(
                                 ctx,
@@ -1762,12 +1773,9 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model_mut().finalize();
+        candidate.model_mut().finalize(ctx)?;
         drop(model_index);
-        if commit_session
-            .commit_model_for_decode(candidate, ctx)?
-            .is_err()
-        {
+        if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

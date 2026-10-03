@@ -1526,11 +1526,21 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: None,
     }];
     let mut builder = AnnotationBuilder::new();
-    let stream =
-        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::stream_name!("test:support"),
+        "fixture stream handle",
+    )
+    .unwrap();
     builder
-        .note(sketch_id.as_str(), &stream, 200)
-        .tag("support");
+        .note(
+            &cadmpeg_test_support::service_decode_context(),
+            sketch_id.as_str(),
+            &stream,
+            200,
+            Some("support"),
+        )
+        .unwrap();
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [
@@ -1538,7 +1548,13 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         entity_id.as_str(),
         constraint_id.as_str(),
     ] {
-        builder.exactness(id, cadmpeg_ir::Exactness::Derived);
+        builder
+            .exactness(
+                &cadmpeg_test_support::service_decode_context(),
+                id,
+                cadmpeg_ir::Exactness::Derived,
+            )
+            .unwrap();
     }
     annotations = builder.build();
 

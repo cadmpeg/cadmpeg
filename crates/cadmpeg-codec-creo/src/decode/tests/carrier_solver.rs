@@ -509,8 +509,12 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             .expect("elliptical cone tangent generator");
     assert_eq!(elliptical_tangent_tag, "plane_cone_tangent_line");
     for parameter in [-1.0, 0.0, 1.0] {
-        let point = cadmpeg_ir::eval::curve_point(&elliptical_tangent_geometry, parameter)
-            .expect("elliptical tangent point");
+        let point = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &elliptical_tangent_geometry,
+            parameter,
+        )
+        .expect("elliptical tangent point");
         let point = [point.x, point.y, point.z];
         assert!(point_on_carrier(point, cone_tangent_plane));
         assert!(point_on_carrier(point, elliptical_cone));
@@ -563,7 +567,12 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             carrier_intersection_curve(plane, elliptical_cone).expect("elliptical cone conic");
         assert_eq!(tag, expected_tag);
         for parameter in [-1.0, 0.0, 1.0] {
-            let point = cadmpeg_ir::eval::curve_point(&geometry, parameter).expect("conic point");
+            let point = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &geometry,
+                parameter,
+            )
+            .expect("conic point");
             let point = [point.x, point.y, point.z];
             assert!(point_on_carrier(point, plane));
             assert!(point_on_carrier(point, elliptical_cone));
@@ -592,8 +601,12 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             .expect("selected elliptical cone generator");
     assert_eq!(tag, "plane_cone_secant_generator");
     for parameter in [-1.0, 0.0, 1.0] {
-        let point = cadmpeg_ir::eval::curve_point(&elliptical_generator, parameter)
-            .expect("elliptical generator point");
+        let point = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &elliptical_generator,
+            parameter,
+        )
+        .expect("elliptical generator point");
         let point = [point.x, point.y, point.z];
         assert!(point_on_carrier(point, cone_degenerate_plane));
         assert!(point_on_carrier(point, elliptical_cone));

@@ -2166,3 +2166,5 @@ mod tests {
         assert_eq!(PositiveAngle::new(angular.get()), Some(angular));
     }
 }
+
+mod identity_rewrite;
