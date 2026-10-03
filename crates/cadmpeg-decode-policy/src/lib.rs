@@ -22,6 +22,7 @@ mod instantiation;
 mod iteration;
 mod key_work;
 mod parser;
+mod replacement;
 mod scope;
 mod scalar;
 mod serde;
@@ -342,6 +343,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     .map(|path| path.display().to_string())
             })
             .unwrap_or(path);
+        let replacement = if message.contains("; replacement: ") { String::new() } else {
+            format!("; replacement: {}", replacement::diagnostic(message))
+        };
         let source = span.source_callsite();
         self.findings
             .entries
@@ -353,14 +357,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 rule.to_owned(),
             ))
             .or_default()
-            .insert(format!("[column {}] {message}", location.col.0 + 1));
+            .insert(format!("[column {}] {message}{replacement}", location.col.0 + 1));
     }
 
-    fn shape_report(&mut self, expression: &Expr<'tcx>, shape: types::Shape, operation: &str) {
+    fn shape_report(&mut self, expression: &'tcx Expr<'tcx>, shape: types::Shape, operation: &str) {
+        let replacement = self.replacement(expression, operation);
         match shape {
             types::Shape::Fixed => (),
-            types::Shape::Dynamic => self.report(expression.span, "uncharged_decode_allocation", &format!("{operation} allocates input-sized storage; use a core charged copy, format or collection operation")),
-            types::Shape::Unknown => self.report(expression.span, "unproven_decode_charge", &format!("{operation}: allocation extent or implementation is unresolved; use a concrete type or a core charged operation")),
+            types::Shape::Dynamic => self.report(expression.span, "uncharged_decode_allocation", &format!("{operation} allocates input-sized storage; replacement: {replacement}")),
+            types::Shape::Unknown => self.report(expression.span, "unproven_decode_charge", &format!("{operation}: allocation extent or implementation is unresolved; replacement: {replacement}")),
         }
     }
 }

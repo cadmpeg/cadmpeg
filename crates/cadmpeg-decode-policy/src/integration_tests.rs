@@ -184,6 +184,21 @@ fn check_fixture(name: &str) {
             "{actual}"
         );
     }
+    if name == "replacement_forms" {
+        let source = std::fs::read_to_string(&path).expect("replacement fixture source");
+        for (index, line) in source.lines().enumerate() {
+            if let Some(method) = line.trim().strip_prefix("// replacement: ") {
+                let line_number = (index + 2).to_string();
+                assert!(actual.lines().any(|row| {
+                    let fields: Vec<_> = row.split('\t').collect();
+                    fields.len() == 4 && fields[2] == line_number
+                        && fields[3].contains(&format!("replacement: DecodeContext::{method}"))
+                }), "missing replacement {method} at {line_number}: {actual}");
+            }
+        }
+        assert!(actual.lines().filter(|row| row.starts_with("uncharged_") || row.starts_with("unproven_decode_charge"))
+            .all(|row| row.contains("; replacement: ")), "{actual}");
+    }
     let mut findings = Vec::new();
     for line in actual.lines() {
         let fields: Vec<_> = line.split('\t').collect();
@@ -222,6 +237,7 @@ fn check_fixture(name: &str) {
                     | "parser_admission"
                     | "parser_json"
                     | "parser_zip"
+                    | "replacement_forms"
                     | "unicode_case"
                     | "parser_zstd"
                     | "reader_callbacks"
@@ -912,4 +928,9 @@ fn constant_evaluation_excludes_scans_and_preserves_runtime_callbacks() {
 #[test]
 fn unicode_case_receipts_require_the_admitted_input_and_live_workspace() {
     check_fixture("unicode_case");
+}
+
+#[test]
+fn replacements_select_the_concrete_collection_and_text_operation() {
+    check_fixture("replacement_forms");
 }
