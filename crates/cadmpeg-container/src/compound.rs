@@ -1539,8 +1539,7 @@ pub fn read_detection_prefix(
         }
         let used = cadmpeg_core::decode::u64_from_index(bytes.len());
         if used >= max_bytes {
-            ctx.charge_work(1, "CFB detection end probe")?;
-            if source.read(&mut [0_u8; 1])? != 0 {
+            if ctx.probe_input_end(source, "CFB detection end probe")? {
                 return Err(ctx.refuse_input_limit(1, "CFB detection input"));
             }
             return Ok(bytes);
