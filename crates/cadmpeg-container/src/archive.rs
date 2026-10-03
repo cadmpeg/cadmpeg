@@ -20,14 +20,14 @@ pub enum ZipCompression {
 }
 
 impl ZipCompression {
-    fn from_zip(method: CompressionMethod, name: &str) -> Result<Self, CodecError> {
+    fn from_zip(ctx: &DecodeContext<'_>, method: CompressionMethod, name: &str) -> Result<Self, CodecError> {
         match method {
             CompressionMethod::Stored => Ok(Self::Stored),
             CompressionMethod::Deflated => Ok(Self::Deflate),
             CompressionMethod::Zstd => Ok(Self::Zstd),
-            other => Err(CodecError::NotImplemented(format!(
-                "ZIP compression {other:?} for {name}"
-            ))),
+            other => Err(CodecError::NotImplemented(ctx.format_retained(
+                format_args!("ZIP compression {other:?} for {name}"), "ZIP compression error"
+            )?)),
         }
     }
 
@@ -193,7 +193,7 @@ impl<'a> ArchiveSnapshot<'a> {
                     "encrypted ZIP entry {name}"
                 )));
             }
-            let compression = ZipCompression::from_zip(file.compression(), &name)?;
+            let compression = ZipCompression::from_zip(ctx, file.compression(), &name)?;
             let data_start = file.data_start().ok_or_else(|| {
                 CodecError::malformed(format_args!("missing data offset for {name}"))
             })?;
@@ -1236,6 +1236,18 @@ mod tests {
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == dimension && refusal.operation == operation
         ));
+    }
+
+    #[test]
+    fn unsupported_zip_compression_refuses_before_error_formatting() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = super::ZipCompression::from_zip(&ctx, CompressionMethod::BZIP2, "entry").expect_err("error format work") else { panic!("refusal") };
+        assert_eq!(first.operation, "ZIP compression error");
+        let CodecError::ResourceLimit(repeated) = ctx.charge_work(1, "later").expect_err("fused refusal") else { panic!("refusal") };
+        assert_eq!(first, repeated);
     }
 
     #[test]

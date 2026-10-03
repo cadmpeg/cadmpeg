@@ -1842,7 +1842,7 @@ fn chain(
             if start == END_OF_CHAIN || (accepts_free && start == FREE_SECTOR) {
                 return Ok(None);
             }
-            return malformed(format!("empty CFB {role} has an invalid start sector"));
+            return malformed(ctx.format_retained(format_args!("empty CFB {role} has an invalid start sector"), "CFB sector chain error")?);
         }
         Some(ChainLength::Declared(count)) => Some(count),
         Some(ChainLength::Unbounded) => None,
@@ -1857,11 +1857,9 @@ fn chain(
     let mut traversal_scratch = ctx.reserve_scoped(0, "walk CFB sector chain")?;
     if start == END_OF_CHAIN {
         return if expected.is_some() {
-            malformed(format!(
-                "CFB {role} chain length does not match its declaration"
-            ))
+            malformed(ctx.format_retained(format_args!("CFB {role} chain length does not match its declaration"), "CFB sector chain error")?)
         } else {
-            malformed(format!("empty CFB {role}"))
+            malformed(ctx.format_retained(format_args!("empty CFB {role}"), "CFB sector chain error")?)
         };
     }
     let mut output = SectorChain {
@@ -1876,9 +1874,7 @@ fn chain(
     while current != END_OF_CHAIN {
         ctx.charge_work(1, "scan CFB sector chain")?;
         if cadmpeg_core::decode::index_from_u32(current) >= sector_count || seen.len() == limit {
-            return malformed(format!(
-                "CFB {role} chain is cyclic, overlong, or out of range"
-            ));
+            return malformed(ctx.format_retained(format_args!("CFB {role} chain is cyclic, overlong, or out of range"), "CFB sector chain error")?);
         }
         if !ctx.insert_scoped_btree_set(
             &mut traversal_scratch,
@@ -1887,9 +1883,7 @@ fn chain(
             "compare CFB visited sectors",
             "walk CFB sector chain",
         )? {
-            return malformed(format!(
-                "CFB {role} chain is cyclic, overlong, or out of range"
-            ));
+            return malformed(ctx.format_retained(format_args!("CFB {role} chain is cyclic, overlong, or out of range"), "CFB sector chain error")?);
         }
         if expected.is_none() {
             if current == start {
@@ -1905,13 +1899,11 @@ fn chain(
             .get(cadmpeg_core::decode::index_from_u32(current))
             .ok_or_else(|| CodecError::malformed(format_args!("CFB {role} FAT link is absent")))?;
         if matches!(current, FREE_SECTOR | FAT_SECTOR | DIFAT_SECTOR) {
-            return malformed(format!("CFB {role} chain enters a reserved sector role"));
+            return malformed(ctx.format_retained(format_args!("CFB {role} chain enters a reserved sector role"), "CFB sector chain error")?);
         }
     }
     if expected.is_some_and(|count| output.len() != count.get()) {
-        return malformed(format!(
-            "CFB {role} chain length does not match its declaration"
-        ));
+        return malformed(ctx.format_retained(format_args!("CFB {role} chain length does not match its declaration"), "CFB sector chain error")?);
     }
     Ok(Some(output))
 }
@@ -2049,6 +2041,18 @@ mod tests {
             CompoundPrefixProbe::inspect_with_context(&ctx, root).expect("probe");
         drop(storage);
         probe
+    }
+
+    #[test]
+    fn sector_chain_error_refuses_before_formatting() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = chain(&ctx, &[], 0, 0, None, ChainRole::Directory).expect_err("error format work") else { panic!("refusal") };
+        assert_eq!(first.operation, "CFB sector chain error");
+        let CodecError::ResourceLimit(repeated) = ctx.charge_work(1, "later").expect_err("fused refusal") else { panic!("refusal") };
+        assert_eq!(first, repeated);
     }
 
     #[test]
