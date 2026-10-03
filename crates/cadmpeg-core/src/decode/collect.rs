@@ -570,6 +570,20 @@ impl DecodeContext<'_> {
         Ok(out)
     }
 
+    /// Splits owned pairs into two vectors, admitting each source step and both slots.
+    /// Adapted sources must start from admitted bases; child values move without cloning.
+    pub fn unzip_vec<A, B>(&self, values: impl IntoIterator<Item = (A, B)>, operation: &'static str) -> Result<(Vec<A>, Vec<B>), CodecError> {
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        let mut input = values.into_iter();
+        loop {
+            let Some((a, b)) = self.next_charged(&mut input, operation)? else { break };
+            self.push_vec(&mut left, a, operation)?;
+            self.push_vec(&mut right, b, operation)?;
+        }
+        Ok((left, right))
+    }
+
     /// Collects fallible iterator values with a charged slot for each success.
     pub fn try_collect_vec<T, E: From<CodecError>>(
         &self,

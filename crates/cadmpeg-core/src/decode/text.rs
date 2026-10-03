@@ -58,14 +58,16 @@ text_scalars!(std::num::NonZeroU8, std::num::NonZeroU16, std::num::NonZeroU32,
 /// Standard integer radix parsers with no child storage or custom callbacks.
 pub trait RadixScalar: sealed::Radix + Sized {
     /// Parses one integer with a radix from 2 through 36.
-    fn parse_radix(text: &str, radix: u32) -> Result<Self, std::num::ParseIntError>;
+    fn parse_radix(ctx: &DecodeContext<'_>, text: &str, radix: u32, operation: &'static str) -> Result<Result<Self, std::num::ParseIntError>, CodecError>;
 }
 macro_rules! radix_scalars {
     ($($scalar:ty),+) => {$(
         impl sealed::Radix for $scalar {}
         impl RadixScalar for $scalar {
-            fn parse_radix(text: &str, radix: u32) -> Result<Self, std::num::ParseIntError> {
-                <$scalar>::from_str_radix(text, radix)
+            fn parse_radix(ctx: &DecodeContext<'_>, text: &str, radix: u32, operation: &'static str) -> Result<Result<Self, std::num::ParseIntError>, CodecError> {
+                ctx.charge_work(u64_from_index(text.len()), operation)?;
+                if !(2..=36).contains(&radix) { return Err(CodecError::malformed("integer radix is outside 2 through 36")); }
+                Ok(<$scalar>::from_str_radix(text, radix))
             }
         }
     )+};
@@ -75,9 +77,7 @@ radix_scalars!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 impl DecodeContext<'_> {
     /// Admits integer input bytes and preserves the standard numeric error.
     pub fn parse_radix<T: RadixScalar>(&self, text: &str, radix: u32, operation: &'static str) -> Result<Result<T, std::num::ParseIntError>, CodecError> {
-        self.charge_work(u64_from_index(text.len()), operation)?;
-        if !(2..=36).contains(&radix) { return Err(CodecError::malformed("integer radix is outside 2 through 36")); }
-        Ok(T::parse_radix(text, radix))
+        T::parse_radix(self, text, radix, operation)
     }
 
     /// Charge the complete text scan and retain its result with the exact input.
