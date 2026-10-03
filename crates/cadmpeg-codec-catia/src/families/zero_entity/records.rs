@@ -3,7 +3,7 @@
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+use cadmpeg_core::decode::index_from_u32;
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
+    nurbs::NurbsCurve,
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
@@ -2022,7 +2022,7 @@ fn zero_entity_model_curve(
             {
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        match zero_entity_surface_isocurve(
+                        match cadmpeg_ir::eval::nurbs_surface_isocurve(
                             ctx,
                             surface,
                             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
@@ -2030,7 +2030,7 @@ fn zero_entity_model_curve(
                         ) {
                             Ok(Some(curve)) => curve,
                             Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
+                            Err(error) => return Some(Err(error.into())),
                         },
                     )),
                     uv_endpoints.map(|uv| uv[1]),
@@ -2041,7 +2041,7 @@ fn zero_entity_model_curve(
             {
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        match zero_entity_surface_isocurve(
+                        match cadmpeg_ir::eval::nurbs_surface_isocurve(
                             ctx,
                             surface,
                             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
@@ -2049,7 +2049,7 @@ fn zero_entity_model_curve(
                         ) {
                             Ok(Some(curve)) => curve,
                             Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
+                            Err(error) => return Some(Err(error.into())),
                         },
                     )),
                     uv_endpoints.map(|uv| uv[0]),
@@ -2107,57 +2107,6 @@ fn zero_entity_lift_pcurve(
         refusal,
         format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
     )
-}
-
-fn zero_entity_surface_isocurve(
-    ctx: &DecodeContext<'_>,
-    surface: &NurbsSurface,
-    axis: SurfaceParameterAxis,
-    parameter: f64,
-) -> Result<Option<NurbsCurve>, CodecError> {
-    let (fixed_degree, varying_count, knots) = match axis {
-        SurfaceParameterAxis::U => (surface.u_degree(), surface.v_count(), surface.v_knots()),
-        SurfaceParameterAxis::V => (surface.v_degree(), surface.u_count(), surface.u_knots()),
-    };
-    let Some(basis_count) = usize::try_from(fixed_degree)
-        .ok()
-        .and_then(|degree| degree.checked_add(1))
-    else {
-        return Err(ctx.refuse_codec_limit("catia_zero_isocurve_basis", u64::MAX, u64::MAX));
-    };
-    for (count, operation) in [
-        (basis_count, "catia_zero_isocurve_basis"),
-        (varying_count, "catia_zero_isocurve_poles"),
-        (varying_count, "catia_zero_isocurve_sums"),
-        (knots.len(), "catia_zero_isocurve_knots"),
-    ] {
-        ctx.charge_collection_items(u64_from_index(count), operation)?;
-    }
-    if let cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
-        ctx.charge_collection_items(
-            u64_from_index(rows.len()),
-            "catia_zero_isocurve_weight_rows",
-        )?;
-        for row in rows {
-            ctx.charge_collection_items(
-                u64_from_index(row.len()),
-                "catia_zero_isocurve_weight_values",
-            )?;
-        }
-        ctx.charge_collection_items(
-            u64_from_index(varying_count),
-            "catia_zero_isocurve_curve_weights",
-        )?;
-        ctx.charge_collection_items(
-            u64_from_index(varying_count),
-            "catia_zero_isocurve_weighted_poles",
-        )?;
-    }
-    ctx.charge_collection_items(
-        u64_from_index(varying_count),
-        "catia_zero_isocurve_checked_poles",
-    )?;
-    cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter).map_err(Into::into)
 }
 
 fn zero_entity_model_curve_construction(

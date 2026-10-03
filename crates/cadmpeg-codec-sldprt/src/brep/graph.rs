@@ -5634,8 +5634,7 @@ fn nurbs_boundary_pcurve(
         .into_iter()
         .filter(|parameter| parameter.is_finite())
     {
-        let _scratch = super::evaluation::admit_nurbs_isocurve(ctx, surface, fixed_axis)?;
-        if nurbs_surface_isocurve(surface, fixed_axis, parameter)?
+        if nurbs_surface_isocurve(ctx, surface, fixed_axis, parameter)?
             .is_some_and(|candidate| same_curve(&candidate))
         {
             if fixed.is_some() {
@@ -6326,8 +6325,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     };
     let mut matched = None;
     for fixed in unique_fixed_values {
-        let _scratch = super::evaluation::admit_nurbs_isocurve(ctx, surface, fixed_axis)?;
-        if nurbs_surface_isocurve(surface, fixed_axis, fixed)?
+        if nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed)?
             .is_some_and(|expected| nurbs_representation_matches(&expected, &clamped))
         {
             if matched.is_some() {
@@ -9216,7 +9214,7 @@ mod tests {
         let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped segment");
-        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(&ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9279,7 +9277,7 @@ mod tests {
         let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped quadratic segment");
-        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(&ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
@@ -9339,7 +9337,7 @@ mod tests {
         let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped rational segment");
-        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(&ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,

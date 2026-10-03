@@ -1665,7 +1665,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         false,
     ).expect("fixture constructor admission")
     .expect("valid tensor surface");
-    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &surface,
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.25,

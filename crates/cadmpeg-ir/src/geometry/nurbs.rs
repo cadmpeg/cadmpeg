@@ -280,7 +280,7 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
 }
 
 /// Explicit storage, work and diagnostic policy for NURBS admission.
-pub(super) trait NurbsAdmission {
+pub(crate) trait NurbsAdmission {
     type Error: From<NurbsError>;
 
     fn collect<I, T>(
@@ -300,7 +300,7 @@ pub(super) trait NurbsAdmission {
 
 }
 
-pub(super) struct StandardNurbsAdmission;
+pub(crate) struct StandardNurbsAdmission;
 
 impl NurbsAdmission for StandardNurbsAdmission {
     type Error = NurbsError;
@@ -566,7 +566,7 @@ pub enum NurbsPoleGrid<P = Point3> {
     },
 }
 
-pub(super) fn pair_curve_lanes<P, W, S: NurbsAdmission>(
+pub(crate) fn pair_curve_lanes<P, W, S: NurbsAdmission>(
     admission: &S,
     points: Vec<P>,
     weights: Option<Vec<W>>,
@@ -1018,7 +1018,7 @@ pub(super) fn require_weight_lane<S: NurbsAdmission>(
 }
 
 /// Admit one weight a source states, naming its index within its lane.
-pub(super) fn admit_weight<S: NurbsAdmission>(
+pub(crate) fn admit_weight<S: NurbsAdmission>(
     admission: &S,
     field: &str,
     index: usize,
@@ -1138,7 +1138,7 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
     }
 }
 
-pub(super) fn build_curve<P: PoleValue<FinitePoint3>, K: KnotValue, S: NurbsAdmission>(
+pub(crate) fn build_curve<P: PoleValue<FinitePoint3>, K: KnotValue, S: NurbsAdmission>(
     admission: &S,
     degree: u32,
     knots: K,

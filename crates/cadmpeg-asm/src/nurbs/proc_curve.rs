@@ -2212,7 +2212,7 @@ pub fn decode_par_int_cur_isoline(
     else {
         return None;
     };
-    surface_isoline_along(support, pcurve).transpose()
+    surface_isoline_along(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, support, pcurve).transpose()
 }
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes. Token-space
@@ -2267,7 +2267,7 @@ pub(super) fn par_int_cur_isoline(
     else {
         return None;
     };
-    surface_isoline_along(support, pcurve)
+    surface_isoline_along(ctx.into(), support, pcurve)
         .transpose()
         .map(|result| result.map_err(Into::into))
 }
@@ -2275,15 +2275,17 @@ pub(super) fn par_int_cur_isoline(
 /// The support isoline a uv pcurve selects, or `None` when the pcurve is not an
 /// isoline of the support's full domain.
 fn surface_isoline_along(
+    admission: cadmpeg_ir::eval::admission::EvaluationAdmission<'_, '_>,
     support: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pcurve: &PcurveNurbs,
 ) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
-    use cadmpeg_ir::eval::IsolineDirection;
+    use cadmpeg_ir::eval::{admission::EvaluationAdmission, IsolineDirection};
+    if let EvaluationAdmission::Decode(ctx) = admission { ctx.charge_work_limit(0, "ASM surface isoline evaluation")?; }
     let Some((direction, at)) = (|| {
-        (pcurve.degree() == 1 && pcurve.pole_rows().count() == 2 && pcurve.weights().is_none())
-            .then_some(())?;
-        let start = *pcurve.control_points().first()?;
-        let end = *pcurve.control_points().last()?;
+        let poles = pcurve.pole_rows();
+        (pcurve.degree() == 1 && poles.count() == 2 && poles.weight_at(0).is_none()).then_some(())?;
+        let start = poles.point_at(0)?.get();
+        let end = poles.point_at(1)?.get();
         let domain = [*pcurve.knots().first()?, *pcurve.knots().last()?];
         let u_domain = [*support.u_knots().first()?, *support.u_knots().last()?];
         let v_domain = [*support.v_knots().first()?, *support.v_knots().last()?];
@@ -2317,7 +2319,7 @@ fn surface_isoline_along(
     })() else {
         return Ok(None);
     };
-    cadmpeg_ir::eval::nurbs_surface_isoline(support, direction, at)
+    cadmpeg_ir::eval::nurbs_surface_isoline(admission, support, direction, at)
 }
 
 /// Span of a parameter domain.

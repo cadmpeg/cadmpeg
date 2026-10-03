@@ -103,7 +103,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
             assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 0.0));
             assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
             assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 0.0));
-            let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+            let curve = nurbs_surface_isocurve(crate::eval::admission::EvaluationAdmission::Standard, &surface, SurfaceParameterAxis::U, 0.5)
                 .expect("resource allocation did not fail")
                 .unwrap();
             assert_eq!(
@@ -118,7 +118,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
 fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
     use super::super::{nurbs_surface_isocurve, SurfaceParameterAxis};
     let surface = bilinear_surface(vec![vec![1.0e308, 1.0e-308]; 2], [2.0, 4.0]);
-    let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+    let curve = nurbs_surface_isocurve(crate::eval::admission::EvaluationAdmission::Standard, &surface, SurfaceParameterAxis::U, 0.5)
         .expect("resource allocation did not fail")
         .unwrap();
     assert_eq!(
@@ -127,7 +127,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
     );
     assert_eq!(curve.pole_rows().weights(), Some(vec![1.0e308, 1.0e-308]));
     let surface = bilinear_surface(vec![vec![1.0e308; 2], vec![1.0e-308; 2]], [0.0, 1.0e308]);
-    let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+    let curve = nurbs_surface_isocurve(crate::eval::admission::EvaluationAdmission::Standard, &surface, SurfaceParameterAxis::U, 0.5)
         .expect("resource allocation did not fail")
         .unwrap();
     for point in curve.control_points() {

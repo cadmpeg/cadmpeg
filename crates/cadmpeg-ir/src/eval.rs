@@ -19,7 +19,6 @@ use std::cmp::Ordering;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
-use crate::geometry::nurbs::scratch;
 use crate::geometry::nurbs::scoped::ScopedRows;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
@@ -2842,7 +2841,8 @@ pub enum IsolineDirection {
 /// knot vector, whose poles are the fixed direction's pole rows blended by the
 /// basis at `at`. The result is exact, not a fit; its parameter is the
 /// surface's own parameter in the free direction.
-pub fn nurbs_surface_isoline(
+pub fn nurbs_surface_isoline<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     direction: IsolineDirection,
     at: f64,
@@ -2851,63 +2851,20 @@ pub fn nurbs_surface_isoline(
         IsolineDirection::ConstantU => SurfaceParameterAxis::U,
         IsolineDirection::ConstantV => SurfaceParameterAxis::V,
     };
-    nurbs_surface_isocurve(surface, fixed_axis, at)
-}
-
-/// Peak vector storage for isocurve evaluation and its returned pole carrier.
-///
-/// The bound includes the fixed basis, homogeneous sums, output positions,
-/// weights, both rational constructor conversions and the copied knot lane.
-/// The reservation must remain live while the returned curve is used.
-pub fn nurbs_surface_isocurve_scratch_bytes(
-    surface: &NurbsSurface,
-    fixed_axis: SurfaceParameterAxis,
-) -> Result<usize, ResourceLimit> {
-    let (degree, count, knots) = match fixed_axis {
-        SurfaceParameterAxis::U => (
-            surface.u_degree(),
-            surface.v_count(),
-            surface.v_knots().len(),
-        ),
-        SurfaceParameterAxis::V => (
-            surface.v_degree(),
-            surface.u_count(),
-            surface.u_knots().len(),
-        ),
-    };
-    let bytes = usize::try_from(degree)
-        .ok()
-        .and_then(|degree| degree.checked_add(1))
-        .and_then(|basis| basis.checked_add(knots))
-        .and_then(|lanes| lanes.checked_mul(std::mem::size_of::<f64>()))
-        .and_then(|bytes| {
-            let per_pole = std::mem::size_of::<Homogeneous>()
-                .checked_add(std::mem::size_of::<FinitePoint3>())?
-                .checked_add(std::mem::size_of::<f64>())?
-                .checked_add(
-                    std::mem::size_of::<crate::geometry::nurbs::WeightedPole3<FinitePoint3>>()
-                        .checked_mul(2)?,
-                )?;
-            bytes.checked_add(count.checked_mul(per_pole)?)
-        });
-    bytes.ok_or_else(|| scratch::allocation_refusal(count, "IR isocurve workspace bound"))
+    nurbs_surface_isocurve(admission, surface, fixed_axis, at)
 }
 
 /// Extract the exact rational NURBS curve obtained by fixing one parameter of
 /// a tensor-product NURBS surface.
-pub fn nurbs_surface_isocurve(
+pub fn nurbs_surface_isocurve<'ctx, 'arena: 'ctx>(
+    admission: impl Into<admission::EvaluationAdmission<'ctx, 'arena>>,
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
     fixed_parameter: f64,
 ) -> Result<Option<NurbsCurve>, ResourceLimit> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let scratch = decode::Scratch::new(&ctx);
+    let scratch = decode::Scratch::new(admission);
     let result = (|| {
+        if scratch.work(0, "IR surface isoline evaluation").is_none() { return Ok(None); }
         let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
             return Ok(None);
         };
@@ -2933,7 +2890,7 @@ pub fn nurbs_surface_isocurve(
         };
         let fixed_parameter = fixed_parameter.get();
         let Some(fixed_span) =
-            basis::bspline_span(&ctx, fixed_knots, fixed_degree, fixed_count, fixed_parameter)?
+            basis::bspline_span(scratch.admission, fixed_knots, fixed_degree, fixed_count, fixed_parameter)?
         else {
             return Ok(None);
         };
@@ -2954,14 +2911,11 @@ pub fn nurbs_surface_isocurve(
         };
         let rational = surface.weight(0, 0).is_some();
         let mut control_points = Vec::new();
-        scratch::reserve_exact(
-            &mut control_points,
-            varying_count,
-            "IR surface isoline controls",
-        )?;
+        if scratch.reserve(&mut control_points, varying_count, "IR surface isoline controls").is_none() { return Ok(None); }
         let mut sums = Vec::new();
-        scratch::reserve_exact(&mut sums, varying_count, "IR surface isoline sums")?;
+        if scratch.reserve(&mut sums, varying_count, "IR surface isoline sums").is_none() { return Ok(None); }
         for varying in 0..varying_count {
+            if scratch.work(1, "IR surface isoline pole visit").is_none() { return Ok(None); }
             let Some(sum) = Homogeneous::sum(&scratch, fixed_basis.iter().copied().enumerate().map(
                 |(local, basis)| {
                     let fixed = fixed_span - fixed_degree + local;
@@ -2984,7 +2938,9 @@ pub fn nurbs_surface_isocurve(
             let Ok([x, y, z]) = finite_lanes(projected) else {
                 return Ok(None);
             };
-            control_points.push(FinitePoint3::from_coordinates(x, y, z));
+            if scratch.work(std::mem::size_of::<Point3>(), "IR surface isoline point copy").is_none() { return Ok(None); }
+            control_points.push(FinitePoint3::from_coordinates(x, y, z).get());
+            if scratch.work(std::mem::size_of::<Homogeneous>(), "IR surface isoline sum copy").is_none() { return Ok(None); }
             sums.push(sum);
         }
         let (degree, knots, periodic) = match fixed_axis {
@@ -2999,9 +2955,7 @@ pub fn nurbs_surface_isocurve(
                 surface.u_periodic(),
             ),
         };
-        let mut admitted_knots = Vec::new();
-        scratch::reserve_exact(&mut admitted_knots, knots.len(), "IR surface isoline knots")?;
-        admitted_knots.extend_from_slice(knots);
+        let Some(admitted_knots) = scratch.retained_copy(knots, "IR surface isoline knots") else { return Ok(None); };
         let weights = if rational {
             let Some(weights) = Homogeneous::weights(&scratch, &sums)? else {
                 return Ok(None);
@@ -3010,7 +2964,17 @@ pub fn nurbs_surface_isocurve(
         } else {
             None
         };
-        match NurbsCurve::from_lanes(&ctx, degree, admitted_knots, control_points, weights, periodic).map_err(crate::geometry::nurbs::NurbsError::from).and_then(|curve| curve) {
+        let curve = match scratch.admission {
+            admission::EvaluationAdmission::Decode(ctx) => NurbsCurve::from_lanes(ctx, degree, admitted_knots, control_points, weights, periodic)
+                .map_err(crate::geometry::nurbs::NurbsError::from).and_then(|curve| curve),
+            admission::EvaluationAdmission::Standard => (|| {
+                use crate::geometry::nurbs::{admit_weight, build_curve, pair_curve_lanes, StandardNurbsAdmission};
+                let poles = pair_curve_lanes(&StandardNurbsAdmission, control_points, weights, &mut None,
+                    |index, weight| admit_weight(&StandardNurbsAdmission, "poles", index, weight))?;
+                build_curve(&StandardNurbsAdmission, degree, admitted_knots, poles, periodic)
+            })(),
+        };
+        match curve {
             Ok(curve) => Ok(Some(curve)),
             Err(crate::geometry::nurbs::NurbsError::ResourceLimit(limit)) => Err(limit),
             Err(_) => Ok(None),
@@ -5149,7 +5113,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                     } else {
                         continue;
                     };
-                let Some(isocurve) = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter)?
+                let Some(isocurve) = nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_parameter)?
                 else {
                     continue;
                 };
