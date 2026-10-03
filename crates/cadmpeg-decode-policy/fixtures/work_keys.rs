@@ -72,3 +72,22 @@ pub fn moves<T: Copy>(ctx: &DecodeContext, target: &mut [T], source: &[T]) -> Re
     target.reverse();
     Ok(())
 }
+
+pub fn replaced_child(ctx: &DecodeContext, values: &mut [String], other: &String, replacement: String) -> Result<(), ()> {
+    ctx.charge_key(&values[0], 1, "child before mutation")?;
+    ctx.charge_key(other, 1, "other")?;
+    values[0] = replacement;
+    let _stale = &values[0] == other; // finding: uncharged_decode_work
+    ctx.charge_key(&values[0], 1, "child after mutation")?;
+    ctx.charge_key(other, 1, "other after mutation")?;
+    let _paid = &values[0] == other;
+    Ok(())
+}
+
+pub fn replaced_field(ctx: &DecodeContext, values: &mut (String, String), other: &String, replacement: String) -> Result<(), ()> {
+    ctx.charge_key(&values.0, 1, "field before mutation")?;
+    ctx.charge_key(other, 1, "other")?;
+    values.0 = replacement;
+    let _stale = &values.0 == other; // finding: uncharged_decode_work
+    Ok(())
+}
