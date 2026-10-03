@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed identity replacement under the caller's decode policy.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 pub mod native_fields;
+mod cache;
+
+use cache::{Key, ReplacementIndex};
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
@@ -41,10 +44,10 @@ pub trait RewriteIdentities: Sized {
 #[derive(Debug)]
 pub struct IdentityMap<'ctx, F> {
     map: F,
-    text_replacements: Option<&'ctx BTreeMap<String, String>>,
-    targets: BTreeMap<String, String>,
-    occupied: BTreeSet<String>,
-    longest: usize,
+    context: &'ctx DecodeContext<'ctx>,
+    text_index: Option<ReplacementIndex<'ctx>>,
+    targets: BTreeMap<Key<'ctx>, String>,
+    occupied: BTreeMap<Key<'ctx>, ()>,
     operation: &'static str,
     refused: Option<String>,
     resource_refusal: Option<ResourceLimit>,
@@ -56,11 +59,11 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     pub fn new(ctx: &'ctx DecodeContext<'_>, operation: &'static str, map: F) -> Result<Self, CodecError> {
         Ok(Self {
             map,
-            text_replacements: None,
+            context: ctx,
+            text_index: None,
             targets: BTreeMap::new(),
-            occupied: BTreeSet::new(),
+            occupied: BTreeMap::new(),
             storage: ctx.reserve_scoped(0, operation)?,
-            longest: 0,
             operation,
             refused: None,
             resource_refusal: None,
@@ -68,19 +71,17 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     }
 
     /// Also rewrite ordinary text that exactly names an owned source identity.
-    pub fn with_text_replacements(mut self, replacements: &'ctx BTreeMap<String, String>) -> Self {
-        self.text_replacements = Some(replacements);
-        self
+    pub fn with_text_replacements(mut self, replacements: &'ctx BTreeMap<String, String>) -> Result<Self, CodecError> {
+        self.text_index = Some(ReplacementIndex::build(self.context, replacements, &mut self.storage, self.operation)?);
+        Ok(self)
     }
 
     fn text(&mut self, ctx: &DecodeContext<'_>, source: String) -> Result<String, CodecError> {
         let result = (|| {
             if let Some(limit) = self.resource_refusal { return Err(CodecError::ResourceLimit(limit)); }
             ctx.charge_work(1, self.operation)?;
-            let Some(replacements) = self.text_replacements else { return Ok(source); };
-            let comparisons = u64_from_index(source.len()).checked_add(1).and_then(|length| length.checked_mul(u64_from_index(replacements.len()).checked_add(1)?)).ok_or_else(|| ctx.refuse_codec_limit(self.operation, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(comparisons, self.operation)?;
-            match replacements.get(&source) {
+            let Some(index) = &self.text_index else { return Ok(source); };
+            match index.get(ctx, &source, self.operation)? {
                 Some(target) => ctx.copy_retained_text(target, self.operation),
                 None => Ok(source),
             }
@@ -93,8 +94,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 
     fn refuse<T>(&mut self, ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> Result<T, CodecError> {
         let message = ctx.format_retained(message, self.operation)?;
-        ctx.charge_work(u64_from_index(message.len()), self.operation)?;
-        self.refused = Some(ctx.copy_scoped_text(&message, &mut self.storage, self.operation)?);
+        self.refused = Some(self.storage.with_storage(|| ctx.copy_retained_text(&message, self.operation))?);
         Err(CodecError::Malformed(message))
     }
 
@@ -126,32 +126,37 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             return Err(CodecError::ResourceLimit(limit));
         }
         let operation = self.operation;
-        self.longest = self.longest.max(source.len());
-        let work = u64_from_index(self.longest)
-            .checked_mul(u64_from_index(self.targets.len()).checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
-        if let Some(target) = self.targets.get(source) {
+        ctx.charge_work(1, operation)?;
+        let cached = self.targets.get(&Key::borrowed(self.context, source, operation));
+        self.context.charge_work_limit(0, operation)?;
+        if let Some(target) = cached {
             return ctx.copy_retained_text(target, operation);
         }
         let target = (self.map)(source)?;
-        self.longest = self.longest.max(target.len());
         ctx.charge_work(u64_from_index(target.len()), operation)?;
         if !crate::ids::is_valid_identity(&target) {
             return self.refuse(ctx, format_args!("identity {source} rewrites to invalid identity {target:?}"));
         }
-        let copies = u64_from_index(source.len()).checked_add(u64_from_index(target.len()).checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(copies, operation)?;
-        let key = ctx.copy_scoped_text(source, &mut self.storage, operation)?;
-        let cached = ctx.copy_scoped_text(&target, &mut self.storage, operation)?;
-        let occupied = ctx.copy_scoped_text(&target, &mut self.storage, operation)?;
-        ctx.charge_work(u64_from_index(self.longest).checked_mul(u64_from_index(self.occupied.len())).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
-        if !ctx.insert_scoped_btree_set(&mut self.storage, &mut self.occupied, occupied, operation, operation)? {
-            return self.refuse(ctx, format_args!("identity {source} collides at rewritten identity {target}"));
+        let key = self.storage.with_storage(|| ctx.copy_retained_text(source, operation))?;
+        let cached = self.storage.with_storage(|| ctx.copy_retained_text(&target, operation))?;
+        let occupied = self.storage.with_storage(|| ctx.copy_retained_text(&target, operation))?;
+        let destination = self.occupied.entry(Key::owned(self.context, occupied, operation));
+        self.context.charge_work_limit(0, operation)?;
+        match destination {
+            Entry::Occupied(_) => return self.refuse(ctx, format_args!("identity {source} collides at rewritten identity {target}")),
+            Entry::Vacant(entry) => {
+                self.storage.with_storage(|| ctx.admit_retained_btree_record::<Key<'_>, ()>(0, operation))?;
+                entry.insert(());
+            }
         }
-        // The absent source was checked before invoking the mapping callback.
-        if !ctx.insert_scoped_btree_map_if_vacant(&mut self.storage, &mut self.targets, key, cached, operation, operation)? {
-            return Err(CodecError::malformed("identity rewrite cache contains the source"));
+        let source_entry = self.targets.entry(Key::owned(self.context, key, operation));
+        self.context.charge_work_limit(0, operation)?;
+        match source_entry {
+            Entry::Occupied(_) => return Err(CodecError::malformed("identity rewrite cache contains the source")),
+            Entry::Vacant(entry) => {
+                self.storage.with_storage(|| ctx.admit_retained_btree_record::<Key<'_>, String>(0, operation))?;
+                entry.insert(cached);
+            }
         }
         Ok(target)
     }

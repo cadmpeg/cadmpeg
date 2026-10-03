@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use std::cmp::Ordering;
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+#[test]
+fn identity_cache_comparisons_admit_only_the_bytes_inspected() {
+    for (first, second, work, expected) in [
+        ("alpha", "beta", 2, Ordering::Less),
+        ("alpha", "alpha", 6, Ordering::Equal),
+        ("a", "alpha", 2, Ordering::Less),
+        ("é", "ê", 3, Ordering::Less),
+        ("", "a", 1, Ordering::Less),
+    ] {
+        for allowance in 0..=work {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_recursion_depth = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::compare(&ctx, first, second, "actual cache comparison");
+            if allowance < work {
+                let original = result.unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(original.operation, "actual cache comparison");
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+            } else {
+                assert_eq!(result.unwrap(), expected);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
+    let fixture = cadmpeg_test_support::service_decode_context();
+    let replacements = std::collections::BTreeMap::from([
+        ("alpha".to_owned(), "A".to_owned()),
+        ("beta".to_owned(), "B".to_owned()),
+        ("gamma".to_owned(), "C".to_owned()),
+    ]);
+    let mut storage = fixture.reserve_scoped_limit(0, "fixture replacement index").unwrap();
+    let index = super::ReplacementIndex::build(&fixture, &replacements, &mut storage, "fixture replacement index").unwrap();
+    // beta differs at its first byte; gamma compares five equal bytes.
+    for allowance in 0..=8 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = index.get(&ctx, "gamma", "actual replacement lookup");
+        if allowance < 8 {
+            let original = result.unwrap_err();
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(original.operation, "actual replacement lookup");
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        } else {
+            assert_eq!(result.unwrap(), Some("C"));
+            ctx.finish_session().unwrap();
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut empty_storage = ctx.reserve_scoped_limit(0, "empty replacement index").unwrap();
+    let empty = std::collections::BTreeMap::new();
+    let empty_index = super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index").unwrap();
+    assert_eq!(empty_index.get(&ctx, "absent", "empty replacement lookup").unwrap(), None);
+    let original = ctx.charge_work_limit(1, "original empty replacement refusal").unwrap_err();
+    assert_eq!(empty_index.get(&ctx, "absent", "empty replacement lookup").unwrap_err(), original);
+    assert!(matches!(super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index"), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    drop(empty_index);
+    drop(empty_storage);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+}
+
+#[test]
+fn replacement_index_admits_storage_and_preserves_byte_order() {
+    let replacements = std::collections::BTreeMap::from([
+        ("é".to_owned(), "third".to_owned()),
+        ("alpha".to_owned(), "first".to_owned()),
+        ("beta".to_owned(), "second".to_owned()),
+    ]);
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems, ResourceDimension::WorkUnits] {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => unreachable!(),
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut storage = ctx.reserve_scoped_limit(0, "replacement storage").unwrap();
+        let CodecError::ResourceLimit(original) = super::ReplacementIndex::build(&ctx, &replacements, &mut storage, "replacement storage").unwrap_err() else { panic!("index must refuse"); };
+        assert_eq!(original.dimension, dimension);
+        drop(storage);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped_limit(0, "replacement storage").unwrap();
+    let index = super::ReplacementIndex::build(&ctx, &replacements, &mut storage, "replacement storage").unwrap();
+    assert_eq!(index.values, [("alpha", "first"), ("beta", "second"), ("é", "third")]);
+    assert_eq!(index.get(&ctx, "alpha", "replacement lookup").unwrap(), Some("first"));
+    assert_eq!(index.get(&ctx, "é", "replacement lookup").unwrap(), Some("third"));
+    assert_eq!(index.get(&ctx, "missing", "replacement lookup").unwrap(), None);
+    drop(index);
+    drop(storage);
+    drop(ctx.reserve_scoped_limit(4096, "replacement storage released").unwrap());
+    ctx.finish_session().unwrap();
+}

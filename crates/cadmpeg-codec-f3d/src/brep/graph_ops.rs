@@ -269,7 +269,7 @@ impl Brep {
         let mut map = IdentityMap::new(ctx, "rewrite F3D qualified BREP fields", |source: &str| {
             tree_work(ctx, source, replacements.0.len(), 1, "find F3D BREP replacement")?;
             ctx.copy_retained_text(replacements.0.get(source).map_or(source, String::as_str), "copy F3D BREP remapped ID")
-        })?.with_text_replacements(&replacements.0);
+        })?.with_text_replacements(&replacements.0)?;
         let source = std::mem::take(self);
         let rewritten = source.rewrite_identities(ctx, &mut map);
         map.finish(ctx)?;
