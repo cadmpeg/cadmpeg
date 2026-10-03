@@ -212,12 +212,12 @@ fn outer_refusal<T, R>(
 }
 
 /// Evaluate a stored curve, admitting every scratch allocation and recursive step.
-pub fn curve_point_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn curve_point_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
     parameter: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = geometry
         .solved()
         .ok_or(EvaluationFailure::NoValue)
@@ -226,12 +226,12 @@ pub fn curve_point_for_decode(
 }
 
 /// Evaluate a NURBS curve in its knot domain with caller scratch admission.
-pub fn nurbs_curve_point_at_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn nurbs_curve_point_at_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     curve: &NurbsCurve,
     parameter: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let poles = curve.pole_rows();
     let result = FiniteReal::new(parameter)
         .ok_or(EvaluationFailure::NoValue)
@@ -250,12 +250,12 @@ pub fn nurbs_curve_point_at_for_decode(
 }
 
 /// Evaluate a stored curve tangent with caller scratch admission.
-pub fn curve_tangent_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn curve_tangent_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
     parameter: f64,
 ) -> Result<Result<FiniteVector3, EvaluationFailure<()>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = geometry
         .solved()
         .ok_or(EvaluationFailure::NoValue)
@@ -271,13 +271,13 @@ pub fn curve_tangent_for_decode(
 }
 
 /// Evaluate a stored surface point with caller scratch admission.
-pub fn surface_point_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn surface_point_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = geometry
         .solved()
         .ok_or(EvaluationFailure::NoValue)
@@ -286,12 +286,12 @@ pub fn surface_point_for_decode(
 }
 
 /// Evaluate a stored pcurve point with caller scratch admission.
-pub fn pcurve_uv_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn pcurve_uv_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &PcurveGeometry,
     parameter: f64,
 ) -> Result<Result<FinitePoint2, EvaluationFailure<Point2>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = FiniteReal::new(parameter)
         .ok_or(EvaluationFailure::NoValue)
         .and_then(|parameter| {
@@ -397,36 +397,36 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
 mod tests;
 
 /// Evaluate a borrowed solved curve with caller-owned scratch admission.
-pub fn curve_point_solved_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn curve_point_solved_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedCurveGeometry,
     parameter: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = super::curve_point_evaluation(&scratch, geometry, parameter);
     scratch.finish_evaluation(result)
 }
 
 /// Evaluate a borrowed solved surface with caller-owned scratch admission.
-pub fn surface_point_solved_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn surface_point_solved_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = super::surface_point_evaluation(&scratch, geometry, u, v);
     scratch.finish_evaluation(result)
 }
 
 /// Evaluate a NURBS surface with scoped caller storage.
-pub fn nurbs_surface_point_for_decode(
-    ctx: &DecodeContext<'_>,
+pub fn nurbs_surface_point_for_decode<'ctx, 'arena: 'ctx>(
+    admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     surface: &crate::geometry::nurbs::NurbsSurface,
     u: f64,
     v: f64,
 ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
-    let scratch = Scratch::new(ctx);
+    let scratch = Scratch::new(admission);
     let result = super::nurbs_surface_local(&scratch, surface, u, v).map(|local| {
         let [point_x, point_y, point_z] = local.point;
         FinitePoint3::from_coordinates(point_x, point_y, point_z)
