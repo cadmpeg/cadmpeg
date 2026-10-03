@@ -3,6 +3,7 @@
 
 use std::io::Read;
 
+use super::collect::LinearGrowth;
 use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceFailure};
 use crate::CodecError;
 
@@ -43,13 +44,17 @@ impl DecodeContext<'_> {
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
             self.charge_collection_items(u64_from_index(read), "input byte slots")?;
-            bytes.try_reserve_exact(read).map_err(|_| {
+            let (additional, storage, _growth) = self.linear_growth::<u8>(
+                bytes.len(), bytes.capacity(), read, LinearGrowth::PrechargedBytes,
+                "input prefix storage",
+            )?;
+            bytes.try_reserve_exact(additional).map_err(|_| {
                 self.budget.refuse(
                     ResourceDimension::InputBytes,
                     ResourceFailure::AllocationFailed,
                     self.policy().limits.max_input_bytes,
                     self.budget.input_bytes(),
-                    u64_from_index(read),
+                    u64_from_index(storage),
                     "input prefix storage",
                 )
             })?;
@@ -173,6 +178,66 @@ mod tests {
             assert_eq!(ctx.budget.input_bytes(), 0);
             assert_eq!(ctx.resource_refusal(), None);
         }
+    }
+
+    #[test]
+    fn input_growth_refuses_overlap_before_reserving_or_copying() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut reader = Cursor::new(b"ab");
+        let mut bytes = ctx.read_input_prefix(&mut reader, 1).expect("first byte");
+        let capacity = bytes.capacity();
+        let CodecError::ResourceLimit(limit) = ctx.extend_input_prefix(&mut reader, &mut bytes, 2)
+            .expect_err("old allocation overlaps the new allocation") else { panic!("resource refusal") };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "input prefix storage");
+        assert_eq!(limit.additional, 1);
+        assert_eq!(bytes, b"a");
+        assert_eq!(bytes.capacity(), capacity);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+
+    #[test]
+    fn input_growth_charges_moves_and_releases_the_overlap() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 1;
+        // Two visits, two read bytes, one old-allocation byte and two copied bytes.
+        policy.limits.max_work_units = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut reader = Cursor::new(b"ab");
+        let mut bytes = ctx.read_input_prefix(&mut reader, 1).expect("first byte");
+        ctx.extend_input_prefix(&mut reader, &mut bytes, 2).expect("second byte");
+        assert_eq!(bytes, b"ab");
+        assert_eq!(ctx.budget.input_bytes(), 2);
+        assert!(ctx.reserve_scoped(1, "released overlap").is_ok());
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "work probe")
+            .expect_err("exact work total") else { panic!("resource refusal") };
+        assert_eq!(limit.used, 7);
+    }
+
+    #[test]
+    fn input_growth_refuses_move_work_before_reserving() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The first read uses three units; the next visit and read use two.
+        policy.limits.max_work_units = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut reader = Cursor::new(b"ab");
+        let mut bytes = ctx.read_input_prefix(&mut reader, 1).expect("first byte");
+        let capacity = bytes.capacity();
+        let CodecError::ResourceLimit(limit) = ctx.extend_input_prefix(&mut reader, &mut bytes, 2)
+            .expect_err("the old allocation move needs another unit") else { panic!("resource refusal") };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "input prefix storage");
+        assert_eq!(limit.used, 5);
+        assert_eq!(bytes, b"a");
+        assert_eq!(bytes.capacity(), capacity);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     #[test]

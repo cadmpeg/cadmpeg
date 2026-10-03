@@ -22,9 +22,6 @@ enum LimitScope {
     PerExpand,
 }
 
-/// Cap on the initial per-expand reservation before any output is produced.
-const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
-
 /// Shared monotonic decode state.
 #[derive(Debug)]
 pub struct DecodeContext<'a> {
@@ -617,30 +614,10 @@ impl<'a> DecodeContext<'a> {
                 ));
             }
         }
-        let mut buffer: Vec<u8> = Vec::new();
-        let reserve = match spec {
-            // A declared size the address space cannot name is above the cap,
-            // so the cap is the reservation either way.
-            ExpandSpec::Exact(size) => match usize::try_from(size) {
-                Ok(size) => size.min(RESERVE_CLAMP),
-                Err(_) => RESERVE_CLAMP,
-            },
-            ExpandSpec::Unknown => 0,
-        };
-        if reserve > 0 {
-            buffer.try_reserve(reserve).map_err(|_| {
-                self.fuse(
-                    ResourceFailure::AllocationFailed,
-                    LimitScope::PerExpand,
-                    u64_from_index(reserve),
-                    "begin_expand",
-                )
-            })?;
-        }
         Ok(ExpandWriter {
             ctx: self,
             spec,
-            buffer,
+            buffer: Vec::new(),
         })
     }
 
@@ -824,11 +801,15 @@ impl<'a> ExpandWriter<'_, 'a> {
             ));
         }
         self.ctx.budget.charge_decompressed(len, "expand_write")?;
-        self.buffer.try_reserve(data.len()).map_err(|_| {
+        let (additional, storage, _growth) = self.ctx.linear_growth::<u8>(
+            self.buffer.len(), self.buffer.capacity(), data.len(),
+            LinearGrowth::PrechargedBytes, "expand_write storage",
+        )?;
+        self.buffer.try_reserve_exact(additional).map_err(|_| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
                 LimitScope::PerExpand,
-                len,
+                u64_from_index(storage),
                 "expand_write",
             )
         })?;
@@ -877,6 +858,7 @@ impl<'a> ExpandWriter<'_, 'a> {
 mod tests {
     use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
     use crate::decode::{ResourceDimension, ResourceFailure};
+    use crate::CodecError;
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
     #[test]
@@ -914,6 +896,84 @@ mod tests {
             .finalize(), Err(crate::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1)
         );
+    }
+
+    #[test]
+    fn declared_expansion_does_not_allocate_before_written_bytes() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let first = ctx.begin_expand(super::ExpandSpec::Exact(512)).expect("first declaration");
+        let second = ctx.begin_expand(super::ExpandSpec::Exact(512)).expect("second declaration");
+        assert_eq!(first.buffer.capacity(), 0);
+        assert_eq!(second.buffer.capacity(), 0);
+        assert_eq!(ctx.budget.decompressed_used(), 0);
+    }
+
+    #[test]
+    fn expansion_growth_refuses_overlap_before_reserving_or_copying() {
+        for spec in [super::ExpandSpec::Exact(3), super::ExpandSpec::Unknown] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut writer = ctx.begin_expand(spec).expect("writer");
+            writer.write(b"ab").expect("first output");
+            let capacity = writer.buffer.capacity();
+            let CodecError::ResourceLimit(limit) = writer.write(b"c")
+                .expect_err("two old allocation bytes exceed the overlap limit") else { panic!("resource refusal") };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.operation, "expand_write storage");
+            assert_eq!(limit.additional, 2);
+            assert_eq!(writer.buffer, b"ab");
+            assert_eq!(writer.buffer.capacity(), capacity);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+
+    #[test]
+    fn expansion_growth_charges_moves_and_releases_the_overlap() {
+        for spec in [super::ExpandSpec::Exact(3), super::ExpandSpec::Unknown] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 2;
+            // Two first-output bytes, two old-allocation bytes and one appended byte.
+            policy.limits.max_work_units = 5;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut writer = ctx.begin_expand(spec).expect("writer");
+            writer.write(b"ab").expect("first output");
+            writer.write(b"c").expect("second output");
+            assert_eq!(writer.buffer, b"abc");
+            assert_eq!(ctx.budget.decompressed_used(), 3);
+            assert!(ctx.reserve_scoped(2, "released overlap").is_ok());
+            let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "work probe")
+                .expect_err("exact work total") else { panic!("resource refusal") };
+            assert_eq!(limit.used, 5);
+        }
+    }
+
+    #[test]
+    fn expansion_growth_refuses_move_work_before_reserving() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The first output copies two bytes before the next two-byte move.
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut writer = ctx.begin_expand(super::ExpandSpec::Unknown).expect("writer");
+        writer.write(b"ab").expect("first output");
+        let capacity = writer.buffer.capacity();
+        let CodecError::ResourceLimit(limit) = writer.write(b"c")
+            .expect_err("old allocation move exceeds work") else { panic!("resource refusal") };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "expand_write storage");
+        assert_eq!(limit.used, 2);
+        assert_eq!(writer.buffer, b"ab");
+        assert_eq!(writer.buffer.capacity(), capacity);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     struct RewindFails(Cursor<Vec<u8>>);
