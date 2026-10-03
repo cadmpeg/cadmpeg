@@ -6053,10 +6053,10 @@ fn model_surface_point_inner(
     let standard;
     let index = match admission.context() {
         Some(ctx) => {
-            decoded = crate::index::ModelIndex::new_for_decode(ir, ctx).map_err(EvaluationFailure::ResourceLimit)?;
+            decoded = crate::index::ModelIndex::new(ir, ctx).map_err(EvaluationFailure::ResourceLimit)?;
             &*decoded
         }
-        None => { standard = crate::index::ModelIndex::new(ir); &standard }
+        None => { standard = crate::index::ModelIndex::new(ir, crate::index::StandardIndex); &standard }
     };
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {

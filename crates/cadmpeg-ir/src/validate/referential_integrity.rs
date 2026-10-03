@@ -86,7 +86,7 @@ mod tests {
         ir.model.tessellations.push(tessellation);
         let mut findings = Vec::new();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let index = ModelIndex::new(&ir);
+        let index = ModelIndex::new(&ir, crate::index::StandardIndex);
         let identities = super::BorrowedIdentities::build(&ctx, |add| {
             for id in index.identities() { add(id, ())?; }
             Ok(())

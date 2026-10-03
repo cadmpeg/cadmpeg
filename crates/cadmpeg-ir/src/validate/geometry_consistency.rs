@@ -78,7 +78,7 @@ pub(super) fn check_procedural_support_consistency(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let index = crate::index::ModelIndex::new(ir);
+    let index = crate::index::ModelIndex::new(ir, ctx)?;
     let curves = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
         Ok(())
@@ -491,7 +491,7 @@ pub(super) fn check_pcurve_surface_consistency(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let index = crate::index::ModelIndex::new(ir);
+    let index = crate::index::ModelIndex::new(ir, ctx)?;
     let curves = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves { add(curve.id.as_str(), &curve.geometry)?; }
         Ok(())

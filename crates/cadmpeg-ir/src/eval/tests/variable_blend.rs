@@ -187,7 +187,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         Some(VariableBlendCrossSection::RoundedChamfer { radius: None }),
     );
 
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -226,7 +226,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             ))
             .unwrap();
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -257,7 +257,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             ))
             .unwrap();
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -316,7 +316,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
             .unwrap();
     });
 
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -341,7 +341,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
             ))
             .unwrap();
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
@@ -360,7 +360,7 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
         [2.0, 4.0],
         Some(VariableBlendCrossSection::Circular {}),
     );
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -422,7 +422,7 @@ fn circular_variable_blend_skips_non_finite_residual_before_valid_candidate() {
         uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
         normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
     };
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let section = cacheless_circular_variable_blend_section(crate::eval::admission::EvaluationAdmission::Standard, &index, payload.construction(), 0.5, [track, track])
     .expect("later finite candidate");
     assert_eq!(section.center, Point3::new(0.0, 0.0, 0.0));
@@ -483,7 +483,7 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
             .unwrap();
     });
 
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5)
         .expect("contact centers still coincide at the sample");
     let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
@@ -574,7 +574,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             .unwrap(),
         )));
 
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -632,7 +632,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let replica = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &replica_surface, 0.5, 0.5)
         .expect("rolling-ball replica");
     assert!((replica.x - (expected + 10.0)).abs() <= tolerance);
@@ -658,7 +658,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
          &cadmpeg_test_support::service_decode_context()).expect("polyline construction admission")
         .unwrap(),
     ));
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert!(model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5).is_ok());
     assert!(model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5).is_err());
 
@@ -687,7 +687,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             .set_legacy_cache(restored_cache)
             .expect("a blend payload states a legacy cache slot");
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
@@ -725,7 +725,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             .set_legacy_cache(restored_cache)
             .expect("a blend payload states a legacy cache slot");
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -765,7 +765,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             .set_legacy_cache(restored_cache)
             .expect("a blend payload states a legacy cache slot");
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
@@ -776,7 +776,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
 /// Both surface routes of `surface` at `(u, v)` left the finite range at a
 /// point with no coordinate.
 fn both_routes_reach_no_coordinate(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> bool {
-    let index = crate::index::ModelIndex::new(ir);
+    let index = crate::index::ModelIndex::new(ir, crate::index::StandardIndex);
     let geometry = &ir
         .model
         .surfaces
@@ -989,7 +989,7 @@ fn steep_support_blend_fixture(cross_section: VariableBlendCrossSection) -> (Cad
 
 /// The first support's partials at the contact `(3, 0.5, 0)` overflow.
 fn assert_first_support_partial_overflows(ir: &CadIr) {
-    let index = crate::index::ModelIndex::new(ir);
+    let index = crate::index::ModelIndex::new(ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &ir.model.surfaces[0].id, 3.0, 0.5)
             .map(crate::eval::SurfacePartials::into_raw),
@@ -1005,7 +1005,7 @@ fn a_ruled_variable_blend_whose_support_partial_overflows_keeps_its_point() {
     let (ir, blend_surface) =
         steep_support_blend_fixture(VariableBlendCrossSection::RoundedChamfer { radius: None });
     assert_first_support_partial_overflows(&ir);
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let point = Point3::new(1.5, 0.5, 1.5);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5)
@@ -1051,7 +1051,7 @@ fn a_constant_rolling_ball_whose_support_partial_overflows_keeps_its_point() {
         )));
     ir.model.surfaces[0].geometry = steep_plane_support();
     assert_first_support_partial_overflows(&ir);
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     assert_eq!(
         model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
@@ -1114,7 +1114,7 @@ fn a_circular_variable_blend_whose_contact_pcurve_has_no_tangent_keeps_its_point
             ))
             .unwrap();
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let point = model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5)
         .expect("cacheless circular variable blend");
     let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
@@ -1135,7 +1135,7 @@ fn a_cacheless_blend_has_the_same_partials_within_a_work_budget() {
             )
             .unwrap(),
         )));
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let budget = cadmpeg_core::decode::WorkBudget::new(1_000_000);
     let partials = model_surface_partials_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &blend_surface, 0.5, 0.5)
         .expect("cacheless rolling-ball partials");

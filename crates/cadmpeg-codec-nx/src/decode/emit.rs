@@ -871,7 +871,7 @@ pub(super) fn emit_topology(
         }
     }
     let (valid_pcurve_fins, fallback_pcurves) = {
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let valid_pcurve_fins = fin_ids
             .keys()
             .map(|fin_xmt| -> Result<Option<u32>, CodecError> {

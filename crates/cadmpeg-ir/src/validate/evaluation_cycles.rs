@@ -194,7 +194,7 @@ pub(super) fn check_evaluation_cycles(ctx: &DecodeContext<'_>, ir: &CadIr, index
 
 /// Refuse a decoded model with the first recursive curve or surface dependency.
 pub(crate) fn admit_evaluation_cycles(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
-    let index = ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = ModelIndex::new_model_only(ir, ctx)?;
     walk_cycles(ctx, ir, &index, |finding| Err(CodecError::Malformed(finding.message)))
 }
 

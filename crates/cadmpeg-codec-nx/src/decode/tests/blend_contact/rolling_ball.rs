@@ -248,7 +248,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         );
         let continuation_parameters =
         crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
-            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex),
             &surface,
             outside_boundary_point,
             None,
@@ -270,7 +270,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
         let direct_parameters =
             crate::decode::blend::blend_surface_parameters_from_point_with_index_and_budget(
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex),
                 &surface,
                 outside_boundary_point,
                 None,
@@ -713,7 +713,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             .find(|candidate| candidate.id == outer)
             .map(|surface| &surface.geometry)
             .unwrap();
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(

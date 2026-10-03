@@ -1366,7 +1366,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let source_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
-        let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
+        let index = cadmpeg_ir::index::ModelIndex::new(result.ir(), cadmpeg_ir::index::StandardIndex);
         let quarter_turn = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface.id, parameter, std::f64::consts::FRAC_PI_2)
         .expect("hyperbola revolution evaluates");
         let expected = Point3::new(-source_point.y, source_point.x, source_point.z);
@@ -1655,7 +1655,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("hyperbola directrix evaluates");
-        let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
+        let index = cadmpeg_ir::index::ModelIndex::new(result.ir(), cadmpeg_ir::index::StandardIndex);
         let surface_point =
             cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface.id, parameter, 1.0)
                 .expect("hyperbola tabulated surface evaluates");
@@ -1758,7 +1758,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::decode::curve_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, directrix_geometry, parameter)
             .expect("placed hyperbola directrix evaluates");
-        let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
+        let index = cadmpeg_ir::index::ModelIndex::new(result.ir(), cadmpeg_ir::index::StandardIndex);
         let surface_point =
             cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &surface.id, parameter, 1.0)
                 .expect("placed hyperbola tabulated surface evaluates");

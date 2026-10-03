@@ -61,7 +61,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
             matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[3.0, 1.0], [4.0, 2.0]], Some(false), Some(false),) if support.as_str() == "step:data:surface#7"),
         _ => false,
     });
-    let index = ModelIndex::new(decoded.ir());
+    let index = ModelIndex::new(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     let trimmed_id = SurfaceId::mint("step:data:surface#8").expect("identity grammar");
     assert_eq!(
         model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &trimmed_id, 0.0, 0.0)
@@ -181,7 +181,7 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     };
     assert!((parameter_ranges[0][0] - 5.5).abs() < 1.0e-12);
     assert!((parameter_ranges[0][1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-12);
-    let index = ModelIndex::new(decoded.ir());
+    let index = ModelIndex::new(decoded.ir(), cadmpeg_ir::index::StandardIndex);
     let point = model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &SurfaceId::mint("step:data:surface#6").expect("identity grammar"), parameter_ranges[0][1] - parameter_ranges[0][0], 1.0)
     .expect("cyclic trimmed endpoint");
     assert!((point.x - 2.0 * 0.5_f64.cos()).abs() < 1.0e-12);

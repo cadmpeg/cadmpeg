@@ -215,7 +215,7 @@ fn numerical_0922_reflection_rejects_unrelated_points() {
 fn numerical_0922_sweep_evaluation_ignores_profile_units() {
     for scale in [1., 1e18] {
         let (ir, id) = fixture(scale);
-        let index = crate::index::ModelIndex::new(&ir);
+        let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
         let r = crate::eval::model_surface_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &id, -0.25 * scale, 0.25);
         println!("IR same law sweep profile chart scale{scale:e}: {r:?}");
         assert!(r.unwrap().distance(Point3::new(-0.5, 0.5, 0.25)) < 1e-14);

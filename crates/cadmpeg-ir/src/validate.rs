@@ -129,7 +129,7 @@ fn record_finding(
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(ctx: &DecodeContext<'_>, ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
+    let index = crate::index::ModelIndex::new(ir, ctx)?;
     validate_model_with_index(ctx, ir, losses, &index)
 }
 
@@ -212,7 +212,7 @@ fn validate_model_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
+    let index = crate::index::ModelIndex::new(ir, ctx)?;
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(ctx, &index, annotations, std::iter::empty(), &mut report.findings)?;
     Ok(report)
@@ -251,7 +251,7 @@ pub fn validate_neutral_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index = crate::index::ModelIndex::new_for_decode(ir, ctx)?;
+        let index = crate::index::ModelIndex::new(ir, ctx)?;
         let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
         validate_annotations(ctx, &index, &source_fidelity.annotations,
             source_fidelity.retained_records().keys().map(|id| id.as_str()),

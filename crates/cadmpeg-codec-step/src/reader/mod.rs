@@ -1169,7 +1169,7 @@ fn record_targets(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, BTreeSet<String>>, CodecError> {
     let mut targets = BTreeMap::<u64, BTreeSet<String>>::new();
-    for identity in cadmpeg_ir::index::ModelIndex::new_for_decode(ir, ctx)?.identities() {
+    for identity in cadmpeg_ir::index::ModelIndex::new(ir, ctx)?.identities() {
         let Some(record_id) = source_record_id(identity) else {
             continue;
         };

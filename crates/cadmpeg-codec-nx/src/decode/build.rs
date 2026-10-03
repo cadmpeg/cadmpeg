@@ -776,7 +776,7 @@ pub(super) fn try_decode_geometry(
             )?;
         }
         let intersection_support_uv = {
-            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(&ir, ctx)?;
+            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx)?;
             intersection_constructions
                 .iter()
                 .map(

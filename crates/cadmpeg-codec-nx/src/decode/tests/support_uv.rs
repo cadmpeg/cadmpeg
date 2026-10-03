@@ -270,7 +270,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             )
         };
         let points = {
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir(), cadmpeg_ir::index::StandardIndex);
             parameter_range
                 .map(|parameter| {
                     let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &pcurve.geometry, parameter)
@@ -455,7 +455,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         );
 
         let offset_parameters = [Point2::new(0.2, 0.45), Point2::new(0.4, 0.45)];
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
         let points = offset_parameters
             .into_iter()
             .map(|parameter| {

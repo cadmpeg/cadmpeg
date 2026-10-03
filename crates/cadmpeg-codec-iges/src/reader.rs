@@ -815,7 +815,7 @@ fn decode_with_occurrence_limits(
             "quarantined parameter data retained; tokens were not recovered",
         )?;
     }
-    let verification_index = cadmpeg_ir::index::ModelIndex::new_for_decode(&ir, ctx)?;
+    let verification_index = cadmpeg_ir::index::ModelIndex::new(&ir, ctx)?;
     transfer_ledger
         .verify(&verification_index)
         .map_err(|message| {

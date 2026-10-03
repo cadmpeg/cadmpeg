@@ -214,8 +214,8 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .iter()
             .find(|surface| construction_owns_surface(round_trip.ir(), procedural, &surface.id))
             .expect("round-trip revolution surface");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, 1.0, 0.7)
         .expect("source line revolution evaluates")
         .get();
@@ -327,8 +327,8 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                 construction_owns_surface(round_trip.ir(), round_procedural, &surface.id)
             })
             .expect("round-trip extrusion surface");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         let source_point = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &source_index, &source_surface.id, source_carrier_end * 0.5, 0.25)
         .expect("source line extrusion evaluates")
         .get();
@@ -649,8 +649,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 _ => None,
             })
             .expect("round-trip extrusion interval");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         for fraction in [0.25, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
@@ -772,8 +772,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                 _ => None,
             })
             .expect("round-trip placed extrusion interval");
-        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
+        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
         for fraction in [0.25, 0.5, 0.75] {
             let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
             let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
@@ -942,8 +942,8 @@ fn assert_type120_round_trip(version: IgesVersion) {
             round_trip.report().losses
         );
     };
-    let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
-    let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+    let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir(), cadmpeg_ir::index::StandardIndex);
+    let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir(), cadmpeg_ir::index::StandardIndex);
     let source_range = surface_construction(original.ir(), &source_surface.id)
         .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload

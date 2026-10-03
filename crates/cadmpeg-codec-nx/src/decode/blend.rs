@@ -624,7 +624,7 @@ pub(super) fn blend_surface_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -653,7 +653,7 @@ pub(super) fn blend_surface_parameters_for_fit(
     seed: Option<Point2>,
     fit_tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     blend_surface_parameters_for_fit_with_grid(
         ctx,
         &index,
@@ -1076,7 +1076,7 @@ pub(super) fn coarse_blend_surface_parameters(
     point: Point3,
     depth: usize,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -1281,7 +1281,7 @@ pub(super) fn refine_blend_surface_parameters(
     parameters: Point2,
     depth: usize,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -1493,7 +1493,7 @@ fn blend_surface_point_inner(
     v: f64,
     depth: usize,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -1798,7 +1798,7 @@ pub(super) fn blend_surface_u_derivative(
     v: f64,
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -4059,7 +4059,7 @@ pub(super) fn constant_surface_offset_between(
     offset_surface: &SurfaceId,
     depth: usize,
 ) -> Option<f64> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
     constant_surface_offset_between_with_index(&index, support, offset_surface, depth)
 }
 
@@ -4317,7 +4317,7 @@ pub(super) fn surface_offset_lineage(
     surface: &SurfaceId,
     depth: usize,
 ) -> Option<(SurfaceId, f64)> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
     surface_offset_lineage_with_index(&index, surface, depth)
         .map(|(base, distance)| (base.clone(), distance))
 }
@@ -4396,7 +4396,7 @@ pub(super) fn surface_contact_direction(
     radius: f64,
     depth: usize,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     surface_contact_direction_with_index(ctx, &index, surface, center, radius, depth)
 }
 
@@ -4618,7 +4618,7 @@ pub(super) fn closest_spine_parameter(
     point: Point3,
     seed: Option<f64>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)?;
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let geometry_budget = GeometryWorkBudget::from_context(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),

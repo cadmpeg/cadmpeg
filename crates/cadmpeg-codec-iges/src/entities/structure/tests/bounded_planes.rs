@@ -359,7 +359,7 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
         .unwrap(),
         self_intersect: Some(false),
     };
-    let index = ModelIndex::new(&ir);
+    let index = ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

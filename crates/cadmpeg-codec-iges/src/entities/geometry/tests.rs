@@ -386,7 +386,7 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
     };
     let mut ir = CadIr::empty();
     ir.model.curves.push(child);
-    let index = ModelIndex::new(&ir);
+    let index = ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
 
     for (dimension, cap, operation) in [

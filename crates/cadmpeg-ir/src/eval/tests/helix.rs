@@ -105,7 +105,7 @@ fn assert_vector_close(actual: Vector3, expected: Vector3) {
 #[test]
 fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
 
     for parameter in [0.25, 0.75, 1.7, 2.0] {
         let (expected_point, expected_tangent, expected_acceleration) = expected_helix(parameter);
@@ -184,7 +184,7 @@ fn helix_angle_range_can_span_both_large_finite_signs() {
 #[test]
 fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
 
     assert_eq!(
         super::model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, 0.24),
@@ -199,13 +199,13 @@ fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
 #[test]
 fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let target_parameter = 1.7;
     let target =
         super::model_curve_point_by_id(crate::eval::admission::EvaluationAdmission::Standard, &index, &curve_id, target_parameter).expect("helix target");
 
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new(&ir),
+        &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
         &curve_id,
         target.get(),
         1.5,
@@ -226,7 +226,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         "residual={residual}"
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new(&ir),
+        &crate::index::ModelIndex::new(&ir, crate::index::StandardIndex),
         &curve_id,
         target.get(),
         0.24
@@ -266,7 +266,7 @@ fn helix_inverse_preserves_iteration_and_depth_refusals() {
 fn helix_inverse_uses_borrowed_definition_without_temporary_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (ir, curve_id) = helix_fixture();
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;

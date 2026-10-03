@@ -1029,7 +1029,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         ),
         [0.0, 1.0],
     )];
-    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
     assert!(!crate::test_support::with_service_context(
         &[],
         |ctx| super::edge_range_matches_curve(
@@ -1111,7 +1111,7 @@ fn trimmed_pcurve_mapping_refuses_before_an_absent_surface_candidate() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let ir = CadIr::empty();
-    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
     let surface_id = SurfaceId::mint("test:model:surface#absent").expect("identity grammar");
     let pcurves = [(
         PcurveGeometry::Line(
