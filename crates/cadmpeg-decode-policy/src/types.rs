@@ -255,7 +255,9 @@ pub(crate) fn iteration(tcx: TyCtxt<'_>, value: Ty<'_>) -> Shape {
 pub(crate) fn admitted_iterator(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
     matches!(value.peel_refs().kind(), ty::Adt(owner, _)
         if tcx.item_name(owner.did()).as_str() == "AdmittedIter"
-            && (tcx.def_path_str(owner.did()) == "cadmpeg_core::decode::scan::AdmittedIter"
+            && (tcx.crate_name(owner.did().krate).as_str() == "cadmpeg_core"
+                && matches!(tcx.def_path_str(owner.did()).as_str(),
+                    "decode::scan::AdmittedIter" | "cadmpeg_core::decode::scan::AdmittedIter")
                 || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
                     && owner.did().is_local()
                     && tcx.def_path_str(owner.did()).ends_with("decode::scan::AdmittedIter")))
