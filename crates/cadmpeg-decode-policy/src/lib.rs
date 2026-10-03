@@ -42,6 +42,7 @@ struct Findings {
     externals: BTreeSet<String>,
     conversions: HashMap<rustc_hir::HirId, Vec<bool>>,
     admitted_operations: HashSet<rustc_hir::HirId>,
+    admitted_growth_operations: HashSet<rustc_hir::HirId>,
     key_work_proofs: BTreeSet<String>,
     entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,
 }

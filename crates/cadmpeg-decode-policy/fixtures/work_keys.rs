@@ -105,3 +105,20 @@ pub fn destructured_keys(ctx: &DecodeContext, hash: &std::collections::HashMap<S
     let _paid = hash.get(&key);
     Ok(())
 }
+
+impl DecodeContext {
+    fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> { Ok(()) }
+}
+pub fn loop_replaced_child(ctx: &DecodeContext, values: &mut [String], other: &String, mut replacement: String, count: usize) -> Result<(), ()> {
+    ctx.charge_key(&values[0], 1, "child before loop")?;
+    ctx.charge_key(other, 1, "other")?;
+    for _index in 0..count {
+        ctx.charge_work(1, "replace")?;
+        values[0] = std::mem::take(&mut replacement);
+    }
+    let _stale = &values[0] == other; // finding: uncharged_decode_work
+    ctx.charge_key(&values[0], 1, "child after loop")?;
+    ctx.charge_key(other, 1, "other after loop")?;
+    let _paid = &values[0] == other;
+    Ok(())
+}

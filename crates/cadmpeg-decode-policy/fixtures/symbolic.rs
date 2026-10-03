@@ -66,6 +66,9 @@ impl DecodeContext {
     fn collection_vec<T>(&self, _count: usize) -> Result<Vec<T>, ()> {
         Ok(Vec::new())
     }
+    fn scoped_vector_storage<T>(&self, _count: usize) -> Result<(Vec<T>, ()), ()> {
+        Ok((Vec::new(), ()))
+    }
     fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> {
         Ok(())
     }
@@ -192,4 +195,27 @@ pub fn duplicate_terms<T>(
     let doubled = count.checked_add(count).ok_or(())?;
     values.try_reserve_exact(doubled).map_err(|_| ())?; // finding: unproven_decode_charge
     Ok(())
+}
+
+pub fn partial_slots(ctx: &DecodeContext, values: &mut Vec<u8>) -> Result<(), ()> {
+    ctx.reserve_vec(values, 2)?;
+    values.push(1);
+    values.push(2);
+    values.push(3); // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn scoped_slack(ctx: &DecodeContext, count: usize) -> Result<Vec<u8>, ()> {
+    let capacity = count.checked_add(4).ok_or(())?;
+    let (mut values, _storage) = ctx.scoped_vector_storage(capacity)?;
+    for index in 0..count {
+        ctx.charge_work(1, "initialize")?;
+        values.push(u8::from(index != 0));
+    }
+    values.push(1);
+    values.push(2);
+    values.push(3);
+    values.push(4);
+    values.push(5); // finding: unproven_decode_charge
+    Ok(values)
 }

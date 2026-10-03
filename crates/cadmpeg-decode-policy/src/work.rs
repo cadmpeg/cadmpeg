@@ -682,7 +682,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         shrinking
     }
 
-    fn restore_loop(&mut self, mut saved: crate::flow::Flow) {
+    fn restore_loop(&mut self, mut saved: crate::flow::Flow, bounded_slots: bool) {
         saved.mutated.extend(self.flow.mutated.iter().cloned());
         saved.work.retain(|credit| {
             !credit
@@ -693,7 +693,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     saved
                         .mutated
                         .iter()
-                        .any(|key| term == key || term.starts_with(&format!("{key}.")))
+                        .any(|key| crate::flow::factor_depends_on(term, key))
                 })
         });
         saved
@@ -703,9 +703,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         saved
             .storage_extents
             .retain(|term| self.flow.storage_extents.contains(term));
-        saved
-            .storage_slots
-            .retain(|credit| self.flow.storage_slots.contains(credit));
+        saved.storage_slots = saved.storage_slots.iter().filter_map(|credit| {
+            let remaining = self.flow.storage_slots.iter().find(|remaining| remaining.admission == credit.admission)?;
+            if bounded_slots || remaining == credit { Some(remaining.clone()) } else { None }
+        }).collect();
         self.flow = saved;
     }
 
@@ -768,7 +769,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         } else {
                             self.flow.work.clear();
                         }
-                        if let Some(bounds) = self.extent_terms(input, &mut Vec::new()) {
+                        let bounds = self.extent_terms(input, &mut Vec::new());
+                        let bounded_slots = bounds.is_some();
+                        if let Some(bounds) = bounds {
                             self.flow.loop_bounds.push(bounds);
                         }
                         if let Some(body) = user_body {
@@ -777,7 +780,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         if iterations.is_some() {
                             saved.work = self.flow.work.clone();
                         }
-                        self.restore_loop(saved);
+                        self.restore_loop(saved, bounded_slots);
                         return;
                     }
                 }
@@ -810,7 +813,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.flow.storage_extents.clear();
                 self.flow.storage_parameters.clear();
                 self.visit_block(block);
-                self.restore_loop(saved);
+                self.restore_loop(saved, false);
                 return;
             }
             ExprKind::If(condition, yes, no) => {

@@ -6,6 +6,7 @@ use rustc_middle::ty;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Slots {
+    pub(crate) admission: rustc_hir::HirId,
     pub(crate) target: String,
     pub(crate) terms: Vec<ExtentTerm>,
     pub(crate) loop_depth: usize,
@@ -111,6 +112,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if name == "reserve_exact" || self.reserve_success(expression) {
             if let Some(target) = self.key(receiver, &mut Vec::new()) {
                 self.flow.storage_slots.push(Slots {
+                    admission: expression.hir_id,
                     target,
                     terms: counts,
                     loop_depth: self.flow.loop_bounds.len(),
@@ -274,6 +276,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         };
         if let (Some(target), Some(terms)) = (target, terms) {
             self.flow.storage_slots.push(Slots {
+                admission: expression.hir_id,
                 target,
                 terms,
                 loop_depth: self.flow.loop_bounds.len(),
@@ -344,8 +347,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 required = product;
             }
-            if valid && credit.terms == required {
-                self.flow.storage_slots.remove(index);
+            let mut remaining = credit.terms.clone();
+            if valid && consume_terms(&mut remaining, &required) {
+                if remaining.is_empty() {
+                    self.flow.storage_slots.remove(index);
+                } else {
+                    self.flow.storage_slots[index].terms = remaining;
+                }
                 return true;
             }
         }
