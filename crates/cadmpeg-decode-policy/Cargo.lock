@@ -13,6 +13,7 @@ name = "cadmpeg-decode-policy"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "memchr",
  "roxmltree",
  "serde",
  "serde_json",

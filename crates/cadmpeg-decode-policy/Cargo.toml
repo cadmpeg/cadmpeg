@@ -7,6 +7,7 @@ publish = false
 license = "Apache-2.0"
 
 [dev-dependencies]
+memchr = "=2.8.3"
 roxmltree = "=0.21.1"
 serde_json = "=1.0.151"
 serde = { version = "=1.0.229", features = ["derive"] }

@@ -2,7 +2,7 @@
 pub struct DecodeContext;
 pub fn parse(_ctx: &DecodeContext, text: &str) {
     let _xml = roxmltree::Document::parse(text); // finding: uncharged_decode_allocation, uncharged_decode_work
-    let _json = serde_json::from_str::<serde_json::Value>(text); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _json = serde_json::from_str::<serde_json::Value>(text); // finding: unproven_decode_charge
 }
 pub fn access(
     _ctx: &DecodeContext,
@@ -23,7 +23,7 @@ pub fn constructors(_ctx: &DecodeContext, text: &str, bytes: &[u8]) {
 }
 
 pub fn parse_bytes(_ctx: &DecodeContext, bytes: &[u8]) {
-    let _json = serde_json::from_slice::<serde_json::Value>(bytes); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _json = serde_json::from_slice::<serde_json::Value>(bytes); // finding: unproven_decode_charge
 }
 
 pub fn node_identity(_ctx: &DecodeContext, node: roxmltree::Node<'_, '_>) {
