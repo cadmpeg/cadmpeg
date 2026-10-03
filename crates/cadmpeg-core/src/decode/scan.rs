@@ -4,7 +4,37 @@
 use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
+/// An iterator whose upper visit bound was charged before construction.
+/// Its private source cannot be cloned or extracted for unpaid replay.
+#[derive(Debug)]
+pub struct AdmittedIter<I> {
+    source: I,
+}
+
+impl<I: Iterator> Iterator for AdmittedIter<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.source.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.source.size_hint()
+    }
+}
+
 impl DecodeContext<'_> {
+    /// Admits every slice slot before visiting any element. Iterator adapters
+    /// run on the admitted result; callbacks admit their own child work.
+    pub fn admit_iter<'values, T>(
+        &self,
+        values: &'values [T],
+        operation: &'static str,
+    ) -> Result<AdmittedIter<std::slice::Iter<'values, T>>, CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        Ok(AdmittedIter { source: values.iter() })
+    }
+
     /// Returns the first matching position. Each visited slot is admitted before
     /// the predicate runs. The predicate admits its own input-sized child work.
     pub fn position_by<T>(
@@ -42,6 +72,43 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+
+    #[test]
+    fn iteration_charges_before_first_element() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("context");
+        let visited = std::cell::Cell::new(0);
+        let values = [1, 2, 3];
+        let source = ctx.admit_iter(&values, "iteration").expect("admission");
+        let mut admitted = source.inspect(|_| visited.set(visited.get() + 1));
+        assert_eq!(visited.get(), 0);
+        assert_eq!(admitted.next(), Some(&1));
+        assert_eq!(visited.get(), 1);
+        assert!(admitted.any(|value| *value == 3));
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else {
+            panic!("resource refusal");
+        };
+        // Three source slots count once, before iteration starts.
+        assert_eq!(limit.used, 3);
+    }
+
+    #[test]
+    fn iteration_refusal_preserves_error_and_visits_nothing() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let visited = std::cell::Cell::new(0);
+        let result = ctx.admit_iter(&[1, 2, 3], "iteration");
+        let error = result.map(|source| source.inspect(|_| visited.set(visited.get() + 1)))
+            .expect_err("refusal");
+        assert_eq!(visited.get(), 0);
+        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(limit.operation, "iteration");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    }
 
     #[test]
     fn scan_search_admits_before_predicate_and_preserves_refusal() {

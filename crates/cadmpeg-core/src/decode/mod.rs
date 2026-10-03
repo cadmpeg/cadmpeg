@@ -13,7 +13,7 @@ mod error;
 mod input;
 mod policy;
 mod probe;
-mod scan;
+pub mod scan;
 mod sort;
 mod space;
 pub mod tree;
