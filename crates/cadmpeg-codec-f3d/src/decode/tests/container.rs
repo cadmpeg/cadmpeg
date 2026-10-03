@@ -467,7 +467,7 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
             panic!("text model facts must not fabricate binary framing")
         };
         assert!(header.has_history_partition());
-        let matched = cadmpeg_asm::dialect::classify(framing.as_header_ref());
+        let matched = cadmpeg_asm::dialect::classify(&cadmpeg_test_support::service_decode_context(), framing.as_header_ref()).unwrap();
         assert_eq!(matched.dialect().as_str(), expected);
         assert!(!matched
             .declared()

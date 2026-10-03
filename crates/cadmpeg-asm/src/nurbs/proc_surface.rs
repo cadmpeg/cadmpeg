@@ -5168,7 +5168,7 @@ mod sweep_law_tests {
         let EmbeddedLawExpression::Text(value) = law else {
             panic!("expected text law");
         };
-        assert_eq!(value, "0.008726867790758789*X");
+        assert_eq!(value.as_str(), "0.008726867790758789*X");
         assert_eq!(cur.take_long(), Some(21));
         assert_eq!(cur.pos(), tokens.len());
     }

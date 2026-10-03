@@ -3891,7 +3891,7 @@ mod tests {
         let parsed = parse(&label, |ctx, source| {
             parse_label(ctx, source, 16).expect("label")
         });
-        assert_eq!(parsed.name, "Extrude1");
+        assert_eq!(parsed.name.as_str(), "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
         assert_eq!(parsed.class_id, ClassId([0xab; 16]));
     }
