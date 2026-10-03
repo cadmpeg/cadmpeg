@@ -556,6 +556,20 @@ pub enum SubdRadialMapSelector {
     Vr,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SubdRadialMapSelector {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<Self>(),
+    ));
+
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 /// One selector-preserving native radial-symmetry map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

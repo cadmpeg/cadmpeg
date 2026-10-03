@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Arguments;
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use super::SubdError;
@@ -18,7 +18,7 @@ pub(super) trait SubdAdmission {
     fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error>;
     fn message(&self, message: Arguments<'_>) -> Result<SubdError, Self::Error>;
     fn storage(&self) -> Result<Self::Storage<'_>, Self::Error>;
-    fn insert<T: Ord>(
+    fn insert<T: Ord + DecodeCost>(
         &self,
         storage: &mut Self::Storage<'_>,
         values: &mut BTreeSet<T>,
@@ -41,7 +41,7 @@ impl SubdAdmission for StandardAdmission {
     fn storage(&self) -> Result<(), SubdError> {
         Ok(())
     }
-    fn insert<T: Ord>(
+    fn insert<T: Ord + DecodeCost>(
         &self,
         _storage: &mut (),
         values: &mut BTreeSet<T>,
@@ -69,7 +69,7 @@ impl SubdAdmission for DecodeContext<'_> {
     fn storage(&self) -> Result<ScopedReservation<'_>, CodecError> {
         self.reserve_scoped(0, "SubD validation members")
     }
-    fn insert<T: Ord>(
+    fn insert<T: Ord + DecodeCost>(
         &self,
         storage: &mut ScopedReservation<'_>,
         values: &mut BTreeSet<T>,

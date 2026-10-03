@@ -184,8 +184,8 @@ fn reduced_unknowns(
     }
     ctx.stable_sort_by(
         &mut reduced,
-        |left, right| left.id().cmp(right.id()),
-        |value| value.id().len(),
+        |value| value.id(),
+        Ord::cmp,
         "sort reduced digest unknowns",
     )?;
     Ok(reduced)
@@ -284,8 +284,8 @@ fn sorted_records<'a>(
     let mut refs = ctx.collect_vec(records.iter(), "borrow digest native arena")?;
     ctx.stable_sort_by(
         &mut refs,
-        |left, right| left.id().cmp(right.id()),
-        |value| value.id().len(),
+        |value| value.id(),
+        Ord::cmp,
         "sort digest native arena",
     )?;
     Ok(refs)

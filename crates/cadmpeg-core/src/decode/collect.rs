@@ -1233,14 +1233,40 @@ impl DecodeContext<'_> {
         len: usize,
         operation: &'static str,
     ) -> Result<u64, ResourceLimit> {
-        let alignment = std::mem::align_of::<K>()
-            .max(std::mem::align_of::<V>())
-            .max(std::mem::align_of::<usize>());
         let next = len
             .checked_add(1)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         let before = if len == 0 { 0 } else { (len - 1) / 5 + 1 };
         let nodes = (next - 1) / 5 + 1 - before;
+        self.tree_node_bytes::<K, V>(nodes, operation)
+    }
+
+    // An insertion can split every node on its path and add a new root.
+    // The path has at most log2(len) + 1 nodes since every level branches.
+    fn tree_mutation_bytes<K, V>(
+        &self,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<u64, ResourceLimit> {
+        let nodes = if len == 0 {
+            1
+        } else {
+            usize::try_from(len.ilog2())
+                .map_err(|_| self.retained_size_overflow_limit(operation))?
+                .checked_add(2)
+                .ok_or_else(|| self.retained_size_overflow_limit(operation))?
+        };
+        self.tree_node_bytes::<K, V>(nodes, operation)
+    }
+
+    fn tree_node_bytes<K, V>(
+        &self,
+        nodes: usize,
+        operation: &'static str,
+    ) -> Result<u64, ResourceLimit> {
+        let alignment = std::mem::align_of::<K>()
+            .max(std::mem::align_of::<V>())
+            .max(std::mem::align_of::<usize>());
         std::mem::size_of::<K>()
             .checked_add(std::mem::size_of::<V>())
             .and_then(|bytes| bytes.checked_mul(11))
@@ -1257,7 +1283,7 @@ impl DecodeContext<'_> {
         len: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = self.tree_growth_bytes::<K, V>(len, operation)?;
+        let bytes = self.tree_mutation_bytes::<K, V>(len, operation)?;
         self.charge_work(self.cost_product(bytes, 4, operation)?, operation)
     }
 

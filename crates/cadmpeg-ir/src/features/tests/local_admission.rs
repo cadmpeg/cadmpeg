@@ -970,7 +970,6 @@ fn three_point_admission_compares_targets_and_historical_states() {
         )
         .expect("selection reference admission")
         .unwrap()
-        .unwrap()
     };
     assert!(ThreePointSelection::new(
         Box::new([

@@ -900,8 +900,8 @@ impl Native {
             for records in namespace.arenas.values_mut() {
                 ctx.stable_sort_by(
                     records,
-                    |left, right| left.id().cmp(right.id()),
-                    |record| record.id().len(),
+                    |record| record.id(),
+                    Ord::cmp,
                     "finalize native arena",
                 )?;
             }

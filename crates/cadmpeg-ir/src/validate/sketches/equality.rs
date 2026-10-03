@@ -196,7 +196,8 @@ mod tests {
     fn reference(document: Option<&str>, object: &str, selectors: &[&str]) -> SketchGeometry {
         SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
             document: document.map(str::to_owned),
-            object: cadmpeg_core::text::NonBlankString::new(object).unwrap(),
+            object: cadmpeg_core::text::NonBlankString::try_from(object)
+                .expect("nonblank external object"),
             subelements: selectors.iter().map(|text| (*text).to_owned()).collect(),
         })
         .unwrap()
@@ -204,8 +205,10 @@ mod tests {
 
     fn text(family: &str, width_factor: Option<f64>, height: f64) -> SketchGeometry {
         SketchGeometry::try_from(SketchGeometryDefinition::Text {
-            text: cadmpeg_core::text::NonBlankString::new("label").unwrap(),
-            font_family: cadmpeg_core::text::NonBlankString::new(family).unwrap(),
+            text: cadmpeg_core::text::NonBlankString::try_from("label")
+                .expect("nonblank sketch text"),
+            font_family: cadmpeg_core::text::NonBlankString::try_from(family)
+                .expect("nonblank font family"),
             font_weight: crate::sketches::SketchFontWeight::Regular,
             height: crate::scalar::Length::new(height).unwrap(),
             width_factor,
@@ -228,7 +231,8 @@ mod tests {
         let referenced = reference(Some("document"), "object", &["first", "other"]);
         let text = text("font", Some(1.0), 2.0);
         let native = SketchGeometry::try_from(SketchGeometryDefinition::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("native").unwrap(),
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("native")
+                .expect("nonblank native kind"),
         })
         .unwrap();
         // Four knots precede two pole rows. Eight document bytes and six object bytes precede selector scans.
@@ -272,7 +276,8 @@ mod tests {
             reference(Some("document"), "object", &["first", "other"]),
             reference(None, "object", &["other", "first"]),
             SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new("native").unwrap(),
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("native")
+                    .expect("nonblank native kind"),
             })
             .unwrap(),
             SketchGeometry::try_from(SketchGeometryDefinition::Point {

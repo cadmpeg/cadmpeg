@@ -2873,8 +2873,8 @@ fn check_feature_references(
                 let cycle = &mut cycle_storage.0;
                 ctx.sort_unstable_by(
                     cycle,
+                    |id| *id,
                     Ord::cmp,
-                    |id| id.len(),
                     "sort datum-plane cycle identities",
                 )?;
                 if !super::scans::any(
@@ -4720,8 +4720,8 @@ fn regeneration_references<'ctx, 'a>(
     let mut ordered =
         Scratch::filter_map(ctx, references.values(), |reference| Ok(Some(*reference)))?;
     ordered.stable_sort_by(
-        |left, right| left.as_str().cmp(right.as_str()),
-        |reference| reference.as_str().len(),
+        |reference| *reference,
+        Ord::cmp,
     )?;
     Ok(ordered)
 }
