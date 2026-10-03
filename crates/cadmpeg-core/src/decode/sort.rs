@@ -62,6 +62,7 @@ impl DecodeContext<'_> {
     }
 
     /// Sorts borrowed keys in place without allocating scratch.
+    /// Each value must project the same key and comparison cost throughout the sort.
     pub fn sort_unstable_by<T, K: DecodeCost + ?Sized>(
         &self,
         values: &mut [T],
@@ -74,6 +75,7 @@ impl DecodeContext<'_> {
     }
 
     /// Sorts copied keys, including scalar getter results and borrowed source identities.
+    /// Each value must project the same key and comparison cost throughout the sort.
     pub fn sort_unstable_by_key<T, K: Copy + DecodeCost>(
         &self,
         values: &mut [T],
