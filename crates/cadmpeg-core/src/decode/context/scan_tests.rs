@@ -33,6 +33,27 @@ fn scan_concat_views_admits_empty_view_iteration() {
 }
 
 #[test]
+fn retained_concatenation_admits_exact_storage_and_both_source_passes() {
+    let arena = DecodeArena::new();
+    let inputs = [vec![1_u8, 2], vec![3]];
+    let mut policy = DecodePolicy::service();
+    // Two length visits, two copy visits and three copied bytes; three retained bytes.
+    policy.limits.max_work_units = 7;
+    policy.limits.max_retained_bytes = 3;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(ctx.concat_retained(&inputs, "concat").expect("admitted"), [1, 2, 3]);
+    for (work, retained) in [(6, 3), (7, 2)] {
+        policy.limits.max_work_units = work;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = ctx.concat_retained(&inputs, "concat").expect_err("refusal") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("resource refusal") };
+        assert_eq!(first, second);
+    }
+}
+
+#[test]
 fn scan_fill_admits_work_and_retained_storage_before_initialization() {
     for dimension in [
         ResourceDimension::WorkUnits,
