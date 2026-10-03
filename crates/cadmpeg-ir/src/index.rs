@@ -61,6 +61,7 @@ pub(crate) trait IndexStorage {
         operation: &'static str,
     ) -> Result<(), Self::Error>;
     fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, Self::Error>;
 }
 
 pub(crate) struct TemporaryIndexMap<'a, K, V> {
@@ -123,6 +124,9 @@ impl IndexStorage for PublicStorage {
     }
     fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> {
         Ok(())
+    }
+    fn equal(&self, first: &str, second: &str, _operation: &'static str) -> Result<bool, Self::Error> {
+        Ok(first == second)
     }
 }
 
@@ -252,6 +256,9 @@ impl IndexStorage for DecodeStorage<'_, '_> {
     fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error> {
         self.0.charge_work_limit(u64_from_index(count), operation)
     }
+    fn equal(&self, first: &str, second: &str, operation: &'static str) -> Result<bool, Self::Error> {
+        crate::ids::comparison::equal(self.0, first, second, operation)
+    }
 }
 
 pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T {
@@ -297,24 +304,43 @@ fn build_identity_index<T: EntitySchema, S: IndexStorage>(
     Ok(index)
 }
 
-fn lookup_identity<'a, T: EntitySchema>(
+fn lookup_identity<'a, T: EntitySchema, S: IndexStorage>(
     entities: &'a [T],
     index: &OnceLock<IdentityIndex>,
     identity: &str,
-) -> Option<&'a T> {
-    let entry = index
-        .get_or_init(|| public_result(build_identity_index(entities, &PublicStorage)))
-        .get(&identity_hash(identity))?;
-    match entry {
-        IdentityEntry::One(slot) => entities
-            .get(*slot)
-            .filter(|entity| entity.identity() == identity),
-        IdentityEntry::Many(slots) => slots.iter().rev().find_map(|slot| {
-            entities
-                .get(*slot)
-                .filter(|entity| entity.identity() == identity)
-        }),
+    storage: &S,
+) -> Result<Option<&'a T>, S::Error> {
+    let index = if S::EAGER_LOOKUPS {
+        index.get()
+    } else {
+        Some(index.get_or_init(|| public_result(build_identity_index(entities, &PublicStorage))))
+    };
+    let Some(index) = index else {
+        for entity in entities.iter().rev() {
+            storage.work(1, "model identity lookup scan")?;
+            if storage.equal(entity.identity(), identity, "model identity lookup comparison")? {
+                return Ok(Some(entity));
+            }
+        }
+        return Ok(None);
+    };
+    storage.work(identity.len(), "model identity lookup hash")?;
+    let hash = identity_hash(identity);
+    storage.work(1, "model identity lookup slot")?;
+    let Some(entry) = index.get(&hash) else { return Ok(None); };
+    let slots = match entry {
+        IdentityEntry::One(slot) => std::slice::from_ref(slot),
+        IdentityEntry::Many(slots) => slots.as_slice(),
+    };
+    for slot in slots.iter().rev() {
+        storage.work(1, "model identity lookup collision")?;
+        if let Some(entity) = entities.get(*slot) {
+            if storage.equal(entity.identity(), identity, "model identity lookup comparison")? {
+                return Ok(Some(entity));
+            }
+        }
     }
+    Ok(None)
 }
 
 /// Borrowed model lookups and the reservation for their temporary storage.
@@ -607,7 +633,7 @@ macro_rules! define_model_index {
             $(
                 #[doc = concat!("Looks up an entity in the `", stringify!($lookup), "` arena.")]
                 pub fn $lookup(&self, identity: &str) -> Option<&'a $element> {
-                    lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity)
+                    public_result(lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity, &PublicStorage))
                 }
             )*
         }
@@ -665,6 +691,66 @@ mod tests {
                 ctx.finish_session().unwrap();
             }
         }
+    }
+
+    #[test]
+    fn typed_lookup_preserves_hash_collision_and_comparison_refusals() {
+        let mut ir = CadIr::empty();
+        let id = crate::ids::PointId::mint("test:model:point#stored").unwrap();
+        ir.model.points.push(crate::topology::Point::new(id, crate::features::FinitePoint3::ZERO, None));
+        let query = "test:model:point#absent";
+        let cache = std::sync::OnceLock::from(std::collections::HashMap::from([
+            (super::identity_hash(query), super::IdentityEntry::Many(vec![0, 0])),
+        ]));
+        let hash_work = cadmpeg_core::decode::u64_from_index(query.len());
+        for (cap, operation) in [
+            (0, "model identity lookup hash"),
+            (hash_work + 1, "model identity lookup collision"),
+            (hash_work + 2, "model identity lookup comparison"),
+            (hash_work + 3, "model identity lookup comparison"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let first = super::lookup_identity(&ir.model.points, &cache, query, &super::DecodeStorage(&ctx)).unwrap_err();
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.operation, operation);
+            assert_eq!(first.limit, cap);
+            assert_eq!(first.used, cap);
+            assert_eq!(first.additional, if cap == 0 { hash_work } else { 1 });
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+        }
+    }
+
+    #[test]
+    fn typed_decode_lookup_keeps_missing_cache_borrowed_and_last_duplicate() {
+        let mut ir = CadIr::empty();
+        let id = crate::ids::PointId::mint("test:model:point#duplicate").unwrap();
+        for position in [crate::features::FinitePoint3::ZERO, crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0)).unwrap()] {
+            ir.model.points.push(crate::topology::Point::new(id.clone(), position, None));
+        }
+        let cache = std::sync::OnceLock::new();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let found = super::lookup_identity(&ir.model.points, &cache, id.as_str(), &super::DecodeStorage(&ctx)).unwrap().unwrap();
+        assert_eq!(found.position().get(), crate::math::Point3::new(1.0, 0.0, 0.0));
+        assert!(cache.get().is_none());
+        ctx.finish_session().unwrap();
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first = super::lookup_identity(&ir.model.points, &cache, id.as_str(), &super::DecodeStorage(&ctx)).unwrap_err();
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.operation, "model identity lookup scan");
+        assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
+        assert!(cache.get().is_none());
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
     }
 
     #[test]
@@ -794,7 +880,7 @@ mod tests {
         assert!(parameters.get().is_none());
         assert!(index.bodies.get().is_none());
         assert_eq!(
-            super::lookup_identity(&ir.model.parameters, &parameters, parameter_id.as_str())
+            super::lookup_identity(&ir.model.parameters, &parameters, parameter_id.as_str(), &super::PublicStorage).unwrap()
                 .map(|parameter| parameter.expression.as_str()),
             Some("last")
         );
