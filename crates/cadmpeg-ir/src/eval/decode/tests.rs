@@ -566,3 +566,34 @@ fn decode_evaluation_refuses_scoped_basis_storage() {
             && limit.operation == "IR B-spline basis")
     );
 }
+
+#[test]
+fn scratch_completion_observes_refusals_from_other_context_operations() {
+    use crate::eval::EvaluationFailure;
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems, ResourceDimension::RecursionDepth] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scratch = super::Scratch::new(&ctx);
+        let original = match dimension {
+            ResourceDimension::WorkUnits => ctx.charge_work_limit(1, "external geometry refusal").unwrap_err(),
+            ResourceDimension::MaterializedBytes => ctx.reserve_scoped_limit(1, "external geometry refusal").unwrap_err(),
+            ResourceDimension::RetainedBytes => ctx.charge_retained_limit(1, "external geometry refusal").unwrap_err(),
+            ResourceDimension::CollectionItems => ctx.charge_collection_items_limit(1, "external geometry refusal").unwrap_err(),
+            ResourceDimension::RecursionDepth => ctx.enter_nested_limit("external geometry refusal").err().unwrap(),
+            _ => unreachable!(),
+        };
+        assert_eq!(scratch.refused(), Some(original));
+        assert_eq!(scratch.unless_refused(), Err(original));
+        assert_eq!(scratch.failure::<()>(EvaluationFailure::NoValue), EvaluationFailure::ResourceLimit(original));
+        assert_eq!(scratch.settle::<(), ()>(Ok(())), Err(EvaluationFailure::ResourceLimit(original)));
+        assert_eq!(scratch.settle::<(), ()>(Err(EvaluationFailure::NoValue)), Err(EvaluationFailure::ResourceLimit(original)));
+        assert_eq!(scratch.finish(()), Err(original));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    }
+}

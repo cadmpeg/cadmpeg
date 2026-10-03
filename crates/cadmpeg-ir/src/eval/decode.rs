@@ -72,7 +72,10 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
 
     /// The resource refusal recorded by an allocation, charge or evaluation.
     pub(super) fn refused(&self) -> Option<ResourceLimit> {
-        *self.refusal.borrow()
+        if let Some(limit) = *self.refusal.borrow() { return Some(limit); }
+        let original = self.context.charge_work_limit(0, "observe geometry evaluation refusal").err();
+        if let Some(limit) = original { *self.refusal.borrow_mut() = Some(limit); }
+        original
     }
 
     /// `Err` with the recorded resource refusal, or `Ok` when nothing was refused.
@@ -169,10 +172,8 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     }
 
     pub(super) fn finish<T>(self, value: T) -> Result<T, ResourceLimit> {
-        match self.refusal.into_inner() {
-            Some(error) => Err(error),
-            None => Ok(value),
-        }
+        self.unless_refused()?;
+        Ok(value)
     }
 
     /// Finishes an evaluation: a recorded refusal, or a resource refusal the
