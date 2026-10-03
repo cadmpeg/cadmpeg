@@ -37,8 +37,9 @@ fn charged_tree_lookup_counts_key_bytes_at_depth_bound() {
     *ctx.get_mut_btree_map(&mut tree, "cd", "get mut").expect("get mut").expect("entry") = 3;
     assert_eq!(ctx.remove_btree_map(&mut tree, "ab", "remove").expect("remove"), Some(1));
     let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("refusal") };
-    // Three two-byte keys, eleven comparisons per node, two nodes in the depth bound.
-    assert_eq!(limit.used, 132);
+    // Three key lookups plus four mutation passes over three bounded tree nodes.
+    let node_bytes = 11 * (std::mem::size_of::<&str>() + std::mem::size_of::<i32>()) + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>();
+    assert_eq!(limit.used, 132 + 4 * 3 * u64::try_from(node_bytes).unwrap());
 }
 
 #[test]
@@ -102,4 +103,31 @@ fn set_relations_and_stored_map_keys_use_complete_query_work() {
     let CodecError::ResourceLimit(first) = ctx.is_disjoint_btree_set(&left, &right, "refuse relation").expect_err("work") else { panic!("refusal") };
     let CodecError::ResourceLimit(repeated) = ctx.remove_entry_hash_map(&mut hash, "alpha", "refuse remove").expect_err("fused") else { panic!("refusal") };
     assert_eq!(first, repeated);
+}
+
+#[test]
+fn tree_mutation_refuses_inline_moves_before_insertion_or_removal() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut empty = BTreeMap::<u8, [u8; 4096]>::new();
+    assert!(matches!(ctx.insert_btree_map(&mut empty, 1, [0; 4096], "insert slots"), Err(CodecError::ResourceLimit(_))));
+    assert!(empty.is_empty());
+
+    policy.limits.max_work_units = 11;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut map = BTreeMap::from([(1_u8, [0_u8; 4096])]);
+    let CodecError::ResourceLimit(first) = ctx.remove_btree_map(&mut map, &1, "remove slots").unwrap_err() else { panic!("resource refusal") };
+    assert_eq!(first.used, 11);
+    assert!(first.additional > 4096);
+    assert_eq!(map.len(), 1);
+    let CodecError::ResourceLimit(repeated) = ctx.remove_entry_btree_map(&mut map, &1, "remove entry slots").unwrap_err() else { panic!("resource refusal") };
+    assert_eq!(first, repeated);
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut set = BTreeSet::from([1_u8]);
+    assert!(matches!(ctx.remove_btree_set(&mut set, &1, "remove set slots"), Err(CodecError::ResourceLimit(_))));
+    assert_eq!(set.len(), 1);
 }

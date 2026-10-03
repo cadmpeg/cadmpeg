@@ -1175,12 +1175,19 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
+    // Four node passes cover slot shifts, splits or merges and parent-link repairs.
+    pub(super) fn admit_tree_mutation<K, V>(&self, len: usize, operation: &'static str) -> Result<(), CodecError> {
+        let bytes = self.tree_growth_bytes::<K, V>(len, operation)?;
+        self.charge_work(self.cost_product(bytes, 4, operation)?, operation)
+    }
+
     /// Admits the backing nodes for one ordered entry whose slot is already charged.
     pub fn admit_btree_node_storage<K, V>(
         &self,
         len: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.admit_tree_mutation::<K, V>(len, operation)?;
         self.charge_retained(self.tree_growth_bytes::<K, V>(len, operation)?, operation)
     }
 
