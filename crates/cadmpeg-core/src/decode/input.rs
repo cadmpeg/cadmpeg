@@ -40,7 +40,6 @@ impl DecodeContext<'_> {
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
             self.charge_collection_items(u64_from_index(read), "input byte slots")?;
-            self.charge_work(u64_from_index(read), "copy input prefix")?;
             bytes.try_reserve_exact(read).map_err(|_| {
                 self.budget.refuse(
                     ResourceDimension::InputBytes,
@@ -51,7 +50,9 @@ impl DecodeContext<'_> {
                     "input prefix storage",
                 )
             })?;
-            bytes.extend_from_slice(&chunk[..read]);
+            let copied = &chunk[..read];
+            self.charge_work(u64_from_index(copied.len()), "copy input prefix")?;
+            bytes.extend_from_slice(copied);
         }
         Ok(())
     }

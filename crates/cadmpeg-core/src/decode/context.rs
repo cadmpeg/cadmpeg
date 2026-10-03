@@ -724,7 +724,6 @@ impl<'a> DecodeContext<'a> {
             })
         })?;
         let total_bytes = crate::decode::u64_from_index(total);
-        self.charge_work(total_bytes, operation)?;
         self.charge_retained(total_bytes, operation)?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
@@ -733,6 +732,7 @@ impl<'a> DecodeContext<'a> {
         })?;
         for input in inputs {
             self.charge_work(1, operation)?;
+            self.charge_work(u64_from_index(input.len()), operation)?;
             buffer.extend_from_slice(input);
         }
         Ok(buffer)
@@ -863,6 +863,7 @@ impl<'a> ExpandWriter<'_, 'a> {
                 "expand_write",
             )
         })?;
+        self.ctx.charge_work(u64_from_index(data.len()), "expand_write copy")?;
         self.buffer.extend_from_slice(data);
         Ok(())
     }
@@ -1318,6 +1319,20 @@ mod tests {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.used == 3 && limit.additional == 1));
         assert_eq!(text, "abc");
+    }
+    #[test]
+    fn expansion_writer_refuses_before_copy_without_a_caller_charge() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut writer = ctx.begin_expand(super::ExpandSpec::Exact(4)).expect("writer");
+        let crate::CodecError::ResourceLimit(original) = writer.write(b"work")
+            .expect_err("copy work") else { panic!("resource refusal"); };
+        assert_eq!(writer.written(), 0);
+        assert_eq!(original.operation, "expand_write copy");
+        assert!(matches!(writer.write(b"x"),
+            Err(crate::CodecError::ResourceLimit(repeated)) if repeated == original));
     }
 }
 

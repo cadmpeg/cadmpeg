@@ -1938,8 +1938,8 @@ fn join_sectors(
         if data.len() != sector_size {
             return malformed("CFB structural sector is truncated");
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "copy CFB sectors")?;
         ctx.reserve_capacity(&mut output, data.len(), "join CFB sector slots")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "copy CFB sectors")?;
         output.extend_from_slice(data);
     }
     Ok(output)

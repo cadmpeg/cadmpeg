@@ -537,3 +537,19 @@ fn collector_counts_source_steps_and_the_end_probe() {
     // Two successful source steps and one end probe for each collection.
     assert_eq!(limit.used, 4);
 }
+
+#[test]
+fn retained_byte_extension_refuses_before_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut bytes = Vec::with_capacity(4);
+    bytes.push(7);
+    let CodecError::ResourceLimit(original) = ctx.extend_retained_bytes(&mut bytes, &[1, 2], "byte copy")
+        .expect_err("copy work") else { panic!("resource refusal"); };
+    assert_eq!(bytes, [7]);
+    assert_eq!(original.operation, "byte copy");
+    assert!(matches!(ctx.charge_work(1, "after refusal"),
+        Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+}
