@@ -83,7 +83,9 @@ fn occurs<'a>(
     let term = resolve(term, bindings);
     match term.1 {
         Pattern::Variable(name) => variable.0 == term.0 && variable.1 == name,
-        Pattern::Rigid(_, children) => children.iter().any(|child| occurs(variable, (term.0, child), bindings)),
+        Pattern::Rigid(_, children) => children
+            .iter()
+            .any(|child| occurs(variable, (term.0, child), bindings)),
     }
 }
 
@@ -91,12 +93,28 @@ pub(super) fn value<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Pattern {
     let rigid = |name: String, children| Pattern::Rigid(name, children);
     match value.kind() {
         ty::Param(parameter) => Pattern::Variable(format!("type:{}", parameter.index)),
-        ty::Ref(_, child, mutable) => rigid(format!("ref:{mutable:?}"), vec![self::value(tcx, *child)]),
-        ty::RawPtr(child, mutable) => rigid(format!("ptr:{mutable:?}"), vec![self::value(tcx, *child)]),
+        ty::Ref(_, child, mutable) => {
+            rigid(format!("ref:{mutable:?}"), vec![self::value(tcx, *child)])
+        }
+        ty::RawPtr(child, mutable) => {
+            rigid(format!("ptr:{mutable:?}"), vec![self::value(tcx, *child)])
+        }
         ty::Slice(child) => rigid("slice".into(), vec![self::value(tcx, *child)]),
-        ty::Array(child, length) => rigid("array".into(), vec![self::value(tcx, *child), constant(*length)]),
-        ty::Tuple(children) => rigid("tuple".into(), children.iter().map(|child| self::value(tcx, child)).collect()),
-        ty::Adt(definition, args) => rigid(format!("adt:{}", key(tcx, definition.did())), arguments(tcx, args)),
+        ty::Array(child, length) => rigid(
+            "array".into(),
+            vec![self::value(tcx, *child), constant(*length)],
+        ),
+        ty::Tuple(children) => rigid(
+            "tuple".into(),
+            children
+                .iter()
+                .map(|child| self::value(tcx, child))
+                .collect(),
+        ),
+        ty::Adt(definition, args) => rigid(
+            format!("adt:{}", key(tcx, definition.did())),
+            arguments(tcx, args),
+        ),
         ty::FnPtr(..) => {
             let signature = tcx.instantiate_bound_regions_with_erased(value.fn_sig(tcx));
             function(tcx, signature, 0)
@@ -105,22 +123,37 @@ pub(super) fn value<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Pattern {
             let mut children = Vec::new();
             for predicate in predicates.iter() {
                 match tcx.instantiate_bound_regions_with_erased(predicate) {
-                    ty::ExistentialPredicate::Trait(trait_ref) => children.push(rigid(format!("trait:{}", key(tcx, trait_ref.def_id)), arguments(tcx, trait_ref.args))),
+                    ty::ExistentialPredicate::Trait(trait_ref) => children.push(rigid(
+                        format!("trait:{}", key(tcx, trait_ref.def_id)),
+                        arguments(tcx, trait_ref.args),
+                    )),
                     ty::ExistentialPredicate::Projection(projection) => {
                         let mut args = arguments(tcx, projection.args);
                         args.push(match projection.term.kind() {
                             ty::TermKind::Ty(value) => self::value(tcx, value),
                             ty::TermKind::Const(value) => constant(value),
                         });
-                        children.push(rigid(format!("projection:{}", key(tcx, projection.def_id)), args));
+                        children.push(rigid(
+                            format!("projection:{}", key(tcx, projection.def_id)),
+                            args,
+                        ));
                     }
-                    ty::ExistentialPredicate::AutoTrait(id) => children.push(rigid(format!("auto:{}", key(tcx, id)), Vec::new())),
+                    ty::ExistentialPredicate::AutoTrait(id) => {
+                        children.push(rigid(format!("auto:{}", key(tcx, id)), Vec::new()))
+                    }
                 }
             }
             rigid("dyn".into(), children)
         }
-        ty::Alias(..) if value.has_non_region_param() => Pattern::Variable(format!("projection:{value:?}")),
-        _ => rigid(ty::print::with_crate_prefix!(ty::print::with_no_trimmed_paths!(format!("type:{value:?}"))), Vec::new()),
+        ty::Alias(..) if value.has_non_region_param() => {
+            Pattern::Variable(format!("projection:{value:?}"))
+        }
+        _ => rigid(
+            ty::print::with_crate_prefix!(ty::print::with_no_trimmed_paths!(format!(
+                "type:{value:?}"
+            ))),
+            Vec::new(),
+        ),
     }
 }
 
@@ -133,15 +166,28 @@ fn constant(value: ty::Const<'_>) -> Pattern {
 }
 
 pub(super) fn arguments<'tcx>(tcx: TyCtxt<'tcx>, args: ty::GenericArgsRef<'tcx>) -> Vec<Pattern> {
-    args.iter().filter_map(|argument| match argument.kind() {
-        ty::GenericArgKind::Type(value) => Some(self::value(tcx, value)),
-        ty::GenericArgKind::Const(value) => Some(constant(value)),
-        ty::GenericArgKind::Lifetime(_) => None,
-    }).collect()
+    args.iter()
+        .filter_map(|argument| match argument.kind() {
+            ty::GenericArgKind::Type(value) => Some(self::value(tcx, value)),
+            ty::GenericArgKind::Const(value) => Some(constant(value)),
+            ty::GenericArgKind::Lifetime(_) => None,
+        })
+        .collect()
 }
 
-pub(super) fn function<'tcx>(tcx: TyCtxt<'tcx>, signature: ty::FnSig<'tcx>, skip: usize) -> Pattern {
-    let children = signature.inputs().iter().skip(skip).copied().chain([signature.output()]).map(|input| value(tcx, input)).collect();
+pub(super) fn function<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    signature: ty::FnSig<'tcx>,
+    skip: usize,
+) -> Pattern {
+    let children = signature
+        .inputs()
+        .iter()
+        .skip(skip)
+        .copied()
+        .chain([signature.output()])
+        .map(|input| value(tcx, input))
+        .collect();
     Pattern::Rigid(format!("fn:{:?}", signature.fn_sig_kind), children)
 }
 
@@ -149,21 +195,34 @@ pub(super) fn function<'tcx>(tcx: TyCtxt<'tcx>, signature: ty::FnSig<'tcx>, skip
 mod tests {
     use super::Pattern;
 
-    fn variable(name: &str) -> Pattern { Pattern::Variable(name.into()) }
-    fn rigid(name: &str, children: Vec<Pattern>) -> Pattern { Pattern::Rigid(name.into(), children) }
+    fn variable(name: &str) -> Pattern {
+        Pattern::Variable(name.into())
+    }
+    fn rigid(name: &str, children: Vec<Pattern>) -> Pattern {
+        Pattern::Rigid(name.into(), children)
+    }
 
     #[test]
     fn consistent_signature_substitutions() {
         let repeated = rigid("fn", vec![variable("T"), variable("T")]);
         assert!(repeated.compatible(&rigid("fn", vec![rigid("u8", vec![]), rigid("u8", vec![])])));
-        assert!(!repeated.compatible(&rigid("fn", vec![rigid("u8", vec![]), rigid("u16", vec![])])));
+        assert!(!repeated.compatible(&rigid(
+            "fn",
+            vec![rigid("u8", vec![]), rigid("u16", vec![])]
+        )));
         assert!(repeated.compatible(&rigid("fn", vec![variable("T"), variable("U")])));
-        assert!(!repeated.compatible(&rigid("fn", vec![variable("U"), rigid("vec", vec![variable("U")])])));
+        assert!(!repeated.compatible(&rigid(
+            "fn",
+            vec![variable("U"), rigid("vec", vec![variable("U")])]
+        )));
         assert!(!repeated.compatible(&rigid("fn", vec![rigid("u8", vec![])])));
     }
 
     #[test]
     fn signature_wire_lengths() {
-        assert_eq!(rigid("λ", vec![variable("T:0"), rigid("u8", vec![])]).wire(), "r1:λ2:v3:T:0r2:u80:");
+        assert_eq!(
+            rigid("λ", vec![variable("T:0"), rigid("u8", vec![])]).wire(),
+            "r1:λ2:v3:T:0r2:u80:"
+        );
     }
 }

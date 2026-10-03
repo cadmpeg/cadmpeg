@@ -253,28 +253,57 @@ fn check_graph_resolution(name: &str) {
     std::fs::create_dir_all(&output_dir).expect("graph comparison directory");
     let run = |mode: &str| {
         Command::new(std::env::current_exe().expect("fixture executable"))
-            .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+            .args([
+                "--exact",
+                "integration_tests::fixture_child",
+                "--ignored",
+                "--nocapture",
+            ])
             .env("CADMPEG_POLICY_FIXTURE", "1")
             .env(mode, "1")
-            .env("CADMPEG_POLICY_INPUT", root.join("fixtures").join(format!("{name}.rs")))
+            .env(
+                "CADMPEG_POLICY_INPUT",
+                root.join("fixtures").join(format!("{name}.rs")),
+            )
             .env("CADMPEG_POLICY_OUTPUT", &output_dir)
-            .output().expect("graph comparison compiler")
+            .output()
+            .expect("graph comparison compiler")
     };
     let graph = run("CADMPEG_POLICY_GRAPH");
-    assert!(graph.status.success(), "{}", String::from_utf8_lossy(&graph.stderr));
+    assert!(
+        graph.status.success(),
+        "{}",
+        String::from_utf8_lossy(&graph.stderr)
+    );
     let path = output_dir.join("graph.tsv");
     std::fs::write(&path, graph.stdout).expect("comparison graph rows");
     let joined = Command::new("python3")
         .args(["-c", "import runpy,sys; from pathlib import Path; m=runpy.run_path(sys.argv[1]); source=Path(sys.argv[2]).read_text(); reached,_=m['resolve_graph'](source); print('\\n'.join(m['unreachable_bodies'](source,reached)))"])
         .arg(root.join("../../scripts/check-decode-policy.py")).arg(path)
         .output().expect("joined graph resolver");
-    assert!(joined.status.success(), "{}", String::from_utf8_lossy(&joined.stderr));
+    assert!(
+        joined.status.success(),
+        "{}",
+        String::from_utf8_lossy(&joined.stderr)
+    );
     let local = run("CADMPEG_POLICY_UNREACHABLE");
-    assert!(local.status.success(), "{}", String::from_utf8_lossy(&local.stderr));
-    let mut local: Vec<_> = String::from_utf8(local.stdout).expect("local scope output").lines()
-        .filter(|line| line.starts_with("unreachable_decode_body\t")).map(str::to_owned).collect();
+    assert!(
+        local.status.success(),
+        "{}",
+        String::from_utf8_lossy(&local.stderr)
+    );
+    let mut local: Vec<_> = String::from_utf8(local.stdout)
+        .expect("local scope output")
+        .lines()
+        .filter(|line| line.starts_with("unreachable_decode_body\t"))
+        .map(str::to_owned)
+        .collect();
     local.sort();
-    let joined: Vec<_> = String::from_utf8(joined.stdout).expect("joined scope output").lines().map(str::to_owned).collect();
+    let joined: Vec<_> = String::from_utf8(joined.stdout)
+        .expect("joined scope output")
+        .lines()
+        .map(str::to_owned)
+        .collect();
     assert_eq!(local, joined, "{name}");
 }
 
@@ -638,40 +667,72 @@ fn shortest_decode_paths() {
     let output_dir = root.join("target/fixtures/path_graph");
     std::fs::create_dir_all(&output_dir).expect("path graph directory");
     let output = Command::new(std::env::current_exe().expect("fixture executable"))
-        .args(["--exact", "integration_tests::fixture_child", "--ignored", "--nocapture"])
+        .args([
+            "--exact",
+            "integration_tests::fixture_child",
+            "--ignored",
+            "--nocapture",
+        ])
         .env("CADMPEG_POLICY_FIXTURE", "1")
         .env("CADMPEG_POLICY_GRAPH", "1")
         .env("CADMPEG_POLICY_INPUT", root.join("fixtures/path_scope.rs"))
         .env("CADMPEG_POLICY_OUTPUT", &output_dir)
-        .output().expect("path graph compiler");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        .output()
+        .expect("path graph compiler");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let graph = output_dir.join("graph.tsv");
     std::fs::write(&graph, output.stdout).expect("path graph rows");
     let explain = |name: &str| {
         let output = Command::new("python3")
             .arg(root.join("../../scripts/check-decode-policy.py"))
-            .arg("--graph-input").arg(&graph)
-            .arg("--explain-body").arg(name)
-            .output().expect("path mode");
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            .arg("--graph-input")
+            .arg(&graph)
+            .arg("--explain-body")
+            .arg(name)
+            .output()
+            .expect("path mode");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         String::from_utf8(output.stdout).expect("path UTF-8")
     };
     let direct = explain("leaf");
-    assert_eq!(direct.lines().filter(|line| line.starts_with("decode_path_edge\t")).count(), 2, "{direct}");
+    assert_eq!(
+        direct
+            .lines()
+            .filter(|line| line.starts_with("decode_path_edge\t"))
+            .count(),
+        2,
+        "{direct}"
+    );
     assert!(direct.contains("direct call"), "{direct}");
     assert!(direct.contains("short ("), "{direct}");
     assert!(!direct.contains("long ("), "{direct}");
     let address = explain("addressed");
     assert!(address.contains("function address"), "{address}");
     let fallback = explain("fallback");
-    assert!(fallback.contains("unresolved-indirect candidate"), "{fallback}");
+    assert!(
+        fallback.contains("unresolved-indirect candidate"),
+        "{fallback}"
+    );
     let object = explain("<Inner as Work>::work");
     assert!(object.contains("trait-object call"), "{object}");
     assert!(object.contains("generic instantiation"), "{object}");
     let excluded = explain("encode");
     assert!(excluded.ends_with("\tunreachable\n"), "{excluded}");
-    let source = std::fs::read_to_string(root.join("fixtures/path_scope.rs")).expect("path fixture source");
-    let line = source.lines().position(|line| line.contains("for byte in bytes")).expect("leaf loop") + 1;
+    let source =
+        std::fs::read_to_string(root.join("fixtures/path_scope.rs")).expect("path fixture source");
+    let line = source
+        .lines()
+        .position(|line| line.contains("for byte in bytes"))
+        .expect("leaf loop")
+        + 1;
     assert_eq!(direct, explain(&format!("fixtures/path_scope.rs:{line}")));
 }
 

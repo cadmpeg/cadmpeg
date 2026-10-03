@@ -93,17 +93,14 @@ struct Edges<'a, 'tcx> {
 
 impl<'tcx> Edges<'_, 'tcx> {
     fn value(&mut self, value: Ty<'tcx>) -> Option<Ty<'tcx>> {
-        match self
-            .concrete
+        self.concrete
             .instance
             .try_instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
                 self.concrete.environment,
                 ty::EarlyBinder::bind(self.tcx, value),
-            ) {
-            Ok(value) => Some(value),
-            Err(_) => None,
-        }
+            )
+            .ok()
     }
 
     fn target(&mut self, id: DefId, args: ty::GenericArgsRef<'tcx>, address: bool) {
@@ -114,22 +111,55 @@ impl<'tcx> Edges<'_, 'tcx> {
             _ => {
                 if address {
                     let value = Ty::new_fn_def(self.tcx, id, ty::Binder::dummy(args));
-                    indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
+                    indirect::address(
+                        self.tcx,
+                        self.graph,
+                        self.concrete.environment,
+                        &self.concrete.caller,
+                        value,
+                        value,
+                    );
                 }
-                if matches!(self.tcx.def_kind(id), rustc_hir::def::DefKind::AssocFn) && self.tcx.trait_of_assoc(id).is_some() {
+                if matches!(self.tcx.def_kind(id), rustc_hir::def::DefKind::AssocFn)
+                    && self.tcx.trait_of_assoc(id).is_some()
+                {
                     let method = key(self.tcx, id);
-                    let signature = indirect::method_signature(self.tcx, self.concrete.environment, id, args);
-                    self.graph.trait_calls.insert((self.concrete.caller.clone(), method.clone(), signature.clone()));
-                    if args.types().next().is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..))) {
-                        self.graph.object_calls.insert((self.concrete.caller.clone(), method, signature));
+                    let signature =
+                        indirect::method_signature(self.tcx, self.concrete.environment, id, args);
+                    self.graph.trait_calls.insert((
+                        self.concrete.caller.clone(),
+                        method.clone(),
+                        signature.clone(),
+                    ));
+                    if args
+                        .types()
+                        .next()
+                        .is_some_and(|value| matches!(value.peel_refs().kind(), ty::Dynamic(..)))
+                    {
+                        self.graph.object_calls.insert((
+                            self.concrete.caller.clone(),
+                            method,
+                            signature,
+                        ));
                     }
                 }
                 return;
             }
         };
         if address {
-            let value = Ty::new_fn_def(self.tcx, instance.def_id(), ty::Binder::dummy(instance.args));
-            indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
+            let value = Ty::new_fn_def(
+                self.tcx,
+                instance.def_id(),
+                ty::Binder::dummy(instance.args),
+            );
+            indirect::address(
+                self.tcx,
+                self.graph,
+                self.concrete.environment,
+                &self.concrete.caller,
+                value,
+                value,
+            );
         }
         enqueue(
             self.tcx,
@@ -138,7 +168,14 @@ impl<'tcx> Edges<'_, 'tcx> {
             &self.concrete.caller,
             instance,
             self.concrete.environment,
-            (self.concrete.depth + 1, if address { EdgeKind::FunctionAddress } else { EdgeKind::GenericInstantiation }),
+            (
+                self.concrete.depth + 1,
+                if address {
+                    EdgeKind::FunctionAddress
+                } else {
+                    EdgeKind::GenericInstantiation
+                },
+            ),
         );
     }
 }
@@ -164,9 +201,8 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                         self.concrete.environment,
                         ty::EarlyBinder::bind(self.tcx, value.args),
                     );
-                match args {
-                    Ok(args) => self.target(value.def, args, false),
-                    Err(_) => (),
+                if let Ok(args) = args {
+                    self.target(value.def, args, false);
                 }
             }
         }
@@ -192,14 +228,32 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                         &mut instances,
                     );
                     for target in instances {
-                        objects::register(self.tcx, self.graph, self.pending, &self.concrete.caller, target, self.concrete.environment, self.concrete.depth + 1);
+                        objects::register(
+                            self.tcx,
+                            self.graph,
+                            self.pending,
+                            &self.concrete.caller,
+                            target,
+                            self.concrete.environment,
+                            self.concrete.depth + 1,
+                        );
                     }
                 }
             }
             Rvalue::Cast(_, operand, target) => {
-                if let (Some(source), Some(target)) = (self.value(operand.ty(self.body, self.tcx)), self.value(*target)) {
+                if let (Some(source), Some(target)) = (
+                    self.value(operand.ty(self.body, self.tcx)),
+                    self.value(*target),
+                ) {
                     if matches!(target.kind(), ty::FnPtr(..)) {
-                        indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, source, target);
+                        indirect::address(
+                            self.tcx,
+                            self.graph,
+                            self.concrete.environment,
+                            &self.concrete.caller,
+                            source,
+                            target,
+                        );
                     }
                 }
             }
@@ -208,7 +262,14 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
                     let value = Ty::new_closure(self.tcx, id, args);
                     if let Some(value) = self.value(value) {
                         if let ty::Closure(id, args) = value.kind() {
-                            indirect::address(self.tcx, self.graph, self.concrete.environment, &self.concrete.caller, value, value);
+                            indirect::address(
+                                self.tcx,
+                                self.graph,
+                                self.concrete.environment,
+                                &self.concrete.caller,
+                                value,
+                                value,
+                            );
                             enqueue(
                                 self.tcx,
                                 self.graph,
@@ -231,8 +292,12 @@ impl<'tcx> Visitor<'tcx> for Edges<'_, 'tcx> {
         if let mir::TerminatorKind::Call { func, .. } = &terminator.kind {
             if let Some(value) = self.value(func.ty(self.body, self.tcx)) {
                 if matches!(value.kind(), ty::FnPtr(..)) {
-                    if let Some(signature) = indirect::signature(self.tcx, self.concrete.environment, value) {
-                        self.graph.pointer_calls.insert((self.concrete.caller.clone(), signature));
+                    if let Some(signature) =
+                        indirect::signature(self.tcx, self.concrete.environment, value)
+                    {
+                        self.graph
+                            .pointer_calls
+                            .insert((self.concrete.caller.clone(), signature));
                     }
                 }
             }

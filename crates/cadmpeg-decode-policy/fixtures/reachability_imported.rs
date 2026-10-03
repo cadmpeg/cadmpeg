@@ -72,7 +72,11 @@ impl cadmpeg_core::SymbolicObject for SymbolicWorker {
     }
 }
 
-pub fn decode_dynamic(ctx: &DecodeContext, worker: &dyn cadmpeg_core::SymbolicObject, bytes: &[u8]) {
+pub fn decode_dynamic(
+    ctx: &DecodeContext,
+    worker: &dyn cadmpeg_core::SymbolicObject,
+    bytes: &[u8],
+) {
     let _ctx = ctx;
     worker.work(bytes);
 }

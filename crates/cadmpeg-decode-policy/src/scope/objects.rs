@@ -2,8 +2,8 @@
 //! Concrete implementations erased by unsizing coercions.
 use super::{indirect, instances, key, pattern::Pattern, EdgeKind, Graph};
 use crate::types;
-use rustc_span::def_id::DefId;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt};
+use rustc_span::def_id::DefId;
 
 pub(super) struct Target<'tcx> {
     method: DefId,
@@ -33,7 +33,9 @@ pub(super) fn targets<'tcx>(
             {
                 let trait_ref = tcx.instantiate_bound_regions_with_erased(bound);
                 for item in tcx.associated_items(trait_ref.def_id).in_definition_order() {
-                    if !matches!(tcx.def_kind(item.def_id), rustc_hir::def::DefKind::AssocFn) || tcx.generics_require_sized_self(item.def_id) {
+                    if !matches!(tcx.def_kind(item.def_id), rustc_hir::def::DefKind::AssocFn)
+                        || tcx.generics_require_sized_self(item.def_id)
+                    {
                         continue;
                     }
                     let args = ty::GenericArgs::for_item(tcx, item.def_id, |parameter, _| {
@@ -55,7 +57,16 @@ pub(super) fn targets<'tcx>(
                         Ok(Some(instance))
                             if !matches!(instance.def, ty::InstanceKind::Virtual(..)) =>
                         {
-                            instances.push(Target { method: item.def_id, signature: indirect::method_signature(tcx, environment, item.def_id, args), instance })
+                            instances.push(Target {
+                                method: item.def_id,
+                                signature: indirect::method_signature(
+                                    tcx,
+                                    environment,
+                                    item.def_id,
+                                    args,
+                                ),
+                                instance,
+                            })
                         }
                         _ => {
                             for implementation in tcx.all_impls(trait_ref.def_id) {
@@ -64,11 +75,30 @@ pub(super) fn targets<'tcx>(
                                     .in_definition_order()
                                     .find(|method| method.name() == item.name())
                                 {
-                                    let args = ty::GenericArgs::identity_for_item(tcx, method.def_id);
-                                    instances.push(Target { method: item.def_id, instance: Instance::new_raw(method.def_id, args), signature: indirect::method_signature(tcx, environment, method.def_id, args) });
+                                    let args =
+                                        ty::GenericArgs::identity_for_item(tcx, method.def_id);
+                                    instances.push(Target {
+                                        method: item.def_id,
+                                        instance: Instance::new_raw(method.def_id, args),
+                                        signature: indirect::method_signature(
+                                            tcx,
+                                            environment,
+                                            method.def_id,
+                                            args,
+                                        ),
+                                    });
                                 }
                             }
-                            instances.push(Target { method: item.def_id, instance: Instance::new_raw(item.def_id, args), signature: indirect::method_signature(tcx, environment, item.def_id, args) });
+                            instances.push(Target {
+                                method: item.def_id,
+                                instance: Instance::new_raw(item.def_id, args),
+                                signature: indirect::method_signature(
+                                    tcx,
+                                    environment,
+                                    item.def_id,
+                                    args,
+                                ),
+                            });
                         }
                     }
                 }
@@ -101,16 +131,47 @@ pub(super) fn register<'tcx>(
     environment: ty::TypingEnv<'tcx>,
     depth: usize,
 ) {
-    let Target { method, instance, signature } = candidate;
+    let Target {
+        method,
+        instance,
+        signature,
+    } = candidate;
     if !types::checked(tcx, instance.def_id()) {
         return;
     }
-    let target = format!("object:{}:{}:{:?}", key(tcx, method), key(tcx, instance.def_id()), instance.args);
-    graph.nodes.insert(target.clone(), format!("trait-object instance {} {:?}", tcx.def_path_str(instance.def_id()), instance.args));
-    graph.method_impls.insert((key(tcx, method), signature.clone(), target.clone()));
+    let target = format!(
+        "object:{}:{}:{:?}",
+        key(tcx, method),
+        key(tcx, instance.def_id()),
+        instance.args
+    );
+    graph.nodes.insert(
+        target.clone(),
+        format!(
+            "trait-object instance {} {:?}",
+            tcx.def_path_str(instance.def_id()),
+            instance.args
+        ),
+    );
+    graph
+        .method_impls
+        .insert((key(tcx, method), signature.clone(), target.clone()));
     if instance.args.has_non_region_param() {
         graph.symbolic_instances.insert(target.clone());
     }
-    graph.objects.insert((caller.to_owned(), key(tcx, method), signature, target.clone()));
-    instances::enqueue(tcx, graph, pending, &target, instance, environment, (depth, EdgeKind::TraitObjectCall));
+    graph.objects.insert((
+        caller.to_owned(),
+        key(tcx, method),
+        signature,
+        target.clone(),
+    ));
+    instances::enqueue(
+        tcx,
+        graph,
+        pending,
+        &target,
+        instance,
+        environment,
+        (depth, EdgeKind::TraitObjectCall),
+    );
 }

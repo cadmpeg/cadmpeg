@@ -5,7 +5,8 @@ static WIDE: [fn(&[u16]) -> usize; 1] = [wide];
 static OTHER: [fn(&str) -> String; 1] = [other];
 static RETURN_MISMATCH: [fn(&[u8]) -> u8; 1] = [return_mismatch];
 fn matching<'a>(bytes: &'a [u8]) -> usize {
-    for byte in bytes { // finding: uncharged_decode_work
+    for byte in bytes {
+        // finding: uncharged_decode_work
         std::hint::black_box(byte);
     }
     bytes.len()
@@ -24,7 +25,8 @@ fn return_mismatch(bytes: &[u8]) -> u8 {
 }
 fn stored_closures() {
     let _matching: fn(&[u8]) -> usize = |bytes| {
-        for byte in bytes { // finding: uncharged_decode_work
+        for byte in bytes {
+            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
         bytes.len()

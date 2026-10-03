@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pub struct DecodeContext;
-trait Recursive { fn scan(&self, bytes: &[u8]); fn encode(&self, bytes: &[u8]); }
+trait Recursive {
+    fn scan(&self, bytes: &[u8]);
+    fn encode(&self, bytes: &[u8]);
+}
 struct Worker<T>(std::marker::PhantomData<T>);
 impl<T> Recursive for Worker<T> {
     fn scan(&self, bytes: &[u8]) {
-        for byte in bytes { // finding: uncharged_decode_work
+        for byte in bytes {
+            // finding: uncharged_decode_work
             std::hint::black_box(byte);
         }
         let object: &dyn Recursive = self;
