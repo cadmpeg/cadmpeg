@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lifetime-erased callable signatures for indirect candidates.
-use super::{key, EdgeKind, Graph};
+use super::{key, pattern, pattern::Pattern, EdgeKind, Graph};
 use crate::types;
-use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt};
+use rustc_span::def_id::DefId;
 
 pub(super) fn signature<'tcx>(
     tcx: TyCtxt<'tcx>,
     environment: ty::TypingEnv<'tcx>,
     value: Ty<'tcx>,
-) -> Option<String> {
+) -> Option<Pattern> {
     let value = value.peel_refs();
     let signature = match value.kind() {
         ty::FnDef(..) | ty::FnPtr(..) => value.fn_sig(tcx),
@@ -26,7 +27,33 @@ pub(super) fn signature<'tcx>(
     } else {
         signature
     };
-    Some(ty::print::with_crate_prefix!(ty::print::with_no_trimmed_paths!(format!("{:?}", tcx.erase_and_anonymize_regions(signature)))))
+    Some(pattern::function(tcx, tcx.erase_and_anonymize_regions(signature), 0))
+}
+
+pub(super) fn method_signature<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    environment: ty::TypingEnv<'tcx>,
+    method: DefId,
+    arguments: ty::GenericArgsRef<'tcx>,
+) -> Pattern {
+    let signature = tcx.fn_sig(method).instantiate(tcx, arguments).skip_norm_wip();
+    let signature = tcx.instantiate_bound_regions_with_erased(signature);
+    let signature = tcx.try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(signature)).unwrap_or(signature);
+    let receiver = tcx.opt_associated_item(method).is_some_and(|item| item.is_method());
+    let parent_count = tcx.generics_of(method).parent_count;
+    let trait_args = if tcx.trait_of_assoc(method).is_some() {
+        Some(tcx.mk_args(&arguments[..parent_count]))
+    } else {
+        Some(tcx.impl_trait_ref(tcx.parent(method)).instantiate(tcx, arguments).skip_norm_wip().args)
+    };
+    let mut children = vec![pattern::function(tcx, tcx.erase_and_anonymize_regions(signature), usize::from(receiver))];
+    if let Some(args) = trait_args {
+        let args = tcx.try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(args)).unwrap_or(args);
+        // Self is selected by the implementation; the remaining trait arguments constrain dispatch.
+        children.extend(pattern::arguments(tcx, tcx.mk_args(&args[1..])));
+    }
+    children.extend(pattern::arguments(tcx, tcx.mk_args(&arguments[parent_count..])));
+    Pattern::Rigid("method".into(), children)
 }
 
 pub(super) fn address<'tcx>(
@@ -45,8 +72,9 @@ pub(super) fn address<'tcx>(
                     let target = format!("virtual:{}:{:?}", key(tcx, *id), instance.args);
                     graph.nodes.insert(target.clone(), format!("trait-object function address {}", tcx.def_path_str(*id)));
                     graph.edges.insert((caller.to_owned(), target.clone(), EdgeKind::FunctionAddress));
-                    graph.trait_calls.insert((target.clone(), key(tcx, *id)));
-                    graph.object_calls.insert((target.clone(), key(tcx, *id)));
+                    let signature = method_signature(tcx, environment, *id, instance.args);
+                    graph.trait_calls.insert((target.clone(), key(tcx, *id), signature.clone()));
+                    graph.object_calls.insert((target.clone(), key(tcx, *id), signature));
                     target
                 }
                 Some(instance) if types::checked(tcx, instance.def_id()) => key(tcx, instance.def_id()),
@@ -57,6 +85,9 @@ pub(super) fn address<'tcx>(
         ty::Closure(id, _) if types::checked(tcx, *id) => key(tcx, *id),
         _ => return,
     };
+    if value.has_non_region_param() {
+        graph.symbolic_candidates.insert(target.clone());
+    }
     for value in [value, stored] {
         if let Some(signature) = signature(tcx, environment, value) {
             graph.addresses.insert((signature, target.clone()));
