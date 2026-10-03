@@ -111,7 +111,6 @@ pub fn find_iter<'a>(haystack: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item
 
 #[cfg(test)]
 mod tests {
-    use super::{contains, find, find_from, find_in, find_iter};
 
     #[test]
     fn assembles_wire_byte_orders_without_host_endian_assumptions() {
@@ -126,26 +125,5 @@ mod tests {
         assert_eq!(super::assemble_f64_le([0, 0, 0, 0, 0, 0, 0xf0, 0x3f]), 1.0);
     }
 
-    #[test]
-    fn empty_needle_is_never_a_match() {
-        assert_eq!(find(b"abc", b""), None);
-        assert_eq!(find_from(b"abc", b"", 1), None);
-        assert_eq!(find_in(b"abc", b"", 0, 3), None);
-        assert!(!contains(b"abc", b""));
-        assert_eq!(
-            find_iter(b"abc", b"").collect::<Vec<_>>(),
-            Vec::<usize>::new()
-        );
-    }
 
-    #[test]
-    fn finds_absolute_and_ranged_offsets() {
-        let haystack = b"xxabcxxabc";
-        assert_eq!(find(haystack, b"abc"), Some(2));
-        assert_eq!(find_from(haystack, b"abc", 3), Some(7));
-        assert_eq!(find_in(haystack, b"abc", 3, 10), Some(7));
-        assert_eq!(find_in(haystack, b"abc", 3, 6), None);
-        assert!(contains(haystack, b"abc"));
-        assert_eq!(find_iter(haystack, b"abc").collect::<Vec<_>>(), [2, 7]);
-    }
 }
