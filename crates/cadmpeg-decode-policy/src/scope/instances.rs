@@ -13,6 +13,7 @@ pub(super) struct Concrete<'tcx> {
     pub(super) instance: Instance<'tcx>,
     pub(super) environment: ty::TypingEnv<'tcx>,
     pub(super) depth: usize,
+    pub(super) constant_evaluation: bool,
 }
 
 pub(super) fn enqueue<'tcx>(
@@ -34,6 +35,7 @@ pub(super) fn enqueue<'tcx>(
     }
     graph.edges.insert((caller.to_owned(), key(tcx, id), kind));
     if instance.args.has_non_region_param() {
+        if kind == EdgeKind::ConstantEvaluation { return; }
         graph
             .symbolic_edges
             .insert((caller.to_owned(), key(tcx, id)));
@@ -52,6 +54,7 @@ pub(super) fn enqueue<'tcx>(
             instance,
             environment,
             depth,
+            constant_evaluation: kind == EdgeKind::ConstantEvaluation,
         });
     }
 }
@@ -63,6 +66,7 @@ pub(super) fn expand<'tcx>(tcx: TyCtxt<'tcx>, graph: &mut Graph, mut pending: Ve
             concrete.caller.clone(),
             concrete.instance,
             concrete.environment,
+            concrete.constant_evaluation,
         )) {
             continue;
         }
@@ -104,11 +108,13 @@ impl<'tcx> Edges<'_, 'tcx> {
     }
 
     fn target(&mut self, id: DefId, args: ty::GenericArgsRef<'tcx>, address: bool) {
+        let constant_evaluation = !address && (self.concrete.constant_evaluation || super::constant_owner(self.tcx, id));
         let instance = match Instance::try_resolve(self.tcx, self.concrete.environment, id, args) {
             Ok(Some(instance)) if !matches!(instance.def, ty::InstanceKind::Virtual(..)) => {
                 instance
             }
             _ => {
+                if constant_evaluation { return; }
                 if address {
                     let value = Ty::new_fn_def(self.tcx, id, ty::Binder::dummy(args));
                     indirect::address(
@@ -172,6 +178,8 @@ impl<'tcx> Edges<'_, 'tcx> {
                 self.concrete.depth + 1,
                 if address {
                     EdgeKind::FunctionAddress
+                } else if constant_evaluation {
+                    EdgeKind::ConstantEvaluation
                 } else {
                     EdgeKind::GenericInstantiation
                 },

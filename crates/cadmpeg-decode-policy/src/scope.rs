@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum EdgeKind {
     DirectCall,
+    ConstantEvaluation,
     FunctionAddress,
     TraitObjectCall,
     GenericInstantiation,
@@ -26,6 +27,7 @@ impl EdgeKind {
     fn label(self) -> &'static str {
         match self {
             Self::DirectCall => "direct call",
+            Self::ConstantEvaluation => "constant evaluation",
             Self::FunctionAddress => "function address",
             Self::TraitObjectCall => "trait-object call",
             Self::GenericInstantiation => "generic instantiation",
@@ -150,6 +152,7 @@ impl Graph {
         }
         let mut reached: BTreeSet<_> = self.roots.keys().cloned().collect();
         let mut symbolic = self.symbolic_roots.clone();
+        let mut constants = BTreeSet::new();
         loop {
             let mut added = false;
             for instance in &self.symbolic_instances {
@@ -157,12 +160,20 @@ impl Graph {
                     added |= symbolic.insert(instance.clone());
                 }
             }
-            for (caller, callee, _) in &self.edges {
+            for (caller, callee, kind) in &self.edges {
                 if reached.contains(caller) {
-                    added |= reached.insert(callee.clone());
+                    if *kind == EdgeKind::ConstantEvaluation {
+                        added |= constants.insert(callee.clone());
+                    } else { added |= reached.insert(callee.clone()); }
+                }
+                if constants.contains(caller) {
+                    if *kind == EdgeKind::FunctionAddress {
+                        added |= reached.insert(callee.clone());
+                    } else { added |= constants.insert(callee.clone()); }
                 }
             }
             for (caller, callee) in &self.symbolic_edges {
+                if constants.contains(caller) { added |= constants.insert(callee.clone()); }
                 if symbolic.contains(caller) {
                     added |= symbolic.insert(callee.clone());
                     added |= reached.insert(callee.clone());
@@ -375,7 +386,9 @@ struct Calls<'a, 'b, 'tcx> {
 
 impl<'tcx> Calls<'_, '_, 'tcx> {
     fn edge(&mut self, callee: DefId) {
-        self.edge_kind(callee, EdgeKind::DirectCall);
+        self.edge_kind(callee, if constant_owner(self.analysis.tcx, callee) {
+            EdgeKind::ConstantEvaluation
+        } else { EdgeKind::DirectCall });
     }
 
     fn edge_kind(&mut self, callee: DefId, kind: EdgeKind) {
@@ -622,4 +635,10 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
 
 pub(crate) fn key(tcx: TyCtxt<'_>, definition: DefId) -> String {
     format!("{:?}", tcx.def_path_hash(definition))
+}
+
+fn constant_owner(tcx: TyCtxt<'_>, owner: DefId) -> bool {
+    matches!(tcx.def_kind(owner), rustc_hir::def::DefKind::Static { .. }
+        | rustc_hir::def::DefKind::Const { .. } | rustc_hir::def::DefKind::AssocConst { .. }
+        | rustc_hir::def::DefKind::AnonConst)
 }
