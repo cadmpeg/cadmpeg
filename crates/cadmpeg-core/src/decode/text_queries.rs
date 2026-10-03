@@ -4,19 +4,18 @@ use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
 impl DecodeContext<'_> {
-    fn admit_text_search(&self, text: &str, pattern: &str, operation: &'static str) -> Result<(), CodecError> {
-        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
-        let pattern = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
-        self.charge_work(self.cost_product(positions, pattern, operation)?, operation)
-    }
     /// Finds a UTF-8 substring after admitting every candidate comparison.
     pub fn find_text(&self, text: &str, pattern: &str, operation: &'static str) -> Result<Option<usize>, CodecError> {
-        self.admit_text_search(text, pattern, operation)?;
+        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
+        let comparisons = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
+        self.charge_work(self.cost_product(positions, comparisons, operation)?, operation)?;
         Ok(text.find(pattern))
     }
     /// Finds the last UTF-8 substring after admitting every candidate comparison.
     pub fn rfind_text(&self, text: &str, pattern: &str, operation: &'static str) -> Result<Option<usize>, CodecError> {
-        self.admit_text_search(text, pattern, operation)?;
+        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
+        let comparisons = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
+        self.charge_work(self.cost_product(positions, comparisons, operation)?, operation)?;
         Ok(text.rfind(pattern))
     }
     /// Tests substring membership through the admitted forward search.
@@ -114,6 +113,20 @@ mod tests {
         assert_eq!(ctx.trim_text("\u{2003}é\n", "trim").expect("admission"), "é");
         assert_eq!(ctx.to_ascii_lowercase("ÉAZλ", "case").expect("admission"), "Éazλ");
         assert_eq!(ctx.to_ascii_uppercase("éazλ", "case").expect("admission"), "éAZλ");
+    }
+    #[test]
+    fn text_search_admits_candidate_and_pattern_work_before_search() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four candidate positions times three pattern steps.
+        policy.limits.max_work_units = 12;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(ctx.find_text("abc", "bc", "find").expect("search"), Some(1));
+        policy.limits.max_work_units = 11;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = ctx.rfind_text("abc", "bc", "rfind").expect_err("refusal") else { panic!("refusal") };
+        let CodecError::ResourceLimit(second) = ctx.find_text("", "", "find").expect_err("fused") else { panic!("refusal") };
+        assert_eq!(first, second);
     }
     #[test]
     fn ascii_case_refuses_before_mutation_and_keeps_original_refusal() {
