@@ -105,10 +105,12 @@ impl FeatureRegenerationParents {
                 )
             })?;
             let mut longest = 0;
-            for (child, _) in self.0.iter().chain(incoming.0.iter()) {
+            for (len, (child, _)) in self.0.iter().chain(incoming.0.iter()).enumerate() {
                 ctx.charge_work(1, "append feature regeneration parent scan")?;
                 longest = longest.max(child.as_str().len());
-                ctx.admit_retained_btree_record::<crate::features::FeatureId, crate::features::FeatureId>(0, "append feature regeneration parents")?;
+                ctx.admit_btree_node_storage::<crate::features::FeatureId, crate::features::FeatureId>(len, "append feature regeneration parents")?;
+                ctx.charge_collection_items(1, "append feature regeneration parents")?;
+                ctx.charge_work(1, "append feature regeneration parents")?;
             }
             let work = count
                 .checked_add(1)
@@ -1836,6 +1838,7 @@ impl CadIr {
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("append native namespace bound", u64::MAX - 1, u64::MAX)
             })?;
+        let mut namespace_len = self.native.0.len();
         for (format, incoming) in &native.0 {
             admit_append_key(
                 ctx,
@@ -1851,6 +1854,7 @@ impl CadIr {
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("append native arena bound", u64::MAX - 1, u64::MAX)
                     })?;
+                let mut arena_len = destination.arenas().len();
                 for (arena, records) in incoming.arenas() {
                     admit_append_key(ctx, arena_bound, arena.len(), "append native arena lookup")?;
                     if let Some(existing) = destination.arenas_mut().get_mut(arena) {
@@ -1867,14 +1871,20 @@ impl CadIr {
                             })?;
                         ctx.charge_work(u64_from_index(moved), "append native record moves")?;
                     } else {
-                        ctx.admit_retained_btree_record::<String, Vec<crate::native::NativeRecord>>(0, "append native arena nodes")?;
+                        ctx.admit_btree_node_storage::<String, Vec<crate::native::NativeRecord>>(arena_len, "append native arena nodes")?;
+                        ctx.charge_collection_items(1, "append native arena nodes")?;
+                        ctx.charge_work(1, "append native arena nodes")?;
+                        arena_len += 1;
                     }
                 }
             } else {
-                ctx.admit_retained_btree_record::<String, crate::native::NativeNamespace>(
-                    0,
+                ctx.admit_btree_node_storage::<String, crate::native::NativeNamespace>(
+                    namespace_len,
                     "append native namespace nodes",
                 )?;
+                ctx.charge_collection_items(1, "append native namespace nodes")?;
+                ctx.charge_work(1, "append native namespace nodes")?;
+                namespace_len += 1;
             }
         }
         if let Some((lengths, _)) = &native_lengths {

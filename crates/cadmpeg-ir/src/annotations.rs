@@ -938,10 +938,12 @@ pub(crate) fn admit_btree_append<K: Ord, V>(
         return Ok(());
     }
     let mut longest = 0;
-    for key in left.keys().chain(right.keys()) {
+    for (len, key) in left.keys().chain(right.keys()).enumerate() {
         ctx.charge_work(1, operation)?;
         longest = longest.max(key_len(key));
-        ctx.admit_retained_btree_record::<K, V>(0, operation)?;
+        ctx.admit_btree_node_storage::<K, V>(len, operation)?;
+        ctx.charge_collection_items(1, operation)?;
+        ctx.charge_work(1, operation)?;
     }
     let work = left
         .len()
@@ -1095,8 +1097,12 @@ impl Annotations {
             ) {
                 (true, true) => {
                     let provenance_key = ctx.copy_retained_text(&target, operation)?;
-                    ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
-                    ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
+                    ctx.admit_btree_node_storage::<String, AnnotationProvenance>(provenance_count, operation)?;
+                    ctx.charge_collection_items(1, operation)?;
+                    ctx.charge_work(1, operation)?;
+                    ctx.admit_btree_node_storage::<String, ExactnessNote>(exactness_count, operation)?;
+                    ctx.charge_collection_items(1, operation)?;
+                    ctx.charge_work(1, operation)?;
                     provenance_count += 1;
                     exactness_count += 1;
                     Destination::Both {
@@ -1105,12 +1111,16 @@ impl Annotations {
                     }
                 }
                 (true, false) => {
-                    ctx.admit_retained_btree_record::<String, AnnotationProvenance>(0, operation)?;
+                    ctx.admit_btree_node_storage::<String, AnnotationProvenance>(provenance_count, operation)?;
+                    ctx.charge_collection_items(1, operation)?;
+                    ctx.charge_work(1, operation)?;
                     provenance_count += 1;
                     Destination::Provenance(target)
                 }
                 (false, true) => {
-                    ctx.admit_retained_btree_record::<String, ExactnessNote>(0, operation)?;
+                    ctx.admit_btree_node_storage::<String, ExactnessNote>(exactness_count, operation)?;
+                    ctx.charge_collection_items(1, operation)?;
+                    ctx.charge_work(1, operation)?;
                     exactness_count += 1;
                     Destination::Exactness(target)
                 }
