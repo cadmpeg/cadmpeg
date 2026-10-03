@@ -288,7 +288,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 let uv = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter)
                     .unwrap()
                     .get();
-                let actual = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), surface, uv.u, uv.v)
+                let actual = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), surface, uv.u, uv.v)
                 .unwrap()
                 .get();
                 assert!(Point3::distance(expected.get(), actual) < EPS_PCURVE_POINT_MATCH);
@@ -403,7 +403,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     let Ok(uv) = cadmpeg_ir::eval::decode::pcurve_uv(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, pcurve, parameter) else {
                         return false;
                     };
-                    let Ok(point) = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), &supports[side], uv.u, uv.v) else {
+                    let Ok(point) = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), &supports[side], uv.u, uv.v) else {
                         return false;
                     };
                     if (point.z - 1.0).abs() > 1.0e-8 {
@@ -417,10 +417,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 .model
                 .procedural_curve_owner(&ir.model.procedural_curves[0].id)
                 .expect("closed intersection owner");
-            let point = cadmpeg_ir::eval::model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir), curve, parameter)
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex), curve, parameter)
             .expect("closed intersection evaluates");
             let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(&cadmpeg_test_support::service_decode_context(),
-                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex),
                 curve,
                 point.get(),
                 parameter,
@@ -1013,7 +1013,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
             end: end_vertex,
             tolerance: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(0),

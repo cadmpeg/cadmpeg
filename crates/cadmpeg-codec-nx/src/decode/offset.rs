@@ -1197,7 +1197,7 @@ pub(super) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)
         .expect("decode index allocation succeeds");
     offset_surface_parameters_with_tolerance_with_index(
         ctx,
@@ -1895,7 +1895,7 @@ fn continue_surface_intersection_parameters_with_seeds(
         ctx,
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
     );
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(ir, ctx)
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)
         .expect("decode index allocation succeeds");
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
@@ -2928,7 +2928,7 @@ mod tests {
                 )),
                 source_object: None,
             });
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
             let geometry_budget = GeometryWorkBudget::from_context(
                 geometry_ctx,
                 cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
@@ -2979,7 +2979,7 @@ mod tests {
         let absent = SurfaceId::mint("test:model:entity#synthetic:absent-surface")
             .expect("identity grammar");
         let ir = CadIr::empty();
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
 
         assert_eq!(
             coarse_surface_sample_counts(&index, &absent, 0),
@@ -3094,7 +3094,7 @@ mod tests {
             )),
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
 
         assert!(offset_support_control_hull_excludes_point(
             &index,
@@ -3179,7 +3179,7 @@ mod tests {
                 ));
 
             let fit_tolerance = f64::EPSILON.sqrt();
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
             let target = Point3::new(3.0, 0.25, 1.0);
             let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, &offset, 3.0, 0.25)
                 .expect("linear offset evaluation")
@@ -3264,7 +3264,7 @@ mod tests {
                     })
                 }, &cadmpeg_test_support::service_decode_context()).expect("pole edit admission")
                 .expect("finite translated support");
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero, cadmpeg_ir::index::StandardIndex);
             let target = Point3::new(3., 0.25, 1e-200);
             assert!(offset_surface_parameters_with_tolerance(
                 geometry_ctx,
@@ -3516,7 +3516,7 @@ mod tests {
             let axis_x = 1.701e308;
             let radius = 1.0e307;
             let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
             let first_candidate =
                 cadmpeg_ir::eval::model_surface_point_by_id(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, &index, offset, -0.2, 0.0);
             assert!(

@@ -51,7 +51,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
             ),
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         for d in [1., 1e9] {
             let p = PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(&cadmpeg_test_support::service_decode_context(), 
@@ -385,7 +385,7 @@ fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) 
 fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let (ir, surface_id, geometry) = overflowing_plane_model();
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(1024),
@@ -444,7 +444,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             geometry: geometry.clone(),
             source_object: None,
         });
-        let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+        let index = cadmpeg_ir::index::ModelIndex::new(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = GeometryWorkBudget::from_context(
             geometry_ctx,
             cadmpeg_core::decode::u64_from_index(1024),

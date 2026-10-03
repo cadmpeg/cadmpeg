@@ -36,6 +36,7 @@ type IdentityIndex = HashMap<u64, IdentityEntry>;
 /// Allocation policy for infallible public indexes and fallible decode indexes.
 pub(crate) trait IndexStorage {
     type Error;
+    const EAGER_LOOKUPS: bool;
     fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error>;
     fn map<K: Eq + Hash, V>(
         &self,
@@ -84,6 +85,7 @@ pub(crate) struct PublicStorage;
 
 impl IndexStorage for PublicStorage {
     type Error = std::convert::Infallible;
+    const EAGER_LOOKUPS: bool = false;
     fn enter_nested(&self, _operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> { Ok(None) }
     fn map<K: Eq + Hash, V>(
         &self,
@@ -128,6 +130,7 @@ pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'ar
 
 impl IndexStorage for DecodeStorage<'_, '_> {
     type Error = ResourceLimit;
+    const EAGER_LOOKUPS: bool = true;
     fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> {
         self.0.enter_nested_limit(operation).map(Some)
     }
@@ -327,6 +330,63 @@ impl<'ir> std::ops::Deref for DecodeModelIndex<'_, 'ir> {
     }
 }
 
+mod sealed {
+    pub trait IndexAdmission {}
+    impl IndexAdmission for super::StandardIndex {}
+    impl IndexAdmission for &cadmpeg_core::decode::DecodeContext<'_> {}
+}
+
+/// Explicit standard allocation policy for context-free model indexes.
+#[derive(Debug, Clone, Copy)]
+pub struct StandardIndex;
+
+/// Select standard lazy lookups or live-session scoped decode lookups.
+pub trait IndexAdmission<'ir>: sealed::IndexAdmission {
+    /// The standard index or the fallible index with scoped decode storage.
+    type Index;
+
+    #[doc(hidden)]
+    fn construct(
+        self,
+        ir: &'ir CadIr,
+        include_native: bool,
+        additional: impl IntoIterator<Item = &'ir str>,
+        native_unknowns: Option<(&'ir str, &'ir [crate::unknown::UnknownRecord], &'ir [usize])>,
+    ) -> Self::Index;
+}
+
+impl<'ir> IndexAdmission<'ir> for StandardIndex {
+    type Index = ModelIndex<'ir>;
+
+    fn construct(
+        self,
+        ir: &'ir CadIr,
+        include_native: bool,
+        additional: impl IntoIterator<Item = &'ir str>,
+        native_unknowns: Option<(&'ir str, &'ir [crate::unknown::UnknownRecord], &'ir [usize])>,
+    ) -> Self::Index {
+        public_result(ModelIndex::with_identity_sources(ir, include_native, additional, native_unknowns, &PublicStorage))
+    }
+}
+
+impl<'ctx, 'ir> IndexAdmission<'ir> for &'ctx DecodeContext<'_> {
+    type Index = Result<DecodeModelIndex<'ctx, 'ir>, ResourceLimit>;
+
+    fn construct(
+        self,
+        ir: &'ir CadIr,
+        include_native: bool,
+        additional: impl IntoIterator<Item = &'ir str>,
+        native_unknowns: Option<(&'ir str, &'ir [crate::unknown::UnknownRecord], &'ir [usize])>,
+    ) -> Self::Index {
+        let mut reservation = self.reserve_scoped_limit(0, "model lookup storage")?;
+        let index = reservation.with_storage_limit(|| {
+            ModelIndex::with_identity_sources(ir, include_native, additional, native_unknowns, &DecodeStorage(self))
+        })?;
+        Ok(DecodeModelIndex { index, _storage: reservation })
+    }
+}
+
 macro_rules! define_model_index {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         define_model_index! {
@@ -366,40 +426,14 @@ macro_rules! define_model_index {
         }
 
         impl<'a> ModelIndex<'a> {
-            /// Build all decode lookups under a live temporary reservation.
-            pub fn new_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), None, ctx)
+            /// Build borrowed model and native lookups under the explicit policy.
+            pub fn new<P: IndexAdmission<'a>>(ir: &'a CadIr, admission: P) -> P::Index {
+                admission.construct(ir, true, std::iter::empty(), None)
             }
 
-            /// Build model-only decode lookups under a live temporary reservation.
-            pub fn new_model_only_for_decode<'ctx>(ir: &'a CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, false, std::iter::empty(), None, ctx)
-            }
-
-            fn new_with_sources_for_decode<'ctx>(ir: &'a CadIr, include_native: bool, additional: impl IntoIterator<Item = &'a str>, native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>, ctx: &'ctx DecodeContext<'_>) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                let mut reservation = ctx.reserve_scoped_limit(0, "model lookup storage")?;
-                let index = reservation.with_storage_limit(|| {
-                    let storage = DecodeStorage(ctx);
-                    let mut index = Self::with_identity_sources(ir, include_native, additional, native_unknowns, &storage)?;
-                    $(index.$lookup = OnceLock::from(build_identity_index(&ir.model.$lookup, &storage)?);)*
-                    Ok::<_, ResourceLimit>(index)
-                })?;
-                Ok(DecodeModelIndex { index, _storage: reservation })
-            }
-
-            /// Builds lazy typed lookups and a borrowed identity universe.
-            pub fn new(ir: &'a CadIr) -> Self {
-                public_result(Self::with_identity_sources(ir, true, std::iter::empty(), None, &PublicStorage))
-            }
-
-            /// Builds typed model lookups without indexing the native namespaces.
-            ///
-            /// Codec decode phases use this constructor when they resolve only
-            /// neutral model identities. Indexing native records in those phases
-            /// adds work without changing any lookup result and is especially
-            /// costly for codecs that retain a large native namespace.
-            pub fn new_model_only(ir: &'a CadIr) -> Self {
-                public_result(Self::with_identity_sources(ir, false, std::iter::empty(), None, &PublicStorage))
+            /// Build model lookups without indexing native namespaces.
+            pub fn new_model_only<P: IndexAdmission<'a>>(ir: &'a CadIr, admission: P) -> P::Index {
+                admission.construct(ir, false, std::iter::empty(), None)
             }
 
             /// Build scoped decode lookups with native identities staged outside the document.
@@ -408,7 +442,7 @@ macro_rules! define_model_index {
                 additional: impl IntoIterator<Item = &'a str>,
                 ctx: &'ctx DecodeContext<'_>,
             ) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, additional, None, ctx)
+                ctx.construct(ir, true, additional, None)
             }
 
             /// Build scoped lookups with one native unknown arena replaced by borrowed source facts.
@@ -419,7 +453,7 @@ macro_rules! define_model_index {
                 order: &'a [usize],
                 ctx: &'ctx DecodeContext<'_>,
             ) -> Result<DecodeModelIndex<'ctx, 'a>, ResourceLimit> {
-                Self::new_with_sources_for_decode(ir, true, std::iter::empty(), Some((format, records, order)), ctx)
+                ctx.construct(ir, true, std::iter::empty(), Some((format, records, order)))
             }
 
             pub(crate) fn native_view(&self) -> crate::native::view::NativeView<'a> {
@@ -493,6 +527,9 @@ macro_rules! define_model_index {
                     native_unknowns,
                 };
                 index.identities = index.build_identity_set(storage)?;
+                if S::EAGER_LOOKUPS {
+                    $(index.$lookup = OnceLock::from(build_identity_index(&ir.model.$lookup, storage)?);)*
+                }
                 Ok(index)
             }
 
@@ -590,6 +627,47 @@ mod tests {
     use serde_json::Map;
 
     #[test]
+    fn explicit_index_policy_keeps_decode_storage_scoped() {
+        let mut ir = CadIr::empty();
+        let id = crate::ids::PointId::mint("test:model:point#policy").unwrap();
+        ir.model.points.push(crate::topology::Point::new(
+            id.clone(), crate::features::FinitePoint3::ZERO, None,
+        ));
+        let standard = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+        assert!(standard.points.get().is_none());
+        for trigger in 0..4 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 4096;
+            let dimension = match trigger {
+                0 => { policy.limits.max_materialized_bytes = 0; Some(ResourceDimension::MaterializedBytes) }
+                1 => { policy.limits.max_collection_items = 0; Some(ResourceDimension::CollectionItems) }
+                2 => { policy.limits.max_work_units = 0; Some(ResourceDimension::WorkUnits) }
+                _ => { policy.limits.max_retained_bytes = 0; None }
+            };
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = ModelIndex::new_model_only(&ir, &ctx);
+            if let Some(dimension) = dimension {
+                let first = result.err().expect("decode index must retain its resource refusal");
+                assert_eq!(first.dimension, dimension);
+                assert_eq!((first.limit, first.used), (0, 0));
+                assert!(first.additional > 0);
+                assert!(matches!(ModelIndex::new_model_only(&ir, &ctx), Err(sticky) if sticky == first));
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            } else {
+                let index = result.unwrap();
+                assert!(index.points.get().is_some());
+                assert!(index.bodies.get().is_some());
+                assert_eq!(index.points(id.as_str()).map(|point| &point.id), Some(&id));
+                drop(index);
+                let storage = ctx.reserve_scoped_limit(4096, "test released model index").unwrap();
+                drop(storage);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+
+    #[test]
     fn decode_index_admits_identity_slots_and_text_before_building() {
         let mut ir = CadIr::empty();
         let point_id = crate::ids::PointId::mint("test:model:point#0").expect("identity grammar");
@@ -617,14 +695,14 @@ mod tests {
             policy.limits.max_collection_items = collection_cap;
             policy.limits.max_materialized_bytes = retained_cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = ModelIndex::new_model_only_for_decode(&ir, &ctx);
+            let result = ModelIndex::new_model_only(&ir, &ctx);
             assert!(matches!(result, Err(limit)
                 if limit.dimension == dimension && limit.operation == operation));
         }
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let index = ModelIndex::new_model_only_for_decode(&ir, &ctx).unwrap();
+        let index = ModelIndex::new_model_only(&ir, &ctx).unwrap();
         assert_eq!(
             index.points(point_id.as_str()).map(|point| &point.id),
             Some(&point_id)
@@ -678,8 +756,8 @@ mod tests {
             native_ref: None,
         });
 
-        let full = ModelIndex::new(&ir);
-        let model_only = ModelIndex::new_model_only(&ir);
+        let full = ModelIndex::new(&ir, crate::index::StandardIndex);
+        let model_only = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
 
         assert!(full.contains(native_id));
         assert!(full.contains(model_id));
@@ -711,7 +789,7 @@ mod tests {
             });
         }
 
-        let index = ModelIndex::new_model_only(&ir);
+        let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
         let parameters = std::sync::OnceLock::new();
         assert!(parameters.get().is_none());
         assert!(index.bodies.get().is_none());
@@ -773,7 +851,7 @@ mod tests {
             ).unwrap()
             .unwrap();
 
-        let index = ModelIndex::new_model_only(&ir);
+        let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
         assert_eq!(
             index
                 .procedural_surface_for_carrier(exact_surface.as_str())

@@ -143,7 +143,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .ok_or_else(|| ctx.refuse_codec_limit("step_edge_parameter_inference", 0, 1))?;
     ctx.charge_work(work, "step_edge_parameter_inference")?;
 
-    let model_index = cadmpeg_ir::index::ModelIndex::new_for_decode(ir, ctx)?;
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir, ctx)?;
     let inferred = candidates.into_iter().try_fold(
         Vec::new(),
         |mut inferred, (edge_index, curve, start, end)| {

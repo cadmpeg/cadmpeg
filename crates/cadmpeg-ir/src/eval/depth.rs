@@ -166,7 +166,7 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(crate::geometry::analytic::PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
             source_object: None,
         });
-        let index = crate::index::ModelIndex::new(&ir);
+        let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
         let frame_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Option<super::ModelEvaluationIdentity>>());
         for trigger in 0..3 {
             let arena = DecodeArena::new();

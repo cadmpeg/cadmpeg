@@ -542,7 +542,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::MaterializedBytes,
         ResourceDimension::CollectionItems, ResourceDimension::WorkUnits, ResourceDimension::RecursionDepth] {
         let arena = DecodeArena::new();

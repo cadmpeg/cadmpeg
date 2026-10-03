@@ -4584,7 +4584,7 @@ fn select_associated_pcurve(
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
-    let index = ModelIndex::new_for_decode(ir, ctx)?;
+    let index = ModelIndex::new(ir, ctx)?;
     let pcurve = ir
         .model
         .pcurves

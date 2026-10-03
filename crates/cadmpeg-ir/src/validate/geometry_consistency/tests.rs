@@ -72,7 +72,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let pcurve = Pcurve {
         id: "test:model:pcurve#large-surface-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
@@ -727,7 +727,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let pcurve = Pcurve {
         id: "test:model:pcurve#pcurve"
             .try_into()
@@ -1409,7 +1409,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1463,7 +1463,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1508,7 +1508,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::new(&ir);
+    let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,

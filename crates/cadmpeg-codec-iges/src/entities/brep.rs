@@ -315,7 +315,7 @@ fn resolve_pcurve_uses<'a>(
         return Ok(Some(Vec::new()));
     }
     if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only_for_decode(
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(
             source, ctx,
         )?);
     }

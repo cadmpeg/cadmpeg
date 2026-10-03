@@ -213,7 +213,7 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(crate::geometry::analytic::PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
             source_object: None,
         });
-        let index = crate::index::ModelIndex::new(&ir);
+        let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
         for trigger in 0..5 {
             for route in 0..4 {
                 let mut policy = DecodePolicy::service();
@@ -274,7 +274,7 @@ mod tests {
             ProceduralSurfaceDefinition::LinearSweep(crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(curve, Vector3::new(0.0, 0.0, 1.0)).unwrap()),
             None,
         )).unwrap().unwrap();
-        let index = crate::index::ModelIndex::new(&ir);
+        let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
         assert_eq!(crate::eval::model_surface_point_by_id(EvaluationAdmission::Standard, &index, &surface, 0.25, 2.0).unwrap().get(), Point3::new(0.25, 0.0, 2.0));
         let frame_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Option<super::super::ModelEvaluationIdentity>>());
         let mut policy = DecodePolicy::service();
@@ -302,7 +302,7 @@ mod tests {
             crate::ids::ProceduralCurveId::mint("test:model:procedural#cycle").unwrap(),
             ProceduralCurveDefinition::Replica { source: id.clone(), transform: crate::transform::Transform::identity() },
         )).unwrap().unwrap();
-        let index = crate::index::ModelIndex::new(&ir);
+        let index = crate::index::ModelIndex::new(&ir, crate::index::StandardIndex);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
