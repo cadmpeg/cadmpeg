@@ -2104,14 +2104,25 @@ pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: FiniteReal) -> O
 /// each reads NaN; a projection that overflows carries each coordinate it
 /// reached.
 pub fn nurbs_pcurve_uv(
+    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     t: f64,
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
-    nurbs_pcurve_differential(degree, knots, control_points, weights, t)
-        .map(|differential| differential.point)
+    ctx.charge_work_limit(0, "IR raw NURBS pcurve evaluation")?;
+    let scratch = decode::Scratch::new(ctx);
+    let result = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue).and_then(|t| {
+        nurbs_curve_point_evaluation(
+            &scratch, degree, knots, control_points.len(),
+            |index| FinitePoint2::new(*control_points.get(index)?).map(planar_pole),
+            |index| weights.and_then(|weights| weights.get(index).copied()), t,
+        )
+        .map(|point| { let [u, v, _] = point.coordinates(); FinitePoint2::from_coordinates(u, v) })
+        .map_err(|failure| failure.map(|point| Point2::new(point.x, point.y)))
+    });
+    scratch.finish_evaluation(result).map_err(EvaluationFailure::ResourceLimit)?
 }
 
 /// Return the signed endpoint-frame offset between two fitted sketch NURBS.
@@ -2201,24 +2212,29 @@ fn planar_value(
 
 /// [`nurbs_pcurve_differential_with`] over raw `(u, v)` poles, each admitted
 /// as the span that supports `t` reads it.
+#[cfg(test)]
 fn nurbs_pcurve_differential(
+    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     t: f64,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
-    default_scratch_evaluation(|scratch| {
+    ctx.charge_work_limit(0, "IR raw NURBS pcurve evaluation")?;
+    let scratch = decode::Scratch::new(ctx);
+    let result = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue).and_then(|t| {
         nurbs_pcurve_differential_with(
-            scratch,
+            &scratch,
             degree,
             knots,
             control_points.len(),
             |index| FinitePoint2::new(*control_points.get(index)?).map(planar_pole),
             weights,
-            FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?,
+            t,
         )
-    })
+    });
+    scratch.finish_evaluation(result).map_err(EvaluationFailure::ResourceLimit)?
 }
 
 /// The point and first two derivatives at `t` of a possibly-rational

@@ -975,6 +975,7 @@ fn e5_native_uv_endpoints(
                     .map(|[u, v]| Point2::new(u.get(), v.get())),
             );
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
                 *degree,
                 &scalar_knots,
                 &scalar_controls,
@@ -982,6 +983,7 @@ fn e5_native_uv_endpoints(
                 range[0].get(),
             ))?;
             let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ctx,
                 *degree,
                 &scalar_knots,
                 &scalar_controls,
