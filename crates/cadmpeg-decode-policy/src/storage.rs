@@ -4,13 +4,20 @@ use crate::{flow::ExtentTerm, types, Analysis};
 use rustc_hir::{Expr, ExprKind, Node, PatKind};
 use rustc_middle::ty;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SlotUse {
+    Storage,
+    Insertion,
+    Reserve,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Slots {
     pub(crate) admission: rustc_hir::HirId,
     pub(crate) target: String,
     pub(crate) terms: Vec<ExtentTerm>,
     pub(crate) loop_depth: usize,
-    pub(crate) reserved: bool,
+    pub(crate) usage: SlotUse,
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -116,7 +123,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     target,
                     terms: counts,
                     loop_depth: self.flow.loop_bounds.len(),
-                    reserved: true,
+                    usage: SlotUse::Insertion,
                 });
             }
         }
@@ -162,7 +169,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         false
     }
 
-    fn allocated_binding(&self, expression: &Expr<'tcx>) -> Option<String> {
+    fn result_binding(&self, expression: &Expr<'tcx>) -> Option<String> {
         for (_, node) in self.tcx.hir_parent_iter(expression.hir_id) {
             match node {
                 Node::LetStmt(local) => {
@@ -207,7 +214,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let name = self.tcx.item_name(definition);
         let (target, terms) = match name.as_str() {
             "collection_vec" | "vector_storage" | "scoped_vector_storage" => (
-                self.allocated_binding(expression),
+                self.result_binding(expression),
                 operands
                     .get(1)
                     .and_then(|count| self.extent_terms(count, &mut Vec::new())),
@@ -247,6 +254,39 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     coefficient: 1,
                 }]),
             ),
+            "linear_growth" => {
+                let Some((length_id, length)) = operands.get(1).and_then(|value| self.call(value)) else { return; };
+                let Some((capacity_id, capacity)) = operands.get(2).and_then(|value| self.call(value)) else { return; };
+                if !types::standard(self.tcx, length_id) || self.tcx.item_name(length_id).as_str() != "len"
+                    || !types::standard(self.tcx, capacity_id) || self.tcx.item_name(capacity_id).as_str() != "capacity" { return; }
+                let Some(value) = length.first() else { return; };
+                let target = self.key(value, &mut Vec::new());
+                if target != capacity.first().and_then(|value| self.key(value, &mut Vec::new())) { return; }
+                let ty::Adt(owner, args) = self.expr_ty(value).peel_refs().kind() else { return; };
+                if !types::standard(self.tcx, owner.did()) || !matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "VecDeque" | "BinaryHeap") { return; }
+                let Some(call_args) = self.call_arguments(expression) else { return; };
+                if args.types().next() != call_args.types().next() { return; }
+                let Some(target) = target else { return; };
+                let Some(result) = self.result_binding(expression) else { return; };
+                let Some(original) = operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return; };
+                // The helper admits its returned reserve count and the requested
+                // insertion slots for this exact collection and element type.
+                self.flow.storage_slots.push(Slots {
+                    admission: expression.hir_id,
+                    target: target.clone(),
+                    terms: original,
+                    loop_depth: self.flow.loop_bounds.len(),
+                    usage: SlotUse::Insertion,
+                });
+                self.flow.storage_slots.push(Slots {
+                    admission: expression.hir_id,
+                    target,
+                    terms: vec![ExtentTerm { factors: vec![result], coefficient: 1 }],
+                    loop_depth: self.flow.loop_bounds.len(),
+                    usage: SlotUse::Reserve,
+                });
+                return;
+            }
             "charge_hash_growth" => {
                 let target = operands
                     .get(1)
@@ -282,7 +322,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 target,
                 terms,
                 loop_depth: self.flow.loop_bounds.len(),
-                reserved: false,
+                usage: SlotUse::Storage,
             });
         }
     }
@@ -318,12 +358,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         };
         for (index, credit) in self.flow.storage_slots.iter().enumerate() {
+            let reserve = matches!(name, "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact");
             if credit.target != target
-                || credit.reserved
-                    && matches!(
-                        name,
-                        "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact"
-                    )
+                || credit.usage == SlotUse::Insertion && reserve
+                || credit.usage == SlotUse::Reserve && !reserve
             {
                 continue;
             }
