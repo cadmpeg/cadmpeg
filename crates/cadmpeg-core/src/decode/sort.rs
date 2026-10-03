@@ -9,7 +9,7 @@ use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
 pub(super) trait SortProjection<T> {
-    type Key<'value>: DecodeCost where Self: 'value, T: 'value;
+    type Key<'value>: Copy + DecodeCost where Self: 'value, T: 'value;
     fn project<'value>(&'value self, value: &'value T) -> Self::Key<'value>;
 }
 
@@ -69,9 +69,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let projection = BorrowedKey { key, marker: PhantomData };
-        self.admit_sort(values, &projection, operation)?;
-        Self::sort_unstable_admitted(values, |left, right| compare((projection.key)(left), (projection.key)(right)));
-        Ok(())
+        self.sort_unstable_projected(values, &projection, |left, right| compare((projection.key)(left), (projection.key)(right)), operation)
     }
 
     /// Sorts copied keys, including scalar getter results and borrowed source identities.
@@ -83,12 +81,12 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         let projection = CopiedKey { key, marker: PhantomData };
-        self.admit_sort(values, &projection, operation)?;
-        Self::sort_unstable_admitted(values, |left, right| compare(&(projection.key)(left), &(projection.key)(right)));
-        Ok(())
+        self.sort_unstable_projected(values, &projection, |left, right| compare(&(projection.key)(left), &(projection.key)(right)), operation)
     }
-    fn sort_unstable_admitted<T>(values: &mut [T], compare: impl FnMut(&T, &T) -> Ordering) {
+    fn sort_unstable_projected<T, P: SortProjection<T>>(&self, values: &mut [T], projection: &P, compare: impl FnMut(&T, &T) -> Ordering, operation: &'static str) -> Result<(), CodecError> {
+        self.admit_sort(values, projection, operation)?;
         values.sort_unstable_by(compare);
+        Ok(())
     }
 }
 
