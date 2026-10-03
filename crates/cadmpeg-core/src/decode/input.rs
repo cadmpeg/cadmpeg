@@ -32,8 +32,9 @@ impl DecodeContext<'_> {
         while bytes.len() < length {
             self.charge_work(1, "input prefix iteration")?;
             let count = (length - bytes.len()).min(chunk.len());
-            self.charge_work(u64_from_index(count), "read input prefix")?;
-            let read = reader.read(&mut chunk[..count]).map_err(CodecError::Io)?;
+            let window = &mut chunk[..count];
+            self.charge_work(u64_from_index(window.len()), "read input prefix")?;
+            let read = reader.read(window).map_err(CodecError::Io)?;
             if read > count {
                 return Err(CodecError::Io(std::io::ErrorKind::InvalidData.into()));
             }
@@ -43,7 +44,8 @@ impl DecodeContext<'_> {
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
             self.charge_collection_items(u64_from_index(read), "input byte slots")?;
-            self.reserve_precharged_bytes(bytes, read, "input prefix storage", |storage| {
+            let copied = &chunk[..read];
+            self.reserve_precharged_bytes(bytes, copied.len(), "input prefix storage", |storage| {
                 self.budget.refuse(
                     ResourceDimension::InputBytes,
                     ResourceFailure::AllocationFailed,
@@ -53,7 +55,6 @@ impl DecodeContext<'_> {
                     "input prefix storage",
                 )
             })?;
-            let copied = &chunk[..read];
             self.charge_work(u64_from_index(copied.len()), "copy input prefix")?;
             bytes.extend_from_slice(copied);
         }

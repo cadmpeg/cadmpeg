@@ -380,6 +380,19 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if !matches { return; }
                 (self.key(value, &mut Vec::new()), Some(vec![ExtentTerm { factors: Vec::new(), coefficient: 1 }]))
             }
+            "reserve_precharged_bytes" => {
+                let Some(value) = operands.get(1) else { return; };
+                let ty::Adt(owner, args) = self.expr_ty(value).peel_refs().kind() else { return; };
+                if !types::standard(self.tcx, owner.did()) || self.tcx.item_name(owner.did()).as_str() != "Vec"
+                    || args.types().next() != Some(self.tcx.types.u8) { return; }
+                let Some(target) = self.key(value, &mut Vec::new()) else { return; };
+                let Some(terms) = operands.get(2).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return; };
+                self.flow.storage_slots.push(Slots {
+                    admission: expression.hir_id, target, terms,
+                    loop_depth: self.flow.loop_bounds.len(), usage: SlotUse::Insertion, scope: None,
+                });
+                return;
+            }
             "linear_growth" => {
                 let Some((length_id, length)) = operands.get(1).and_then(|value| self.call(value)) else { return; };
                 let Some((capacity_id, capacity)) = operands.get(2).and_then(|value| self.call(value)) else { return; };

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use rustc_middle::ty;
 use crate::{types, Analysis};
 use rustc_hir::{def::Res, Expr, ExprKind, HirId, MatchSource, Node};
 
@@ -53,6 +54,23 @@ impl Default for Flow<'_> {
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn range_key(&self, range: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Option<String> {
+        let range = self.initializer(range).unwrap_or(range);
+        let ExprKind::Struct(_, fields, _) = range.kind else { return self.key(range, seen); };
+        let ty::Adt(owner, _) = self.expr_ty(range).kind() else { return None; };
+        if !types::standard(self.tcx, owner.did()) { return None; }
+        let name = self.tcx.item_name(owner.did());
+        if !matches!(name.as_str(), "Range" | "RangeTo" | "RangeFrom" | "RangeInclusive" | "RangeToInclusive") { return None; }
+        let mut result = name.as_str().to_owned();
+        for field in fields {
+            let key = self.extent_terms(field.expr, &mut Vec::new())
+                .map(|terms| format!("{terms:?}"))
+                .or_else(|| self.key(field.expr, &mut seen.clone()))?;
+            result.push_str(&format!(":{}={key}", field.ident.name));
+        }
+        Some(result)
+    }
+
     pub(crate) fn key(
         &self,
         expression: &'tcx Expr<'tcx>,
@@ -117,7 +135,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let value = self.expr_ty(index).peel_refs();
                 if matches!(value.kind(), rustc_middle::ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range"))
                 {
-                    self.key(base, seen)
+                    let base = self.key(base, &mut seen.clone())?;
+                    if matches!(value.kind(), ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "RangeFull") { return Some(base); }
+                    self.range_key(index, seen).map(|range| format!("{base}.range[{range}]"))
                 } else {
                     self.key(base, seen).map(|key| format!("{key}.window"))
                 }
@@ -125,12 +145,21 @@ impl<'tcx> Analysis<'_, 'tcx> {
             _ => {
                 let (definition, operands) = self.call(expression)?;
                 let name = self.tcx.item_name(definition);
+                if types::standard(self.tcx, definition) && matches!(name.as_str(), "unwrap" | "expect")
+                    && operands.first().is_some_and(|operand| matches!(self.expr_ty(operand).peel_refs().kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Option"))
+                    && matches!(self.expr_ty(expression).peel_refs().kind(), ty::Slice(_) | ty::Str)
+                {
+                    return operands.first().and_then(|operand| self.key(operand, seen));
+                }
                 if types::standard(self.tcx, definition) && name.as_str() == "get" {
                     let range = operands.get(1).is_some_and(|operand|
                         matches!(self.expr_ty(operand).kind(), rustc_middle::ty::Adt(owner, _)
                             if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str().starts_with("Range")));
                     if range {
-                        return operands.first().and_then(|operand| self.key(operand, seen));
+                        let base = operands.first().and_then(|operand| self.key(operand, &mut seen.clone()))?;
+                        let range = operands.get(1)?;
+                        if matches!(self.expr_ty(range).kind(), ty::Adt(owner, _) if self.tcx.item_name(owner.did()).as_str() == "RangeFull") { return Some(base); }
+                        return self.range_key(range, seen).map(|range| format!("{base}.range[{range}]"));
                     }
                     return None;
                 }
@@ -617,6 +646,7 @@ impl Flow<'_> {
 
 pub(crate) fn factor_depends_on(factor: &str, key: &str) -> bool {
     factor == key
+        || factor.contains(".range[") && factor.contains(key)
         || matches!(factor.split_once(':').map(|(kind, _)| kind), Some("keybytes" | "treekeybytes" | "sortbytes" | "movebytes")) && factor.contains(key)
         || factor.starts_with(&format!("{key}."))
         || key.starts_with(&format!("{factor}."))
