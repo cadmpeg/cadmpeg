@@ -24,7 +24,7 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
             ctx.charge_work(u64_from_index(id.len()), "hash validation identity")?;
             let hash = crate::index::identity_hash(id);
             storage.with_storage(|| {
-                ctx.push_retained_vec(
+                ctx.push_vec(
                     &mut values,
                     (hash, id, value),
                     "borrowed validation identity slots",
@@ -114,7 +114,7 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         )?;
         self.storage.with_storage(|| {
             self.ctx
-                .reserve_retained_vec(&mut self.values, 1, "borrowed validation identity slots")
+                .reserve_vec(&mut self.values, 1, "borrowed validation identity slots")
         })?;
         self.values.insert(low, (hash, id, value));
         Ok(())

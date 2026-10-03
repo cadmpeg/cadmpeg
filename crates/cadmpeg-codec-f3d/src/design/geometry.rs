@@ -2212,7 +2212,7 @@ fn certified_nurbs_tubes(
                     lanes.points(),
                     lanes.weights(),
                     geometric!(parameter(index)),
-                )?
+                )
             )?)
             .as_raw();
             let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
@@ -2223,7 +2223,7 @@ fn certified_nurbs_tubes(
                     lanes.points(),
                     lanes.weights(),
                     geometric!(parameter(index + 1)),
-                )?
+                )
             )?)
             .as_raw();
             {

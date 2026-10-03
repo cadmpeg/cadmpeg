@@ -62,10 +62,8 @@ impl TrimPacket {
     ) -> Result<Self, CodecError> {
         Ok(Self {
             independent_count: self.independent_count,
-            strip_lengths: ctx
-                .copy_slice(&self.strip_lengths, "catia_trim_clone_strip_lengths")?,
-            fan_lengths: ctx
-                .copy_slice(&self.fan_lengths, "catia_trim_clone_fan_lengths")?,
+            strip_lengths: ctx.copy_slice(&self.strip_lengths, "catia_trim_clone_strip_lengths")?,
+            fan_lengths: ctx.copy_slice(&self.fan_lengths, "catia_trim_clone_fan_lengths")?,
             handles: ctx.copy_slice(&self.handles, "catia_trim_clone_handles")?,
             triangles: OnceLock::new(),
         })

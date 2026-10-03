@@ -239,7 +239,14 @@ mod tests {
             (product_id_len, "creo product source name"),
             (product_id_len + 5, "creo product label"),
             (product_id_len + 10, "creo product part number"),
-            (product_id_len + 15 + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>()), "creo occurrence name"),
+            (
+                product_id_len
+                    + 15
+                    + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        cadmpeg_ir::products::ProductDefinition,
+                    >()),
+                "creo occurrence name",
+            ),
         ] {
             let error = limited_product(
                 &named_scan(),
@@ -297,7 +304,10 @@ mod tests {
         let error = limited_product(
             &named_scan(),
             u64::MAX,
-            product_identity_and_annotation_bytes() + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::ids::BodyId>()),
+            product_identity_and_annotation_bytes()
+                + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    cadmpeg_ir::ids::BodyId,
+                >()),
             true,
         );
         assert!(
@@ -311,14 +321,30 @@ mod tests {
     #[test]
     fn part_product_identity_retention_refuses_before_occurrence_transfer() {
         let product_id_len = cadmpeg_core::decode::u64_from_index(
-            cadmpeg_ir::ids::ProductDefinitionId::compose(&crate::identity::MODEL_PRODUCT_DEFINITION,
-                cadmpeg_ir::identity_key!("root")).as_str().len());
-        let before_transfer = product_identity_and_annotation_bytes() + product_id_len + 20
-            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>());
-        let error = limited_product(&named_scan(), u64::MAX, before_transfer + product_id_len - 1, false);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            cadmpeg_ir::ids::ProductDefinitionId::compose(
+                &crate::identity::MODEL_PRODUCT_DEFINITION,
+                cadmpeg_ir::identity_key!("root"),
+            )
+            .as_str()
+            .len(),
+        );
+        let before_transfer = product_identity_and_annotation_bytes()
+            + product_id_len
+            + 20
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                cadmpeg_ir::products::ProductDefinition,
+            >());
+        let error = limited_product(
+            &named_scan(),
+            u64::MAX,
+            before_transfer + product_id_len - 1,
+            false,
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "creo product identity"
-                && limit.additional == product_id_len));
+                && limit.additional == product_id_len)
+        );
     }
 
     #[test]

@@ -914,7 +914,7 @@ pub(crate) fn retain_identity_entries<V>(
 ) -> Result<(), CodecError> {
     let count = entries.len();
     let mut decisions = ctx.with_scoped_storage(decisions_operation, || {
-        ctx.retained_vec(count, decisions_operation)
+        ctx.collection_vec(count, decisions_operation)
     })?;
     for identity in entries.keys() {
         ctx.charge_work(1, predicate_operation)?;

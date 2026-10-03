@@ -191,6 +191,7 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
 #[test]
 fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -202,6 +203,7 @@ fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap();
     let mut policy = DecodePolicy::service();
@@ -217,6 +219,7 @@ fn sketch_nurbs_point_preserves_caller_scratch_refusal() {
 #[test]
 fn certified_nurbs_tubes_preserve_caller_scratch_refusal() {
     let curve = PcurveNurbs::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
         3,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -228,6 +231,7 @@ fn certified_nurbs_tubes_preserve_caller_scratch_refusal() {
         None,
         false,
     )
+    .expect("fixture pcurve construction admission")
     .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;

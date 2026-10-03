@@ -37,7 +37,7 @@ impl<'ctx, 'arena, T: Ord + Copy> Orders<'ctx, 'arena, T> {
         )?;
         self.storage.with_storage(|| {
             self.ctx
-                .reserve_retained_vec(&mut self.values, 1, "validation order slots")
+                .reserve_vec(&mut self.values, 1, "validation order slots")
         })?;
         self.values.insert(low, order);
         Ok(true)

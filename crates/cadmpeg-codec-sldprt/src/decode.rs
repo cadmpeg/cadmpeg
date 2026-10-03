@@ -2592,7 +2592,7 @@ fn append_brep_arena<T>(
         cadmpeg_core::decode::u64_from_index(work),
         "merge SLDPRT B-rep arena moves",
     )?;
-    ctx.reserve_retained_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
+    ctx.reserve_vec(target, source.len(), "merge SLDPRT B-rep arena")?;
     target.append(source);
     Ok(())
 }

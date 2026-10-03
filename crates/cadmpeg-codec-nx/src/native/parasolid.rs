@@ -3632,11 +3632,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
                 let ordinal = u32::try_from(stream_ordinal).map_err(|_| {
                     ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1)
                 })?;
-                ctx.reserve_vec(
-                    &mut references,
-                    1,
-                    "NX topology attribute list references",
-                )?;
+                ctx.reserve_vec(&mut references, 1, "NX topology attribute list references")?;
                 let digits = |value: u64| {
                     value
                         .checked_ilog10()

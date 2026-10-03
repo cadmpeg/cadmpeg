@@ -1696,13 +1696,13 @@ impl SketchSurfaceGeometry {
             return Err("surface knots must be nondecreasing".into());
         }
         let mut finite_u_knots =
-            admission.retained_vec(u_knots.len(), "f3d sketch surface u knots")?;
+            admission.collection_vec(u_knots.len(), "f3d sketch surface u knots")?;
         for value in u_knots {
             admission.work(1, "f3d sketch surface knot finiteness")?;
             finite_u_knots.push(FiniteReal::new(value).ok_or("surface u knot is not finite")?);
         }
         let mut finite_v_knots =
-            admission.retained_vec(v_knots.len(), "f3d sketch surface v knots")?;
+            admission.collection_vec(v_knots.len(), "f3d sketch surface v knots")?;
         for value in v_knots {
             admission.work(1, "f3d sketch surface knot finiteness")?;
             finite_v_knots.push(FiniteReal::new(value).ok_or("surface v knot is not finite")?);

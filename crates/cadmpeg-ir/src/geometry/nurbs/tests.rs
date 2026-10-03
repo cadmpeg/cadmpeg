@@ -1535,7 +1535,7 @@ fn weighted_pole_pairing_admits_each_slot_and_visit_before_weight() {
             super::weighted_poles(
                 vec![3_u32, 7],
                 vec![1.0, 2.0],
-                |output| ctx.reserve_retained_vec(output, 1, "test weighted pairing"),
+                |output| ctx.reserve_vec(output, 1, "test weighted pairing"),
                 || ctx.charge_work(1, "test weighted pairing"),
                 |_, value| {
                     visits.set(visits.get() + 1);

@@ -508,6 +508,7 @@ fn feature_result_topology_arena_refuses_collection_limit() {
     assert!(matches!(ctx.finish_session(),
         Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
     let error = crate::test_support::last_refusal_at(
+        &[],
         ResourceDimension::CollectionItems,
         "creo model feature result topologies",
         |ctx| {

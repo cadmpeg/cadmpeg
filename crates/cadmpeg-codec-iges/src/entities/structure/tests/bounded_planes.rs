@@ -508,11 +508,13 @@ fn bounded_plane_polyline_proofs_propagate_work_refusals() {
                 points: points.try_into().unwrap(),
             },
             0.0,
+            &cadmpeg_test_support::service_decode_context(),
         )
+        .expect("polyline construction admission")
         .unwrap(),
     );
     let ir = CadIr::empty();
-    let index = ModelIndex::new(&ir);
+    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     for operation in [
         "iges closed polyline duplicate comparisons",
         "iges planar self-intersection comparisons",

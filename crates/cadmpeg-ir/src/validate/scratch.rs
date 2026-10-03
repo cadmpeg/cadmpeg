@@ -55,7 +55,7 @@ impl<'ctx, T> Scratch<'ctx, T> {
         self.ctx.charge_work(1, "validation scratch copy")?;
         self.storage.with_storage(|| {
             self.ctx
-                .push_retained_vec(&mut self.values, value, "validation scratch slots")
+                .push_vec(&mut self.values, value, "validation scratch slots")
         })
     }
 

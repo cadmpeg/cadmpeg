@@ -408,7 +408,7 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
                 u64_from_index(std::mem::size_of::<T>()),
                 "identity rewrite sequence",
             )?;
-            ctx.push_retained_vec(&mut rewritten, value, "identity rewrite sequence")?;
+            ctx.push_vec(&mut rewritten, value, "identity rewrite sequence")?;
         }
         Ok(rewritten)
     }

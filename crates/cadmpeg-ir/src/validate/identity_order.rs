@@ -161,7 +161,7 @@ pub(super) fn check_identity_and_order(
                 };
                 for record in records.records() {
                     ctx.charge_work(1, "validation native order scan")?;
-                    ctx.push_retained_vec(ids, record.id(), "validation native order slots")?;
+                    ctx.push_vec(ids, record.id(), "validation native order slots")?;
                 }
                 Ok::<_, CodecError>(())
             })?;

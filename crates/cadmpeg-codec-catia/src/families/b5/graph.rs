@@ -1079,8 +1079,7 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        let payload =
-            ctx.copy_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
+        let payload = ctx.copy_slice(&record.payload, "catia_b5_opaque_surface_payload")?;
         ctx.insert_btree_map(
             &mut surfaces,
             surface_id,
@@ -1240,10 +1239,8 @@ fn parse_from_records_with_class21(
                     B5Surface::Unknown {
                         family: record.family,
                         class: record.class,
-                        payload: ctx.copy_slice(
-                            &record.payload,
-                            "catia_b5_offset_carrier_payload",
-                        )?,
+                        payload: ctx
+                            .copy_slice(&record.payload, "catia_b5_offset_carrier_payload")?,
                     }
                 };
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
@@ -1682,8 +1679,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
     Ok(match surface {
         B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
             header: header.copy_charged(ctx)?,
-            payload: ctx
-                .copy_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
+            payload: ctx.copy_slice(payload, "catia_b5_copied_unresolved_surface_payload")?,
         },
         B5Surface::Unknown {
             family,
@@ -5972,8 +5968,7 @@ fn framed_records_and_dependency_candidates(
         {
             continue;
         }
-        let seen_payload =
-            ctx.copy_slice(&record.payload, "catia_b5_seen_record_payload")?;
+        let seen_payload = ctx.copy_slice(&record.payload, "catia_b5_seen_record_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
@@ -6050,8 +6045,7 @@ fn indexed_topology_records_and_dependency_candidates(
         {
             continue;
         }
-        let seen_payload =
-            ctx.copy_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
+        let seen_payload = ctx.copy_slice(&record.payload, "catia_b5_indexed_seen_payload")?;
         ctx.insert_hash_map(
             &mut seen,
             frame.object_id,
@@ -6749,8 +6743,7 @@ fn owned_object_stream_population(
         {
             continue;
         }
-        let bytes =
-            ctx.copy_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
+        let bytes = ctx.copy_slice(&stream[range.clone()], "catia_b5_population_isolated_bytes")?;
         ctx.admit_hash_map_entry(
             &mut isolated,
             &object_id,

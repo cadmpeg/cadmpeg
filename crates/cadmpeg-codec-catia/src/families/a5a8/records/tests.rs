@@ -1921,7 +1921,7 @@ fn a5_surface_strict_knot_refusal_stays_in_the_outer_result() {
         pos: record.byte_offset(),
         payload: record.payload().unwrap().start,
         end: record.range().unwrap().end,
-        header_token: record.header_token,
+        header_token: record.header_token(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

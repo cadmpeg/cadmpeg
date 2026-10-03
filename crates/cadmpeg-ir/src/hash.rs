@@ -44,7 +44,7 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
         .map_err(CanonicalJsonError::from)?;
     let mut buffer = Vec::new();
     buffer_storage
-        .with_storage_limit(|| ctx.reserve_retained_capacity_limit(&mut buffer, 8192, operation))
+        .with_storage_limit(|| ctx.reserve_capacity_limit(&mut buffer, 8192, operation))
         .map_err(|limit| CanonicalJsonError::Resource(limit.into()))?;
     let mut hasher = Sha256::new();
     let mut writer = CanonicalDigestWriter {

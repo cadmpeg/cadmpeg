@@ -3414,7 +3414,7 @@ fn attach_feature_operations(
             Some("TEXT_SEMANTIC_ANNOTATION"),
         )?;
         annotations.exactness(ctx, annotation.id.as_str(), Exactness::Derived)?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        ctx.reserve_capacity(
             &mut ir.model.semantic_annotations,
             1,
             "allocate NX semantic annotations",
@@ -5851,7 +5851,7 @@ fn append_feature_result_topology(
         "NX result topology member validation",
     )?
     .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    ctx.reserve_retained_vec_limit(
+    ctx.reserve_vec_limit(
         &mut ir.model.feature_result_topologies,
         1,
         "allocate NX result topology records",
