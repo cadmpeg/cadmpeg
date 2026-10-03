@@ -269,7 +269,7 @@ fn root(tcx: TyCtxt<'_>, owner: LocalDefId) -> bool {
     if !crate::production(tcx, owner.to_def_id()) {
         return false;
     }
-    types::cost_body(tcx, owner.to_def_id())
+    types::closed_admission_body(tcx, owner.to_def_id())
         || codec_input_method(tcx, owner.to_def_id())
         || matches!(
             tcx.def_kind(owner),

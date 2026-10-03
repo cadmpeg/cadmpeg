@@ -225,3 +225,17 @@ fn scan_join_measurement_refuses_on_work() {
         matches!(ctx.join_retained(&[""], "", "join"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
     );
 }
+#[test]
+fn retained_join_uses_owned_and_borrowed_text_views_without_copying_views() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Two length visits, two copy visits, three text bytes and one separator byte.
+    policy.limits.max_work_units = 8;
+    policy.limits.max_retained_bytes = 4;
+    let parts = [String::from("A"), String::from("λ")];
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(ctx.join_retained(&parts, "/", "join").expect("admission"), "A/λ");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let borrowed = [&parts[0], &parts[1]];
+    assert_eq!(ctx.join_retained(&borrowed, "/", "join").expect("admission"), "A/λ");
+}

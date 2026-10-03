@@ -308,6 +308,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             | "reserve_vec_limit"
             | "reserve_capacity"
             | "reserve_capacity_limit"
+            | "try_reserve_retained_text"
             | "reserve_retained_vec_storage"
             | "reserve_set"
             | "reserve_map"

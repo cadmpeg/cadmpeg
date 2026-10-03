@@ -358,10 +358,16 @@ pub(crate) fn cost_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -
         && matches!(tcx.def_path_str(trait_id).as_str(), "cadmpeg_core::decode::cost::DecodeCost" | "decode::cost::DecodeCost")
 }
 
-pub(crate) fn cost_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
+pub(crate) fn text_source_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::DefId) -> bool {
+    tcx.crate_name(trait_id.krate).as_str() == "cadmpeg_core"
+        && matches!(tcx.def_path_str(trait_id).as_str(), "cadmpeg_core::decode::text::TextSource" | "decode::text::TextSource")
+}
+
+pub(crate) fn closed_admission_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
     while let Some(parent) = tcx.opt_parent(owner) {
         if matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true })
-            && cost_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
+            && (cost_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id)
+                || text_source_trait(tcx, tcx.impl_trait_ref(parent).skip_binder().def_id))
         {
             return true;
         }
