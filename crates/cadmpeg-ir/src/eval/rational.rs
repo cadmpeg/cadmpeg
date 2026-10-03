@@ -2,7 +2,6 @@
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
 use super::decode;
 use crate::features::FinitePoint3;
-use crate::geometry::nurbs::scratch;
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::ResourceLimit;
@@ -86,67 +85,71 @@ impl Homogeneous {
 
     /// Keep source weights when they remain normal. Otherwise choose one
     /// binary scale for the complete output net, preserving relative weights.
-    pub(super) fn weights(values: &[Self]) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        if values.iter().any(|value| value.values[3].is_none()) {
-            return Ok(None);
-        }
-        let mut output = Vec::new();
-        scratch::reserve_exact(&mut output, values.len(), "IR homogeneous output weights")?;
-        for value in values {
-            let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else {
-                break;
+    pub(super) fn weights(
+        scratch: &decode::Scratch<'_, '_>, values: &[Self],
+    ) -> Result<Option<Vec<f64>>, ResourceLimit> {
+        let result = (|| {
+            scratch.work(0, "IR homogeneous weight inspection")?;
+            for value in values {
+                scratch.work(1, "IR homogeneous weight inspection")?;
+                if value.values[3].is_none() { return None; }
+            }
+            let mut output = Vec::new();
+            scratch.reserve(&mut output, values.len(), "IR homogeneous output weights")?;
+            for value in values {
+                scratch.work(1, "IR homogeneous weight inspection")?;
+                let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else { break; };
+                scratch.work(std::mem::size_of::<f64>(), "IR homogeneous weight copy")?;
+                output.push(weight.get());
+            }
+            if output.len() == values.len() {
+                let mut normal = true;
+                for value in &output {
+                    scratch.work(1, "IR homogeneous weight inspection")?;
+                    if !value.is_normal() { normal = false; break; }
+                }
+                if normal { return Some(output); }
+            }
+            let mut bounds: Option<(i32, i32)> = None;
+            for value in values {
+                scratch.work(1, "IR homogeneous weight inspection")?;
+                let exponent = value.values[3]?.exponent();
+                bounds = Some(match bounds {
+                    Some((minimum, maximum)) => (minimum.min(exponent), maximum.max(exponent)),
+                    None => (exponent, exponent),
+                });
+            }
+            let (minimum, maximum) = bounds?;
+            let normal_range = (maximum - 1023, minimum + 1021);
+            let full_range = (maximum - 1024, minimum + 1073);
+            let (lower, upper) = if normal_range.0 <= normal_range.1 {
+                normal_range
+            } else {
+                full_range
             };
-            output.push(weight.get());
-        }
-        if output.len() == values.len() && output.iter().all(|value| value.is_normal()) {
-            return Ok(Some(output));
-        }
-        let Some(minimum) = values
-            .iter()
-            .filter_map(|value| value.values[3])
-            .map(crate::math::sum::ScaledValue::exponent)
-            .min()
-        else {
-            return Ok(None);
-        };
-        let Some(maximum) = values
-            .iter()
-            .filter_map(|value| value.values[3])
-            .map(crate::math::sum::ScaledValue::exponent)
-            .max()
-        else {
-            return Ok(None);
-        };
-        let normal_range = (maximum - 1023, minimum + 1021);
-        let full_range = (maximum - 1024, minimum + 1073);
-        let (lower, upper) = if normal_range.0 <= normal_range.1 {
-            normal_range
-        } else {
-            full_range
-        };
-        if lower > upper {
-            return Ok(None);
-        }
-        // Select the nearest exponent to zero that preserves the complete net.
-        let exponent = if 0 < lower {
-            lower
-        } else if 0 > upper {
-            upper
-        } else {
-            0
-        };
-        output.clear();
-        for value in values {
-            let Some(weight) = value.values[3]
-                .and_then(|weight| weight.rescale(exponent))
-                .map(FiniteReal::get)
-                .filter(|weight| *weight != 0.0)
-            else {
-                return Ok(None);
+            if lower > upper { return None; }
+            // Select the nearest exponent to zero that preserves the complete net.
+            let exponent = if 0 < lower {
+                lower
+            } else if 0 > upper {
+                upper
+            } else {
+                0
             };
-            output.push(weight);
-        }
-        Ok(Some(output))
+            output.clear();
+            for value in values {
+                scratch.work(1, "IR homogeneous weight inspection")?;
+                let weight = value.values[3]
+                    .and_then(|weight| weight.rescale(exponent))
+                    .map(FiniteReal::get)
+                    .filter(|weight| *weight != 0.0)?;
+                scratch.work(std::mem::size_of::<f64>(), "IR homogeneous weight copy")?;
+                output.push(weight);
+            }
+            Some(output)
+        })();
+        scratch.unless_refused()?;
+        Ok(result)
     }
 
     /// Subtract the specified weight derivatives, then divide by the base
