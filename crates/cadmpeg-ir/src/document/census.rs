@@ -79,8 +79,8 @@ impl CensusStorage for DecodeContext<'_> {
                 self.refuse_codec_limit("validation census key comparisons", u64::MAX - 1, u64::MAX)
             })?;
         self.charge_work(u64_from_index(work), "validation census key comparisons")?;
-        self.admit_retained_btree_record::<CensusKey, usize>(0, operation)?;
-        counts.insert(key, count);
+        self.charge_work(1, operation)?;
+        self.insert_btree_map(counts, key, count, operation)?;
         Ok(())
     }
 }

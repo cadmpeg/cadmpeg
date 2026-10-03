@@ -478,7 +478,8 @@ impl ModelDraft<DraftAccounting> {
         let identity = if exactness != Exactness::ByteExact
             && !self.accounting.exactness.contains_key(&identity)
         {
-            ctx.admit_retained_btree_record::<String, Exactness>(0, "draft exactness records")?;
+            ctx.charge_work(1, "draft exactness records")?;
+            ctx.admit_btree_entry(&self.accounting.exactness, &identity, "draft exactness records")?;
             ctx.copy_retained_text(&identity, "draft exactness identity")?
         } else {
             identity

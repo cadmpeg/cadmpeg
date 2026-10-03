@@ -661,15 +661,17 @@ impl AnnotationState {
             "collect source provenance",
         )?;
         if !self.annotations.provenance.contains_key(id.as_ref()) {
-            ctx.admit_retained_btree_record::<String, AnnotationProvenance>(
-                0,
-                "collect source provenance",
-            )?;
             if let std::borrow::Cow::Borrowed(text) = id {
                 id = std::borrow::Cow::Owned(
                     ctx.copy_retained_text(text, "retain source provenance identity")?,
                 );
             }
+        }
+        if let std::borrow::Cow::Owned(id) = &id {
+            if !self.annotations.provenance.contains_key(id) {
+                ctx.charge_work(1, "collect source provenance")?;
+            }
+            ctx.admit_btree_entry(&self.annotations.provenance, id, "collect source provenance")?;
         }
         let tag = tag
             .map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag"))
@@ -737,10 +739,8 @@ impl AnnotationState {
             .map_or(0, |note| note.fields().len());
         ctx.charge_work(u64_from_index(fields), "retain source exactness fields")?;
         if exactness != Exactness::ByteExact && !self.annotations.exactness.contains_key(&id) {
-            ctx.admit_retained_btree_record::<String, ExactnessNote>(
-                0,
-                "collect source exactness entities",
-            )?;
+            ctx.charge_work(1, "collect source exactness entities")?;
+            ctx.admit_btree_entry(&self.annotations.exactness, &id, "collect source exactness entities")?;
         }
         if let Some(note) = self.annotations.exactness.get_mut(&id) {
             note.fields_mut().retain(|_, value| *value != exactness);
@@ -820,16 +820,8 @@ impl AnnotationState {
         let new_field =
             keep_field && existing.is_none_or(|note| !note.fields().contains_key(field.as_ref()));
         if new_entity {
-            ctx.admit_retained_btree_record::<String, ExactnessNote>(
-                0,
-                "collect source exactness entities",
-            )?;
-        }
-        if new_field {
-            ctx.admit_retained_btree_record::<FieldName, Exactness>(
-                0,
-                "collect source exactness fields",
-            )?;
+            ctx.charge_work(1, "collect source exactness entities")?;
+            ctx.admit_btree_entry(&self.annotations.exactness, &id, "collect source exactness entities")?;
         }
         let fields = existing.map_or(0, |note| note.fields().len());
         admit_identity_work(ctx, fields, field.len(), "collect source exactness fields")?;
@@ -847,7 +839,14 @@ impl AnnotationState {
             std::borrow::Cow::Borrowed(field) => scratch
                 .with_storage(|| ctx.copy_retained_text(field, "source exactness field lookup"))?,
         };
-        self.set_field_exactness(id, FieldName(field), exactness);
+        let field = FieldName(field);
+        if new_field {
+            ctx.charge_work(1, "collect source exactness fields")?;
+            let empty = BTreeMap::new();
+            let fields = self.annotations.exactness.get(&id).map_or(&empty, ExactnessNote::fields);
+            ctx.admit_btree_entry(fields, &field, "collect source exactness fields")?;
+        }
+        self.set_field_exactness(id, field, exactness);
         Ok(self)
     }
 

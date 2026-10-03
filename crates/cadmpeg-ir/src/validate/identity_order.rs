@@ -149,13 +149,13 @@ pub(super) fn check_identity_and_order(
                         )
                     })?;
                 ctx.charge_work(u64_from_index(work), "group validation native arenas")?;
+                if !by_arena.0.contains_key(&label) {
+                    ctx.charge_work(1, "validation native arena slots")?;
+                }
+                ctx.admit_btree_entry(&by_arena.0, &label, "validation native arena slots")?;
                 let ids = match by_arena.0.entry(label) {
                     Entry::Occupied(entry) => entry.into_mut(),
                     Entry::Vacant(entry) => {
-                        ctx.admit_retained_btree_record::<String, Vec<&str>>(
-                            0,
-                            "validation native arena slots",
-                        )?;
                         entry.insert(Vec::new())
                     }
                 };
