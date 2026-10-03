@@ -30,3 +30,15 @@ pub fn utf16(ctx: &DecodeContext, units: &[u16]) {
     for character in char::decode_utf16(source.copied()) { std::hint::black_box(character.is_ok()); }
     for character in char::decode_utf16(units.iter().copied()) { std::hint::black_box(character.is_ok()); } // finding: uncharged_decode_work
 }
+
+fn opaque_admitted(bytes: &[u8]) -> impl Iterator<Item = u8> + '_ {
+    decode::scan::source(bytes.iter()).copied()
+}
+fn opaque_raw(bytes: &[u8]) -> impl Iterator<Item = u8> + '_ {
+    bytes.iter().copied()
+}
+pub fn opaque(ctx: &DecodeContext, bytes: &[u8]) {
+    let _ctx = ctx;
+    for byte in opaque_admitted(bytes) { std::hint::black_box(byte); }
+    for byte in opaque_raw(bytes) { std::hint::black_box(byte); } // finding: uncharged_decode_work
+}

@@ -284,7 +284,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn expr_ty(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
-        let value = self.substitute(self.typeck.expr_ty(expression));
+        let value = types::reveal_opaque(self.tcx, self.substitute(self.typeck.expr_ty(expression)));
         self.tcx
             .try_normalize_erasing_regions(
                 self.typing_env(),
@@ -294,7 +294,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     fn expr_ty_adjusted(&self, expression: &Expr<'tcx>) -> rustc_middle::ty::Ty<'tcx> {
-        let value = self.substitute(self.typeck.expr_ty_adjusted(expression));
+        let value = types::reveal_opaque(self.tcx, self.substitute(self.typeck.expr_ty_adjusted(expression)));
         self.tcx
             .try_normalize_erasing_regions(
                 self.typing_env(),
