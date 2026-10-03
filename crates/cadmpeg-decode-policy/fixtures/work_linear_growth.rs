@@ -47,3 +47,14 @@ pub fn mutation_invalidates_returned_reserve_count(ctx: &DecodeContext, values: 
     values.try_reserve_exact(additional).map_err(|_| ())?; // finding: unproven_decode_charge
     Ok(())
 }
+
+pub fn string_capacity(ctx: &DecodeContext, value: &mut String, count: usize) -> Result<(), ()> {
+    let (reserve, _bytes) = ctx.linear_growth::<u8>(value.len(), value.capacity(), count, "growth")?;
+    value.try_reserve_exact(reserve).map_err(|_| ())?;
+    Ok(())
+}
+pub fn wrong_string_element(ctx: &DecodeContext, value: &mut String, count: usize) -> Result<(), ()> {
+    let (reserve, _bytes) = ctx.linear_growth::<u64>(value.len(), value.capacity(), count, "growth")?;
+    value.try_reserve_exact(reserve).map_err(|_| ())?; // finding: unproven_decode_charge
+    Ok(())
+}

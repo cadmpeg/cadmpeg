@@ -132,6 +132,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 None => return false,
             },
             "String" => self.tcx.types.u8,
+            "VecDeque" => match arguments.types().next() { Some(element) => element, None => return false },
             _ => return false,
         };
         let Some(mut terms) = operands
@@ -349,9 +350,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 let target = self.key(value, &mut Vec::new());
                 if target != capacity.first().and_then(|value| self.key(value, &mut Vec::new())) { return; }
                 let ty::Adt(owner, args) = self.expr_ty(value).peel_refs().kind() else { return; };
-                if !types::standard(self.tcx, owner.did()) || !matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "VecDeque" | "BinaryHeap") { return; }
+                if !types::standard(self.tcx, owner.did()) || !matches!(self.tcx.item_name(owner.did()).as_str(), "Vec" | "VecDeque" | "BinaryHeap" | "String") { return; }
                 let Some(call_args) = self.call_arguments(expression) else { return; };
-                if args.types().next() != call_args.types().next() { return; }
+                let element = if self.tcx.item_name(owner.did()).as_str() == "String" { Some(self.tcx.types.u8) } else { args.types().next() };
+                if element != call_args.types().next() { return; }
                 let Some(target) = target else { return; };
                 let Some(result) = self.result_binding(expression) else { return; };
                 let Some(original) = operands.get(3).and_then(|count| self.extent_terms(count, &mut Vec::new())) else { return; };

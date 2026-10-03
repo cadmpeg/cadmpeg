@@ -7,6 +7,7 @@ use std::io::SeekFrom;
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
+use super::collect::LinearGrowth;
 use super::budget::{DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
@@ -281,22 +282,11 @@ impl<'a> DecodeContext<'a> {
         additional: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let required = text
-            .len()
-            .checked_add(additional)
-            .ok_or_else(|| CodecError::from(self.retained_size_overflow_limit(operation)))?;
-        let growth = if required > text.capacity() {
-            required - text.capacity()
-        } else {
-            0
-        };
-        let bytes = u64_from_index(growth);
-        self.charge_retained(bytes, operation)?;
-        if growth != 0 {
-            self.charge_work(u64_from_index(text.capacity()), operation)?;
-        }
-        text.try_reserve_exact(additional).map_err(|_| {
-            self.budget.retained_allocation_failed(bytes, operation)
+        let (reserve, bytes) = self.linear_growth::<u8>(
+            text.len(), text.capacity(), additional, LinearGrowth::Exact, operation,
+        )?;
+        text.try_reserve_exact(reserve).map_err(|_| {
+            self.budget.retained_allocation_failed(u64_from_index(bytes), operation)
         })
     }
 
