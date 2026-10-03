@@ -30,6 +30,27 @@ impl DecodeContext<'_> {
         self.charge_work(self.cost_sum(count, bytes, operation)?, operation)
     }
 
+    /// Retains hash entries after admitting the complete bucket scan.
+    /// The predicate admits child work. A predicate refusal keeps that entry
+    /// and all later entries; entries already removed stay removed.
+    pub fn retain_hash_map<K, V, S>(
+        &self,
+        values: &mut std::collections::HashMap<K, V, S>,
+        mut keep: impl FnMut(&K, &mut V) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(u64_from_index(values.capacity()), operation)?;
+        let mut refusal = None;
+        values.retain(|key, value| {
+            if refusal.is_some() { return true; }
+            match keep(key, value) {
+                Ok(keep) => keep,
+                Err(error) => { refusal = Some(error); true }
+            }
+        });
+        match refusal { Some(error) => Err(error), None => Ok(()) }
+    }
+
     /// Copies equal-length slices after admitting all inline source bytes.
     pub fn copy_into<T: Copy>(&self, target: &mut [T], source: &[T], operation: &'static str) -> Result<(), CodecError> {
         if target.len() != source.len() {
@@ -150,6 +171,44 @@ mod tests {
         values.extend_from_slice(&[1_u8, 2, 3]);
         assert_eq!(&*ctx.into_boxed_slice(values, "box").expect("admission"), &[1, 2, 3]);
         ctx.reserve_scoped(3, "released shrink storage").expect("released");
+    }
+
+
+    #[test]
+    fn hash_retention_refuses_before_predicate_and_propagates_child_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut values = std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]);
+        let called = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(first) = ctx.retain_hash_map(&mut values, |_, _| { called.set(true); Ok(false) }, "retain").expect_err("refusal") else { panic!("refusal") };
+        assert!(!called.get());
+        assert_eq!(values.len(), 2);
+        let CodecError::ResourceLimit(second) = ctx.charge_work(1, "later").expect_err("fused") else { panic!("refusal") };
+        assert_eq!(first, second);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let mut calls = 0;
+        let CodecError::ResourceLimit(child) = ctx.retain_hash_map(&mut values, |_, _| {
+            calls += 1;
+            Err(ctx.refuse_codec_limit("child", 0, 1))
+        }, "retain").expect_err("child refusal") else { panic!("refusal") };
+        assert_eq!(calls, 1);
+        assert_eq!(child.operation, "child");
+        assert_eq!(values, std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]));
+    }
+
+    #[test]
+    fn hash_retention_charges_capacity_and_preserves_selected_entries() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let mut values = std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]);
+        let capacity = values.capacity();
+        ctx.retain_hash_map(&mut values, |key, value| { *value += 1; Ok(*key == 3) }, "retain").expect("admission");
+        assert_eq!(values, std::collections::HashMap::from([(3_u8, 5_u8)]));
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe") else { panic!("refusal") };
+        // The scan admits the hash table's complete capacity, including empty buckets.
+        assert_eq!(limit.used, crate::decode::u64_from_index(capacity));
     }
 
     #[test]

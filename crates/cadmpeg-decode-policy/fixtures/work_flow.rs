@@ -64,3 +64,14 @@ pub fn numeric_word(ctx: &DecodeContext, mut word: u64) {
     }
     std::hint::black_box(digits);
 }
+
+pub fn hash_bucket_retention(ctx: &DecodeContext, values: &mut std::collections::HashMap<String, Vec<String>>, other: &std::collections::HashMap<String, Vec<String>>) -> Result<(), ()> {
+    ctx.charge_work(u64::try_from(values.capacity()).map_err(|_| ())?, "scan")?;
+    values.retain(|_, _| true);
+    values.retain(|_, _| true); // finding: uncharged_decode_work
+    ctx.charge_work(u64::try_from(other.capacity()).map_err(|_| ())?, "other")?;
+    values.retain(|_, _| true); // finding: uncharged_decode_work
+    ctx.charge_work(u64::try_from(values.len()).map_err(|_| ())?, "length")?;
+    values.retain(|_, _| true); // finding: uncharged_decode_work
+    Ok(())
+}
