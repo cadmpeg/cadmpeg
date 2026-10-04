@@ -171,7 +171,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .sketch_entities
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
-
     let profiles = crate::decode::with_test_decode_ctx(|ctx| {
         resolved_sketch_profiles(
             ctx,
@@ -234,7 +233,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9, [None, None])
             .expect("service intersection resources")
     );
-
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };

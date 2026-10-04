@@ -56,6 +56,19 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let result = self.replacement_kind(self.expr_ty(expression));
         let map = matches!(kind, "hash_map" | "btree_map");
         let set = matches!(kind, "hash_set" | "btree_set");
+        if kind == "text" {
+            match name.as_str() {
+                "push" | "write_char" => return method("push_retained_char"),
+                "push_str" | "write_str" => return method("append_retained"),
+                "insert" => {
+                    return "DecodeContext::replace_text_range over index..index with value.encode_utf8(&mut [0; 4])".to_owned()
+                }
+                "extend" => {
+                    return "DecodeContext::admit_iter followed by DecodeContext::push_retained_char for char/&char items or DecodeContext::append_retained for &str/String/Cow<str>/Box<str> items".to_owned()
+                }
+                _ => (),
+            }
+        }
         if map
             && matches!(
                 name.as_str(),

@@ -1082,7 +1082,10 @@ fn patch_retained_swobjects_metadata(
                         attribute.id
                     ))
                 })?;
-            Ok(((provenance.stream().to_owned(), Reverse(provenance.offset)), attribute))
+            Ok((
+                (provenance.stream().to_owned(), Reverse(provenance.offset)),
+                attribute,
+            ))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     ctx.stable_sort_by(
