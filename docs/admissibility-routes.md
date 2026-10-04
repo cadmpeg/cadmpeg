@@ -1,5 +1,25 @@
 # Admissibility routes
 
+## Container metadata recovery
+
+The source-recovery policy is in [architecture.md](architecture.md#source-recovery).
+These are the container and header paths reviewed for metadata-only refusal.
+This table does not describe every entity-level admission rule.
+
+| Codec | Metadata and interpretation boundary |
+| --- | --- |
+| STEP | `parse::validate_header` locates records by name. Description, filename, and optional header conformance produce diagnostics. A unique readable schema remains required. Nonconforming headers are retained by `reader::decode_exchange_mode`. |
+| IGES | `global::Resolution` reports unusable metadata per field; `resolve` applies the existing field-specific fallbacks. Delimiters must resolve before fields can be framed. |
+| Rhino | `container::scan` accepts an absent or short introductory comment. Chunk bounds remain required. Table order is still used to obtain the writer version before decoding object records. |
+| FreeCAD | `container::parse_document` reports aliased or conflicting producer-version metadata. `SchemaVersion` selects persistence tags; duplicate persistence sections remain ambiguous. |
+| Inventor | `property_set::inventory` retains malformed property streams as `PropertySetState::Malformed`. The compound storage and RSeStorage are needed to locate model data. |
+| Fusion | `container::scan` uses the manifests to resolve the Design asset folder. Manifest failures cannot be treated as absent producer metadata: the selected asset determines which model is decoded. |
+| SolidWorks | `container` skips unreadable optional expanded payloads while propagating resource failures. Body streams are selected by their stream names and Parasolid headers. |
+| CATIA | `container::scan_bytes` collects directory and segment facts without a whole-file parse Result. Segment boundaries and downstream model admission are separate from descriptive metadata. |
+| Creo | `container::scan_bytes` collects framed sections without a whole-file parse Result. The section scan and semantic admission remain separate. |
+| NX | `container::scan_bytes` validates directory offsets, overlap, and file spans. These locate payloads; they are not descriptive header fields. |
+| SAT/ASM | `decode::build_result` reports invalid header tolerances and retains defaults. Record-stream location and reference width are interpretation fields. |
+
 Successful decode is not a valid IR. Decoder and export gates use documented
 subsets of [`Check`](../crates/cadmpeg-ir/src/report.rs); final document
 validation remains `validate_neutral` (+ fidelity + native at the application

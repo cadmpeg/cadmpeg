@@ -27,7 +27,7 @@ fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
 fn document_root_error_refuses_at_retained_limit() {
     let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
-        super::parse_document(ctx, bytes)
+        super::parse_document(ctx, bytes, &mut Vec::new())
     });
 }
 
@@ -35,7 +35,7 @@ fn document_root_error_refuses_at_retained_limit() {
 fn document_parse_error_refuses_at_retained_limit() {
     let bytes = b"<Document>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
-        super::parse_document(ctx, bytes)
+        super::parse_document(ctx, bytes, &mut Vec::new())
     });
 }
 
@@ -302,7 +302,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
     crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
-        super::parse_document(ctx, document)
+        super::parse_document(ctx, document, &mut Vec::new())
     });
 }
 
@@ -834,4 +834,36 @@ fn source_attribute_copies_and_summary_formatting_refuse_work() {
             matches!(super::summary_notes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd schema note")
         );
     });
+}
+
+#[test]
+fn producer_version_metadata_does_not_refuse_the_document() {
+    for (attributes, expected) in [
+        ("programVersion=\"1.0\"", Some("1.0")),
+        ("ProgramVersion=\"1.0\" programVersion=\"1.0\"", Some("1.0")),
+        ("ProgramVersion=\"1.0\" programVersion=\"2.0\"", None),
+    ] {
+        let xml = format!(
+            "<Document SchemaVersion=\"4\" {attributes}><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>"
+        );
+        let bytes = archive(&xml);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+        let scan = crate::container::scan(&ctx, root)
+            .expect("metadata does not select persistence grammar");
+        assert_eq!(scan.document.program_version.as_deref(), expected);
+        let summary = crate::container::summarize(&ctx, &scan).unwrap();
+        assert!(summary.losses.iter().any(|loss| loss.code
+            == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
+                .note("")
+                .code));
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(decoded.report().losses.iter().any(|loss| loss.code
+            == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
+                .note("")
+                .code));
+    }
 }

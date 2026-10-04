@@ -217,7 +217,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&extended, &arena, &policy)
         .expect("root fits the test policy");
 
-    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), &ctx)
+    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), &[], &ctx)
         .expect("byte accounting allocation");
 
     assert_eq!(accounting.unclassified, 1);
@@ -266,7 +266,7 @@ fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
     policy.limits.max_materialized_bytes = 4;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits the test policy");
-    let error = byte_accounting(source, &exchange, &HashSet::new(), &ctx)
+    let error = byte_accounting(source, &exchange, &HashSet::new(), &[], &ctx)
         .expect_err("binary lexer must refuse before temporary digit allocation");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "step_binary_lexeme_temp")
