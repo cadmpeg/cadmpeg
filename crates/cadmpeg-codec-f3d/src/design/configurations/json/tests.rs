@@ -77,7 +77,8 @@ fn configuration_json_nested_values_refuse_depth_limit() {
 #[test]
 fn configuration_json_values_refuse_work_limit() {
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 2;
+    // The outer value, two array probes, and the first member precede the second value.
+    policy.limits.max_work_units = 4;
     refuse(
         b"[null,true]",
         policy,
@@ -234,4 +235,23 @@ fn configuration_json_escaped_text_scratch_refuses_capacity_rounding() {
         ResourceDimension::MaterializedBytes,
         "f3d configuration JSON",
     );
+}
+
+#[test]
+fn configuration_json_iteration_refusals_propagate() {
+    for (bytes, operation) in [
+        (b"[null]".as_slice(), "f3d configuration JSON array scan"),
+        (br#"{"a":null}"#.as_slice(), "f3d configuration JSON object scan"),
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                parse_configuration_payload(&ctx, "table.dsgcfg", bytes)
+            });
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::WorkUnits && failure.operation == operation));
+    }
 }

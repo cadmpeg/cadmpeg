@@ -137,11 +137,13 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
         S: SeqAccess<'de>,
     {
         let mut values = Vec::new();
-        while let Some(value) = sequence.next_element_seed(ValueSeed {
+        loop {
+            self.admit(self.ctx.charge_work(1, "f3d configuration JSON array scan"))?;
+            let Some(value) = sequence.next_element_seed(ValueSeed {
             ctx: self.ctx,
             refusal: &mut *self.refusal,
             member: true,
-        })? {
+        })? else { break; };
             self.admit(self.ctx.reserve_capacity(
                 &mut values,
                 1,
@@ -156,13 +158,15 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
         M: MapAccess<'de>,
     {
         let mut fields = serde_json::Map::new();
-        while let Some(key) = map.next_key_seed(TextSeed {
+        loop {
+            self.admit(self.ctx.charge_work(1, "f3d configuration JSON object scan"))?;
+            let Some(key) = map.next_key_seed(TextSeed {
             ctx: self.ctx,
             refusal: &mut *self.refusal,
             operation: "f3d configuration JSON key",
             entry: true,
             expected: "a string key",
-        })? {
+        })? else { break; };
             // serde_json's raw-value feature interprets this first-key carrier.
             if fields.is_empty() && key == "$serde_json::private::RawValue" {
                 let raw = map.next_value_seed(TextSeed {
