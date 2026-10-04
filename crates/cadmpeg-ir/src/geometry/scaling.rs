@@ -14,7 +14,7 @@ use super::analytic::{
 };
 use super::nurbs::NurbsError;
 use super::sampled::GeometryLayoutError;
-use super::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use super::{PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use crate::features::FinitePoint3;
 use crate::scalar::{NonZeroLength, PositiveLength, PositiveReal};
 
@@ -213,12 +213,7 @@ impl SolvedCurveGeometry {
                 return Ok(());
             }
             Self::Transformed(placed) => {
-                let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
-                placed.basis.scale_in_place(ctx, scale)?;
-                placed.transform = placed
-                    .transform
-                    .scaled_translation(scale)
-                    .ok_or(ScaleRefusal::Translation)?;
+                placed.scale_in_place(ctx, scale)?;
                 return Ok(());
             }
             Self::Composite { .. } | Self::Unknown { .. } => return Ok(()),
@@ -328,17 +323,56 @@ impl SolvedSurfaceGeometry {
                 return Ok(());
             }
             Self::Transformed(placed) => {
-                let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
-                placed.basis.scale_in_place(ctx, scale)?;
-                placed.transform = placed
-                    .transform
-                    .scaled_translation(scale)
-                    .ok_or(ScaleRefusal::Translation)?;
+                placed.scale_in_place(ctx, scale)?;
                 return Ok(());
             }
             Self::Unknown { .. } => return Ok(()),
         };
         *self = scaled;
+        Ok(())
+    }
+}
+
+// Keep the recursive placement walk separate from the carrier match. Its
+// analytic construction temporaries otherwise occupy every recursive frame.
+impl PlacedCurve {
+    fn scale_in_place(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<(), ScalingError> {
+        let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
+        if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_mut() {
+            ctx.charge_work(1, "IR geometry unit scaling work")?;
+            placed.scale_in_place(ctx, scale)?;
+        } else {
+            self.basis.scale_in_place(ctx, scale)?;
+        }
+        self.transform = self
+            .transform
+            .scaled_translation(scale)
+            .ok_or(ScaleRefusal::Translation)?;
+        Ok(())
+    }
+}
+
+impl PlacedSurface {
+    fn scale_in_place(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<(), ScalingError> {
+        let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
+        if let SolvedSurfaceGeometry::Transformed(placed) = self.basis.as_mut() {
+            ctx.charge_work(1, "IR geometry unit scaling work")?;
+            placed.scale_in_place(ctx, scale)?;
+        } else {
+            self.basis.scale_in_place(ctx, scale)?;
+        }
+        self.transform = self
+            .transform
+            .scaled_translation(scale)
+            .ok_or(ScaleRefusal::Translation)?;
         Ok(())
     }
 }

@@ -2,12 +2,12 @@
 # Enforced by scripts/check-dialect-support.py.
 #
 # This file describes cadmpeg, not formats. It changes per commit. Identity --
-# which dialects exist -- lives in `docs/dialects.toml` and changes when a
+# which dialects exist -- lives in `crates/cadmpeg-registry/docs/dialects.toml` and changes when a
 # vendor ships. See “Dialects: the version dimension in cadmpeg,” sections 5 and 6.
 #
 # Schema
 #   [[support]]  dialect   a `<format>:<name>` id declared in
-#                          `docs/dialects.toml`. Every identity row has
+#                          `crates/cadmpeg-registry/docs/dialects.toml`. Every identity row has
 #                          exactly one support row; every support row names
 #                          an identity row.
 #                read      `L0`..`L9`, `detected`, `refused`, or
