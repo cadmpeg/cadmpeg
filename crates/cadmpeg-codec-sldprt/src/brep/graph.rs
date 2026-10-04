@@ -240,17 +240,17 @@ impl Brep {
                 cadmpeg_ir::topology::LoopBoundary::Ring(ring) => {
                     let coedges = qualified_ids(ctx, ring.coedges(), &tail)?;
                     let mut vertex_uses = Vec::new();
-                    ctx.reserve_vec(
+                    ctx.reserve_capacity(
                         &mut vertex_uses,
                         ring.vertex_uses().len(),
                         "collect qualified SLDPRT vertex uses",
                     )?;
                     for vertex_use in ctx.admit_iter(ring.vertex_uses(), "scan SLDPRT topology members")? {
-                        vertex_uses.push(cadmpeg_ir::topology::AnchoredVertexUse {
+                        ctx.push_vec(&mut (vertex_uses), cadmpeg_ir::topology::AnchoredVertexUse {
                             vertex: qualified(ctx, &vertex_use.vertex, &tail)?,
                             after: qualified(ctx, &vertex_use.after, &tail)?,
                             pcurves: qualified_pcurve_uses(ctx, &vertex_use.pcurves, &tail)?,
-                        });
+                        }, "collect qualified SLDPRT vertex uses")?;
                     }
                     *ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
                         .map_err(cadmpeg_core::CodecError::from)?
@@ -613,13 +613,13 @@ where
     T: std::fmt::Display + From<cadmpeg_ir::ids::Identity>,
 {
     let mut qualified_ids = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut qualified_ids,
         ids.len(),
         "collect qualified SLDPRT identities",
     )?;
     for id in ctx.admit_iter(ids, "scan SLDPRT qualified_ids values")? {
-        qualified_ids.push(qualified(ctx, id, site)?);
+        ctx.push_vec(&mut (qualified_ids), qualified(ctx, id, site)?, "collect qualified SLDPRT identities")?;
     }
     Ok(qualified_ids)
 }
@@ -630,17 +630,17 @@ fn qualified_pcurve_uses(
     site: &cadmpeg_ir::ids::IdentityKeyTail,
 ) -> Result<Vec<cadmpeg_ir::topology::PcurveUse>, cadmpeg_core::CodecError> {
     let mut qualified_uses = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut qualified_uses,
         uses.len(),
         "collect qualified SLDPRT pcurve uses",
     )?;
     for use_ in ctx.admit_iter(uses, "scan SLDPRT qualified_pcurve_uses values")? {
-        qualified_uses.push(cadmpeg_ir::topology::PcurveUse {
+        ctx.push_vec(&mut (qualified_uses), cadmpeg_ir::topology::PcurveUse {
             pcurve: qualified(ctx, &use_.pcurve, site)?,
             isoparametric: use_.isoparametric,
             parameter_range: use_.parameter_range,
-        });
+        }, "collect qualified SLDPRT pcurve uses")?;
     }
     Ok(qualified_uses)
 }
@@ -1371,10 +1371,11 @@ pub(crate) fn decode_bodies(
     let mut facts = entity::Facts::default();
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
+    let mut ordered_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut ordered = Vec::new();
-    ctx.reserve_vec(&mut ordered, bodies.len(), "order Parasolid body streams")?;
+    ordered_storage.with_storage(|| ctx.reserve_capacity(&mut ordered, bodies.len(), "order Parasolid body streams"))?;
     for &(payload, header) in ctx.admit_iter(bodies, "scan Parasolid body stream ordering keys")? {
-        ordered.push((payload, header, is_deltas_stream(ctx, &header.description)?));
+        ordered_storage.with_storage(|| ctx.push_vec(&mut (ordered), (payload, header, is_deltas_stream(ctx, &header.description)?), "order Parasolid body streams"))?;
     }
     ctx.stable_sort_by(
         &mut ordered,
@@ -1382,24 +1383,27 @@ pub(crate) fn decode_bodies(
         bool::cmp,
         "sort Parasolid body streams",
     )?;
+    let mut entity_streams_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut entity_streams = Vec::new();
-    ctx.reserve_vec(
+    entity_streams_storage.with_storage(|| ctx.reserve_capacity(
         &mut entity_streams,
         ordered.len(),
         "index Parasolid body streams",
-    )?;
+    ))?;
     for &(payload, header, is_deltas) in ctx.admit_iter(&ordered, "scan ordered Parasolid body streams")? {
         let body = header_body(payload, header)?;
-        entity_streams.push((body, is_deltas));
+        entity_streams_storage.with_storage(|| ctx.push_vec(&mut (entity_streams), (body, is_deltas), "index Parasolid body streams"))?;
     }
+    let mut typed_streams_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut typed_streams = Vec::new();
-    ctx.reserve_vec(
+    typed_streams_storage.with_storage(|| ctx.reserve_capacity(
         &mut typed_streams,
         entity_streams.len(),
         "index typed Parasolid streams",
-    )?;
+    ))?;
     for (body, _) in ctx.admit_iter(&entity_streams, "scan SLDPRT decode_bodies values")? {
-        typed_streams.push(typed::scan(body, ctx)?);
+        let stream_facts = typed::scan(body, ctx)?;
+        typed_streams_storage.with_storage(|| ctx.push_vec(&mut (typed_streams), stream_facts, "index typed Parasolid streams"))?;
     }
     for stream_typed_facts in ctx.admit_iter(&typed_streams, "scan SLDPRT decode_bodies values")? {
         typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?)?;
@@ -2550,11 +2554,11 @@ fn decode_graph(
                     )?;
                 }
                 admit_brep_entity(ctx)?;
-                out.surfaces.push(Surface {
+                ctx.push_vec(&mut (out.surfaces), Surface {
                     id: id_surf(f.bridge_attr),
                     source_object: None,
                     geometry,
-                });
+                }, "collect SLDPRT decoded vector items")?;
             }
             _ => {
                 let resolved_offset = if let Some(offset) = carriers.offset(f.surface_attr) {
@@ -3922,7 +3926,7 @@ fn derive_cylindrical_pcurves(
                 // One pole row carries its radial and axial halves together,
                 // so the two projections are built into one list.
                 let mut poles = Vec::new();
-                ctx.reserve_vec(
+                ctx.reserve_capacity(
                     &mut poles,
                     nurbs.pole_count(),
                     "collect cylindrical polar poles",
@@ -3931,13 +3935,13 @@ fn derive_cylindrical_pcurves(
                     let Some(point) = nurbs.pole_rows().point_at(index) else {
                         continue;
                     };
-                    poles.push(cadmpeg_ir::geometry::pcurve::PolarNurbsPole {
+                    ctx.push_vec(&mut (poles), cadmpeg_ir::geometry::pcurve::PolarNurbsPole {
                         radial: *radial,
                         axial: dot(
                             [point.x - origin.x, point.y - origin.y, point.z - origin.z],
                             *axis,
                         ),
-                    });
+                    }, "collect cylindrical polar poles")?;
                 }
                 let knots = nurbs
                     .knots()
@@ -4192,12 +4196,13 @@ where
         if start >= end {
             continue;
         }
+        let mut samples_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
         let mut samples = Vec::new();
-        ctx.reserve_vec(
+        samples_storage.with_storage(|| ctx.reserve_capacity(
             &mut samples,
             INVERSE_SAMPLE_COUNT + 1,
             "sample Parasolid inverse span",
-        )?;
+        ))?;
         for index in 0..=INVERSE_SAMPLE_COUNT {
             ctx.charge_work(1, "sample Parasolid inverse span")?;
             let (Some(position), Some(span_count)) =
@@ -4213,7 +4218,7 @@ where
             let Some(distance) = objective(parameter)? else {
                 return Ok(None);
             };
-            samples.push((parameter, distance));
+            samples_storage.with_storage(|| ctx.push_vec(&mut (samples), (parameter, distance), "sample Parasolid inverse span"))?;
         }
         ctx.reserve_vec(
             &mut candidates,
@@ -5224,7 +5229,7 @@ fn intersection_support_pcurve(
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     let mut control_points = Vec::new();
-                    ctx.reserve_vec(&mut control_points, chart_points.len(), "solve intersection support UV controls")?;
+                    ctx.reserve_capacity(&mut control_points, chart_points.len(), "solve intersection support UV controls")?;
                     for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
                             ctx,
@@ -5237,16 +5242,16 @@ fn intersection_support_pcurve(
                             Ok(None) => return Ok(None),
                             Err(limit) => return Err(limit),
                         };
-                        control_points.push(parameters.get());
+                        ctx.push_vec(&mut (control_points), parameters.get(), "solve intersection support UV controls")?;
                     }
                     (control_points, IntersectionPcurveSource::NurbsInverse)
                 }
                 _ => {
                     let mut control_points = Vec::new();
-                    ctx.reserve_vec(&mut control_points, chart_points.len(), "project intersection analytic controls")?;
+                    ctx.reserve_capacity(&mut control_points, chart_points.len(), "project intersection analytic controls")?;
                     for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
                         let parameters = some_or_none!(analytic_surface_parameters(surface, point.get()));
-                        control_points.push(cadmpeg_ir::math::Point2::from(parameters));
+                        ctx.push_vec(&mut (control_points), cadmpeg_ir::math::Point2::from(parameters), "project intersection analytic controls")?;
                     }
                     for index in 1..control_points.len() {
                         let previous = control_points[index - 1];
@@ -5358,12 +5363,13 @@ fn intersection_support_pcurve(
                 return Ok(None);
             }
         }
+        let mut mapped_points_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
         let mut mapped_points = Vec::new();
-        ctx.reserve_vec(&mut mapped_points, control_points.len(), "map intersection support controls")?;
+        mapped_points_storage.with_storage(|| ctx.reserve_capacity(&mut mapped_points, control_points.len(), "map intersection support controls"))?;
         for parameters in ctx.admit_iter(&control_points, "scan SLDPRT intersection_support_pcurve values")? {
             let Some(point) = super::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
             let point = point.get();
-            mapped_points.push(point);
+            mapped_points_storage.with_storage(|| ctx.push_vec(&mut (mapped_points), point, "map intersection support controls"))?;
         }
         let mut control_errors = Vec::new();
         ctx.reserve_vec(&mut control_errors, mapped_points.len(), "check intersection support control errors")?;
@@ -5851,7 +5857,7 @@ fn nurbs_homogeneous_controls(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<Option<Vec<[f64; 4]>>, cadmpeg_core::CodecError> {
     let mut controls = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut controls,
         curve.pole_count(),
         "collect homogeneous NURBS controls",
@@ -5864,7 +5870,7 @@ fn nurbs_homogeneous_controls(
         if weight <= 0.0 {
             return Ok(None);
         }
-        controls.push([point.x * weight, point.y * weight, point.z * weight, weight]);
+        ctx.push_vec(&mut (controls), [point.x * weight, point.y * weight, point.z * weight, weight], "collect homogeneous NURBS controls")?;
     }
     Ok(Some(controls))
 }
@@ -5924,13 +5930,14 @@ fn insert_nurbs_homogeneous_knot(
         return Ok(None);
     };
     let mut inserted_knots = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut inserted_knots,
         knot_count,
         "insert homogeneous NURBS knot lane",
     )?;
+    ctx.charge_collection_items(u64_from_index(knots.len()), "insert homogeneous NURBS knot lane")?;
     inserted_knots.extend_from_slice(&knots[..=span]);
-    inserted_knots.push(value);
+    ctx.push_vec(&mut (inserted_knots), value, "insert homogeneous NURBS knot lane")?;
     inserted_knots.extend_from_slice(&knots[span + 1..]);
 
     let Some(control_count) = controls.len().checked_add(1) else {
@@ -6066,14 +6073,14 @@ fn clamp_nurbs_curve_to_domain_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
     );
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut control_points,
         control_slice.len(),
         "collect clamped NURBS controls",
     )?;
     let mut weights = if rational {
         let mut weights = Vec::new();
-        ctx.reserve_vec(
+        ctx.reserve_capacity(
             &mut weights,
             control_slice.len(),
             "collect clamped NURBS weights",
@@ -6086,13 +6093,13 @@ fn clamp_nurbs_curve_to_domain_lanes(
         if !weight.is_finite() || weight <= 0.0 {
             return Ok(None);
         }
-        control_points.push(cadmpeg_ir::math::Point3::new(
+        ctx.push_vec(&mut (control_points), cadmpeg_ir::math::Point3::new(
             x / weight,
             y / weight,
             z / weight,
-        ));
+        ), "collect clamped NURBS controls")?;
         if let Some(weights) = &mut weights {
-            weights.push(weight);
+            ctx.push_vec(&mut *weights, weight, "collect clamped NURBS weights")?;
         }
     }
     Ok(Some((segment_knots, control_points, weights)))
@@ -6172,6 +6179,7 @@ fn extended_nurbs_isocurve_axis_candidate(
         return Ok(InverseResolution::NoMatch);
     }
 
+    let mut fixed_values_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut fixed_values = vec![fixed_domain[0], fixed_domain[1]];
     let overlap = [
         curve_domain[0].max(varying_domain[0]),
@@ -6201,10 +6209,10 @@ fn extended_nurbs_isocurve_axis_candidate(
                 if mapped
                     .is_some_and(|mapped| Point3::distance(point.get(), mapped.get()) <= tolerance)
                 {
-                    fixed_values.push(match fixed_axis {
+                    fixed_values_storage.with_storage(|| ctx.push_vec(&mut (fixed_values), match fixed_axis {
                         SurfaceParameterAxis::U => parameters.u,
                         SurfaceParameterAxis::V => parameters.v,
-                    });
+                    }, "collect SLDPRT decoded vector items"))?;
                 }
             }
         }
@@ -6212,6 +6220,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * fixed_domain[1]
         - INVERSE_PARAMETER_TOLERANCE * fixed_domain[0])
         .abs();
+    let mut unique_fixed_values_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut unique_fixed_values = Vec::new();
     for value in ctx.admit_iter(&fixed_values, "scan Parasolid fixed isocurve parameters")?.copied() {
         if value.is_finite()
@@ -6221,7 +6230,7 @@ fn extended_nurbs_isocurve_axis_candidate(
                 .iter()
                 .any(|known: &f64| (value - *known).abs() <= parameter_tolerance)
         {
-            unique_fixed_values.push(value.clamp(fixed_domain[0], fixed_domain[1]));
+            unique_fixed_values_storage.with_storage(|| ctx.push_vec(&mut (unique_fixed_values), value.clamp(fixed_domain[0], fixed_domain[1]), "collect SLDPRT decoded vector items"))?;
         }
     }
     // The clamp does not vary with the candidate value, and the first candidate
@@ -6459,7 +6468,7 @@ fn nurbs_degree_one_cache_lanes(
         return Ok(None);
     }
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut control_points,
         curve.pole_count(),
         "collect NURBS cache pcurve controls",
@@ -6490,7 +6499,7 @@ fn nurbs_degree_one_cache_lanes(
         };
         let parameters = parameters.get();
         seed = Some(parameters);
-        control_points.push(parameters);
+        ctx.push_vec(&mut (control_points), parameters, "collect NURBS cache pcurve controls")?;
     }
     let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
         return Ok(None);
@@ -7452,13 +7461,13 @@ fn synthesize_sphere_seams(
             )?;
             pole_vertices.dedup();
             let mut ring = Vec::new();
-            ctx.reserve_vec(
+            ctx.reserve_capacity(
                 &mut ring,
                 lp.coedges().len(),
                 "copy Parasolid sphere seam ring",
             )?;
             for id in ctx.admit_iter(lp.coedges(), "scan SLDPRT topology members")? {
-                ring.push(id.try_clone_for_decode(ctx, "SLDPRT sphere ring identity")?);
+                ctx.push_vec(&mut (ring), id.try_clone_for_decode(ctx, "SLDPRT sphere ring identity")?, "copy Parasolid sphere seam ring")?;
             }
             ctx.reserve_vec(
                 &mut candidates,
@@ -8800,7 +8809,8 @@ mod tests {
         let body = crate::test_support::parasolid::triangle_body();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        // One analytic marker slot precedes surface carrier insertion.
+        policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
         let Err(error) = super::decode_body(
             &ctx,

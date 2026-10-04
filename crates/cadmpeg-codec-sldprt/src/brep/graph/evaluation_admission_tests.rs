@@ -49,3 +49,24 @@ fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
         1
     );
 }
+
+#[test]
+fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
+    let header = crate::parasolid::StreamHeader {
+        description: String::from("test partition"),
+        schema: cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999").unwrap(),
+        body_offset: 0,
+    };
+    let bodies = [(&[][..], &header)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(error) = super::decode_bodies(&ctx, &bodies, &cadmpeg_ir::stream_name!("test-stream-index")) else { panic!("temporary stream index refusal"); };
+    let CodecError::ResourceLimit(limit) = error else { panic!("temporary stream index refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "order Parasolid body streams");
+    assert!(limit.additional > 0);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(header.description, "test partition");
+}

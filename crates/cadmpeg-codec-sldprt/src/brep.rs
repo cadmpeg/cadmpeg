@@ -209,20 +209,20 @@ pub(crate) struct SurfaceCarrier {
     orientation_reversed: bool,
 }
 
-fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
+fn analytic_marker_candidates(ctx: &cadmpeg_core::decode::DecodeContext<'_>, body: &[u8], hdr: usize) -> Result<Option<Vec<usize>>, cadmpeg_core::CodecError> {
     let mut candidates = Vec::with_capacity(2);
 
-    let partition_marker = hdr.checked_add(analytic::MARKER)?;
+    let partition_marker = match hdr.checked_add(analytic::MARKER) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
     if matches!(body.get(partition_marker), Some(0x2b | 0x2d)) {
-        candidates.push(partition_marker);
+        ctx.push_vec(&mut (candidates), partition_marker, "collect SLDPRT decoded vector items")?;
     }
 
     // Deltas records encode each of the five references as [hi][lo][01].
     // The marker follows that fixed-width roster, so its position is not a
     // search result. The terminators distinguish this framing from arbitrary
     // marker-like bytes in the reference and ordinal fields.
-    let refs_at = hdr.checked_add(analytic::REFS)?;
-    let tripled_marker = hdr.checked_add(DELTAS_MARKER_OFFSET)?;
+    let refs_at = match hdr.checked_add(analytic::REFS) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
+    let tripled_marker = match hdr.checked_add(DELTAS_MARKER_OFFSET) { Some(value) => value, None => return Ok::<_, cadmpeg_core::CodecError>(None) };
     let tripled_refs = (0..COMPACT_REF_COUNT).all(|index| {
         refs_at
             .checked_add(index * DELTAS_REF_STRIDE + DELTAS_REF_STRIDE - 1)
@@ -230,10 +230,10 @@ fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
             == Some(&1)
     });
     if tripled_refs && matches!(body.get(tripled_marker), Some(0x2b | 0x2d)) {
-        candidates.push(tripled_marker);
+        ctx.push_vec(&mut (candidates), tripled_marker, "collect SLDPRT decoded vector items")?;
     }
 
-    Some(candidates)
+    Ok::<_, cadmpeg_core::CodecError>(Some(candidates))
 }
 
 fn parse_carrier_at_marker(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
@@ -279,7 +279,7 @@ pub(crate) fn parse_carrier(ctx: &cadmpeg_core::decode::DecodeContext<'_>, body:
     let has_ff = body.get(tag_end) == Some(&0xff);
     let hdr = match tag_end.checked_add(usize::from(has_ff)) { Some(value) => value, None => return Ok(None) };
     let attr = match View::u16_be_at(body, hdr) { Some(value) => value, None => return Ok(None) };
-    let mut candidates = match analytic_marker_candidates(body, hdr) { Some(value) => value, None => return Ok(None) }
+    let mut candidates = match analytic_marker_candidates(ctx, body, hdr)? { Some(value) => value, None => return Ok(None) }
         .into_iter()
         .filter_map(|marker_at| parse_carrier_at_marker(ctx, body, off, tt, attr, n, marker_at).transpose());
     let Some(carrier) = candidates.next().transpose()? else { return Ok(None); };

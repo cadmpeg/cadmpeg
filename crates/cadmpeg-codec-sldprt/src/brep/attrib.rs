@@ -244,7 +244,7 @@ fn integer_lists(
             continue;
         }
         let mut values = Vec::new();
-        ctx.reserve_vec(&mut values, count, "decode Parasolid attribute values")?;
+        ctx.reserve_capacity(&mut values, count, "decode Parasolid attribute values")?;
         for index in 0..count {
             let Some(value) = index
                 .checked_mul(4)
@@ -254,7 +254,7 @@ fn integer_lists(
                 values.clear();
                 break;
             };
-            values.push(value);
+            ctx.push_vec(&mut (values), value, "decode Parasolid attribute values")?;
         }
         if values.len() == count {
             ctx.admit_hash_map_entry(&mut found, &node, "collect Parasolid attribute value lists")?;

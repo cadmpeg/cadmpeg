@@ -61,3 +61,19 @@ fn attribute_nurbs_patch_preserves_carrier_scan_refusal() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(body, original);
 }
+
+#[test]
+fn analytic_marker_candidate_refusal_preserves_the_resource_limit() {
+    let mut body = vec![0_u8; super::analytic::MARKER + 1];
+    body[super::analytic::MARKER] = 0x2b;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+    let error = super::analytic_marker_candidates(&ctx, &body, 0).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("candidate slot refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "collect SLDPRT decoded vector items");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}

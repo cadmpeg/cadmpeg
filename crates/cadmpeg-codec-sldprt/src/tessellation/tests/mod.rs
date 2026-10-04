@@ -919,7 +919,8 @@ fn geometric_tessellation_assignment_refuses_retained_limit() {
 
 #[test]
 fn geometric_tessellation_assignment_refuses_work_limit() {
-    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
+    // One face visit precedes surface index admission.
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 1);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index SLDPRT tessellation surfaces")

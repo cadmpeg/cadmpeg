@@ -1005,7 +1005,7 @@ fn contains_fixstr_key(ctx: &DecodeContext<'_>, window: &[u8], key: &str) -> Res
         return Ok(false);
     };
     let mut encoded = Vec::with_capacity(key.len() + 1);
-    encoded.push(0xa0 | key_len);
+    ctx.push_vec(&mut (encoded), 0xa0 | key_len, "collect SLDPRT decoded vector items")?;
     encoded.extend_from_slice(key.as_bytes());
     Ok(ctx.admit_iter(window, "scan SLDPRT PMI encoded map key")?.windows(std::num::NonZeroUsize::new(encoded.len()).ok_or_else(|| CodecError::malformed("zero map key width"))?)
         .any(|candidate| candidate == encoded))
@@ -1320,7 +1320,7 @@ fn parse_array<'a>(
     let Some(len) = cadmpeg_core::decode::bounded_len(u64_from_index(len), 1, remaining) else {
         return Ok(None);
     };
-    let mut values = ctx.collection_vec(len, "collect SLDPRT PMI array items")?;
+    let mut values = ctx.vector_storage(len, "collect SLDPRT PMI array items")?;
     let next_depth = depth
         .checked_add(1)
         .ok_or_else(|| ctx.refuse_codec_limit("advance SLDPRT PMI depth", 16, u64::MAX))?;
@@ -1328,7 +1328,7 @@ fn parse_array<'a>(
         let Some(value) = parse_value(ctx, bytes, cursor, next_depth)? else {
             return Ok(None);
         };
-        values.push(value);
+        ctx.push_vec(&mut (values), value, "collect SLDPRT PMI array items")?;
     }
     Ok(Some(SpannedValue {
         kind: ValueKind::Array(values),

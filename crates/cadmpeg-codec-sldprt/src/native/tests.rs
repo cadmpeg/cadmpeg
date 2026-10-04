@@ -574,7 +574,6 @@ fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
         )
         .unwrap();
     let native = sldprt_native(decoded.ir());
-    let lane_count = u64::try_from(native.feature_input_lanes.len()).unwrap();
     let payload_bytes = native
         .feature_input_lanes
         .iter()
@@ -582,10 +581,17 @@ fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
         .sum::<u64>();
     assert!(payload_bytes > 0);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = lane_count - 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::lanes::admit(&native, &limited).unwrap_err();
+    // Admit copied lane fields, then refuse the next primary-lane collection slot.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "validate SLDPRT expected primary lanes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::lanes::admit(&native, &limited).map_err(cadmpeg_core::CodecError::from)
+        },
+    );
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)

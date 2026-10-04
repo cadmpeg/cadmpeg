@@ -201,7 +201,7 @@ impl Facts {
     pub(super) fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         charge_record_copy::<BodyNode>(ctx, self.bodies.len(), "copy typed Parasolid bodies")?;
         let mut bodies = Vec::new();
-        ctx.reserve_vec(
+        ctx.reserve_capacity(
             &mut bodies,
             self.bodies.len(),
             "copy typed Parasolid bodies",
@@ -219,7 +219,7 @@ impl Facts {
                 "copy typed Parasolid body references",
             )?;
             ownership_refs.extend_from_slice(&body.ownership_refs);
-            bodies.push(BodyNode {
+            ctx.push_vec(&mut (bodies), BodyNode {
                 attr: body.attr,
                 node_id: body.node_id,
                 topology_refs: body.topology_refs,
@@ -227,7 +227,7 @@ impl Facts {
                 kind: body.kind,
                 offset: body.offset,
                 end: body.end,
-            });
+            }, "copy typed Parasolid bodies")?;
         }
         charge_record_copy::<ShellNode>(ctx, self.shells.len(), "copy typed Parasolid shells")?;
         let mut shells = Vec::new();

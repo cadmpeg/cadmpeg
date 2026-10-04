@@ -160,7 +160,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
                 .filter(|lane| !is_supplemental_config_lane(lane))
                 .count();
             let mut expected_primary_lanes = Vec::new();
-            ctx.reserve_vec(
+            ctx.reserve_capacity(
                 &mut expected_primary_lanes,
                 primary_count,
                 "validate SLDPRT expected primary lanes",
@@ -168,12 +168,11 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
             for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected primary lanes").map_err(cadmpeg_core::CodecError::from)?
                 .filter(|lane| !is_supplemental_config_lane(lane))
             {
-                expected_primary_lanes
-                    .push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
+                ctx.push_vec(&mut (expected_primary_lanes), lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?, "validate SLDPRT expected primary lanes")?;
             }
             let supplemental_count = native.feature_input_lanes.len() - primary_count;
             let mut expected_supplemental_lanes = Vec::new();
-            ctx.reserve_vec(
+            ctx.reserve_capacity(
                 &mut expected_supplemental_lanes,
                 supplemental_count,
                 "validate SLDPRT expected supplemental lanes",
@@ -181,9 +180,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
             for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected supplemental lanes").map_err(cadmpeg_core::CodecError::from)?
                 .filter(|lane| is_supplemental_config_lane(lane))
             {
-                expected_supplemental_lanes.push(
-                    lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?,
-                );
+                ctx.push_vec(&mut (expected_supplemental_lanes), lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?, "validate SLDPRT expected supplemental lanes")?;
             }
             for lane in expected_primary_lanes
                 .iter_mut()

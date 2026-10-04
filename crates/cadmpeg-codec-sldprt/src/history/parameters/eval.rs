@@ -207,7 +207,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                             return Err(ExpressionFailure::NoValue);
                         }
                     }
-                    arguments.push(self.comparison()?);
+                    self.ctx.push_vec(&mut (arguments), self.comparison()?, "collect SLDPRT decoded vector items")?;
                 }
                 self.skip_space()?;
                 if !self.take(')') {

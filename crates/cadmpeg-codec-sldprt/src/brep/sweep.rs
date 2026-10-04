@@ -181,12 +181,10 @@ pub(super) fn profile_nurbs<'a>(
         } else {
             std::f64::consts::SQRT_2
         };
-        control_points.push(
-            center
+        ctx.push_vec(&mut (control_points), center
                 .translated(major, tangent_scale * major_radius * cos)
-                .translated(minor, tangent_scale * minor_radius * sin),
-        );
-        weights.push(if index % 2 == 0 { 1.0 } else { half_sqrt2 });
+                .translated(minor, tangent_scale * minor_radius * sin), "collect SLDPRT decoded vector items")?;
+        ctx.push_vec(&mut (weights), if index % 2 == 0 { 1.0 } else { half_sqrt2 }, "collect SLDPRT decoded vector items")?;
     }
     match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx,
@@ -228,12 +226,12 @@ fn curve_rows<T: Copy>(
     operation: &'static str,
 ) -> Result<Vec<Vec<T>>, CodecError> {
     let mut rows = Vec::new();
-    ctx.reserve_vec(&mut rows, values.len() / width, operation)?;
+    ctx.reserve_capacity(&mut rows, values.len() / width, operation)?;
     for values in ctx.admit_iter(values, "scan Parasolid sweep rows")?.chunks(std::num::NonZeroUsize::new(width).ok_or_else(|| CodecError::malformed("zero sweep row width"))?) {
         let mut row = Vec::new();
         ctx.reserve_vec(&mut row, values.len(), operation)?;
         row.extend_from_slice(values);
-        rows.push(row);
+        ctx.push_vec(&mut (rows), row, operation)?;
     }
     Ok(rows)
 }
@@ -272,10 +270,10 @@ pub(super) fn swept_nurbs(
         "solve swept surface poles",
     )?;
     let mut control = Vec::new();
-    ctx.reserve_vec(&mut control, count, "construct swept surface poles")?;
+    ctx.reserve_capacity(&mut control, count, "construct swept surface poles")?;
     let mut weights = matches!(profile.pole_rows(), NurbsPoles3::Rational { .. }).then(Vec::new);
     if let Some(weights) = &mut weights {
-        ctx.reserve_vec(weights, count, "construct swept surface weights")?;
+        ctx.reserve_capacity(weights, count, "construct swept surface weights")?;
     }
     for i in 0..n {
         let (pole, weight) = match profile.pole_rows() {
@@ -283,13 +281,13 @@ pub(super) fn swept_nurbs(
             NurbsPoles3::Rational { points } => (points[i].point.get(), Some(points[i].weight)),
         };
         for v in [v_start, v_end] {
-            control.push(Point3::new(
+            ctx.push_vec(&mut (control), Point3::new(
                 pole.x + v * direction.x,
                 pole.y + v * direction.y,
                 pole.z + v * direction.z,
-            ));
+            ), "construct swept surface poles")?;
             if let (Some(out), Some(weight)) = (&mut weights, weight) {
-                out.push(weight);
+                ctx.push_vec(&mut *out, weight, "construct swept surface weights")?;
             }
         }
     }
@@ -351,9 +349,9 @@ pub(super) fn spun_nurbs(
     )?;
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control = Vec::new();
-    ctx.reserve_vec(&mut control, count, "construct spun surface poles")?;
+    ctx.reserve_capacity(&mut control, count, "construct spun surface poles")?;
     let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, count, "construct spun surface weights")?;
+    ctx.reserve_capacity(&mut weights, count, "construct spun surface weights")?;
     for i in 0..n {
         let (pole, pole_weight) = match profile.pole_rows() {
             NurbsPoles3::Polynomial { points } => (points[i].get(), 1.0),
@@ -371,12 +369,12 @@ pub(super) fn spun_nurbs(
         if radius <= f64::EPSILON {
             // Degenerate ring: the pole sits on the axis.
             for k in 0..9 {
-                control.push(center);
-                weights.push(if k % 2 == 1 {
+                ctx.push_vec(&mut (control), center, "construct spun surface poles")?;
+                ctx.push_vec(&mut (weights), if k % 2 == 1 {
                     pole_weight * half_sqrt2
                 } else {
                     pole_weight
-                });
+                }, "construct spun surface weights")?;
             }
             continue;
         }
@@ -410,8 +408,8 @@ pub(super) fn spun_nurbs(
                 };
                 *coordinate += offset;
             }
-            control.push(Point3::new(coordinates[0], coordinates[1], coordinates[2]));
-            weights.push(weight);
+            ctx.push_vec(&mut (control), Point3::new(coordinates[0], coordinates[1], coordinates[2]), "construct spun surface poles")?;
+            ctx.push_vec(&mut (weights), weight, "construct spun surface weights")?;
         }
     }
     let v_knots = vec![

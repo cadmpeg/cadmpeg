@@ -31,11 +31,11 @@ impl<T> DigestPartition<T> {
             .checked_mul(3)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-        let (mut decisions, reservation) = ctx.temporary_vec(source.len(), operation)?;
+        let (mut decisions, mut reservation) = ctx.scoped_vector_storage(source.len(), operation)?;
         let mut kept_count = 0usize;
         for item in source.iter() {
             let decision = keep(item)?;
-            decisions.push(decision);
+            reservation.with_storage(|| ctx.push_vec(&mut decisions, decision, operation))?;
             if decision {
                 kept_count = kept_count
                     .checked_add(1)
