@@ -336,12 +336,11 @@ pub(crate) fn enrich_history_reference_planes(
                     .enumerate()
                 {
                     if position > 0 {
-                        ctx.try_reserve_retained_text(
+                        ctx.push_retained_char(
                             &mut native,
-                            1,
+                            ',',
                             "retain SLDPRT component face reference",
                         )?;
-                        native.push(',');
                     }
                     let digits =
                         usize::try_from(local_id.checked_ilog10().unwrap_or(0)).map_err(|_| {
