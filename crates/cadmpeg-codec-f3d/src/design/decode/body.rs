@@ -41,10 +41,26 @@ pub(crate) fn decode_body_members(
         &10u32.to_le_bytes(),
         "build F3D body-member marker prefix",
     )?;
-    prefix.extend_from_slice(b"BodiesRoot");
-    prefix.extend_from_slice(&0u16.to_le_bytes());
-    prefix.extend_from_slice(&10u32.to_le_bytes());
-    prefix.extend_from_slice(b"BodiesRoot");
+    ctx.extend_from_slice(
+        &mut prefix,
+        b"BodiesRoot",
+        "build F3D body-member marker prefix",
+    )?;
+    ctx.extend_from_slice(
+        &mut prefix,
+        &0u16.to_le_bytes(),
+        "build F3D body-member marker prefix",
+    )?;
+    ctx.extend_from_slice(
+        &mut prefix,
+        &10u32.to_le_bytes(),
+        "build F3D body-member marker prefix",
+    )?;
+    ctx.extend_from_slice(
+        &mut prefix,
+        b"BodiesRoot",
+        "build F3D body-member marker prefix",
+    )?;
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D body-member streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))

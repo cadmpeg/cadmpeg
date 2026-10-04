@@ -157,3 +157,31 @@ fn sketch_surface_decoder_keeps_constructor_refusals_in_the_outer_result() {
         );
     }
 }
+
+
+#[test]
+fn sketch_surface_row_copy_refuses_each_resource_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let payload = canonical_surface_payload();
+    let operation = "f3d sketch surface row points";
+    for (dimension, additional) in [
+        (ResourceDimension::WorkUnits, 50),
+        (ResourceDimension::CollectionItems, 2),
+        (ResourceDimension::RetainedBytes, 96),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| parse_sketch_surface(ctx, &payload, 0).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
+}

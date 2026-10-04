@@ -110,8 +110,11 @@ fn copy_design_type(
 
     let entities = if let Some(rows) = design_type.entities.located_rows() {
         let mut copied = Vec::new();
-        ctx.reserve_vec(&mut copied, count, "f3d design type registered entities")?;
-        copied.extend_from_slice(rows);
+        ctx.extend_from_slice(
+            &mut copied,
+            rows,
+            "f3d design type registered entities",
+        )?;
         ReferenceRun::located(copied)
     } else {
         let mut copied = ctx.collection_vec(count, "f3d design type registered entities")?;

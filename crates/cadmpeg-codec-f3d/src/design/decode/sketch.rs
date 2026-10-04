@@ -3687,12 +3687,11 @@ fn parse_sketch_surface(
         std::num::NonZeroUsize::new(frame.v_count).ok_or_else(|| CodecError::malformed("F3D surface row width is zero"))?,
     ) {
         let mut row_points = Vec::new();
-        ctx.reserve_vec(
+        ctx.extend_from_slice(
             &mut row_points,
-            frame.v_count,
+            row,
             "f3d sketch surface row points",
         )?;
-        row_points.extend_from_slice(row);
         control_points.push(row_points);
     }
     let geometry = match SketchSurfaceGeometry::from_checked_parts(

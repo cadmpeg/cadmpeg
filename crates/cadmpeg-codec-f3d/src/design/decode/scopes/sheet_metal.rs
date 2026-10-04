@@ -653,14 +653,20 @@ fn edge_flange_operation_at(
         // Every reference the fixed section names is removed from this pool, so the
         // entries that remain at the end are exactly the unclaimed ones.
         // The three width modes share one fixed ten-slot allocation.
-        let mut unclaimed = match ctx.collection_vec(
+        let mut unclaimed = match ctx.vector_storage(
             8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS,
             "collect F3D unclaimed flange references",
         ) {
             Ok(values) => values,
             Err(error) => return Some(Err(error)),
         };
-        unclaimed.extend_from_slice(references);
+        if let Err(error) = ctx.extend_from_slice(
+            &mut unclaimed,
+            references,
+            "collect F3D unclaimed flange references",
+        ) {
+            return Some(Err(error));
+        }
         let claim = |index: u32, pool: &mut Vec<u32>| -> Result<Option<u32>, CodecError> {
             let mut entries = ctx
                 .admit_iter(pool, "claim F3D edge flange reference")

@@ -33,18 +33,28 @@ fn body_member_marker_prefix_copy_refuses_work() {
         assert_eq!(members[0].entity_suffix, 9);
         assert_eq!(members[0].flags, 2);
 
-        let refusal = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "build F3D body-member marker prefix",
-            0,
-            |ctx| super::super::decode_body_members(ctx, scan).map(|_| ()),
-        );
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "build F3D body-member marker prefix"
-                    && limit.additional == 8
-        ));
+        for (skip, additional) in [
+            (0, 8),
+            (1, 20),
+            (2, 8),
+            (3, 4),
+            (4, 8),
+            (5, 16),
+            (6, 20),
+        ] {
+            let refusal = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "build F3D body-member marker prefix",
+                skip,
+                |ctx| super::super::decode_body_members(ctx, scan).map(|_| ()),
+            );
+            assert!(matches!(
+                refusal,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "build F3D body-member marker prefix"
+                        && limit.additional == additional
+            ));
+        }
     });
 }
