@@ -1601,6 +1601,20 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Appends one retained character after charging its UTF-8 bytes.
+    pub fn push_retained_char(
+        &self,
+        output: &mut String,
+        value: char,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let length = value.len_utf8();
+        self.charge_work(u64_from_index(length), operation)?;
+        self.try_reserve_retained_text(output, length, operation)?;
+        output.push(value);
+        Ok(())
+    }
+
     /// Appends formatted text after admitting its exact retained byte count.
     pub fn append_formatted_retained(
         &self,
