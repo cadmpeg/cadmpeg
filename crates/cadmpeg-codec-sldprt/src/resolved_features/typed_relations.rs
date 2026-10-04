@@ -391,14 +391,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 loci_by_marker,
                 MarkerEntityFilter::All,
             )?;
-            ctx.charge_work(
-                u64_from_index(additions.len())
-                    .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            ctx.reserve_vec(&mut entities, additions.len(), OPERATION)?;
-            entities.extend(additions);
+            ctx.extend_vec(&mut entities, additions, OPERATION)?;
         }
         sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
         let owners = relation_owner_markers(ctx, marker, markers_by_id)?;
@@ -410,14 +403,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 loci_by_marker,
                 MarkerEntityFilter::All,
             )?;
-            ctx.charge_work(
-                u64_from_index(additions.len())
-                    .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            ctx.reserve_vec(&mut entities, additions.len(), OPERATION)?;
-            entities.extend(additions);
+            ctx.extend_vec(&mut entities, additions, OPERATION)?;
         }
         sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
         let mut operands = Vec::new();
@@ -709,16 +695,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         loci_by_marker,
                         MarkerEntityFilter::All,
                     )?;
-                    ctx.reserve_vec(&mut exact_entities, additions.len(), ENTITY_OPERATION)?;
-                    ctx.charge_work(
-                        u64_from_index(additions.len())
-                            .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(ENTITY_OPERATION, u64::MAX - 1, u64::MAX)
-                            })?,
-                        ENTITY_OPERATION,
-                    )?;
-                    exact_entities.extend(additions);
+                    ctx.extend_vec(&mut exact_entities, additions, ENTITY_OPERATION)?;
                     continue;
                 }
                 if !matches!(

@@ -509,12 +509,7 @@ pub(crate) fn bind_pattern_inputs(
                         class.offset,
                         end,
                     )?;
-                    ctx.reserve_capacity(
-                        &mut directions,
-                        declared.len(),
-                        "merge SLDPRT declared line directions",
-                    )?;
-                    directions.extend(declared);
+                    ctx.extend_vec(&mut directions, declared, "merge SLDPRT declared line directions")?;
                 }
                 if let Some(start) = object_start {
                     let mut excluded_handles = Vec::new();
@@ -535,12 +530,7 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     )?;
-                    ctx.reserve_capacity(
-                        &mut directions,
-                        compact.len(),
-                        "merge SLDPRT compact line directions",
-                    )?;
-                    directions.extend(compact);
+                    ctx.extend_vec(&mut directions, compact, "merge SLDPRT compact line directions")?;
                     if directions.is_empty() {
                         let first_spacing_m = feature
                             .parameters
@@ -563,12 +553,7 @@ pub(crate) fn bind_pattern_inputs(
                             &lane.names,
                             [first_spacing_m, second_spacing_m],
                         );
-                        ctx.reserve_vec(
-                            &mut directions,
-                            display.len(),
-                            "collect SLDPRT pattern display directions",
-                        )?;
-                        directions.extend(display);
+                        ctx.extend_vec(&mut directions, display, "collect SLDPRT pattern display directions")?;
                     }
                 }
                 let mut unique_directions = Vec::new();
@@ -662,12 +647,7 @@ pub(crate) fn bind_pattern_inputs(
             )?;
         }
     }
-    ctx.reserve_capacity(
-        &mut pattern_seed_assignments,
-        curve_seed_assignments.len(),
-        "merge SLDPRT pattern seed assignments",
-    )?;
-    pattern_seed_assignments.extend(curve_seed_assignments);
+    ctx.extend_vec(&mut pattern_seed_assignments, curve_seed_assignments, "merge SLDPRT pattern seed assignments")?;
     let mut seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
     for (index, seed) in pattern_seed_assignments {
         reserve_feature_binding_map(ctx, &mut seeds_by_pattern, "index SLDPRT pattern inputs")?;
