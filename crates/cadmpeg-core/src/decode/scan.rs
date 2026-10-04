@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible linear search and byte comparison under the caller's work budget.
 
-use super::iter_source::IterSource;
+use super::iter_source::{IterSource, VisitBoundError};
 use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
@@ -199,7 +199,13 @@ impl DecodeContext<'_> {
         values: &'values S,
         operation: &'static str,
     ) -> Result<AdmittedIter<S::Iter<'values>>, super::ResourceLimit> {
-        self.charge_work_limit(u64_from_index(values.visit_bound()), operation)?;
+        let bound = match values.visit_bound() {
+            Ok(bound) => bound,
+            Err(VisitBoundError::ExceedsU64) => {
+                return Err(self.budget.work_bound_overflow_limit(operation));
+            }
+        };
+        self.charge_work_limit(bound, operation)?;
         Ok(AdmittedIter {
             source: values.source_iter(),
         })
@@ -541,7 +547,38 @@ impl DecodeContext<'_> {
 #[cfg(test)]
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::decode::iter_source::IterSource;
+    use crate::decode::ResourceFailure;
     use crate::CodecError;
+
+    fn assert_range_overflow<S: IterSource + ?Sized>(source: &S, prior_work: u64) {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        ctx.charge_work(prior_work, "prior range work")
+            .expect("prior work fits");
+
+        let first = match ctx.admit_iter(source, "range bound") {
+            Err(failure) => failure,
+            Ok(_) => panic!("unrepresentable range bound refuses"),
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first.reason, ResourceFailure::BudgetExceeded);
+        assert_eq!(first.limit, u64::MAX);
+        assert_eq!(first.used, prior_work);
+        assert_eq!(first.additional, u64::MAX);
+        assert_eq!(first.operation, "range bound");
+        assert_eq!(ctx.resource_refusal(), Some(first));
+
+        let CodecError::ResourceLimit(repeated) = ctx
+            .charge_work(0, "later work")
+            .expect_err("overflow refusal fuses the work budget")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(repeated, first);
+    }
 
     #[test]
     fn empty_needle_is_never_a_match() {
@@ -878,6 +915,139 @@ mod tests {
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(limit.operation, "iteration");
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    }
+
+    #[test]
+    fn unsigned_range_admission_charges_exact_bound_and_refuses_one_below() {
+        macro_rules! assert_exact_and_one_below {
+            ($source:expr) => {{
+                let source = $source;
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = 3;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                assert_eq!(
+                    ctx.admit_iter(&source, "integer range")
+                        .expect("exact range bound fits")
+                        .collect::<Vec<_>>(),
+                    [0, 1, 2]
+                );
+
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = 2;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                let refusal = ctx
+                    .admit_iter(&source, "integer range")
+                    .expect_err("one unit below the range bound refuses");
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(refusal.reason, ResourceFailure::BudgetExceeded);
+                assert_eq!(refusal.used, 0);
+                assert_eq!(refusal.additional, 3);
+                assert_eq!(ctx.resource_refusal(), Some(refusal));
+            }};
+        }
+
+        assert_exact_and_one_below!(0_u8..3_u8);
+        assert_exact_and_one_below!(0_u8..=2_u8);
+        assert_exact_and_one_below!(0_u16..3_u16);
+        assert_exact_and_one_below!(0_u16..=2_u16);
+        assert_exact_and_one_below!(0_u32..3_u32);
+        assert_exact_and_one_below!(0_u32..=2_u32);
+        assert_exact_and_one_below!(0_u64..3_u64);
+        assert_exact_and_one_below!(0_u64..=2_u64);
+        assert_exact_and_one_below!(0_u128..3_u128);
+        assert_exact_and_one_below!(0_u128..=2_u128);
+        assert_exact_and_one_below!(0_usize..3_usize);
+        assert_exact_and_one_below!(0_usize..=2_usize);
+    }
+
+    #[test]
+    fn empty_and_reversed_ranges_admit_zero_visits() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+
+        let empty = std::ops::Range {
+            start: 3_u8,
+            end: 3_u8,
+        };
+        let reversed = std::ops::Range {
+            start: 4_u16,
+            end: 2_u16,
+        };
+        let reversed_inclusive = std::ops::RangeInclusive::new(3_u32, 2_u32);
+        let reversed_usize = std::ops::RangeInclusive::new(5_usize, 2_usize);
+        assert_eq!(ctx.admit_iter(&empty, "empty").expect("empty").count(), 0);
+        assert_eq!(ctx.admit_iter(&reversed, "reversed").expect("empty").count(), 0);
+        assert_eq!(
+            ctx.admit_iter(&reversed_inclusive, "reversed")
+                .expect("empty")
+                .count(),
+            0
+        );
+        assert_eq!(
+            ctx.admit_iter(&reversed_usize, "reversed")
+                .expect("empty")
+                .count(),
+            0
+        );
+
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, "probe")
+            .expect_err("empty range admission charges no work")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+    }
+
+    #[test]
+    fn partially_consumed_inclusive_range_admits_only_remaining_values() {
+        let mut source = (u64::MAX - 2)..=u64::MAX;
+        assert_eq!(source.next(), Some(u64::MAX - 2));
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ctx.admit_iter(&source, "remaining range")
+                .expect("remaining bound fits")
+                .collect::<Vec<_>>(),
+            [u64::MAX - 1, u64::MAX]
+        );
+    }
+
+    #[test]
+    fn overflowing_range_bounds_fuse_at_the_work_limit() {
+        assert_range_overflow(&(0_u64..=u64::MAX), 0);
+        assert_range_overflow(&(0_u128..=u128::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn maximum_u64_half_open_range_fits_the_work_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let source = 0_u64..u64::MAX;
+        let _admitted = ctx
+            .admit_iter(&source, "maximum range")
+            .expect("u64::MAX visits fit the work limit");
+
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, "probe")
+            .expect_err("one more unit exceeds the work limit")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(limit.used, u64::MAX);
+        assert_eq!(limit.additional, 1);
     }
 
     #[test]

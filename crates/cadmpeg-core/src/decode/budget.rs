@@ -475,6 +475,17 @@ impl DecodeBudget {
             operation,
         )
     }
+
+    pub(super) fn work_bound_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
+        self.refuse_limit(
+            ResourceDimension::WorkUnits,
+            ResourceFailure::BudgetExceeded,
+            self.policy.limits.max_work_units,
+            self.work.get(),
+            u64::MAX,
+            operation,
+        )
+    }
 }
 
 pub(super) struct StorageScope<'a> {
