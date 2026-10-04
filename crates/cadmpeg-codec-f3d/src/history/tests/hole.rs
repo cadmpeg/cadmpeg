@@ -223,3 +223,34 @@ fn edge_backed_hole_selection_rejects_ambiguous_support_planes() {
         .and_then(|construction| construction.face_selection.as_ref())
         .is_some_and(|selection| selection.historical_face_candidates.is_empty()));
 }
+
+#[test]
+fn edge_backed_hole_selection_refuses_transition_scan_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for operation in [
+        "scan F3D Hole cylinder axes",
+        "measure F3D Hole support surface coordinates",
+        "scan F3D Hole updated faces",
+        "deduplicate F3D Hole transition faces",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let history = test_history();
+                let mut scope = hole_scope();
+                bind_hole_selection_history(
+                    decode,
+                    std::slice::from_mut(&mut scope),
+                    std::slice::from_ref(&history),
+                )
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}

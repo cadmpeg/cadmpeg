@@ -640,3 +640,29 @@ fn manifest_entry_lookup_preserves_resource_refusal() {
     };
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
+
+#[test]
+fn manifest_count_ranges_propagate_work_refusals() {
+    let top = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let asset = generated_design_asset().unwrap();
+    for (bytes, operation, top_level) in [
+        (top.as_slice(), "visit F3D manifest registry entries", true),
+        (top.as_slice(), "visit F3D manifest asset folders", true),
+        (asset.as_slice(), "visit F3D manifest capability entries", false),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                if top_level {
+                    parse_top_level(ctx, bytes).map(|_| ())
+                } else {
+                    parse_asset_header(ctx, bytes).map(|_| ())
+                }
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == operation));
+    }
+}

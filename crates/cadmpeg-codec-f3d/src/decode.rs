@@ -291,8 +291,9 @@ fn report_unresolved_configuration_rules(
     ir: &CadIr,
 ) -> Result<(), CodecError> {
     let count = crate::design::configurations::unresolved_configuration_member_count(
+        ctx,
         &native.design_configurations,
-    );
+    )?;
     if count != 0 {
         push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationMemberUnassigned, format_args!(
             "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."

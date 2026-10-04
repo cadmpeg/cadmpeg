@@ -1049,7 +1049,8 @@ fn fusion_attribute_family_scan_preserves_work_refusal() {
     let mut asm = AsmBrep::default();
     asm.attributes.push(attribute);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Counts the one outer attribute visit before the first family-value scan.
+    policy.limits.max_work_units = 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let error = super::Brep::from_asm(ctx, asm).err().expect("scan refusal");
         assert!(

@@ -547,6 +547,42 @@ impl SketchPointClosure10Inline {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchPointClosure {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(1)
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchPointClosure10 {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(1)
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchPointClosure10Inline {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(1)
+    }
+}
+
 /// Serialized member sequence of one sketch-point record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SketchPointRecordForm<T = f64> {
@@ -605,6 +641,111 @@ pub(crate) enum SketchPointRecordForm<T = f64> {
         flags: [bool; 8],
         closure: SketchPointClosure,
     },
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchPointRecordForm<f64> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        match self {
+            Self::Version0 { flag } => {
+                let tag = 0_u8;
+                DecodeCost::decode_cost(&(&tag, flag), ctx, operation)
+            }
+            Self::Version8 {
+                persistent_id,
+                flags,
+                depth,
+            } => {
+                let tag = 1_u8;
+                DecodeCost::decode_cost(
+                    &(&tag, persistent_id, flags, depth),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Version10 {
+                depth,
+                persistent_id,
+                flags,
+                closure,
+            } => {
+                let tag = 2_u8;
+                DecodeCost::decode_cost(
+                    &(&tag, depth, persistent_id, flags, closure),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Version10InlineTyped {
+                depth,
+                trailing_reference,
+                persistent_id,
+                flags,
+                closure,
+            } => {
+                let tag = 3_u8;
+                DecodeCost::decode_cost(
+                    &(
+                        &tag,
+                        depth,
+                        trailing_reference,
+                        persistent_id,
+                        flags,
+                        closure,
+                    ),
+                    ctx,
+                    operation,
+                )
+            }
+            Self::Version11 {
+                depth,
+                entity_genesis,
+                padded_paired_reference,
+                companion_prefix_present_zero,
+                persistent_id,
+                flags,
+                closure,
+            } => {
+                let tag = 4_u8;
+                let leading = (
+                    &tag,
+                    depth,
+                    entity_genesis,
+                    padded_paired_reference,
+                    companion_prefix_present_zero,
+                    persistent_id,
+                );
+                let trailing = (flags, closure);
+                DecodeCost::decode_cost(&(&leading, &trailing), ctx, operation)
+            }
+            Self::Version11InlineTyped {
+                depth,
+                entity_genesis,
+                trailing_reference,
+                companion_prefix_present_zero,
+                persistent_id,
+                flags,
+                closure,
+            } => {
+                let tag = 5_u8;
+                let leading = (
+                    &tag,
+                    depth,
+                    entity_genesis,
+                    trailing_reference,
+                    companion_prefix_present_zero,
+                    persistent_id,
+                );
+                let trailing = (flags, closure);
+                DecodeCost::decode_cost(&(&leading, &trailing), ctx, operation)
+            }
+        }
+    }
 }
 
 impl SketchPointRecordForm<f64> {
@@ -888,7 +1029,10 @@ impl SketchPointCompanion {
     fn validate_charged(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         let operation = "index F3D sketch point incident curves";
         let mut unique = std::collections::HashSet::new();
-        for curve in &self.incident_curves {
+        for curve in ctx.admit_iter(
+            &self.incident_curves,
+            "scan F3D sketch point incident curves",
+        )? {
             ctx.reserve_set(&mut unique, 1, operation)?;
             if !unique.insert(curve) {
                 return Err(CodecError::Malformed(
@@ -1087,6 +1231,13 @@ impl SketchPoint {
         let coordinates = FinitePoint2::new(draft.coordinates).ok_or_else(|| {
             CodecError::Malformed("sketch point coordinates must be finite".into())
         })?;
+        let operation = "clone F3D sketch point record form";
+        let copy_cost = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &draft.record_form,
+            ctx,
+            operation,
+        )?;
+        ctx.charge_work(copy_cost, operation)?;
         let record_form = draft
             .record_form
             .clone()
@@ -2628,6 +2779,142 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "index F3D sketch point incident curves")
         );
+    }
+
+    #[test]
+    fn sketch_point_decode_admits_companion_scan_and_fixed_record_form_clone() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let make_draft = || {
+            let point: SketchPoint = serde_json::from_value(native_point_wire(&json!({
+                "kind": "version11",
+                "padded_paired_reference": false,
+                "companion_prefix_present_zero": false
+            })))
+            .unwrap();
+            super::SketchPointDraft {
+                id: point.id,
+                record_index: point.record_index,
+                owner_reference: point.owner_reference,
+                class_tag: point.class_tag,
+                byte_offset: point.byte_offset,
+                coordinate_offset: point.coordinate_offset,
+                record_form: point.record_form.into_raw(),
+                companion: point.companion,
+                paired_reference: point.paired_reference,
+                coordinates: point.coordinates.get(),
+            }
+        };
+        let companion_scan = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D sketch point incident curves",
+            0,
+            |ctx| SketchPoint::try_from_charged(ctx, make_draft()),
+        );
+        assert!(matches!(
+            companion_scan,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "scan F3D sketch point incident curves"
+        ));
+        let record_form_clone = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "clone F3D sketch point record form",
+            0,
+            |ctx| SketchPoint::try_from_charged(ctx, make_draft()),
+        );
+        assert!(matches!(
+            record_form_clone,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "clone F3D sketch point record form"
+        ));
+    }
+
+    #[test]
+    fn sketch_point_record_form_cost_counts_active_semantic_fields() {
+        use super::{
+            SketchPointClosure, SketchPointClosure10, SketchPointClosure10Inline,
+            SketchPointRecordForm,
+        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::decode::cost::DecodeCost;
+        use std::num::NonZeroU64;
+
+        let depth = 1.0;
+        let persistent_id = NonZeroU64::new(1).unwrap();
+        let forms: [(SketchPointRecordForm<f64>, u64); 7] = [
+            (SketchPointRecordForm::Version0 { flag: true }, 2),
+            (
+                SketchPointRecordForm::Version8 {
+                    persistent_id,
+                    flags: [false; 7],
+                    depth,
+                },
+                24,
+            ),
+            (
+                SketchPointRecordForm::Version10 {
+                    depth,
+                    persistent_id,
+                    flags: [false; 7],
+                    closure: SketchPointClosure10::State0,
+                },
+                25,
+            ),
+            (
+                SketchPointRecordForm::Version10InlineTyped {
+                    depth,
+                    trailing_reference: 3,
+                    persistent_id,
+                    flags: [false; 7],
+                    closure: SketchPointClosure10Inline::Selector0State0,
+                },
+                29,
+            ),
+            (
+                SketchPointRecordForm::Version11 {
+                    depth,
+                    entity_genesis: None,
+                    padded_paired_reference: false,
+                    companion_prefix_present_zero: false,
+                    persistent_id,
+                    flags: [false; 8],
+                    closure: SketchPointClosure::Selector0State0,
+                },
+                29,
+            ),
+            (
+                SketchPointRecordForm::Version11 {
+                    depth,
+                    entity_genesis: Some(4),
+                    padded_paired_reference: false,
+                    companion_prefix_present_zero: false,
+                    persistent_id,
+                    flags: [false; 8],
+                    closure: SketchPointClosure::Selector0State0,
+                },
+                37,
+            ),
+            (
+                SketchPointRecordForm::Version11InlineTyped {
+                    depth,
+                    entity_genesis: None,
+                    trailing_reference: 3,
+                    companion_prefix_present_zero: false,
+                    persistent_id,
+                    flags: [false; 8],
+                    closure: SketchPointClosure::Selector0State0,
+                },
+                32,
+            ),
+        ];
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+
+        // Counts one variant tag and the semantic byte cost of every active field.
+        for (form, expected) in forms {
+            assert_eq!(DecodeCost::decode_cost(&form, &ctx, "record form copy").unwrap(), expected);
+        }
     }
 
     fn native_surface_wire() -> serde_json::Value {

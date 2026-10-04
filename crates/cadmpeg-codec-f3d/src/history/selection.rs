@@ -1557,10 +1557,14 @@ fn hole_transition_face_candidate(
         cylinders.push(cylinder);
     }
     if cylinders.is_empty()
-        || cylinders.iter().any(|cylinder| {
-            let axis = cylinder.axis.unit();
-            axis.is_none_or(|axis| !same_axis_line((cylinder.origin, axis), (point, direction)))
-        })
+        || decode
+            .admit_iter(&cylinders, "scan F3D Hole cylinder axes")?
+            .any(|cylinder| {
+                let axis = cylinder.axis.unit();
+                axis.is_none_or(|axis| {
+                    !same_axis_line((cylinder.origin, axis), (point, direction))
+                })
+            })
     {
         return Ok(None);
     }
@@ -1575,30 +1579,31 @@ fn hole_transition_face_candidate(
             "index F3D Hole preceding faces",
         )?;
     }
+    let surface_scale = decode
+        .admit_iter(
+            &preceding_topology.surface_planes,
+            "measure F3D Hole support surface coordinates",
+        )?
+        .fold(0.0_f64, |maximum, plane| {
+            maximum
+                .max(plane.origin.x.abs())
+                .max(plane.origin.y.abs())
+                .max(plane.origin.z.abs())
+        });
     let scale = [
         point.x.abs(),
         point.y.abs(),
         point.z.abs(),
-        preceding_topology
-            .surface_planes
-            .iter()
-            .flat_map(|plane| {
-                [
-                    plane.origin.x.abs(),
-                    plane.origin.y.abs(),
-                    plane.origin.z.abs(),
-                ]
-            })
-            .fold(0.0, f64::max),
+        surface_scale,
     ]
     .into_iter()
     .fold(1.0, f64::max);
     let mut candidates = decode.collect_vec(
-        transition
-            .topology
-            .faces
-            .updated
-            .iter()
+        decode
+            .admit_iter(
+                &transition.topology.faces.updated,
+                "scan F3D Hole updated faces",
+            )?
             .copied()
             .filter(|face| preceding_faces.contains(face))
             .filter_map(|face| {
@@ -1632,7 +1637,7 @@ fn hole_transition_face_candidate(
         Ord::cmp,
         "sort F3D Hole transition faces",
     )?;
-    candidates.dedup();
+    decode.dedup_vec(&mut candidates, "deduplicate F3D Hole transition faces")?;
     let [face_slot] = candidates.as_slice() else {
         return Ok(None);
     };
@@ -1728,14 +1733,17 @@ pub(crate) fn bind_circular_pattern_axes(
             )?,
             |local_id| std::iter::once(*local_id).chain(None),
         )?;
-        let mut axes = historical_pattern_identity_axes(
+        let axis_candidates = historical_pattern_identity_axes(
             decode,
             *persistent_identity,
             &identities,
             history,
             input_state_id,
-        )?
-        .into_iter();
+        )?;
+        let mut axes = decode.admit_iter(
+            &axis_candidates,
+            "scan F3D circular pattern identity axes",
+        )?;
         let Some(axis) = axes.next() else {
             continue;
         };
@@ -1748,7 +1756,7 @@ pub(crate) fn bind_circular_pattern_axes(
         }) {
             continue;
         }
-        *resolved = Some(axis);
+        *resolved = Some(*axis);
     }
     Ok(())
 }
@@ -1901,14 +1909,22 @@ fn historical_pattern_identity_axis_candidates(
         return Ok(Vec::new());
     };
     match kind {
-        AsmHistoricalEntityKind::Face => decode.collect_vec(
-            historical_face_surface_axis(entity_ref, topology),
-            "collect F3D face axis candidates",
-        ),
-        AsmHistoricalEntityKind::Surface => decode.collect_vec(
-            historical_surface_axis(entity_ref, topology),
-            "collect F3D surface axis candidates",
-        ),
+        AsmHistoricalEntityKind::Face => match historical_face_surface_axis(
+            decode,
+            entity_ref,
+            topology,
+        )? {
+            Some(axis) => decode.collect_vec(Some(axis), "collect F3D face axis candidates"),
+            None => Ok(Vec::new()),
+        },
+        AsmHistoricalEntityKind::Surface => match historical_surface_axis(
+            decode,
+            entity_ref,
+            topology,
+        )? {
+            Some(axis) => decode.collect_vec(Some(axis), "collect F3D surface axis candidates"),
+            None => Ok(Vec::new()),
+        },
         _ => {
             let mut axes = Vec::new();
             let identity_edges = historical_identity_edges(decode, kind, entity_ref, topology)?;
@@ -1926,38 +1942,87 @@ fn historical_pattern_identity_axis_candidates(
 }
 
 fn historical_face_surface_axis(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     face: i64,
     topology: &AsmHistoricalTopology,
-) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    let mut bindings = topology
+) -> Result<Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>, cadmpeg_core::CodecError> {
+    let Some(index) = decode.position_by(
+        &topology.face_surfaces,
+        |binding| Ok(binding.entity == face),
+        "find F3D pattern face surface binding",
+    )? else {
+        return Ok(None);
+    };
+    let Some((binding, remaining)) = topology
         .face_surfaces
-        .iter()
-        .filter(|binding| binding.entity == face);
-    let binding = bindings.next()?;
-    bindings
-        .next()
-        .is_none()
-        .then(|| historical_surface_axis(binding.carrier, topology))?
+        .get(index..)
+        .and_then(|bindings| bindings.split_first())
+    else {
+        return Ok(None);
+    };
+    if decode.any_by(
+        remaining,
+        |candidate| Ok(candidate.entity == face),
+        "find F3D pattern face surface binding",
+    )? {
+        return Ok(None);
+    }
+    historical_surface_axis(decode, binding.carrier, topology)
 }
 
 fn historical_surface_axis(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: i64,
     topology: &AsmHistoricalTopology,
-) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    let mut candidates = topology
-        .surface_axes
-        .iter()
-        .filter(|axis| axis.surface == surface)
-        .map(|axis| (axis.origin, axis.direction))
-        .chain(
-            topology
-                .surface_planes
-                .iter()
-                .filter(|plane| plane.surface == surface)
-                .map(|plane| (plane.origin, plane.normal)),
-        );
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+) -> Result<Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>, cadmpeg_core::CodecError> {
+    let axis_index = decode.position_by(
+        &topology.surface_axes,
+        |axis| Ok(axis.surface == surface),
+        "find F3D pattern surface axis",
+    )?;
+    let axis = if let Some(index) = axis_index {
+        let Some((axis, remaining)) = topology
+            .surface_axes
+            .get(index..)
+            .and_then(|axes| axes.split_first())
+        else {
+            return Ok(None);
+        };
+        if decode.any_by(
+            remaining,
+            |candidate| Ok(candidate.surface == surface),
+            "find F3D pattern surface axis",
+        )? {
+            return Ok(None);
+        }
+        Some((axis.origin, axis.direction))
+    } else {
+        None
+    };
+    let Some(plane_index) = decode.position_by(
+        &topology.surface_planes,
+        |plane| Ok(plane.surface == surface),
+        "find F3D pattern surface plane",
+    )? else {
+        return Ok(axis);
+    };
+    let Some((plane, remaining)) = topology
+        .surface_planes
+        .get(plane_index..)
+        .and_then(|planes| planes.split_first())
+    else {
+        return Ok(axis);
+    };
+    if axis.is_some()
+        || decode.any_by(
+            remaining,
+            |candidate| Ok(candidate.surface == surface),
+            "find F3D pattern surface plane",
+        )?
+    {
+        return Ok(None);
+    }
+    Ok(Some((plane.origin, plane.normal)))
 }
 
 /// Bind persistent Mirror plane selections to exact planes in the selected

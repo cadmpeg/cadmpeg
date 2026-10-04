@@ -446,6 +446,24 @@ historical_transition_limit_test!(
 );
 
 #[test]
+fn history_transition_node_source_refuses_work_limit() {
+    let operation = "scan F3D transition nodes";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_state_history();
+            super::super::bind_historical_transitions(ctx, &mut history.states)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
 fn history_archived_count_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -972,6 +990,85 @@ fn history_delta_offsets_refuse_collection_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "f3d history delta offsets"
+    ));
+}
+
+fn history_decode_work_refusal(
+    bytes: &[u8],
+    operation: &'static str,
+) -> cadmpeg_core::CodecError {
+    let limits = cadmpeg_core::decode::ResourceLimits::service();
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            super::super::decode(
+                ctx,
+                bytes,
+                "history",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+                &limits,
+            )
+            .map(|_| ())
+        },
+    )
+}
+
+#[test]
+fn history_preamble_search_refuses_work_limit() {
+    let error = history_decode_work_refusal(&one_delta_state(), "find F3D ASM preamble");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3D ASM preamble"
+    ));
+}
+
+#[test]
+fn history_delta_marker_search_refuses_work_limit() {
+    let error = history_decode_work_refusal(&one_delta_state(), "find F3D ASM delta markers");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3D ASM delta markers"
+    ));
+}
+
+#[test]
+fn history_delta_offset_scan_refuses_work_limit() {
+    let error = history_decode_work_refusal(&one_delta_state(), "scan F3D ASM delta offsets");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D ASM delta offsets"
+    ));
+}
+
+#[test]
+fn history_record_reference_count_refuses_work_limit() {
+    let operation = "count F3D history record references";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let bytes = one_framed_history_record();
+            super::super::decode_history_records(
+                ctx,
+                &bytes,
+                0,
+                None,
+                "history",
+                "state",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
 

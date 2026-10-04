@@ -304,7 +304,7 @@ fn pattern_body_seed_preserves_native_selection() {
                     if id == "f3d:Design/BulkStream.dat:design-construction-operand-group#20")));
 }
 
-fn pattern_slots_error(max_items: u64, max_retained: u64) -> Result<(), cadmpeg_core::CodecError> {
+fn pattern_slots_error(max_items: u64, max_materialized_bytes: u64) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed},
@@ -367,7 +367,9 @@ fn pattern_slots_error(max_items: u64, max_retained: u64) -> Result<(), cadmpeg_
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
+    policy.limits.max_retained_bytes = u64::MAX;
+    // Temporary copied index keys stay in the live scoped reservation.
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::bind_feature_body_selections(&ctx, std::slice::from_mut(&mut feature), &inputs)
 }
@@ -393,7 +395,7 @@ fn pattern_body_second_slot_refuses_collection_limit() {
 #[test]
 fn pattern_body_feature_id_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D pattern body feature ID",
         |cap| pattern_slots_error(u64::MAX, cap),
     );

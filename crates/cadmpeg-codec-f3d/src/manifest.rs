@@ -398,7 +398,7 @@ fn parse_top_level_body<'a, 'ctx>(
 
     let mut registry_storage = ctx.reserve_scoped(0, "F3D manifest registry storage")?;
     let mut registry_names = BTreeSet::new();
-    for ordinal in 0..registry_count {
+    for ordinal in ctx.admit_iter(&(0..registry_count), "visit F3D manifest registry entries").map_err(CodecError::from)? {
         let field = ctx.format_scoped(
             format_args!("top-level manifest registry name {ordinal}"),
             "describe F3D manifest field",
@@ -490,7 +490,7 @@ fn parse_asset_tail_at<'a, 'ctx>(
         "top-level manifest asset-folder count",
     )?;
     let mut asset_folder_bases = Vec::new();
-    for ordinal in 0..asset_folder_count {
+    for ordinal in ctx.admit_iter(&(0..asset_folder_count), "visit F3D manifest asset folders").map_err(CodecError::from)? {
         let field = ctx.format_scoped(
             format_args!("top-level manifest asset-folder base {ordinal}"),
             "describe F3D manifest field",
@@ -753,7 +753,7 @@ fn parse_capability_registry<'ctx>(
             MAX_REGISTRY_ENTRIES,
         )?;
         let mut capability_names = BTreeSet::new();
-        for ordinal in 0..capability_count {
+        for ordinal in cursor.ctx.admit_iter(&(0..capability_count), "visit F3D manifest capability entries").map_err(CodecError::from)? {
             let field = cursor.ctx.format_scoped(
                 format_args!("Fusion asset manifest capability name {ordinal}"),
                 "describe F3D manifest field",

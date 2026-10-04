@@ -577,11 +577,20 @@ pub(crate) fn unresolved_configuration_rule_count(
         .count()
 }
 
-pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguration]) -> usize {
-    native
-        .iter()
-        .map(DesignConfiguration::unknown_member_count)
-        .sum()
+pub(crate) fn unresolved_configuration_member_count(
+    ctx: &DecodeContext<'_>,
+    native: &[DesignConfiguration],
+) -> Result<usize, CodecError> {
+    native.iter().try_fold(0usize, |count, configuration| {
+        let member_count = configuration.unknown_member_count(ctx)?;
+        count.checked_add(member_count).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "count F3D unresolved configuration members",
+                cadmpeg_core::decode::u64_from_index(count),
+                cadmpeg_core::decode::u64_from_index(member_count),
+            )
+        })
+    })
 }
 
 #[cfg(test)]
@@ -706,7 +715,24 @@ mod tests {
             })
             .unwrap(),
         ];
-        assert_eq!(unresolved_configuration_member_count(&native), 3);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| {
+                unresolved_configuration_member_count(ctx, &native)
+            })
+            .unwrap(),
+            3
+        );
+        let variant_refusal = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D configuration variants for members",
+            0,
+            |ctx| unresolved_configuration_member_count(ctx, &native),
+        );
+        assert!(matches!(
+            variant_refusal,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "scan F3D configuration variants for members"
+        ));
     }
 
     #[test]

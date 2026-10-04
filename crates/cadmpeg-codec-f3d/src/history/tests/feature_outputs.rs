@@ -39,13 +39,15 @@ fn feature_output_error(
     histories: &[crate::history_records::AsmHistory],
     bodies: &[cadmpeg_ir::topology::Body],
     max_items: u64,
-    max_retained: u64,
+    max_materialized_bytes: u64,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
+    policy.limits.max_retained_bytes = u64::MAX;
+    // Temporary copied body IDs stay in the live scoped reservation.
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::bind_feature_outputs(&ctx, &mut [], &[], histories, bodies).unwrap_err()
 }

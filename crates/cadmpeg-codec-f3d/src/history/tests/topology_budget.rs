@@ -117,3 +117,157 @@ fn historical_tags_refuse_collection_limit() {
         if limit.operation == "collect F3D historical persistent tags")
     );
 }
+
+fn relation_brep(classified_face_loops: bool) -> cadmpeg_asm::brep::AsmBrep {
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
+    };
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Region, Sense,
+        Shell,
+    };
+
+    let id = |slot| format!("f3d:brep:entity#{slot}");
+    let body = BodyId::mint(id(1)).expect("identity grammar");
+    let region = RegionId::mint(id(2)).expect("identity grammar");
+    let shell = ShellId::mint(id(3)).expect("identity grammar");
+    let face = FaceId::mint(id(4)).expect("identity grammar");
+    let outer_loop = LoopId::mint(id(5)).expect("identity grammar");
+    let outer_coedge = CoedgeId::mint(id(6)).expect("identity grammar");
+    let mut brep = cadmpeg_asm::brep::AsmBrep {
+        bodies: vec![Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![region.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        }],
+        regions: vec![Region {
+            id: region.clone(),
+            body,
+            shells: vec![shell.clone()],
+        }],
+        shells: vec![Shell::with_face(shell, region, face.clone())],
+        faces: vec![Face {
+            id: face.clone(),
+            shell: ShellId::mint(id(3)).expect("identity grammar"),
+            surface: SurfaceId::mint(id(20)).expect("identity grammar"),
+            sense: Sense::Forward,
+            loops: if classified_face_loops {
+                FaceLoops::classified(
+                    outer_loop.clone(),
+                    vec![LoopId::mint(id(9)).expect("identity grammar")],
+                )
+            } else {
+                FaceLoops::unspecified(vec![outer_loop.clone()])
+            },
+            name: None,
+            color: None,
+            tolerance: None,
+        }],
+        ..Default::default()
+    };
+    brep.loops.push(Loop {
+        id: outer_loop.clone(),
+        face: face.clone(),
+        boundary: LoopBoundary::Ring(LoopRing::single(outer_coedge.clone())),
+    });
+    brep.coedges.push(Coedge {
+        id: outer_coedge.clone(),
+        owner_loop: outer_loop,
+        edge: EdgeId::mint(id(7)).expect("identity grammar"),
+        radial_next: outer_coedge,
+        sense: Sense::Forward,
+        pcurves: Vec::new(),
+        use_curve: None,
+    });
+    if classified_face_loops {
+        let inner_loop = LoopId::mint(id(9)).expect("identity grammar");
+        let inner_coedge = CoedgeId::mint(id(10)).expect("identity grammar");
+        brep.loops.push(Loop {
+            id: inner_loop.clone(),
+            face,
+            boundary: LoopBoundary::Ring(LoopRing::single(inner_coedge.clone())),
+        });
+        brep.coedges.push(Coedge {
+            id: inner_coedge.clone(),
+            owner_loop: inner_loop,
+            edge: EdgeId::mint(id(11)).expect("identity grammar"),
+            radial_next: inner_coedge,
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+        });
+    }
+    brep
+}
+
+#[test]
+fn historical_topology_relation_owner_slices_refuse_work() {
+    let brep = relation_brep(false);
+    let operation = "scan F3D historical topology relation owners";
+    for skip in 0..7 {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
+            |ctx| super::super::historical_topology(ctx, &brep).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn historical_topology_relation_member_slices_refuse_work() {
+    let brep = relation_brep(false);
+    let operation = "scan F3D historical topology relation members";
+    for skip in 0..5 {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
+            |ctx| super::super::historical_topology(ctx, &brep).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn historical_topology_classified_face_loop_refuses_work() {
+    let brep = relation_brep(true);
+    let operation = "visit F3D historical classified face loop";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| super::super::historical_topology(ctx, &brep).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn historical_topology_classified_face_loop_members_refuse_work() {
+    let brep = relation_brep(true);
+    let operation = "scan F3D historical topology relation members";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        3,
+        |ctx| super::super::historical_topology(ctx, &brep).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
