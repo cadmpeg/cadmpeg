@@ -193,7 +193,7 @@ fn generated_input_output_bodies(
         "creo generated input feature lookup",
     )?;
     let mut matching_feature = None;
-    for feature in ir.model.features.iter() {
+    for feature in ctx.admit_iter(&ir.model.features, "creo generated input feature lookup traversal")? {
         if !ctx.equal(
             feature.id.as_str(),
             feature_id_text.as_str(),
@@ -415,7 +415,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
             "creo evaluated sweep body candidate",
         )?;
         let mut matching_body = None;
-        for body in ir.model.bodies.iter() {
+        for body in ctx.admit_iter(&ir.model.bodies, "creo evaluated sweep body lookup traversal")? {
             if !ctx.equal(
                 body.id.as_str(),
                 candidate.as_str(),

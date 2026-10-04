@@ -1164,3 +1164,51 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     );
     assert_eq!(evaluated_sweep_body_kind(&ir, "extrusion", 40), None);
 }
+
+#[test]
+fn generated_input_feature_scan_refuses_before_identity_comparison() {
+    let scan = crate::test_support::empty_container_scan();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
+            .expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    });
+    let outputs = crate::test_support::assert_work_boundaries(
+        &["creo generated input feature lookup traversal"],
+        |ctx| {
+            generated_input_output_bodies(
+                ctx,
+                &scan,
+                &ir,
+                40,
+                &mut super::FeatureOutputHistory::new(ctx)?,
+            )
+        },
+    );
+    assert!(outputs.is_empty());
+}
+
+#[test]
+fn evaluated_sweep_body_scan_refuses_before_identity_comparison() {
+    let ir = sweep_output_ir();
+    let outputs = crate::test_support::assert_work_boundaries(
+        &["creo evaluated sweep body lookup traversal"],
+        |ctx| evaluated_sweep_output_bodies(ctx, &ir, 40),
+    );
+    assert_eq!(
+        outputs,
+        vec![BodyId::mint("creo:feature:extrusion#40:body").expect("identity grammar")],
+    );
+}
