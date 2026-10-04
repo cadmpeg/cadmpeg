@@ -303,8 +303,12 @@ impl Serialize for DesignVisualToken {
 impl TryFrom<String> for DesignVisualToken {
     type Error = &'static str;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        crate::design::presentation::visual_token(&value)
-            .ok_or("visual_guid must be a complete visual token")?;
+        let parsed = crate::design::presentation::visual_token(&cadmpeg_ir::index::StandardIndex, &value);
+        let parsed = match parsed {
+            Ok(parsed) => parsed,
+            Err(error) => match error {},
+        };
+        parsed.ok_or("visual_guid must be a complete visual token")?;
         cadmpeg_ir::ids::IdentityKey::try_new(value)
             .map(Self)
             .map_err(|_| "visual_guid must be a complete visual token")
@@ -331,6 +335,17 @@ impl std::fmt::Display for DesignVisualToken {
 }
 
 impl DesignVisualToken {
+    pub(crate) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: String,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if crate::design::presentation::visual_token(ctx, &value)?.is_none() {
+            return Ok(None);
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), "f3d visual token identity grammar")?;
+        Ok(cadmpeg_ir::ids::IdentityKey::try_new(value).ok().map(Self))
+    }
+
     pub(crate) fn matches(&self, other: &Self) -> bool {
         self.0.as_str().eq_ignore_ascii_case(other.0.as_str())
     }

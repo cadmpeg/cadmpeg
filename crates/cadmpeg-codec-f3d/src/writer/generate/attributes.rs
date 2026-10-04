@@ -73,7 +73,7 @@ impl<'a> AttributeIndex<'a> {
         let mut material_body_keys = HashMap::new();
         for assignment in &native.design_material_assignments {
             if let Some(appearance) =
-                crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?
+                crate::materials::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, &target.model.appearances, assignment)?
             {
                 material_body_keys
                     .entry(appearance.id.as_str())

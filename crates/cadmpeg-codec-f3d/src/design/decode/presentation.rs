@@ -378,7 +378,7 @@ fn presentation_material(
         else {
             continue;
         };
-        if !is_physical_material_token(&physical_token) || after_token > end {
+        if !is_physical_material_token(ctx, &physical_token)? || after_token > end {
             continue;
         }
         let mut reference_at = after_token;
@@ -420,7 +420,7 @@ fn presentation_material(
         else {
             continue;
         };
-        let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
+        let Some(visual_guid) = crate::records::references::DesignVisualToken::new(ctx, visual_guid)?
         else {
             continue;
         };
@@ -504,7 +504,7 @@ fn bare_presentation_material(
         else {
             continue;
         };
-        if !is_physical_material_token(&physical_token) {
+        if !is_physical_material_token(ctx, &physical_token)? {
             continue;
         }
 
@@ -559,7 +559,7 @@ fn bare_presentation_material(
         else {
             continue;
         };
-        let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
+        let Some(visual_guid) = crate::records::references::DesignVisualToken::new(ctx, visual_guid)?
         else {
             continue;
         };

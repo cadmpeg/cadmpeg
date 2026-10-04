@@ -6327,6 +6327,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             continue;
         };
         let appearance = materials::appearance_for_visual_token(
+            ctx,
             &ir.model.appearances,
             assignment.visual_guid,
             None,

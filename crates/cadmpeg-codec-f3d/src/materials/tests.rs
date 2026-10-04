@@ -535,7 +535,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     };
 
     assert!(
-        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+        super::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, std::slice::from_ref(&appearance), &assignment)
             .expect("valid preset-less assignment")
             .is_none()
     );
@@ -544,7 +544,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         crate::records::references::DesignVisualToken::try_from(appearance_guid.to_owned())
             .unwrap();
     assert!(
-        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+        super::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, std::slice::from_ref(&appearance), &assignment)
             .expect("exact visual-token assignment")
             .is_some()
     );
@@ -559,7 +559,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     });
     appearance.name = Some("Prism-017".into());
     assert!(
-        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+        super::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, std::slice::from_ref(&appearance), &assignment)
             .expect("present preset-name fallback")
             .is_some()
     );
@@ -587,7 +587,7 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#revised", revised_token),
     ];
 
-    let selected = super::appearance_for_visual_token(
+    let selected = super::appearance_for_visual_token(&cadmpeg_ir::index::StandardIndex,
         &appearances,
         &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
         None,
@@ -596,12 +596,22 @@ fn complete_visual_token_selects_one_revision_record() {
     .expect("revised appearance exists");
     assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(super::appearance_for_visual_token(&ctx, &appearances,
+        &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(), None),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && failure.operation == "f3d visual token revision step"));
+
     let duplicates = [
         appearance("f3d:test:appearance#first", revised_token),
         appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
-        super::appearance_for_visual_token(
+        super::appearance_for_visual_token(&cadmpeg_ir::index::StandardIndex,
             &duplicates,
             &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
                 .unwrap(),
@@ -632,7 +642,7 @@ fn visual_preset_fallback_requires_one_record() {
     ];
 
     assert!(matches!(
-        super::appearance_for_visual_token(
+        super::appearance_for_visual_token(&cadmpeg_ir::index::StandardIndex,
             &appearances,
             &crate::records::references::DesignVisualToken::try_from(
                 "11111111-2222-3333-4444-555555555555".to_owned()

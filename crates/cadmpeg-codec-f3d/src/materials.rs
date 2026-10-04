@@ -726,7 +726,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let act_channels = decode_act_channels(ctx, scan)?;
     let object_types = decode_design_object_types(ctx, scan)?;
     for assignment in &assignments {
-        if appearance_for_assignment(&out, assignment)?.is_none() {
+        if appearance_for_assignment(ctx, &out, assignment)?.is_none() {
             ctx.push_vec(
                 &mut out,
                 Appearance {
@@ -763,12 +763,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
         }
     }
     for appearance in &mut out {
-        if let Some(assignment) = assignments.iter().find(|assignment| {
-            appearance.visual_guid.as_deref().is_some_and(|guid| {
-                crate::design::presentation::visual_token(guid).is_some()
-                    && guid.eq_ignore_ascii_case(&assignment.visual_guid)
-            })
-        }) {
+        if let Some(assignment) = ctx.find_by(&assignments, |assignment| {
+            let Some(guid) = appearance.visual_guid.as_deref() else {
+                return Ok(false);
+            };
+            Ok(crate::design::presentation::visual_token(ctx, guid)?.is_some() && guid.eq_ignore_ascii_case(&assignment.visual_guid))
+        }, "f3d visual token assignment search")? {
             appearance.physical_token = (assignment
                 .physical_token
                 .as_ref()
@@ -792,7 +792,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         ) {
             continue;
         }
-        let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
+        let Some(appearance) = appearance_for_visual_token(ctx, &out, &over.visual_guid, None)? else {
             continue;
         };
         ctx.push_vec(
@@ -1287,7 +1287,7 @@ fn legacy_face_appearance_assignments(
         }
 
         let visual_text = ctx.copy_retained_text(visual, "copy F3D face visual token")?;
-        let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
+        let Some(visual) = DesignVisualToken::new(ctx, visual_text)? else {
             continue;
         };
         let Some(face_at) = visual_at.checked_sub(LP_GUID_BYTES + COLOR_BYTES + CARRIER_BYTES)
@@ -1427,7 +1427,7 @@ fn modern_face_appearance_assignments(
         }
 
         let visual_text = ctx.copy_retained_text(visual, "copy F3D face visual token")?;
-        let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
+        let Some(visual) = DesignVisualToken::new(ctx, visual_text)? else {
             continue;
         };
         let Some((_, first_library_len)) = lp_utf16_string_at(ctx, bytes, *marker_at)? else {
@@ -1547,7 +1547,7 @@ fn browser_body_appearances(
         }
         let visual = &strings[visual_index].1;
         let visual_text = ctx.copy_retained_text(visual, "copy F3D browser visual token")?;
-        let Ok(visual) = DesignVisualToken::try_from(visual_text) else {
+        let Some(visual) = DesignVisualToken::new(ctx, visual_text)? else {
             continue;
         };
         if let Some(entity_suffix) = body_node_candidate(ctx, &strings, visual_index, &nodes)? {
@@ -1651,7 +1651,7 @@ fn bind_bodies(
         else {
             continue;
         };
-        let Some(appearance) = appearance_for_assignment(appearances, assignment)? else {
+        let Some(appearance) = appearance_for_assignment(ctx, appearances, assignment)? else {
             continue;
         };
         ctx.push_vec(
@@ -1696,11 +1696,13 @@ fn bind_bodies(
 ///
 /// The complete visual token is authoritative. A present preset name is a
 /// secondary identity only when no appearance carries that token.
-pub(crate) fn appearance_for_assignment<'a>(
+pub(crate) fn appearance_for_assignment<'a, A: crate::design::presentation::VisualTokenAdmission>(
+    admission: &A,
     appearances: &'a [Appearance],
     assignment: &DesignMaterialAssignment,
 ) -> Result<Option<&'a Appearance>, CodecError> {
     appearance_for_visual_token(
+        admission,
         appearances,
         &assignment.visual_guid,
         assignment
@@ -1714,20 +1716,25 @@ pub(crate) fn appearance_for_assignment<'a>(
 ///
 /// A preset name is an optional fallback for assignments whose visual token
 /// names no decoded asset. Absence of a preset supplies no fallback identity.
-pub(crate) fn appearance_for_visual_token<'a>(
+pub(crate) fn appearance_for_visual_token<'a, A: crate::design::presentation::VisualTokenAdmission>(
+    admission: &A,
     appearances: &'a [Appearance],
     serialized_token: &DesignVisualToken,
     fallback_name: Option<&str>,
 ) -> Result<Option<&'a Appearance>, CodecError> {
-    let exact = unique_appearance(
-        appearances.iter().filter(|appearance| {
-            appearance.visual_guid.as_deref().is_some_and(|token| {
-                DesignVisualToken::try_from(token.to_owned())
-                    .is_ok_and(|token| serialized_token.matches(&token))
-            })
-        }),
-        "visual token",
-    )?;
+    let mut exact = None;
+    for appearance in appearances {
+        let Some(token) = appearance.visual_guid.as_deref() else {
+            continue;
+        };
+        if admission.finish(crate::design::presentation::visual_token(admission, token))?.is_some()
+            && serialized_token.eq_ignore_ascii_case(token) {
+            if exact.is_some() {
+                return Err(CodecError::malformed("F3D visual token matches multiple appearance assets"));
+            }
+            exact = Some(appearance);
+        }
+    }
     if exact.is_some() {
         return Ok(exact);
     }
