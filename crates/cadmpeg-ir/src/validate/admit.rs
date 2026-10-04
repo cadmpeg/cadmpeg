@@ -218,11 +218,7 @@ fn native_unknown_order<'ctx>(
         for second_position in positions {
             let first = records[first_position].id().as_str();
             let second = records[second_position].id().as_str();
-            ctx.charge_work(
-                u64_from_index(first.len().min(second.len())),
-                "source product identity duplicate comparison",
-            )?;
-            if first == second {
+            if ctx.equal(first, second, "source product identity duplicate comparison")? {
                 let message = ctx.format_retained(
                     format_args!("duplicate native unknown record {first}"),
                     "native unknown identity collision",

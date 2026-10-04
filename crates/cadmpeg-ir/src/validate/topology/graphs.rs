@@ -83,11 +83,11 @@ pub(in crate::validate) fn check_coedge_pairing(
                 }
                 break;
             };
-            ctx.charge_work(
-                u64_from_index(next.edge.as_str().len()),
+            if !ctx.equal(
+                next.edge.as_str(),
+                expected_edge.as_str(),
                 "radial edge comparison",
-            )?;
-            if next.edge != *expected_edge {
+            )? {
                 for member in path {
                     ctx.charge_work(1, "radial status scan")?;
                     statuses.insert(member, RadialStatus::CrossesEdge)?;

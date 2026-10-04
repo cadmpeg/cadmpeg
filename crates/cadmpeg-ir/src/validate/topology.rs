@@ -2715,19 +2715,32 @@ fn check_feature_references(
                     "configuration parameter value",
                     parameter.as_str(),
                 )?,
-                Some(baseline)
-                    if baseline.is_some_and(|baseline| {
-                        std::mem::discriminant(baseline) != std::mem::discriminant(value)
-                    }) =>
-                {
-                    geometry_error(
-                        ctx,
-                        findings,
-                        configuration.id.as_str(),
-                        "configuration parameter value is invalid",
-                    )?;
+                Some(baseline) => {
+                    let kind = |value: &crate::features::ParameterValue| -> u8 {
+                        match value {
+                            crate::features::ParameterValue::Length(_) => 0,
+                            crate::features::ParameterValue::Angle(_) => 1,
+                            crate::features::ParameterValue::Real(_) => 2,
+                            crate::features::ParameterValue::Integer(_) => 3,
+                            crate::features::ParameterValue::Boolean(_) => 4,
+                            crate::features::ParameterValue::String(_) => 5,
+                        }
+                    };
+                    if let Some(baseline) = baseline {
+                        if !ctx.equal(
+                            &kind(baseline),
+                            &kind(value),
+                            "configuration parameter value kind",
+                        )? {
+                            geometry_error(
+                                ctx,
+                                findings,
+                                configuration.id.as_str(),
+                                "configuration parameter value is invalid",
+                            )?;
+                        }
+                    }
                 }
-                Some(_) => {}
             }
         }
         for (feature, state) in &configuration.feature_states {
