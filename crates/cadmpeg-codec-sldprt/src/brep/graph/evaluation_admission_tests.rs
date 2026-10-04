@@ -70,3 +70,19 @@ fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(header.description, "test partition");
 }
+
+#[test]
+fn reference_qualifier_character_refusal_preserves_the_resource_limit() {
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(super::qualified_reference(&service, "test#1", "scope").unwrap(), "test#1@scope");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::qualified_reference(&ctx, "test#1", "scope").unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("character copy refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "append SLDPRT reference qualifier");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
