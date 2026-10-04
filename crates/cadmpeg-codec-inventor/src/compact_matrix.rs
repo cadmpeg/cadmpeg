@@ -33,9 +33,9 @@ impl CompactMatrix {
         zero_mask: u16,
         mut explicit: impl FnMut(usize) -> Result<FiniteReal, CodecError>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(16, "admit Inventor compact matrix cells")?;
         let mut matrix = [[FiniteReal::ZERO; 4]; 4];
-        for (index, value) in matrix.iter_mut().flatten().enumerate() {
+        for index in ctx.admit_iter(&(0_usize..16), "admit Inventor compact matrix cells")? {
+            let value = &mut matrix[index / 4][index % 4];
             let bit = 1u16 << index;
             *value = match (value_mask & bit != 0, zero_mask & bit != 0) {
                 (false, false) => explicit(index)?,

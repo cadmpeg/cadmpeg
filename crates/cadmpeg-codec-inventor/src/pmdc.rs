@@ -33,8 +33,8 @@ pub(crate) fn push_hex(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     for byte in ctx.admit_iter(bytes, operation)? {
-        text.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
-        text.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+        ctx.push_retained_char(text, char::from(HEX_DIGITS[usize::from(byte >> 4)]), operation)?;
+        ctx.push_retained_char(text, char::from(HEX_DIGITS[usize::from(byte & 0x0f)]), operation)?;
     }
     Ok(())
 }
@@ -588,7 +588,7 @@ pub(crate) fn reference_list(
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
     let mut references = ctx.vector_storage(count, "admit Inventor PmDc references")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
         references.push(cursor.reference("reference-list entry")?);
     }
     PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
@@ -643,7 +643,7 @@ pub(crate) fn u32_list(
     let (count, metadata) =
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
     let mut values = ctx.vector_storage(count, "admit Inventor PmDc integers")?;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
         values.push(cursor.u32("integer-list value")?);
     }
     PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
