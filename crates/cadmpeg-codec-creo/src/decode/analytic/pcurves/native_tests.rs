@@ -204,6 +204,25 @@ fn pcurve_domain_solver_refuses_self_loop_point() {
 }
 
 #[test]
+fn same_vertex_pcurve_domain_retention_refuses_work_and_preserves_result() {
+    let point = [1.0, 0.0, 0.0];
+    let constraints = [([1, 1], [point, point]), ([1, 1], [point, point])];
+    let solved = crate::test_support::assert_work_boundaries(
+        &["creo same-vertex pcurve domain retention"],
+        |ctx| {
+            super::solve_pcurve_vertex_domains(
+                ctx,
+                &constraints,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(solved, BTreeMap::from([(1, point)]));
+}
+
+#[test]
 fn pcurve_domain_solver_refuses_two_vertex_node() {
     let a = [1.0, 0.0, 0.0];
     let b = [2.0, 0.0, 0.0];
