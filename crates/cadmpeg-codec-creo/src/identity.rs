@@ -147,7 +147,7 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
 
 /// Compare a numbered identity without constructing a temporary identity string.
 pub(crate) fn matches_numbered_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>, actual: &str, prefix: &str, number: u32) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(suffix) = actual.strip_prefix(prefix) else {
+    let Some(suffix) = ctx.strip_prefix(actual, prefix, "creo numbered identity prefix")? else {
         return Ok(false);
     };
     let mut digits = 1;
@@ -421,6 +421,18 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
                 && resource.operation == "creo scalar text parsing"));
+    }
+
+    #[test]
+    fn numbered_identity_prefix_refuses_before_mismatch() {
+        let error = crate::test_support::last_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "creo numbered identity prefix",
+            |ctx| matches_numbered_identity(ctx, "other:1", "id:", 1),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && resource.operation == "creo numbered identity prefix"));
     }
 
 }
