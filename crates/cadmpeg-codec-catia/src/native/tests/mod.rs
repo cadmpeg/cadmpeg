@@ -14,6 +14,7 @@ mod entity_suffix_framing;
 mod formula_relation;
 mod inventory;
 mod hash_lookups;
+mod append_admission;
 mod load;
 mod relation_expression;
 mod relation_program;
