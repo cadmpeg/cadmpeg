@@ -1822,9 +1822,9 @@ mod tests {
         let node_bytes = 22 * std::mem::size_of::<String>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<String>();
-        // Four attribute texts and nine admitted tree nodes precede the first entry name.
+        // Four attribute texts and one cumulative backing-node bound precede the first entry name.
         policy.limits.max_retained_bytes +=
-            cadmpeg_core::decode::u64_from_index(attribute_bytes + 9 * node_bytes);
+            cadmpeg_core::decode::u64_from_index(attribute_bytes + node_bytes);
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(
