@@ -1976,13 +1976,19 @@ fn parse_a8_class21_pcurve(
                 Err(error) => return Some(Err(error.into())),
             };
             for chunk in &mut chunks {
-                values.push(f64_le(chunk, 0)?);
+                if let Err(error) = ctx.push_vec(
+                    values,
+                    f64_le(chunk, 0)?,
+                    "catia B5 pcurve distinct knots",
+                ) {
+                    return Some(Err(error));
+                }
             }
             *position = end;
             Some(Ok(()))
         };
         let mut distinct_knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_capacity(
             &mut distinct_knots,
             knot_count,
             "catia B5 pcurve distinct knots",

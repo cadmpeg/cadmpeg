@@ -1058,6 +1058,45 @@ fn a8_class21_test_payload() -> Vec<u8> {
 }
 
 #[test]
+fn a8_class21_distinct_knot_push_preserves_collection_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    const OPERATION: &str = "catia B5 pcurve distinct knots";
+    let payload = a8_class21_test_payload();
+    let service = crate::test_support::with_service_context(|ctx| {
+        parse_a8_class21_pcurve(ctx, 7, &payload)
+    })
+    .expect("service resource budget")
+    .expect("complete class-21 jet");
+    assert_eq!(
+        service.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[10.0, 20.0])
+    );
+
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        OPERATION,
+        |cap| {
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                let result = parse_a8_class21_pcurve(ctx, 7, &payload);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            })
+        },
+    );
+    assert!(matches!(
+        refusal,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == OPERATION
+    ));
+}
+
+#[test]
 fn targeted_geometry_graph_closes_a_four_span_extrusion_without_topology() {
     let append_b5 = |bytes: &mut Vec<u8>, class, object_id: u32, payload: &[u8]| {
         bytes.extend_from_slice(&[
