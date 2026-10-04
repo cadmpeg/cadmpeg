@@ -894,6 +894,24 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         ]
     );
 
+    for (skip, additional) in [(0, 1), (1, 8), (2, 8)] {
+        let operation = "find F3D body recipe Design reference";
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, skip,
+            |ctx| {
+                let mut limited_operand = operand.clone();
+                crate::design::decode::operands::bind_body_recipe_operand_candidates(
+                    ctx, std::slice::from_mut(&mut limited_operand),
+                    std::slice::from_ref(&recipe), &candidate_tags,
+                    std::slice::from_ref(&scope),
+                )
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation && limit.additional == additional));
+    }
+
     // A legacy Combine tool keeps the same identity envelope with no
     // persistent Design-reference clauses. The marker therefore follows the
     // zero count at the ordinary reference-table cursor.

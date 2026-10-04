@@ -140,7 +140,15 @@ pub(super) fn exact_symmetric_extrude_prologue(
         }
         if present {
             let record_index = super::shared_frames::marked_record_reference(bytes, slot_offset)?;
-            if !reference_members.contains(&record_index) {
+            let is_reference_member = match ctx.contains(
+                reference_members,
+                &record_index,
+                "search F3D class-397 Extrude reference members",
+            ) {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+            if !is_reference_member {
                 return None;
             }
             slot_offset = slot_offset.checked_add(11)?;

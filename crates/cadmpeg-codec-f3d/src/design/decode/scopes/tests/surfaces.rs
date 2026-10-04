@@ -57,6 +57,25 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
     assert_eq!(operation.auxiliary_record_indices, [99]);
     assert_eq!(operation.direction_entity_id, None);
 
+    let target_operation = "find F3D ruled surface listed edge group";
+    // Three visited references select record13; the second lookup starts at request9.
+    for (skip, additional) in [(0, 1), (1, 4), (2, 4), (9, 1), (10, 4), (11, 4)] {
+        let refusal = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            target_operation,
+            skip,
+            |ctx| {
+                exact_ruled_surface_operation(
+                    ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16],
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == target_operation && limit.additional == additional));
+    }
+
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     for (ordinal, byte) in b"01234567-89ab-cdef-0123-456789abcdef".iter().enumerate() {
         bytes[111 + ordinal * 2] = *byte;

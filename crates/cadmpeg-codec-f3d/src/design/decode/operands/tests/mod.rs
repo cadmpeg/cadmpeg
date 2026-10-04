@@ -17,6 +17,7 @@ mod selection;
 mod work_point;
 
 mod body_recipes;
+mod fillet_collections;
 
 mod construction_paths;
 mod candidate_faces;

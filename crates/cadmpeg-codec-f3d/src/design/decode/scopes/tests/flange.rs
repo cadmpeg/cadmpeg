@@ -539,6 +539,87 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
 }
 
 #[test]
+fn legacy_edge_flange_two_sided_owner_pairs_refuse_at_each_exact_boundary() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let references = [
+        201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246,
+    ];
+    let frame = legacy_class325_two_sided_per_edge_flange_frame();
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            ctx,
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            "325",
+            "258",
+            &references,
+        )
+    };
+    let operation = crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("service admission")
+        .expect("valid two-sided per-edge frame");
+    assert_eq!(
+        match &operation.selection.shape() {
+            crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                edges,
+                ..
+            } => edges.iter().map(|edge| edge.owners).collect::<Vec<_>>(),
+            _ => Vec::new(),
+        },
+        vec![[210, 222], [234, 237]]
+    );
+    assert_eq!(
+        operation
+            .selection
+            .shape()
+            .owner_indices()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![210, 222, 234, 237]
+    );
+
+    for (dimension, operation_label, additional) in [
+        (
+            ResourceDimension::WorkUnits,
+            "scan F3D edge flange two-sided width owners",
+            4,
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "collect F3D edge flange two-sided width owners",
+            1,
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "collect F3D edge flange two-sided width owners",
+            1,
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "collect F3D edge flange two-sided width owners",
+            u64::try_from(4 * std::mem::size_of::<[u32; 2]>())
+                .expect("four owner-pair slots fit u64"),
+        ),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation_label,
+            0,
+            |ctx| decode(ctx).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == dimension
+                    && failure.operation == operation_label
+                    && failure.additional == additional
+        ));
+    }
+}
+
+#[test]
 fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     let references = [201, 204, 207, 218, 240, 243, 251, 254];
     let frame = legacy_class286_single_edge_flange_frame();
