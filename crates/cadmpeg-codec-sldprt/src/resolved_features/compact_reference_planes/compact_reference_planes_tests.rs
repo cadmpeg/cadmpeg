@@ -1,8 +1,8 @@
 //! Tests for the `compact_reference_planes` module.
 
 use super::{
-    compact_component_plane_frame, compact_reference_plane_source, principal_sketch_frame,
-    CompactReferencePlaneIndex,
+    compact_component_plane_frame, compact_profile_component_plane_frame,
+    compact_reference_plane_source, principal_sketch_frame, CompactReferencePlaneIndex,
 };
 use cadmpeg_ir::features::PrincipalPlane;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -48,6 +48,43 @@ fn compact_reference_plane_index_refuses_work_limit() {
 }
 
 #[test]
+fn compact_profile_source_refuses_class_scan_work_limit() {
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
+    };
+
+    let payload = b"moCompRefPlane_c";
+    let index_arena = DecodeArena::new();
+    let (index_ctx, _) = DecodeContext::from_root_bytes(
+        payload,
+        &index_arena,
+        &DecodePolicy::service(),
+    )
+    .expect("index context");
+    let index = CompactReferencePlaneIndex::new(&index_ctx, payload).expect("index");
+
+    let query_arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The lookup must admit its one class-offset slot before filtering.
+    policy.limits.max_work_units = 0;
+    let (query_ctx, _) = DecodeContext::from_root_bytes(payload, &query_arena, &policy)
+        .expect("query context");
+    let error = index
+        .profile_source(&query_ctx, 0, 0, payload.len())
+        .expect_err("class offset scan exceeds work limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.reason == ResourceFailure::BudgetExceeded
+                && limit.limit == 0
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "count compact reference plane classes"
+    ));
+}
+
+#[test]
 fn every_principal_plane_has_a_sketch_frame() {
     for plane in [
         PrincipalPlane::Front,
@@ -76,15 +113,27 @@ fn compact_reference_plane_source_requires_the_complete_trailer() {
         0x65,
     ]);
     payload.extend([0; 4]);
-    assert_eq!(compact_reference_plane_source(&payload), Some(2));
+    assert_eq!(
+        compact_reference_plane_source(&payload).expect("source lookup"),
+        Some(2)
+    );
     payload[start + 50] = 3;
     payload[start + 54] = 0xff;
-    assert_eq!(compact_reference_plane_source(&payload), Some(2));
+    assert_eq!(
+        compact_reference_plane_source(&payload).expect("source lookup"),
+        Some(2)
+    );
     payload[start + 50] = 1;
-    assert_eq!(compact_reference_plane_source(&payload), None);
+    assert_eq!(
+        compact_reference_plane_source(&payload).expect("source lookup"),
+        None
+    );
     payload[start + 50] = 3;
     payload[start + 59] ^= 1;
-    assert_eq!(compact_reference_plane_source(&payload), None);
+    assert_eq!(
+        compact_reference_plane_source(&payload).expect("source lookup"),
+        None
+    );
 }
 
 #[test]
@@ -103,9 +152,15 @@ fn compact_legacy_reference_plane_source_uses_the_embedded_u16_id() {
     ]);
     payload.extend([0; 4]);
 
-    assert_eq!(compact_reference_plane_source(&payload), Some(3));
+    assert_eq!(
+        compact_reference_plane_source(&payload).expect("source lookup"),
+        Some(3)
+    );
     payload[start + 10..start + 12].fill(0);
-    assert_eq!(compact_reference_plane_source(&payload), None);
+    assert_eq!(
+        compact_reference_plane_source(&payload).expect("source lookup"),
+        None
+    );
 }
 
 #[test]
@@ -155,11 +210,15 @@ fn compact_profile_uses_a_unique_lane_scoped_reference_plane() {
         .expect("reference plane index fits service policy");
 
     assert_eq!(
-        plane_index.profile_source(profile_start, profile_start, payload.len(),),
+        plane_index
+            .profile_source(&ctx, profile_start, profile_start, payload.len())
+            .expect("profile source"),
         Some(2)
     );
     assert_eq!(
-        plane_index.profile_source(component_start, component_start, payload.len(),),
+        plane_index
+            .profile_source(&ctx, component_start, component_start, payload.len())
+            .expect("component source"),
         Some(549)
     );
 }
@@ -181,12 +240,45 @@ fn compact_component_matrix_places_a_sketch_plane() {
     payload[122..126].copy_from_slice(&4u32.to_le_bytes());
     payload[126..130].copy_from_slice(&[0xff; 4]);
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component plane context");
     assert_eq!(
-        compact_component_plane_frame(&payload),
+        compact_component_plane_frame(&ctx, &payload).expect("component plane frame"),
         Some((
             Point3::new(0.0, 0.0, -31.0),
             Vector3::new(0.0, -1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0)
         ))
     );
+}
+
+#[test]
+fn compact_profile_component_plane_frame_refuses_window_scan_work_limit() {
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure,
+    };
+
+    let payload = vec![0; 138];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The scan admits all 138 byte-source slots before window filtering.
+    policy.limits.max_work_units = u64::try_from(payload.len()).expect("fixture length") - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("context");
+    let error = compact_profile_component_plane_frame(&ctx, &payload, 0, 0, payload.len())
+        .expect_err("window scan exceeds work limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.reason == ResourceFailure::BudgetExceeded
+                && limit.limit == 137
+                && limit.used == 0
+                && limit.additional == 138
+                && limit.operation == "scan compact component plane frames"
+    ));
 }
