@@ -2666,7 +2666,7 @@ pub(crate) fn sketch_payload_scalar_lanes(
     for form in [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07] {
         let discriminator = form.discriminator();
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
-            if window != discriminator {
+            if !ctx.equal_bytes(window, discriminator, "NX sketch scalar lane discriminator equality")? {
                 continue;
             }
             let mut at = offset + discriminator.len();
