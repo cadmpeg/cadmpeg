@@ -163,10 +163,14 @@ fn regeneration_parent_setter_preserves_the_model_on_caller_refusal() {
             "install decoded feature regeneration parent"
         );
         if dimension == ResourceDimension::WorkUnits {
-            assert_eq!(limit.used, 4);
+            // Two preliminary tree-child scan visits and the first
+            // child-lookup row visit are admitted before comparing the first
+            // feature id. String comparison charges the complete left key
+            // before the right key.
+            assert_eq!(limit.used, 3);
             assert_eq!(
                 limit.additional,
-                u64::try_from(child.as_str().len().min(parent.as_str().len())).unwrap()
+                u64::try_from(parent.as_str().len()).unwrap()
             );
         }
         assert_eq!(ir, before);
