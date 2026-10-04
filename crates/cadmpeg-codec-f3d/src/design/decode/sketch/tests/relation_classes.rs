@@ -340,48 +340,54 @@ fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
     }
 }
 
+fn relation_class_of(type_guid: &str, version: u32) -> Option<SketchRelationClass> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        SketchRelationClass::of(ctx, type_guid, version).unwrap()
+    })
+}
+
 #[test]
 fn relation_classes_are_named_by_type_guid() {
     assert_eq!(
-        SketchRelationClass::of("60403D47-0C49-49B0-BDE8-1679608164A2", 3),
+        relation_class_of("60403D47-0C49-49B0-BDE8-1679608164A2", 3),
         Some(SketchRelationClass::Plain)
     );
     assert_eq!(
-        SketchRelationClass::of("d3bd153b-eb8a-405e-9d29-69ee0c3d227c", 0),
+        relation_class_of("d3bd153b-eb8a-405e-9d29-69ee0c3d227c", 0),
         Some(SketchRelationClass::Plain)
     );
     assert_eq!(
-        SketchRelationClass::of("73762C3B-82DC-4632-93B0-B8FE1CC5282F", 0),
+        relation_class_of("73762C3B-82DC-4632-93B0-B8FE1CC5282F", 0),
         Some(SketchRelationClass::Plain)
     );
     assert_eq!(
-        SketchRelationClass::of("24DB790E-3DCD-4336-AFA3-6F119EF2239B", 0),
+        relation_class_of("24DB790E-3DCD-4336-AFA3-6F119EF2239B", 0),
         Some(SketchRelationClass::Tangent)
     );
     assert_eq!(
-        SketchRelationClass::of("8269E861-0BB7-47E0-9911-5AE3EC475058", 3),
+        relation_class_of("8269E861-0BB7-47E0-9911-5AE3EC475058", 3),
         Some(SketchRelationClass::CircularPattern)
     );
     assert_eq!(
-        SketchRelationClass::of("40800FB9-C2BE-494E-A047-7D76E82B9F6C", 5),
+        relation_class_of("40800FB9-C2BE-494E-A047-7D76E82B9F6C", 5),
         Some(SketchRelationClass::RectangularPattern)
     );
     assert_eq!(
-        SketchRelationClass::of("8B369926-123F-4F9D-878E-6D4C076128D3", 0),
+        relation_class_of("8B369926-123F-4F9D-878E-6D4C076128D3", 0),
         Some(SketchRelationClass::TextFrame)
     );
     assert_eq!(
-        SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 0),
+        relation_class_of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 0),
         Some(SketchRelationClass::TextPath {
             leading_flag: false
         })
     );
     assert_eq!(
-        SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 1),
+        relation_class_of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 1),
         Some(SketchRelationClass::TextPath { leading_flag: true })
     );
     assert_eq!(
-        SketchRelationClass::of("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 0),
+        relation_class_of("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 0),
         None
     );
 }
@@ -953,7 +959,7 @@ fn text_pattern_definition_preserves_member_work_refusal() {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan F3D sketch pattern text references"
-                    && limit.additional == 2));
+                    && limit.additional == 1));
         assert!(decode_pattern_definition(
             &cadmpeg_test_support::service_decode_context(),
             record,

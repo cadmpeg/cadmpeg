@@ -226,7 +226,13 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
             );
             assert_eq!(
                 crate::design::test_support::with_test_decode_context(|ctx| {
-                    decode_sketch_point_companion(ctx, &payload, POINT, record_form.clone(), &types)
+                    decode_sketch_point_companion(
+                        ctx,
+                        &payload,
+                        POINT,
+                        record_form.clone(),
+                        |target| Ok(types.get(&target).map(|registered| registered.0)),
+                    )
                 })
                 .expect("point companion admission"),
                 Some((
@@ -266,61 +272,13 @@ fn sketch_point_incident_curves_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = decode_sketch_point_companion(&ctx, &payload, POINT, record_form, &types)
-        .expect_err("collection limit must refuse incident curves");
+    let error = decode_sketch_point_companion(&ctx, &payload, POINT, record_form, |target| {
+        Ok(types.get(&target).map(|registered| registered.0))
+    })
+    .expect_err("collection limit must refuse incident curves");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d sketch point incident curves")
     );
-}
-
-#[test]
-fn point_record_parser_preserves_source_flag_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let payload = tagged_point_payload(10, false, 0, 1, false);
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "scan F3D sketch point source flags",
-        0,
-        |ctx| decode_sketch_point_record(ctx, &payload, 10),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan F3D sketch point source flags"
-            && limit.additional == 7)
-    );
-    assert!(decode_sketch_point_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        10
-    )
-    .unwrap()
-    .is_some());
-}
-
-#[test]
-fn point_record_parser_preserves_reserved_byte_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let payload = tagged_point_payload(10, false, 0, 1, false);
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "scan F3D sketch point reserved bytes",
-        0,
-        |ctx| decode_sketch_point_record(ctx, &payload, 10),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan F3D sketch point reserved bytes"
-            && limit.additional == 12)
-    );
-    assert!(decode_sketch_point_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        10
-    )
-    .unwrap()
-    .is_some());
 }

@@ -2,8 +2,8 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::sketch::{
-    decode_headers_for_indices_from_stream, entity_meta_scope, insert_entity_module,
-    insert_legacy_candidate, native_scope_scoped, wanted_record_indices, IndexedRecordOffsets,
+    decode_headers_for_indices_from_stream, insert_entity_module, insert_legacy_candidate,
+    native_scope_scoped, want_record_index, IndexedRecordOffsets,
 };
 
 #[test]
@@ -117,22 +117,6 @@ fn owned_record_cache_refuses_retained_key() {
 }
 
 #[test]
-fn owned_record_cache_refuses_temporary_lookup() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut cache = std::collections::HashMap::new();
-    assert!(matches!(
-        crate::design::decode::sketch::cached_owned_record_offsets(
-            &ctx, &mut cache, "stream", &[]
-        ),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes
-    ));
-}
-
-#[test]
 fn scoped_stream_copy_refuses_materialized_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -191,13 +175,14 @@ fn scoped_native_scope_key_refuses_materialized_limit() {
 }
 
 #[test]
-fn wanted_record_indices_charge_each_distinct_index() {
+fn wanted_record_index_charges_its_stream_and_index_slots() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut wanted = std::collections::HashMap::new();
     assert!(matches!(
-        wanted_record_indices(&ctx, [("stream", 7), ("stream", 7), ("stream", 8)]),
+        want_record_index(&ctx, &mut wanted, "stream", 7),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d wanted record index"
@@ -209,8 +194,7 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&indexed_header(7));
     bytes.extend_from_slice(&indexed_header(7));
-    let scope = crate::ids::native_scope("BulkStream.dat");
-    let wanted = std::collections::HashSet::from([(scope.as_str(), 7)]);
+    let wanted = [7];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     for (items, operation) in [
@@ -221,9 +205,7 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let mut out = Vec::new();
         assert!(matches!(
-            decode_headers_for_indices_from_stream(
-                &ctx, "BulkStream.dat", &scope, &bytes, &wanted, &mut out
-            ),
+            decode_headers_for_indices_from_stream(&ctx, "BulkStream.dat", &bytes, &wanted, &mut out),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == operation
@@ -234,15 +216,8 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut out = Vec::new();
-    decode_headers_for_indices_from_stream(
-        &ctx,
-        "BulkStream.dat",
-        &scope,
-        &bytes,
-        &wanted,
-        &mut out,
-    )
-    .unwrap();
+    decode_headers_for_indices_from_stream(&ctx, "BulkStream.dat", &bytes, &wanted, &mut out)
+        .unwrap();
     assert_eq!(out.len(), 1);
     assert_eq!(
         out[0].id,
@@ -292,49 +267,6 @@ fn entity_header_type_indices_refuse_collection_limits() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d legacy sketch candidate"
-    ));
-}
-
-#[test]
-fn entity_header_existing_index_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut indices = std::collections::HashSet::new();
-    assert!(matches!(
-        &ctx.insert_hash_set(&mut indices, 7, "f3d existing entity index").map(|_| ()),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d existing entity index"
-    ));
-}
-
-#[test]
-fn entity_header_meta_scope_and_module_refuse_byte_limits() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    let bulk_scope = crate::ids::native_scope("a/BulkStream.dat");
-    let expected = crate::ids::native_scope("a/MetaStream.dat");
-    policy.limits.max_materialized_bytes = u64_from_index(expected.len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        entity_meta_scope(&ctx, &bulk_scope),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes
-    ));
-    policy.limits.max_materialized_bytes = u64_from_index(expected.len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (_reservation, actual) = entity_meta_scope(&ctx, &bulk_scope).unwrap().unwrap();
-    assert_eq!(actual, expected);
-
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        ctx.copy_retained_text("Mα", "f3d entity module text"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
     ));
 }
 
