@@ -2,6 +2,7 @@
 //! Decode the boundary-settings record a `SurfacePatch` scope references once
 //! per boundary component.
 
+use super::byte_fields::zeros_at;
 use super::sketch::IndexedRecordOffsets;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
@@ -45,8 +46,7 @@ pub(super) fn surface_patch_boundaries(
         boundary.scope_reference_ordinal = ordinal;
         boundary.record_index = *record_index;
 
-        ctx.reserve_vec(&mut boundaries, 1, "f3d SurfacePatch boundaries")?;
-        boundaries.push(boundary);
+        ctx.push_vec(&mut boundaries, boundary, "f3d SurfacePatch boundaries")?;
     }
     Ok(boundaries)
 }
@@ -90,9 +90,7 @@ mod tests {
 /// base level's reference run closes the record and carries no settings.
 fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurfacePatchBoundary> {
     let payload = at.checked_add(PAYLOAD)?;
-    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0
-        || bytes.get(payload..payload + 2)? != [0; 2]
-    {
+    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0 || !zeros_at::<2>(bytes, payload) {
         return None;
     }
     let is_seed_selection = match bytes.get(payload + 2)? {
