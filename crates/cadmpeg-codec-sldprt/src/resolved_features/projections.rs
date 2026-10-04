@@ -564,7 +564,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 continue;
             };
             let Some((value, display, expression)) =
-                relation_display_parameter_value(relation.family, scalar.value.get())
+                relation_display_parameter_value(ctx, relation.family, scalar.value.get())?
             else {
                 continue;
             };
@@ -696,12 +696,15 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
 }
 
 fn relation_display_parameter_value(
+    ctx: &DecodeContext<'_>,
     family: FeatureInputRelationFamily,
     value: f64,
-) -> Option<(ParameterValue, Option<DimensionDisplay>, String)> {
-    Some(match family {
+) -> Result<Option<(ParameterValue, Option<DimensionDisplay>, String)>, cadmpeg_core::CodecError> {
+    Ok(Some(match family {
         FeatureInputRelationFamily::Angle => {
-            let angle = Angle::new(value)?;
+            let Some(angle) = Angle::new(value) else {
+                return Ok(None);
+            };
             (
                 ParameterValue::Angle(angle),
                 None,
@@ -709,14 +712,16 @@ fn relation_display_parameter_value(
             )
         }
         FeatureInputRelationFamily::CircleDiameter => {
-            let millimetres = Length::new(value * 1000.0)?;
+            let Some(millimetres) = Length::new(value * 1000.0) else {
+                return Ok(None);
+            };
             (
                 ParameterValue::Length(millimetres),
                 Some(DimensionDisplay::Diameter),
-                format!(
-                    "<MOD-DIAM>{}",
-                    crate::history::literals::format_length_mm(millimetres)
-                ),
+                ctx.format_retained(
+                    format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(millimetres)),
+                    "format SLDPRT relation display parameter",
+                )?,
             )
         }
         FeatureInputRelationFamily::LineLineDistance
@@ -724,14 +729,16 @@ fn relation_display_parameter_value(
         | FeatureInputRelationFamily::PointLineDistance
         | FeatureInputRelationFamily::PointPointHorizontalDistance
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
-            let millimetres = Length::new(value * 1000.0)?;
+            let Some(millimetres) = Length::new(value * 1000.0) else {
+                return Ok(None);
+            };
             (
                 ParameterValue::Length(millimetres),
                 None,
                 crate::history::literals::format_length_mm(millimetres),
             )
         }
-    })
+    }))
 }
 
 /// Apply relation-defined units and display semantics to parameters named by display scalars.
@@ -786,10 +793,10 @@ pub(crate) fn type_display_relation_parameters(
                             )
                         })?;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
-                        format!(
-                            "<MOD-DIAM>{}",
-                            crate::history::literals::format_length_mm(value)
-                        )
+                        ctx.format_retained(
+                            format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(value)),
+                            "format SLDPRT relation display parameter",
+                        )?
                     } else {
                         crate::history::literals::format_length_mm(value)
                     };
@@ -808,10 +815,10 @@ pub(crate) fn type_display_relation_parameters(
                         )
                     })?;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
-                        format!(
-                            "<MOD-DIAM>{}",
-                            crate::history::literals::format_length_mm(value)
-                        )
+                        ctx.format_retained(
+                            format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(value)),
+                            "format SLDPRT relation display parameter",
+                        )?
                     } else {
                         crate::history::literals::format_length_mm(value)
                     };
