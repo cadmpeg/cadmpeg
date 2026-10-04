@@ -573,6 +573,15 @@ if self.checked_call(expression, definition) {
             return;
         }
         let name = name.as_str();
+        if self.bounded_slice_copy(expression) {
+            return;
+        }
+        if let Some(source) = self.copied_slice_source(expression) {
+            let shape = self.iteration(source, &mut Vec::new());
+            let paid = self.take_credit(&[source]);
+            self.work_report(expression, expression.span, shape, paid, name);
+            return;
+        }
         let key_work_paid = self.key_work_paid(&operands, name);
         if key_work_paid {
             self.record_key_work_proof(expression);
@@ -652,13 +661,7 @@ if self.checked_call(expression, definition) {
                 Some(term) => self.take_credit_for_keys(&term.factors),
                 None => None,
             };
-            self.work_report(
-                expression,
-                expression.span,
-                Shape::Dynamic,
-                paid,
-                name,
-            );
+            self.work_report(expression, expression.span, Shape::Dynamic, paid, name);
             return;
         }
         if let external::Work::Arguments(indices) = summary.work {
@@ -669,7 +672,8 @@ if self.checked_call(expression, definition) {
                     complete = false;
                     continue;
                 };
-                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand) {
+                let shape = if self.constant(operand, &mut Vec::new()) || self.bounded_work(operand)
+                {
                     Shape::Fixed
                 } else {
                     types::work(self.tcx, self.expr_ty(operand), &mut Vec::new())
@@ -1052,10 +1056,12 @@ if self.checked_call(expression, definition) {
             external::Work::Argument(index) => operands.get(index).copied().unwrap_or(receiver),
             _ => receiver,
         };
-        let string_extension = name == "extend"
-            && operands
-                .first()
-                .is_some_and(|receiver| types::standard_string(self.tcx, self.expr_ty(receiver)));
+        let iterator_extension = name == "extend"
+            && operands.first().is_some_and(|receiver| {
+                let receiver_type = self.expr_ty(receiver);
+                types::standard_string(self.tcx, receiver_type)
+                    || types::standard_vector(self.tcx, receiver_type)
+            });
         let shape = if name == "count" {
             Shape::Unknown
         } else if consumers {
@@ -1063,7 +1069,7 @@ if self.checked_call(expression, definition) {
         } else {
             if self.constant(extent, &mut Vec::new()) || self.bounded_work(extent) {
                 Shape::Fixed
-            } else if string_extension {
+            } else if iterator_extension {
                 self.iteration(extent, &mut Vec::new())
             } else {
                 types::work(self.tcx, self.expr_ty(extent), &mut Vec::new())

@@ -52,19 +52,19 @@ pub fn collection_growth(
 
     // replacement: DecodeContext::push_retained_char
     output.push('é'); // finding: uncharged_decode_allocation
-    // replacement: DecodeContext::push_retained_char
+                      // replacement: DecodeContext::push_retained_char
     let _ = output.write_char('ö'); // finding: unproven_decode_charge
-    // replacement: DecodeContext::append_retained
+                                    // replacement: DecodeContext::append_retained
     output.push_str(text); // finding: unproven_decode_charge, uncharged_decode_work
-    // replacement: DecodeContext::append_retained
+                           // replacement: DecodeContext::append_retained
     let _ = output.write_str(text); // finding: unproven_decode_charge, uncharged_decode_work
-    // replacement: DecodeContext::replace_text_range over index..index with value.encode_utf8(&mut [0; 4])
+                                    // replacement: DecodeContext::replace_text_range over index..index with value.encode_utf8(&mut [0; 4])
     output.insert(0, 'é'); // finding: unproven_decode_charge, uncharged_decode_work
-    // replacement: DecodeContext::admit_iter followed by DecodeContext::push_retained_char for char/&char items or DecodeContext::append_retained for &str/String/Cow<str>/Box<str> items
+                           // replacement: DecodeContext::admit_iter followed by DecodeContext::push_retained_char for char/&char items or DecodeContext::append_retained for &str/String/Cow<str>/Box<str> items
     output.extend(characters.iter().copied()); // finding: unproven_decode_charge, uncharged_decode_work
-    // replacement: DecodeContext::admit_iter followed by DecodeContext::push_retained_char for char/&char items or DecodeContext::append_retained for &str/String/Cow<str>/Box<str> items
+                                               // replacement: DecodeContext::admit_iter followed by DecodeContext::push_retained_char for char/&char items or DecodeContext::append_retained for &str/String/Cow<str>/Box<str> items
     output.extend(texts.iter().map(String::as_str)); // finding: unproven_decode_charge, uncharged_decode_work
-    // replacement: push_vec
+                                                     // replacement: push_vec
     values.push(byte); // finding: uncharged_decode_allocation
     // replacement: insert_vec
     values.insert(0, byte); // finding: unproven_decode_charge, uncharged_decode_work

@@ -13,19 +13,19 @@ pub(super) fn check_tessellations(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let bodies = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for body in &ir.model.bodies {
+        for body in ctx.admit_iter(&ir.model.bodies, "tessellation body identity scan")? {
             add(body.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let faces = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for face in &ir.model.faces {
+        for face in ctx.admit_iter(&ir.model.faces, "tessellation face identity scan")? {
             add(face.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let assets = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for asset in &ir.model.assets {
+        for asset in ctx.admit_iter(&ir.model.assets, "tessellation asset identity scan")? {
             add(asset.id.as_str(), ())?;
         }
         Ok(())

@@ -1,47 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UFRx` document states and their owned child records.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 
-use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{de::Error as _, ser::SerializeStruct, Deserialize, Serialize};
+use cadmpeg_ir::native::{NativeConvertError, NativeNamespace, NativeRecord};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::num::NonZeroU64;
-
-fn is_blank(value: &str) -> bool {
-    value.chars().all(char::is_whitespace)
-}
-
-pub(crate) fn model_state_issue(suffix_len: u64, name: &str) -> Option<&'static str> {
-    if suffix_len != 77 {
-        Some("suffix_len must be 77")
-    } else if is_blank(name) {
-        Some("name must not be empty")
-    } else {
-        None
-    }
-}
-
-pub(crate) fn external_reference_issue(path: &str, has_document_id: bool) -> Option<&'static str> {
-    (is_blank(path) && !has_document_id).then_some("path or a nonzero document_id is required")
-}
-
-pub(crate) fn byte_document_id_present(value: &[u8]) -> bool {
-    value.iter().any(|byte| *byte != 0)
-}
 
 /// Hexadecimal text for exactly sixteen identifier bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Identifier16(NonBlankString);
 
 impl Identifier16 {
-    fn try_new(value: String) -> Result<Self, String> {
-        if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err("identifier must contain 32 hexadecimal digits".to_owned());
+    fn try_new(ctx: &DecodeContext<'_>, value: String) -> Result<Self, CodecError> {
+        if value.len() != 32
+            || !ctx
+                .admit_iter(
+                    value.as_bytes(),
+                    "validate Inventor UFRx sixteen-byte identifier",
+                )?
+                .all(u8::is_ascii_hexdigit)
+        {
+            return Err(CodecError::Malformed(
+                "identifier must contain 32 hexadecimal digits".into(),
+            ));
         }
-        NonBlankString::from_ascii_leading(value)
-            .map(Self)
-            .ok_or_else(|| "identifier must contain 32 hexadecimal digits".to_owned())
+        match NonBlankString::from_ascii_leading(value) {
+            Some(value) => Ok(Self(value)),
+            None => Err(CodecError::Malformed(
+                "identifier must contain 32 hexadecimal digits".into(),
+            )),
+        }
     }
 
     fn as_str(&self) -> &str {
@@ -54,11 +46,17 @@ impl Identifier16 {
 struct NonzeroDocumentId(Identifier16);
 
 impl NonzeroDocumentId {
-    fn try_new(value: Identifier16) -> Result<Self, String> {
-        if value.as_str().bytes().all(|byte| byte == b'0') {
-            Err("document_id must be nonzero".to_owned())
+    fn try_new(ctx: &DecodeContext<'_>, value: Identifier16) -> Result<Option<Self>, CodecError> {
+        if ctx
+            .admit_iter(
+                value.as_str().as_bytes(),
+                "validate nonzero Inventor UFRx document identifier",
+            )?
+            .all(|byte| *byte == b'0')
+        {
+            Ok(None)
         } else {
-            Ok(Self(value))
+            Ok(Some(Self(value)))
         }
     }
 
@@ -79,21 +77,138 @@ pub(crate) fn occurrence_issue(header_padding_words: u8, record_len: u64) -> Opt
     }
 }
 
-pub(crate) fn representation_issue(
-    name: Option<&str>,
-    kind: Option<&str>,
-    active_model_state: &str,
-) -> Option<&'static str> {
-    match (name, kind) {
-        (Some(name), Some(_)) if is_blank(name) => Some("active_representation must not be empty"),
-        (Some(_), Some(kind)) if is_blank(kind) => {
-            Some("active_representation_kind must not be empty")
-        }
-        (None, None) | (Some(_), Some(_)) => {
-            is_blank(active_model_state).then_some("active_model_state must not be empty")
-        }
-        _ => Some("active_representation and active_representation_kind must be present together"),
+fn malformed(
+    ctx: &DecodeContext<'_>,
+    detail: &str,
+    operation: &'static str,
+) -> Result<CodecError, CodecError> {
+    Ok(CodecError::Malformed(
+        ctx.copy_retained_text(detail, operation)?,
+    ))
+}
+
+fn qualify_error(
+    ctx: &DecodeContext<'_>,
+    error: CodecError,
+    field: &str,
+    operation: &'static str,
+) -> Result<CodecError, CodecError> {
+    match error {
+        CodecError::Malformed(detail) => Ok(CodecError::Malformed(
+            ctx.format_retained(format_args!("{field}: {detail}"), operation)?,
+        )),
+        error => Ok(error),
     }
+}
+
+fn required<T>(
+    ctx: &DecodeContext<'_>,
+    value: Option<T>,
+    detail: &str,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    match value {
+        Some(value) => Ok(value),
+        None => Err(malformed(ctx, detail, operation)?),
+    }
+}
+
+fn native_conversion_error(error: CodecError) -> NativeConvertError {
+    match error {
+        CodecError::Malformed(detail) => NativeConvertError::ConversionMessage(detail),
+        error => NativeConvertError::Resource(error),
+    }
+}
+
+fn arena_conversion_error(
+    ctx: &DecodeContext<'_>,
+    arena: &str,
+    record: &NativeRecord,
+    error: CodecError,
+) -> Result<NativeConvertError, NativeConvertError> {
+    if matches!(&error, CodecError::ResourceLimit(_)) {
+        return Err(NativeConvertError::Resource(error));
+    }
+    let message = match error {
+        CodecError::Malformed(message) => message,
+        error => {
+            ctx.format_retained(format_args!("{error}"), "format Inventor UFRx reader issue")?
+        }
+    };
+    let source = NativeConvertError::ReadRecordMessage {
+        id: record.identity_for_decode(ctx, "retain Inventor native record error identity")?,
+        message,
+    };
+    let arena = ctx.copy_retained_text(arena, "retain native arena error name")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
+        "retain native arena error",
+    )?;
+    Ok(NativeConvertError::Arena {
+        arena,
+        source: Box::new(source),
+    })
+}
+
+fn convert_arena<Wire, Record>(
+    ctx: &DecodeContext<'_>,
+    namespace: &NativeNamespace,
+    arena: &'static str,
+    operation: &'static str,
+    mut convert: impl FnMut(Wire, &DecodeContext<'_>) -> Result<Record, CodecError>,
+) -> Result<Vec<Record>, NativeConvertError>
+where
+    Wire: serde::de::DeserializeOwned,
+{
+    let records = ctx
+        .get_btree_map(namespace.arenas(), arena, "find Inventor UFRx record arena")?
+        .map_or(&[][..], Vec::as_slice);
+    let records = ctx
+        .admit_iter(records, operation)
+        .map_err(CodecError::from)?;
+    let wires = namespace.arena_iter_as_for_decode::<Wire>(ctx, arena);
+    ctx.try_collect_vec(
+        records.zip(wires).map(|(record, wire)| {
+            let wire = wire?;
+            match convert(wire, ctx) {
+                Ok(record) => Ok(record),
+                Err(error) => Err(arena_conversion_error(ctx, arena, record, error)?),
+            }
+        }),
+        operation,
+    )
+}
+
+fn convert_single_arena<Wire, Record>(
+    ctx: &DecodeContext<'_>,
+    namespace: &NativeNamespace,
+    arena: &'static str,
+    operation: &'static str,
+    mut convert: impl FnMut(Wire, &DecodeContext<'_>) -> Result<Record, CodecError>,
+) -> Result<(Option<Record>, usize), NativeConvertError>
+where
+    Wire: serde::de::DeserializeOwned,
+{
+    let records = ctx
+        .get_btree_map(namespace.arenas(), arena, "find Inventor UFRx record arena")?
+        .map_or(&[][..], Vec::as_slice);
+    let count = records.len();
+    let records = ctx
+        .admit_iter(records, operation)
+        .map_err(CodecError::from)?;
+    let wires = namespace.arena_iter_as_for_decode::<Wire>(ctx, arena);
+    let mut first = None;
+    for (record, wire) in records.zip(wires) {
+        let wire = wire?;
+        let value = match convert(wire, ctx) {
+            Ok(value) => value,
+            Err(error) => return Err(arena_conversion_error(ctx, arena, record, error)?),
+        };
+        if first.is_none() {
+            first = Some(value);
+        }
+    }
+    Ok((first, count))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,8 +250,7 @@ pub(crate) struct UfrxParsedPrefix {
     pub(crate) tail_sha256: Sha256Digest,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "UfrxRepresentationRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxRepresentationRecord {
     prefix: u16,
     pub(crate) active_representation: Option<(NonBlankString, NonBlankString)>,
@@ -168,59 +282,70 @@ impl Serialize for UfrxRepresentationRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct UfrxRepresentationRecordWire<T = String> {
+pub(crate) struct UfrxRepresentationRecordWire {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<T>,
-    pub(crate) active_representation_kind: Option<T>,
+    pub(crate) active_representation: Option<String>,
+    pub(crate) active_representation_kind: Option<String>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: T,
+    pub(crate) active_model_state: String,
     pub(crate) active_model_state_state: [u16; 2],
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxRepresentationRecordWire<T>>
-    for UfrxRepresentationRecord
-{
-    type Error = String;
-    fn try_from(wire: UfrxRepresentationRecordWire<T>) -> Result<Self, Self::Error> {
-        if let Some(issue) = representation_issue(
-            wire.active_representation.as_ref().map(AsRef::as_ref),
-            wire.active_representation_kind.as_ref().map(AsRef::as_ref),
-            wire.active_model_state.as_ref(),
-        ) {
-            return Err(issue.into());
-        }
+impl UfrxRepresentationRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<UfrxRepresentationRecord, CodecError> {
         let active_representation =
-            match (wire.active_representation, wire.active_representation_kind) {
+            match (self.active_representation, self.active_representation_kind) {
                 (None, None) => None,
-                (Some(name), Some(kind)) => Some((
-                    name.try_into()
-                        .ok()
-                        .ok_or("active_representation must not be empty")?,
-                    kind.try_into()
-                        .ok()
-                        .ok_or("active_representation_kind must not be empty")?,
-                )),
-                _ => return Err(
-                    "active_representation and active_representation_kind must be present together"
-                        .into(),
-                ),
+                (Some(name), Some(kind)) => {
+                    let name = required(
+                        ctx,
+                        NonBlankString::for_decode(ctx, name, "validate active_representation")?,
+                        "active_representation must not be empty",
+                        "retain Inventor UFRx representation conversion issue",
+                    )?;
+                    let kind = required(
+                        ctx,
+                        NonBlankString::for_decode(
+                            ctx,
+                            kind,
+                            "validate active_representation_kind",
+                        )?,
+                        "active_representation_kind must not be empty",
+                        "retain Inventor UFRx representation conversion issue",
+                    )?;
+                    Some((name, kind))
+                }
+                _ => {
+                    return Err(CodecError::Malformed(ctx.copy_retained_text(
+                    "active_representation and active_representation_kind must be present together",
+                    "retain Inventor UFRx representation conversion issue",
+                )?));
+                }
             };
-        Ok(Self {
-            prefix: wire.prefix,
+        let active_model_state = required(
+            ctx,
+            NonBlankString::for_decode(
+                ctx,
+                self.active_model_state,
+                "validate active_model_state",
+            )?,
+            "active_model_state must not be empty",
+            "retain Inventor UFRx representation conversion issue",
+        )?;
+        Ok(UfrxRepresentationRecord {
+            prefix: self.prefix,
             active_representation,
-            secondary_active_lod_state: wire.secondary_active_lod_state,
-            active_model_state: wire
-                .active_model_state
-                .try_into()
-                .ok()
-                .ok_or("active_model_state must not be empty")?,
-            active_model_state_state: wire.active_model_state_state,
+            secondary_active_lod_state: self.secondary_active_lod_state,
+            active_model_state,
+            active_model_state_state: self.active_model_state_state,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "UfrxModelStateRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxModelStateRecord {
     id: String,
     pub(crate) ordinal: u32,
@@ -249,11 +374,11 @@ impl Serialize for UfrxModelStateRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct UfrxModelStateRecordWire<T = String> {
+pub(crate) struct UfrxModelStateRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) prefix: u8,
-    pub(crate) name: T,
+    pub(crate) name: String,
     pub(crate) state: [u16; 2],
     pub(crate) prefix_count: u32,
     pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
@@ -261,24 +386,41 @@ pub(crate) struct UfrxModelStateRecordWire<T = String> {
     pub(crate) suffix_sha256: String,
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<UfrxModelStateRecordWire<T>>
-    for UfrxModelStateRecord
-{
-    type Error = String;
-    fn try_from(wire: UfrxModelStateRecordWire<T>) -> Result<Self, Self::Error> {
-        if let Some(issue) = model_state_issue(wire.suffix_len, wire.name.as_ref()) {
-            return Err(issue.into());
+impl UfrxModelStateRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<UfrxModelStateRecord, CodecError> {
+        if self.suffix_len != 77 {
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "suffix_len must be 77",
+                "retain Inventor UFRx model-state conversion issue",
+            )?));
         }
-        Ok(Self {
-            id: wire.id,
-            ordinal: wire.ordinal,
-            prefix: wire.prefix,
-            name: wire.name.try_into().ok().ok_or("name must not be empty")?,
-            state: wire.state,
-            prefix_count: wire.prefix_count,
-            parameters: wire.parameters,
-            suffix_sha256: Sha256Digest::try_from(wire.suffix_sha256)
-                .map_err(|error| format!("suffix_sha256: {error}"))?,
+        let name = required(
+            ctx,
+            NonBlankString::for_decode(ctx, self.name, "validate name")?,
+            "name must not be empty",
+            "retain Inventor UFRx model-state conversion issue",
+        )?;
+        let suffix_sha256 = match Sha256Digest::try_from(self.suffix_sha256) {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("suffix_sha256: {error}"),
+                    "retain Inventor UFRx model-state conversion issue",
+                )?));
+            }
+        };
+        Ok(UfrxModelStateRecord {
+            id: self.id,
+            ordinal: self.ordinal,
+            prefix: self.prefix,
+            name,
+            state: self.state,
+            prefix_count: self.prefix_count,
+            parameters: self.parameters,
+            suffix_sha256,
         })
     }
 }
@@ -311,7 +453,7 @@ struct UfrxRecordWire {
     section_versions: Vec<u16>,
     original_file_name: Option<String>,
     caption: Option<String>,
-    representation: Option<UfrxRepresentationRecord>,
+    representation: Option<UfrxRepresentationRecordWire>,
     model_state_count: u64,
     reference_count: u64,
     embedded_reference_count: u64,
@@ -453,25 +595,43 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
 impl UfrxRecordWire {
     fn into_record(
         self,
+        ctx: &DecodeContext<'_>,
+        representation: Option<UfrxRepresentationRecord>,
         model_states: Vec<UfrxModelStateRecord>,
         external_references: Vec<ExternalReferenceRecord>,
         embedded_references: Vec<EmbeddedReferenceRecord>,
         occurrences: Vec<UfrxOccurrenceRecord>,
-    ) -> Result<UfrxRecord, String> {
+    ) -> Result<UfrxRecord, CodecError> {
         let wire = self;
         if wire.model_state_count != cadmpeg_core::decode::u64_from_index(model_states.len()) {
-            return Err("UFRx model_state_count does not match its arena".into());
+            return Err(malformed(
+                ctx,
+                "UFRx model_state_count does not match its arena",
+                "retain Inventor UFRx state issue",
+            )?);
         }
         if wire.reference_count != cadmpeg_core::decode::u64_from_index(external_references.len()) {
-            return Err("UFRx reference_count does not match its arena".into());
+            return Err(malformed(
+                ctx,
+                "UFRx reference_count does not match its arena",
+                "retain Inventor UFRx state issue",
+            )?);
         }
         if wire.embedded_reference_count
             != cadmpeg_core::decode::u64_from_index(embedded_references.len())
         {
-            return Err("UFRx embedded_reference_count does not match its arena".into());
+            return Err(malformed(
+                ctx,
+                "UFRx embedded_reference_count does not match its arena",
+                "retain Inventor UFRx state issue",
+            )?);
         }
         if wire.occurrence_count != cadmpeg_core::decode::u64_from_index(occurrences.len()) {
-            return Err("UFRx occurrence_count does not match its arena".into());
+            return Err(malformed(
+                ctx,
+                "UFRx occurrence_count does not match its arena",
+                "retain Inventor UFRx state issue",
+            )?);
         }
         let has_children = !model_states.is_empty()
             || !external_references.is_empty()
@@ -479,7 +639,7 @@ impl UfrxRecordWire {
             || !occurrences.is_empty();
         let has_parsed_fields = wire.original_file_name.is_some()
             || wire.caption.is_some()
-            || wire.representation.is_some()
+            || representation.is_some()
             || has_children;
         let has_tail = wire.tail_len != 0 || wire.tail_sha256.is_some();
         let invalid = match wire.state {
@@ -501,73 +661,138 @@ impl UfrxRecordWire {
             UfrxRecordState::ParsedPrefix => wire.detail.is_some(),
         };
         if invalid {
-            return Err("UFRx state carries incompatible fields".into());
+            return Err(malformed(
+                ctx,
+                "UFRx state carries incompatible fields",
+                "retain Inventor UFRx state issue",
+            )?);
         }
         match wire.state {
             UfrxRecordState::Absent => Ok(UfrxRecord::Absent { id: wire.id }),
             UfrxRecordState::ParsedPrefix => {
+                let directory_id = required(
+                    ctx,
+                    wire.directory_id,
+                    "parsed UFRxDoc requires directory_id",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let schema = required(
+                    ctx,
+                    wire.schema,
+                    "parsed UFRxDoc requires schema",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let original_file_name = required(
+                    ctx,
+                    wire.original_file_name,
+                    "parsed UFRxDoc requires original_file_name",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let caption = required(
+                    ctx,
+                    wire.caption,
+                    "parsed UFRxDoc requires caption",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let tail_sha256 = required(
+                    ctx,
+                    wire.tail_sha256,
+                    "parsed UFRxDoc requires tail_sha256",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let tail_sha256 = match Sha256Digest::try_from(tail_sha256) {
+                    Ok(digest) => digest,
+                    Err(error) => {
+                        return Err(CodecError::Malformed(ctx.format_retained(
+                            format_args!("tail_sha256: {error}"),
+                            "format invalid Inventor UFRx tail digest issue",
+                        )?));
+                    }
+                };
                 Ok(UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
                     id: wire.id,
-                    directory_id: wire
-                        .directory_id
-                        .ok_or_else(|| "parsed UFRxDoc requires directory_id".to_owned())?,
-                    schema: wire
-                        .schema
-                        .ok_or_else(|| "parsed UFRxDoc requires schema".to_owned())?,
+                    directory_id,
+                    schema,
                     section_versions: wire.section_versions,
-                    original_file_name: wire
-                        .original_file_name
-                        .ok_or_else(|| "parsed UFRxDoc requires original_file_name".to_owned())?,
-                    caption: wire
-                        .caption
-                        .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
-                    representation: wire.representation,
+                    original_file_name,
+                    caption,
+                    representation,
                     model_states,
                     external_references,
                     embedded_references,
                     occurrences,
                     tail_len: wire.tail_len,
-                    tail_sha256: Sha256Digest::try_from(
-                        wire.tail_sha256
-                            .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
-                    )
-                    .map_err(|detail| format!("tail_sha256: {detail}"))?,
+                    tail_sha256,
                 })))
             }
-            UfrxRecordState::Unsupported => Ok(UfrxRecord::Unsupported {
-                id: wire.id,
-                directory_id: wire
-                    .directory_id
-                    .ok_or_else(|| "unsupported UFRxDoc requires directory_id".to_owned())?,
-                schema: wire
-                    .schema
-                    .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
-                section_versions: wire.section_versions,
-                tail_len: wire.tail_len,
-                tail_sha256: Sha256Digest::try_from(
-                    wire.tail_sha256
-                        .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
-                )
-                .map_err(|detail| format!("tail_sha256: {detail}"))?,
-                detail: wire
-                    .detail
-                    .ok_or_else(|| "unsupported UFRxDoc requires detail".to_owned())?,
-            }),
-            UfrxRecordState::Malformed => Ok(UfrxRecord::Malformed {
-                id: wire.id,
-                directory_id: wire
-                    .directory_id
-                    .ok_or_else(|| "malformed UFRxDoc requires directory_id".to_owned())?,
-                detail: wire
-                    .detail
-                    .ok_or_else(|| "malformed UFRxDoc requires detail".to_owned())?,
-            }),
+            UfrxRecordState::Unsupported => {
+                let directory_id = required(
+                    ctx,
+                    wire.directory_id,
+                    "unsupported UFRxDoc requires directory_id",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let schema = required(
+                    ctx,
+                    wire.schema,
+                    "unsupported UFRxDoc requires schema",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let tail_sha256 = required(
+                    ctx,
+                    wire.tail_sha256,
+                    "unsupported UFRxDoc requires tail_sha256",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let tail_sha256 = match Sha256Digest::try_from(tail_sha256) {
+                    Ok(digest) => digest,
+                    Err(error) => {
+                        return Err(CodecError::Malformed(ctx.format_retained(
+                            format_args!("tail_sha256: {error}"),
+                            "format invalid Inventor UFRx tail digest issue",
+                        )?));
+                    }
+                };
+                let detail = required(
+                    ctx,
+                    wire.detail,
+                    "unsupported UFRxDoc requires detail",
+                    "retain Inventor UFRx state issue",
+                )?;
+                Ok(UfrxRecord::Unsupported {
+                    id: wire.id,
+                    directory_id,
+                    schema,
+                    section_versions: wire.section_versions,
+                    tail_len: wire.tail_len,
+                    tail_sha256,
+                    detail,
+                })
+            }
+            UfrxRecordState::Malformed => {
+                let directory_id = required(
+                    ctx,
+                    wire.directory_id,
+                    "malformed UFRxDoc requires directory_id",
+                    "retain Inventor UFRx state issue",
+                )?;
+                let detail = required(
+                    ctx,
+                    wire.detail,
+                    "malformed UFRxDoc requires detail",
+                    "retain Inventor UFRx state issue",
+                )?;
+                Ok(UfrxRecord::Malformed {
+                    id: wire.id,
+                    directory_id,
+                    detail,
+                })
+            }
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "ExternalReferenceRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExternalReferenceRecord {
     id: String,
     ordinal: u32,
@@ -618,10 +843,10 @@ impl Serialize for ExternalReferenceRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ExternalReferenceRecordWire<T = String> {
+pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
-    pub(crate) path: T,
+    pub(crate) path: String,
     pub(crate) library_id: i32,
     pub(crate) library_name: String,
     pub(crate) display_name: String,
@@ -640,54 +865,120 @@ pub(crate) struct ExternalReferenceRecordWire<T = String> {
     pub(crate) flags: u32,
 }
 
-impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<ExternalReferenceRecordWire<T>>
-    for ExternalReferenceRecord
-{
-    type Error = String;
-    fn try_from(wire: ExternalReferenceRecordWire<T>) -> Result<Self, Self::Error> {
-        let suffix = wire
-            .id
-            .strip_prefix("inventor:ufrx:external-reference#")
-            .ok_or_else(|| "external reference id has an invalid namespace".to_owned())?;
-        if suffix.is_empty()
-            || !suffix.bytes().all(|byte| byte.is_ascii_digit())
-            || (suffix.len() > 1 && suffix.starts_with('0'))
-            || suffix.parse::<u32>().ok() != Some(wire.ordinal)
+cadmpeg_core::named_optional_field!(deserialize_document_id, String, "document_id");
+
+impl ExternalReferenceRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<ExternalReferenceRecord, CodecError> {
+        let suffix = required(
+            ctx,
+            ctx.strip_prefix(
+                &self.id,
+                "inventor:ufrx:external-reference#",
+                "validate Inventor UFRx external reference identity prefix",
+            )?,
+            "external reference id has an invalid namespace",
+            "retain Inventor UFRx external conversion issue",
+        )?;
+        if suffix.is_empty() {
+            return Err(malformed(
+                ctx,
+                "external reference id disagrees with ordinal",
+                "retain Inventor UFRx external conversion issue",
+            )?);
+        }
+        let digits = ctx
+            .admit_iter(
+                suffix.as_bytes(),
+                "validate Inventor UFRx external reference ordinal digits",
+            )?
+            .all(u8::is_ascii_digit);
+        if !digits {
+            return Err(malformed(
+                ctx,
+                "external reference id disagrees with ordinal",
+                "retain Inventor UFRx external conversion issue",
+            )?);
+        }
+        if suffix.len() > 1
+            && ctx.starts_with(
+                suffix,
+                "0",
+                "validate Inventor UFRx external reference ordinal spelling",
+            )?
         {
-            return Err("external reference id disagrees with ordinal".to_owned());
+            return Err(malformed(
+                ctx,
+                "external reference id disagrees with ordinal",
+                "retain Inventor UFRx external conversion issue",
+            )?);
         }
-        let database_id = Identifier16::try_new(wire.database_id)
-            .map_err(|error| format!("database_id: {error}"))?;
-        let document_id = wire
-            .document_id
-            .map(Identifier16::try_new)
-            .transpose()
-            .map_err(|error| format!("document_id: {error}"))?
-            .filter(|value| !value.as_str().bytes().all(|byte| byte == b'0'))
-            .map(NonzeroDocumentId::try_new)
-            .transpose()?;
-        if let Some(issue) = external_reference_issue(wire.path.as_ref(), document_id.is_some()) {
-            return Err(issue.into());
+        let parsed_ordinal =
+            ctx.parse_text::<u32>(suffix, "parse Inventor UFRx external reference ordinal")?;
+        if parsed_ordinal.ok() != Some(self.ordinal) {
+            return Err(malformed(
+                ctx,
+                "external reference id disagrees with ordinal",
+                "retain Inventor UFRx external conversion issue",
+            )?);
         }
-        Ok(Self {
-            id: wire.id,
-            ordinal: wire.ordinal,
-            identity: match wire.path.try_into().ok() {
-                Some(path) => ExternalReferenceIdentity::Path { path, document_id },
-                None => ExternalReferenceIdentity::DocumentId(
-                    document_id.ok_or("path or a nonzero document_id is required")?,
-                ),
-            },
-            library_id: wire.library_id,
-            library_name: wire.library_name,
-            display_name: wire.display_name,
-            state_groups: wire.state_groups,
-            state: wire.state,
+
+        let database_id = match Identifier16::try_new(ctx, self.database_id) {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(qualify_error(
+                    ctx,
+                    error,
+                    "database_id",
+                    "retain Inventor UFRx external conversion issue",
+                )?);
+            }
+        };
+        let document_id = match self.document_id {
+            Some(value) => {
+                let value = match Identifier16::try_new(ctx, value) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return Err(qualify_error(
+                            ctx,
+                            error,
+                            "document_id",
+                            "retain Inventor UFRx external conversion issue",
+                        )?);
+                    }
+                };
+                NonzeroDocumentId::try_new(ctx, value)?
+            }
+            None => None,
+        };
+        let path = NonBlankString::for_decode(ctx, self.path, "validate path")?;
+        let identity = match (path, document_id) {
+            (Some(path), document_id) => ExternalReferenceIdentity::Path { path, document_id },
+            (None, Some(document_id)) => ExternalReferenceIdentity::DocumentId(document_id),
+            (None, None) => {
+                return Err(malformed(
+                    ctx,
+                    "path or a nonzero document_id is required",
+                    "retain Inventor UFRx external conversion issue",
+                )?);
+            }
+        };
+        Ok(ExternalReferenceRecord {
+            id: self.id,
+            ordinal: self.ordinal,
+            identity,
+            library_id: self.library_id,
+            library_name: self.library_name,
+            display_name: self.display_name,
+            state_groups: self.state_groups,
+            state: self.state,
             database_id,
-            reference_id: wire.reference_id,
-            occurrence_count: wire.occurrence_count,
-            version: wire.version,
-            flags: wire.flags,
+            reference_id: self.reference_id,
+            occurrence_count: self.occurrence_count,
+            version: self.version,
+            flags: self.flags,
         })
     }
 }
@@ -710,28 +1001,27 @@ impl ExternalReferenceRecord {
         self.ordinal
     }
 
-    pub(crate) fn document_copy_len(&self) -> usize {
-        match &self.identity {
-            ExternalReferenceIdentity::Path { path, .. } => path.as_str().len(),
-            ExternalReferenceIdentity::DocumentId(document_id) => document_id.as_str().len(),
-        }
-    }
-
-    pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
+    pub(crate) fn document(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<cadmpeg_ir::products::ExternalDocument, CodecError> {
         use cadmpeg_ir::products::ExternalDocument;
-        match &self.identity {
-            ExternalReferenceIdentity::Path { path, .. } => {
-                ExternalDocument::Path { path: path.clone() }
-            }
-            ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id.0 .0.clone(),
+        Ok(match &self.identity {
+            ExternalReferenceIdentity::Path { path, .. } => ExternalDocument::Path {
+                path: path
+                    .try_clone_for_decode(ctx, "copy Inventor UFRx external document path")?,
             },
-        }
+            ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
+                document_id: document_id
+                    .0
+                     .0
+                    .try_clone_for_decode(ctx, "copy Inventor UFRx external document identifier")?,
+            },
+        })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "EmbeddedReferenceRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EmbeddedReferenceRecord {
     id: String,
     pub(crate) ordinal: u32,
@@ -791,35 +1081,55 @@ pub(crate) struct EmbeddedReferenceRecordWire {
     pub(crate) record_sha256: String,
 }
 
-impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
-    type Error = String;
-    fn try_from(wire: EmbeddedReferenceRecordWire) -> Result<Self, Self::Error> {
-        if let Some(issue) = embedded_reference_issue(wire.record_len) {
-            return Err(issue.into());
+impl EmbeddedReferenceRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<EmbeddedReferenceRecord, CodecError> {
+        if let Some(issue) = embedded_reference_issue(self.record_len) {
+            return Err(malformed(
+                ctx,
+                issue,
+                "retain Inventor UFRx embedded conversion issue",
+            )?);
         }
-        Ok(Self {
-            id: wire.id,
-            ordinal: wire.ordinal,
-            value_0: wire.value_0,
-            filetime: wire.filetime,
-            value_1: wire.value_1,
-            extended_value: wire.extended_value,
-            value_2: wire.value_2,
-            path: wire.path,
-            library_id: wire.library_id,
-            library_name: wire.library_name,
-            state: wire.state,
-            display_name: wire.display_name,
-            state_values: wire.state_values,
-            record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
-            record_sha256: Sha256Digest::try_from(wire.record_sha256)
-                .map_err(|error| format!("record_sha256: {error}"))?,
+        let Some(record_len) = NonZeroU64::new(self.record_len) else {
+            return Err(malformed(
+                ctx,
+                "record_len must not be zero",
+                "retain Inventor UFRx embedded conversion issue",
+            )?);
+        };
+        let record_sha256 = match Sha256Digest::try_from(self.record_sha256) {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("record_sha256: {error}"),
+                    "retain Inventor UFRx embedded conversion issue",
+                )?));
+            }
+        };
+        Ok(EmbeddedReferenceRecord {
+            id: self.id,
+            ordinal: self.ordinal,
+            value_0: self.value_0,
+            filetime: self.filetime,
+            value_1: self.value_1,
+            extended_value: self.extended_value,
+            value_2: self.value_2,
+            path: self.path,
+            library_id: self.library_id,
+            library_name: self.library_name,
+            state: self.state,
+            display_name: self.display_name,
+            state_values: self.state_values,
+            record_len,
+            record_sha256,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "UfrxOccurrenceRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
@@ -864,24 +1174,45 @@ pub(crate) struct UfrxOccurrenceRecordWire {
     pub(crate) record_sha256: String,
 }
 
-impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
-    type Error = String;
-    fn try_from(wire: UfrxOccurrenceRecordWire) -> Result<Self, Self::Error> {
-        if let Some(issue) = occurrence_issue(wire.header_padding_words, wire.record_len) {
-            return Err(issue.into());
+impl UfrxOccurrenceRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<UfrxOccurrenceRecord, CodecError> {
+        if let Some(issue) = occurrence_issue(self.header_padding_words, self.record_len) {
+            return Err(malformed(
+                ctx,
+                issue,
+                "retain Inventor UFRx occurrence conversion issue",
+            )?);
         }
-        Ok(Self {
-            id: wire.id,
-            ordinal: wire.ordinal,
-            end_string_flag: wire.end_string_flag,
-            file_reference_id: wire.file_reference_id,
-            occurrence_id: wire.occurrence_id,
-            header_value: wire.header_value,
-            title: wire.title,
-            header_padding_words: wire.header_padding_words,
-            record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
-            record_sha256: Sha256Digest::try_from(wire.record_sha256)
-                .map_err(|error| format!("record_sha256: {error}"))?,
+        let Some(record_len) = NonZeroU64::new(self.record_len) else {
+            return Err(malformed(
+                ctx,
+                "record_len must not be zero",
+                "retain Inventor UFRx occurrence conversion issue",
+            )?);
+        };
+        let record_sha256 = match Sha256Digest::try_from(self.record_sha256) {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("record_sha256: {error}"),
+                    "retain Inventor UFRx occurrence conversion issue",
+                )?));
+            }
+        };
+        Ok(UfrxOccurrenceRecord {
+            id: self.id,
+            ordinal: self.ordinal,
+            end_string_flag: self.end_string_flag,
+            file_reference_id: self.file_reference_id,
+            occurrence_id: self.occurrence_id,
+            header_value: self.header_value,
+            title: self.title,
+            header_padding_words: self.header_padding_words,
+            record_len,
+            record_sha256,
         })
     }
 }
@@ -930,37 +1261,127 @@ impl UfrxRecord {
         namespace.set_arena(ctx, "ufrx_occurrences", self.occurrences())?;
         Ok(())
     }
-    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let [wire] = <[_; 1]>::try_from(namespace.arena_as::<UfrxRecordWire>("ufrx")?).map_err(
-            |records: Vec<_>| {
-                serde_json::Error::custom(format!(
-                    "Inventor native data has {} UFRxDoc state records",
-                    records.len()
-                ))
+    pub(crate) fn read(
+        ctx: &DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let (record, record_count) = convert_single_arena::<UfrxRecordWire, _>(
+            ctx,
+            namespace,
+            "ufrx",
+            "convert Inventor UFRx state records",
+            |mut wire, ctx| {
+                let representation = wire
+                    .representation
+                    .take()
+                    .map(|representation| representation.into_record(ctx))
+                    .transpose()?;
+                Ok((wire, representation))
             },
         )?;
+        if record_count != 1 {
+            return Err(NativeConvertError::ConversionMessage(ctx.format_retained(
+                format_args!("Inventor native data has {record_count} UFRxDoc state records"),
+                "format Inventor UFRx record count issue",
+            )?));
+        }
+        let Some((wire, representation)) = record else {
+            return Err(NativeConvertError::ConversionMessage(
+                ctx.copy_retained_text(
+                    "native record disappeared during UFRx conversion",
+                    "retain Inventor UFRx reader issue",
+                )?,
+            ));
+        };
+        let model_states = convert_arena::<UfrxModelStateRecordWire, _>(
+            ctx,
+            namespace,
+            "ufrx_model_states",
+            "convert Inventor UFRx model states",
+            UfrxModelStateRecordWire::into_record,
+        )?;
+        let external_references = convert_arena::<ExternalReferenceRecordWire, _>(
+            ctx,
+            namespace,
+            "external_references",
+            "convert Inventor UFRx external references",
+            ExternalReferenceRecordWire::into_record,
+        )?;
+        let embedded_references = convert_arena::<EmbeddedReferenceRecordWire, _>(
+            ctx,
+            namespace,
+            "embedded_references",
+            "convert Inventor UFRx embedded references",
+            EmbeddedReferenceRecordWire::into_record,
+        )?;
+        let occurrences = convert_arena::<UfrxOccurrenceRecordWire, _>(
+            ctx,
+            namespace,
+            "ufrx_occurrences",
+            "convert Inventor UFRx occurrences",
+            UfrxOccurrenceRecordWire::into_record,
+        )?;
         wire.into_record(
-            namespace.arena_as("ufrx_model_states")?,
-            namespace.arena_as("external_references")?,
-            namespace.arena_as("embedded_references")?,
-            namespace.arena_as("ufrx_occurrences")?,
+            ctx,
+            representation,
+            model_states,
+            external_references,
+            embedded_references,
+            occurrences,
         )
-        .map_err(|detail| serde_json::Error::custom(detail).into())
+        .map_err(native_conversion_error)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        byte_document_id_present, embedded_reference_issue, external_reference_issue,
-        model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
-        ExternalReferenceRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
-        UfrxOccurrenceRecord, UfrxParsedPrefix, UfrxRecord, UfrxRepresentationRecord,
+        embedded_reference_issue, occurrence_issue, EmbeddedReferenceRecord,
+        EmbeddedReferenceRecordWire, ExternalReferenceRecord, ExternalReferenceRecordWire,
+        UfrxModelStateRecord, UfrxModelStateRecordWire, UfrxOccurrenceRecord,
+        UfrxOccurrenceRecordWire, UfrxParsedPrefix, UfrxRecord, UfrxRepresentationRecord,
+        UfrxRepresentationRecordWire,
     };
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+    use serde::de::DeserializeOwned;
+
+    fn from_wire<W: DeserializeOwned, T>(
+        value: serde_json::Value,
+        convert: impl FnOnce(W, &DecodeContext<'static>) -> Result<T, CodecError>,
+    ) -> Result<T, String> {
+        let ctx = crate::native::test_ctx();
+        let wire = serde_json::from_value::<W>(value).map_err(|error| error.to_string())?;
+        convert(wire, &ctx).map_err(|error| error.to_string())
+    }
+
+    fn decode_representation(value: serde_json::Value) -> Result<UfrxRepresentationRecord, String> {
+        from_wire::<UfrxRepresentationRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
+    }
+
+    fn decode_model_state(value: serde_json::Value) -> Result<UfrxModelStateRecord, String> {
+        from_wire::<UfrxModelStateRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
+    }
+
+    fn decode_external_reference(
+        value: serde_json::Value,
+    ) -> Result<ExternalReferenceRecord, String> {
+        from_wire::<ExternalReferenceRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
+    }
+
+    fn decode_embedded_reference(
+        value: serde_json::Value,
+    ) -> Result<EmbeddedReferenceRecord, String> {
+        from_wire::<EmbeddedReferenceRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
+    }
+
+    fn decode_occurrence(value: serde_json::Value) -> Result<UfrxOccurrenceRecord, String> {
+        from_wire::<UfrxOccurrenceRecordWire, _>(value, |wire, ctx| wire.into_record(ctx))
+    }
 
     #[test]
     fn ufrx_representation_streams_once_with_retained_limit() {
@@ -976,7 +1397,10 @@ mod tests {
             "active_model_state": "Primary", "active_model_state_state": [0, 0]
         });
         let admitted: UfrxRepresentationRecord =
-            serde_json::from_value(representation.clone()).expect("valid fixture");
+            from_wire::<UfrxRepresentationRecordWire, _>(representation.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         let record = Row {
             id: "inventor:ufrx:representation#0",
             representation: &admitted,
@@ -995,7 +1419,10 @@ mod tests {
             "parameters": [], "suffix_len": 77, "suffix_sha256": "a".repeat(64)
         });
         let record: UfrxModelStateRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            from_wire::<UfrxModelStateRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1009,7 +1436,10 @@ mod tests {
             "version": 0, "flags": 0
         });
         let record: ExternalReferenceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            from_wire::<ExternalReferenceRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1024,7 +1454,10 @@ mod tests {
             "record_sha256": "a".repeat(64)
         });
         let record: EmbeddedReferenceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            from_wire::<EmbeddedReferenceRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1038,7 +1471,10 @@ mod tests {
             "record_sha256": "a".repeat(64)
         });
         let record: UfrxOccurrenceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            from_wire::<UfrxOccurrenceRecordWire, _>(expected.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1065,8 +1501,25 @@ mod tests {
 
     #[test]
     fn ufrx_conversion_issues_preserve_wire_refusal_order() {
-        assert_eq!(model_state_issue(76, " "), Some("suffix_len must be 77"));
-        assert_eq!(model_state_issue(77, " "), Some("name must not be empty"));
+        let model = serde_json::json!({
+            "id": "state", "ordinal": 0, "prefix": 0, "name": " ",
+            "state": [0, 0], "prefix_count": 0, "parameters": [],
+            "suffix_len": 76, "suffix_sha256": "a".repeat(64)
+        });
+        assert!(
+            from_wire::<UfrxModelStateRecordWire, _>(model.clone(), |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect_err("wrong suffix length")
+            .contains("suffix_len must be 77")
+        );
+        let mut model = model;
+        model["suffix_len"] = serde_json::json!(77);
+        assert!(
+            from_wire::<UfrxModelStateRecordWire, _>(model, |wire, ctx| { wire.into_record(ctx) })
+                .expect_err("blank model name")
+                .contains("name must not be empty")
+        );
         assert_eq!(
             embedded_reference_issue(0),
             Some("record_len must not be zero")
@@ -1076,29 +1529,66 @@ mod tests {
             Some("header_padding_words must not exceed 8")
         );
         assert_eq!(occurrence_issue(8, 0), Some("record_len must not be zero"));
-        assert_eq!(
-            representation_issue(Some(" "), Some(" "), " "),
-            Some("active_representation must not be empty")
+        let representation = serde_json::json!({
+            "prefix": 0, "active_representation": " ",
+            "active_representation_kind": " ", "secondary_active_lod_state": [0, 0],
+            "active_model_state": " ", "active_model_state_state": [0, 0]
+        });
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("blank representation name")
+            .contains("active_representation must not be empty")
         );
-        assert_eq!(
-            representation_issue(Some("name"), Some(" "), " "),
-            Some("active_representation_kind must not be empty")
+        let mut representation = serde_json::json!({
+            "prefix": 0, "active_representation": "name",
+            "active_representation_kind": null, "secondary_active_lod_state": [0, 0],
+            "active_model_state": " ", "active_model_state_state": [0, 0]
+        });
+        representation["active_representation_kind"] = serde_json::json!(" ");
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("blank representation kind")
+            .contains("active_representation_kind must not be empty")
         );
-        assert_eq!(
-            representation_issue(Some("name"), None, " "),
-            Some("active_representation and active_representation_kind must be present together")
+        let representation = serde_json::json!({
+            "prefix": 0, "active_representation": "name",
+            "active_representation_kind": null, "secondary_active_lod_state": [0, 0],
+            "active_model_state": " ", "active_model_state_state": [0, 0]
+        });
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("half representation pair")
+            .contains(
+                "active_representation and active_representation_kind must be present together"
+            )
         );
-        assert_eq!(
-            representation_issue(None, None, " "),
-            Some("active_model_state must not be empty")
+        let representation = serde_json::json!({
+            "prefix": 0, "active_representation": null,
+            "active_representation_kind": null, "secondary_active_lod_state": [0, 0],
+            "active_model_state": " ", "active_model_state_state": [0, 0]
+        });
+        assert!(
+            from_wire::<UfrxRepresentationRecordWire, _>(representation, |wire, ctx| wire
+                .into_record(ctx))
+            .expect_err("blank active model state")
+            .contains("active_model_state must not be empty")
         );
-        assert_eq!(
-            external_reference_issue(" ", byte_document_id_present(&[0; 16])),
-            Some("path or a nonzero document_id is required")
-        );
-        assert_eq!(
-            external_reference_issue(" ", byte_document_id_present(&[1; 16])),
-            None
+        let external = serde_json::json!({
+            "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
+            "path": " ", "library_id": 0, "library_name": "", "display_name": "",
+            "state_groups": [], "state": [0, 0], "document_id": "0".repeat(32),
+            "database_id": "0".repeat(32), "reference_id": 1, "occurrence_count": 0,
+            "version": 0, "flags": 0
+        });
+        assert!(
+            from_wire::<ExternalReferenceRecordWire, _>(external, |wire, ctx| {
+                wire.into_record(ctx)
+            })
+            .expect_err("blank path and zero document ID")
+            .contains("path or a nonzero document_id is required")
         );
     }
 
@@ -1110,13 +1600,12 @@ mod tests {
             "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
             "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
         });
-        let record: ExternalReferenceRecord =
-            serde_json::from_value(valid.clone()).expect("zero database ID is valid");
+        let record = decode_external_reference(valid.clone()).expect("zero database ID is valid");
         assert_eq!(serde_json::to_value(record).expect("record"), valid);
         for database_id in ["", "not-hex", "0001", "g0000000000000000000000000000000"] {
             let mut wire = valid.clone();
             wire["database_id"] = serde_json::json!(database_id);
-            assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
+            assert!(decode_external_reference(wire).is_err());
         }
         for id in [
             "",
@@ -1126,11 +1615,11 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire["id"] = serde_json::json!(id);
-            assert!(serde_json::from_value::<ExternalReferenceRecord>(wire).is_err());
+            assert!(decode_external_reference(wire).is_err());
         }
         let mut wrong_ordinal = valid;
         wrong_ordinal["ordinal"] = serde_json::json!(7);
-        assert!(serde_json::from_value::<ExternalReferenceRecord>(wrong_ordinal).is_err());
+        assert!(decode_external_reference(wrong_ordinal).is_err());
     }
 
     #[test]
@@ -1157,7 +1646,7 @@ mod tests {
             let mut wire = valid.clone();
             wire["path"] = serde_json::json!(path);
             wire["document_id"] = serde_json::json!(document_id);
-            let record = serde_json::from_value::<ExternalReferenceRecord>(wire.clone());
+            let record = decode_external_reference(wire.clone());
             if accepted {
                 if document_id.chars().all(|character| character == '0') {
                     wire.as_object_mut()
@@ -1172,7 +1661,6 @@ mod tests {
             } else {
                 assert!(record
                     .expect_err("invalid native record fixture")
-                    .to_string()
                     .contains("document_id"));
             }
         }
@@ -1193,14 +1681,13 @@ mod tests {
             "state_values": [0,0,0,0,0,0,0,0], "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
-        let admitted: UfrxOccurrenceRecord =
-            serde_json::from_value(occurrence.clone()).expect("valid native record fixture");
+        let admitted = decode_occurrence(occurrence.clone()).expect("valid native record fixture");
         assert_eq!(
             serde_json::to_value(admitted).expect("valid native record fixture"),
             occurrence
         );
-        let admitted: EmbeddedReferenceRecord =
-            serde_json::from_value(embedded.clone()).expect("valid native record fixture");
+        let admitted =
+            decode_embedded_reference(embedded.clone()).expect("valid native record fixture");
         assert_eq!(
             serde_json::to_value(admitted).expect("valid native record fixture"),
             embedded
@@ -1213,22 +1700,19 @@ mod tests {
         ] {
             let mut wire = occurrence.clone();
             wire[field] = value.clone();
-            assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
+            assert!(decode_occurrence(wire)
                 .expect_err("invalid native record fixture")
-                .to_string()
                 .contains(field));
             let mut wire = embedded.clone();
             wire[field] = value;
-            assert!(serde_json::from_value::<EmbeddedReferenceRecord>(wire)
+            assert!(decode_embedded_reference(wire)
                 .expect_err("invalid native record fixture")
-                .to_string()
                 .contains(field));
         }
         let mut wire = occurrence;
         wire["header_padding_words"] = serde_json::json!(9);
-        assert!(serde_json::from_value::<UfrxOccurrenceRecord>(wire)
+        assert!(decode_occurrence(wire)
             .expect_err("invalid native record fixture")
-            .to_string()
             .contains("header_padding_words"));
     }
 
@@ -1239,8 +1723,7 @@ mod tests {
             "active_representation_kind": "LOD", "secondary_active_lod_state": [0, 0],
             "active_model_state": "Primary", "active_model_state_state": [0, 0]
         });
-        let record: UfrxRepresentationRecord =
-            serde_json::from_value(valid.clone()).expect("valid native record fixture");
+        let record = decode_representation(valid.clone()).expect("valid native record fixture");
         assert_eq!(
             serde_json::to_value(record).expect("valid native record fixture"),
             valid
@@ -1252,20 +1735,19 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire[field] = serde_json::json!("");
-            assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
+            assert!(decode_representation(wire)
                 .expect_err("invalid native record fixture")
-                .to_string()
                 .contains(field));
         }
         for field in ["active_representation", "active_representation_kind"] {
             let mut wire = valid.clone();
             wire[field] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_err());
+            assert!(decode_representation(wire).is_err());
         }
         let mut wire = valid;
         wire["active_representation"] = serde_json::Value::Null;
         wire["active_representation_kind"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_ok());
+        assert!(decode_representation(wire).is_ok());
     }
 
     #[test]
@@ -1275,8 +1757,7 @@ mod tests {
             "state": [0, 0], "prefix_count": 0, "parameters": [],
             "suffix_len": 77, "suffix_sha256": "a".repeat(64)
         });
-        let record: UfrxModelStateRecord =
-            serde_json::from_value(valid.clone()).expect("valid native record fixture");
+        let record = decode_model_state(valid.clone()).expect("valid native record fixture");
         assert_eq!(
             serde_json::to_value(record).expect("valid native record fixture"),
             valid
@@ -1290,10 +1771,7 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
-            assert!(
-                serde_json::from_value::<UfrxModelStateRecord>(wire).is_err(),
-                "{field}"
-            );
+            assert!(decode_model_state(wire).is_err(), "{field}");
         }
     }
 
@@ -1307,19 +1785,18 @@ mod tests {
             original_file_name: "part.ipt".into(),
             caption: "part".into(),
             representation: None,
-            model_states: vec![UfrxModelStateRecord::try_from(
-                UfrxModelStateRecordWire::<String> {
-                    id: "inventor:ufrx:model-state#0".into(),
-                    ordinal: 0,
-                    prefix: 0,
-                    name: "Primary".into(),
-                    state: [0, 0],
-                    prefix_count: 0,
-                    parameters: vec![],
-                    suffix_len: 77,
-                    suffix_sha256: "0".repeat(64),
-                },
-            )
+            model_states: vec![UfrxModelStateRecordWire {
+                id: "inventor:ufrx:model-state#0".into(),
+                ordinal: 0,
+                prefix: 0,
+                name: "Primary".into(),
+                state: [0, 0],
+                prefix_count: 0,
+                parameters: vec![],
+                suffix_len: 77,
+                suffix_sha256: "0".repeat(64),
+            }
+            .into_record(&crate::native::test_ctx())
             .expect("valid native record fixture")],
             external_references: vec![],
             embedded_references: vec![],
@@ -1332,7 +1809,7 @@ mod tests {
             .install(&crate::native::test_ctx(), &mut namespace)
             .expect("valid test fixture");
         assert_eq!(
-            UfrxRecord::read(&namespace).expect("valid test fixture"),
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace).expect("valid test fixture"),
             record
         );
         let mut wire = namespace
@@ -1343,7 +1820,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
             .expect("valid test fixture");
-        assert!(UfrxRecord::read(&namespace)
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("invalid test fixture")
             .to_string()
             .contains("model_state_count"));
@@ -1353,7 +1830,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &[absent])
             .expect("valid test fixture");
-        assert!(UfrxRecord::read(&namespace).is_err());
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     #[test]
@@ -1382,7 +1859,8 @@ mod tests {
                 .install(&crate::native::test_ctx(), &mut namespace)
                 .expect("valid test fixture");
             assert_eq!(
-                UfrxRecord::read(&namespace).expect("valid test fixture"),
+                UfrxRecord::read(&crate::native::test_ctx(), &namespace)
+                    .expect("valid test fixture"),
                 record
             );
             let mut wire = namespace
@@ -1392,7 +1870,7 @@ mod tests {
             namespace
                 .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
                 .expect("valid test fixture");
-            assert!(UfrxRecord::read(&namespace).is_err());
+            assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
         }
     }
 
@@ -1407,4 +1885,3 @@ mod tests {
 }
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_document_id, String, "document_id");

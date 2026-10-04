@@ -565,8 +565,15 @@ impl DialectLayers {
     }
 
     /// Iterates over the primary layer followed by every extra layer.
-    pub fn iter(&self) -> impl Iterator<Item = &DialectMatch> {
+    pub fn iter(
+        &self,
+    ) -> std::iter::Chain<std::iter::Once<&DialectMatch>, std::slice::Iter<'_, DialectMatch>> {
         std::iter::once(&self.primary).chain(&self.extra)
+    }
+
+    /// Returns the number of layers after the primary layer.
+    pub(crate) fn extra_layer_count(&self) -> usize {
+        self.extra.len()
     }
 }
 

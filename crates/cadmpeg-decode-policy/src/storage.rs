@@ -765,6 +765,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         coefficient: 1,
                     }]
                 }),
+            ("extend", false) => self
+                .copied_slice_source(expression)
+                .and_then(|source| self.key(source, &mut Vec::new()))
+                .map(|key| {
+                    vec![ExtentTerm {
+                        factors: vec![key],
+                        coefficient: 1,
+                    }]
+                }),
             _ => None,
         };
         let Some(terms) = terms else {
