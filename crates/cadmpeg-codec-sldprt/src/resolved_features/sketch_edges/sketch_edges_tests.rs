@@ -391,6 +391,189 @@ fn projected_polynomial_sketch_nurbs_preserves_pole_order_and_knots() {
     );
 }
 
+#[test]
+fn projected_rational_sketch_nurbs_preserves_pole_order_weights_and_knots() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+
+    let curve_id = CurveId::mint("test:model:entity#curve").expect("curve id");
+    let start_vertex = VertexId::mint("test:model:entity#start-vertex").expect("vertex id");
+    let end_vertex = VertexId::mint("test:model:entity#end-vertex").expect("vertex id");
+    let start_point = PointId::mint("test:model:entity#start-point").expect("point id");
+    let end_point = PointId::mint("test:model:entity#end-point").expect("point id");
+    let edge = Edge {
+        id: EdgeId::mint("test:model:entity#edge").expect("edge id"),
+        carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
+        start: start_vertex.clone(),
+        end: end_vertex.clone(),
+        tolerance: None,
+    };
+    let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
+    let source_points = [
+        Point3::new(10.0, 4.0, 8.0),
+        Point3::new(30.0, -3.0, 1.0),
+        Point3::new(-10.0, 0.0, 5.0),
+    ];
+    let points = HashMap::from([
+        (&start_point, source_points[0]),
+        (&end_point, source_points[2]),
+    ]);
+    let knots = [0.0, 0.0, 0.0, 2.0, 2.0, 2.0];
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            knots.to_vec(),
+            source_points.to_vec(),
+            Some(vec![2.0, 3.0, 5.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid curve"),
+    ));
+    let curves = HashMap::from([(&curve_id, &geometry)]);
+    let frame = super::SketchPlaneFrame {
+        origin: Point3::new(10.0, -5.0, 2.0),
+        u_axis: Vector3::new(0.0, 1.0, 0.0),
+        v_axis: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root fits service policy");
+    let projected = super::project_edge(
+        &ctx,
+        &edge,
+        &vertices,
+        &points,
+        &curves,
+        frame,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service budget")
+    .expect("NURBS curve projects");
+
+    let SketchGeometryDefinition::Nurbs { curve } = projected.definition() else {
+        panic!("projected curve remains NURBS")
+    };
+    assert_eq!(curve.degree(), 2);
+    assert_eq!(curve.knots().as_slice(), knots.as_slice());
+    assert!(!curve.periodic());
+    assert_eq!(
+        curve.weights().map(|weights| {
+            weights.into_iter().map(|weight| weight.get()).collect::<Vec<_>>()
+        }),
+        Some(vec![2.0, 3.0, 5.0])
+    );
+    let PcurveNurbsPoles::Rational { points } = curve.pole_rows() else {
+        panic!("rational source poles remain rational")
+    };
+    assert_eq!(
+        points.iter().map(|point| point.point.get()).collect::<Vec<_>>(),
+        vec![
+            Point2::new(9.0, 6.0),
+            Point2::new(2.0, -1.0),
+            Point2::new(5.0, 3.0),
+        ]
+    );
+}
+
+#[test]
+fn projected_rational_sketch_nurbs_weights_refuse_work_limit() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+
+    let curve_id = CurveId::mint("test:model:entity#curve").expect("curve id");
+    let start_vertex = VertexId::mint("test:model:entity#start-vertex").expect("vertex id");
+    let end_vertex = VertexId::mint("test:model:entity#end-vertex").expect("vertex id");
+    let start_point = PointId::mint("test:model:entity#start-point").expect("point id");
+    let end_point = PointId::mint("test:model:entity#end-point").expect("point id");
+    let edge = Edge {
+        id: EdgeId::mint("test:model:entity#edge").expect("edge id"),
+        carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
+        start: start_vertex.clone(),
+        end: end_vertex.clone(),
+        tolerance: None,
+    };
+    let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
+    let source_points = [
+        Point3::new(10.0, 4.0, 8.0),
+        Point3::new(30.0, -3.0, 1.0),
+        Point3::new(-10.0, 0.0, 5.0),
+    ];
+    let points = HashMap::from([
+        (&start_point, source_points[0]),
+        (&end_point, source_points[2]),
+    ]);
+    let knots = [0.0, 0.0, 0.0, 2.0, 2.0, 2.0];
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            knots.to_vec(),
+            source_points.to_vec(),
+            Some(vec![2.0, 3.0, 5.0]),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid curve"),
+    ));
+    let curves = HashMap::from([(&curve_id, &geometry)]);
+    let frame = super::SketchPlaneFrame {
+        origin: Point3::new(10.0, -5.0, 2.0),
+        u_axis: Vector3::new(0.0, 1.0, 0.0),
+        v_axis: Vector3::new(0.0, 0.0, 1.0),
+    };
+    // Prefix work counts five map keys, six copied knots and three projected poles.
+    let prefix_work = [
+        start_vertex.as_str().len(),
+        start_point.as_str().len(),
+        end_vertex.as_str().len(),
+        end_point.as_str().len(),
+        curve_id.as_str().len(),
+        knots.len(),
+        source_points.len(),
+    ]
+    .into_iter()
+    .fold(0_usize, |total, amount| {
+        total.checked_add(amount).expect("fixture work count fits")
+    });
+    assert_eq!(prefix_work, 146);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units =
+        u64::try_from(prefix_work).expect("fixture work count fits u64");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits work policy");
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::project_edge(
+        &ctx,
+        &edge,
+        &vertices,
+        &points,
+        &curves,
+        frame,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    else {
+        panic!("first projected weight exceeds the remaining work units")
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.used, 146);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(limit.operation, "project SLDPRT sketch NURBS edge");
+}
+
 fn shared_endpoint_constraints(
     policy: &cadmpeg_core::decode::DecodePolicy,
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, cadmpeg_core::CodecError> {
