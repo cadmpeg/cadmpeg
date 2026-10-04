@@ -3,9 +3,47 @@
 use rustc_hir::intravisit::{walk_pat, Visitor};
 use rustc_hir::{HirId, Pat, PatKind};
 use rustc_middle::mir::{Body, Operand, Rvalue, StatementKind, TerminatorKind};
-use rustc_middle::ty::{self, TyCtxt};
+use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypeVisitableExt};
 use rustc_span::def_id::LocalDefId;
 use std::collections::HashSet;
+
+pub(crate) fn copy_layout_is_fixed<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    environment: ty::TypingEnv<'tcx>,
+    value: Ty<'tcx>,
+) -> bool {
+    if value.has_aliases() || value.has_non_region_param() || value.has_escaping_bound_vars() {
+        return false;
+    }
+    tcx.type_is_copy_modulo_regions(environment, value)
+        && tcx.layout_of(environment.as_query_input(value)).is_ok()
+}
+
+pub(crate) fn copy_conversion_body_is_fixed<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    instance: Instance<'tcx>,
+) -> bool {
+    if !tcx.is_mir_available(instance.def_id())
+        || matches!(instance.def, InstanceKind::Virtual(_, _))
+    {
+        return false;
+    }
+    let body = tcx.instance_mir(instance.def);
+    if crate::conversion::cyclic(body) {
+        return false;
+    }
+    body.basic_blocks.iter().all(|block| {
+        block.statements.iter().all(|statement| {
+            !matches!(&statement.kind, StatementKind::Intrinsic(_))
+        }) && !matches!(
+            &block.terminator().kind,
+            TerminatorKind::Call { .. }
+                | TerminatorKind::Drop { .. }
+                | TerminatorKind::InlineAsm { .. }
+                | TerminatorKind::TailCall { .. }
+        )
+    })
+}
 
 pub(crate) fn bindings(tcx: TyCtxt<'_>, owner: LocalDefId, fixed: &[bool]) -> HashSet<HirId> {
     struct Bindings {

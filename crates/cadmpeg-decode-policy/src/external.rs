@@ -75,6 +75,16 @@ pub(crate) fn summary(
     definition: DefId,
     receiver: Option<Ty<'_>>,
 ) -> Option<Summary> {
+    if ["is_array", "is_object"].iter().any(|method| {
+        types::physical_inherent_method(tcx, definition, "serde_json", &["value", "Value"], method)
+    }) {
+        return Some(Summary {
+            allocation: Allocation::None,
+            work: Work::Fixed,
+            zero_operand: None,
+            empty_operand: None,
+        });
+    }
     let crate_name = tcx.crate_name(definition.krate);
     let name = tcx.opt_item_name(definition)?;
     let path = tcx.def_path_str(definition);
@@ -177,6 +187,20 @@ pub(crate) fn summary(
             ("serde_json", "eq" | "ne" | "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge") => {
                 (Allocation::None, Work::Comparison)
             }
+            ("serde_json", "next")
+                if value.is_some_and(|value| {
+                    matches!(value.kind(), ty::Adt(owner, _) if
+                        ["Iter", "IntoIter"].iter().any(|name|
+                            types::physical_item_path(tcx, owner.did(), "serde_json", &["map", name])))
+                }) && tcx.opt_parent(definition).is_some_and(|parent| {
+                    matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true })
+                        && types::physical_item_path(
+                            tcx,
+                            tcx.impl_trait_ref(parent).skip_binder().def_id,
+                            "core",
+                            &["iter", "traits", "iterator", "Iterator"],
+                        )
+                }) => (Allocation::None, Work::Fixed),
             ("serde_json", "index" | "index_mut") => (Allocation::None, Work::Argument(1)),
             ("roxmltree", "eq" | "ne") => (Allocation::None, Work::Fixed),
             ("serde_json", "fmt") => (Allocation::None, Work::Receiver),
@@ -221,6 +245,9 @@ pub(crate) fn summary(
             ("encoding_rs", "for_label") => (Allocation::None, Work::Argument(0)),
             ("encoding_rs", "decode" | "decode_without_bom_handling") => {
                 (Allocation::Input(1), Work::Argument(1))
+            }
+            ("encoding_rs", "decode_to_string_without_replacement") => {
+                (Allocation::None, Work::Argument(1))
             }
             ("encoding_rs", "decode_to_utf8_without_replacement") => {
                 (Allocation::None, Work::Argument(1))

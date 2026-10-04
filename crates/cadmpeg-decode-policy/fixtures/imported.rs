@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::context::DecodeContext;
+use cadmpeg_core::key_callbacks::{
+    ImportedMarkerEqKey, ImportedMarkerHashKey, ImportedSelfEqWithOtherRhs,
+};
+use std::collections::HashSet;
+
 pub fn decode(_ctx: &cadmpeg_core::DecodeContext, text: &String, number: u32, bytes: &[u8]) {
     let _length = cadmpeg_core::fixed(bytes);
     let _minimum = cadmpeg_core::minimum(number, number);
@@ -100,4 +106,31 @@ pub fn imported_string_write_str(
     suffix: &str,
 ) -> std::fmt::Result {
     cadmpeg_core::generic_write_str(output, suffix) // finding: uncharged_decode_allocation
+}
+
+pub fn imported_marked_hash_callback(
+    ctx: &DecodeContext,
+    values: &HashSet<ImportedMarkerHashKey>,
+    key: &ImportedMarkerHashKey,
+) -> Result<(), ()> {
+    let _found = ctx.equal_hash_set(values, key, "imported marked hash callback")?; // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn imported_marked_equality_callback(
+    ctx: &DecodeContext,
+    values: &HashSet<ImportedMarkerEqKey>,
+    key: &ImportedMarkerEqKey,
+) -> Result<(), ()> {
+    let _found = ctx.equal_hash_set(values, key, "imported marked equality callback")?; // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn imported_derived_self_equality_ignores_other_rhs(
+    ctx: &DecodeContext,
+    values: &HashSet<ImportedSelfEqWithOtherRhs>,
+    key: &ImportedSelfEqWithOtherRhs,
+) -> Result<(), ()> {
+    let _found = ctx.equal_hash_set(values, key, "imported Self equality with unrelated RHS")?;
+    Ok(())
 }

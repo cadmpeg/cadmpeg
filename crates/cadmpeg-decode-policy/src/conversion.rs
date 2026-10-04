@@ -1,10 +1,133 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Single owned text conversions admitted by operand byte receipts.
+//! Checked conversion proofs for reflexive, fixed-copy, and owned-text values.
 use crate::{storage, types, Analysis};
 use rustc_hir::Expr;
 use rustc_middle::mir::{Body, Local, Operand, Rvalue, StatementKind, TerminatorKind};
 use rustc_middle::ty::{self, Instance, TyCtxt};
+use rustc_span::def_id::DefId;
 use std::collections::HashSet;
+
+fn reflexive_conversion<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    definition: DefId,
+    source: ty::Ty<'tcx>,
+    output: ty::Ty<'tcx>,
+) -> bool {
+    (core_conversion_trait(tcx, definition, "From")
+        || core_conversion_trait(tcx, definition, "Into"))
+        && source == output
+}
+
+pub(crate) fn core_conversion_trait(tcx: TyCtxt<'_>, definition: DefId, expected: &str) -> bool {
+    let method = if expected == "From" { "from" } else { "into" };
+    tcx.trait_of_assoc(definition).is_some_and(|trait_id| {
+        types::physical_item_path(tcx, trait_id, "core", &["convert", expected])
+            && tcx
+                .opt_item_name(definition)
+                .is_some_and(|name| name.as_str() == method)
+    })
+}
+
+pub(crate) fn forwarded_from<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    environment: ty::TypingEnv<'tcx>,
+    instance: Instance<'tcx>,
+    source: ty::Ty<'tcx>,
+    output: ty::Ty<'tcx>,
+) -> Option<Instance<'tcx>> {
+    if !tcx.is_mir_available(instance.def_id()) || cyclic(tcx.instance_mir(instance.def)) {
+        return None;
+    }
+    let body = tcx.instance_mir(instance.def);
+    let mut target = None;
+    for block in body.basic_blocks.iter() {
+        if block.statements.iter().any(|statement| match &statement.kind {
+            rustc_middle::mir::StatementKind::StorageLive(_)
+            | rustc_middle::mir::StatementKind::StorageDead(_)
+            | rustc_middle::mir::StatementKind::Nop => false,
+            rustc_middle::mir::StatementKind::Assign(assignment) => {
+                !matches!(&assignment.1, Rvalue::Use(..))
+            }
+            _ => true,
+        }) {
+            return None;
+        }
+        match &block.terminator().kind {
+            rustc_middle::mir::TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                ..
+            } => {
+                let function = instance.instantiate_mir(
+                    tcx,
+                    ty::EarlyBinder::bind(tcx, func.ty(body, tcx)),
+                );
+                let ty::FnDef(definition, arguments) = function.kind() else {
+                    return None;
+                };
+                if !core_conversion_trait(tcx, *definition, "From") {
+                    return None;
+                }
+                let input = args.first().map(|argument| {
+                    instance.instantiate_mir(
+                        tcx,
+                        ty::EarlyBinder::bind(tcx, argument.node.ty(body, tcx)),
+                    )
+                })?;
+                let result = instance.instantiate_mir(
+                    tcx,
+                    ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty),
+                );
+                if input != source || result != output || target.is_some() {
+                    return None;
+                }
+                let arguments = arguments.no_bound_vars()?;
+                let arguments = tcx
+                    .try_normalize_erasing_regions(
+                        environment,
+                        ty::Unnormalized::new_wip(arguments),
+                    )
+                    .ok()?;
+                target = Instance::try_resolve(tcx, environment, *definition, arguments)
+                    .ok()
+                    .flatten();
+            }
+            rustc_middle::mir::TerminatorKind::Drop { .. }
+            | rustc_middle::mir::TerminatorKind::InlineAsm { .. }
+            | rustc_middle::mir::TerminatorKind::TailCall { .. }
+            | rustc_middle::mir::TerminatorKind::SwitchInt { .. } => return None,
+            _ => (),
+        }
+    }
+    target
+}
+
+pub(crate) fn copy_conversion_is_fixed<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    environment: ty::TypingEnv<'tcx>,
+    definition: DefId,
+    instance: Instance<'tcx>,
+    source: ty::Ty<'tcx>,
+    output: ty::Ty<'tcx>,
+) -> bool {
+    if reflexive_conversion(tcx, definition, source, output) {
+        return true;
+    }
+    if !crate::fixed::copy_layout_is_fixed(tcx, environment, source)
+        || !crate::fixed::copy_layout_is_fixed(tcx, environment, output)
+    {
+        return false;
+    }
+    if core_conversion_trait(tcx, definition, "From") {
+        return crate::fixed::copy_conversion_body_is_fixed(tcx, instance);
+    }
+    if !core_conversion_trait(tcx, definition, "Into") {
+        return false;
+    }
+    forwarded_from(tcx, environment, instance, source, output)
+        .is_some_and(|from| crate::fixed::copy_conversion_body_is_fixed(tcx, from))
+}
 
 fn text(tcx: TyCtxt<'_>, value: ty::Ty<'_>) -> bool {
     matches!(value.peel_refs().kind(), ty::Str)
@@ -228,7 +351,7 @@ pub(crate) fn operand_admitted<'tcx>(
         .is_some_and(|index| admitted.get(index) == Some(&true))
 }
 
-fn cyclic(body: &Body<'_>) -> bool {
+pub(crate) fn cyclic(body: &Body<'_>) -> bool {
     fn visit(
         body: &Body<'_>,
         block: rustc_middle::mir::BasicBlock,

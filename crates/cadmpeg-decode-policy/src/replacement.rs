@@ -15,8 +15,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     "slice"
                 }
             }
-            ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) => {
+            ty::Adt(owner, arguments) if types::standard(self.tcx, owner.did()) => {
                 match self.tcx.item_name(owner.did()).as_str() {
+                    "Option" if matches!(arguments.type_at(0).kind(), ty::Adt(inner, _)
+                        if types::standard(self.tcx, inner.did())
+                            && self.tcx.item_name(inner.did()).as_str() == "HashSet") => "hash_set",
                     "String" => "text",
                     "Vec" => "vector",
                     "HashMap" => "hash_map",
@@ -34,6 +37,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn replacement(&self, expression: &'tcx Expr<'tcx>, operation: &str) -> String {
         if let ExprKind::Binary(operator, left, _) = expression.kind {
             return method(match operator.node {
+                BinOpKind::Eq | BinOpKind::Ne
+                    if self.replacement_kind(self.expr_ty(left)) == "hash_set" =>
+                {
+                    "equal_hash_set"
+                }
                 BinOpKind::Eq | BinOpKind::Ne
                     if self.replacement_kind(self.expr_ty(left)) == "bytes" =>
                 {
@@ -110,6 +118,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 "push_heap"
             });
         }
+        if kind == "vector" && name.as_str() == "insert" {
+            return method("insert_vec");
+        }
         match name.as_str() {
             "contains" if kind == "text" => method("contains_text"),
             "contains" if matches!(kind, "slice" | "bytes" | "vector") => method("contains"),
@@ -132,6 +143,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 "hash_map" => "collect_hash_map", "hash_set" => "collect_hash_set", "btree_set" => "collect_btree_set", _ => "collect_scoped_btree_map",
             }),
             "eq" | "ne" if kind == "bytes" => method("equal_bytes"),
+            "eq" | "ne" if kind == "hash_set" => method("equal_hash_set"),
             "eq" | "ne" => method("equal"),
             "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge" => method("compare"),
             _ => fallback(name.as_str()),
@@ -178,14 +190,14 @@ pub(crate) fn fallback(name: &str) -> String {
         "resize_with" => "resize_with", "drain" => "drain_vec", "splice" => "splice_vec", "split_off" => "split_off_vec", "shrink_to_fit" => "shrink_vec",
         "into_boxed_slice" | "into_boxed_slice may shrink/reallocate: capacity equality unresolved" => "into_boxed_slice",
         "with_capacity" => "collection_vec", "derived Default" => "collect_indexed_vec",
-        "attribute" | "has_tag_name" | "root_element" => "charge_work",
+        "attribute" => "xml_attribute", "has_tag_name" => "xml_has_tag_name", "root_element" => "xml_root_element",
         "parse_with_options" => "parse_xml",
         "deserialize" | "deserialize_any" | "deserialize_map" | "from_value" => "parse_json",
         "serialize" | "to_value" | "to_writer" | "custom" | "end" => return "DecodeContext::parse_json_value for a value-tree decode; rebuild concrete owned fields with DecodeContext::collect_vec and DecodeContext::format_retained; custom Serde callbacks remain unproven".to_owned(),
         "unzip" => "unzip_vec",
         "decode" => return "DecodeContext::collection_vec for output storage and DecodeContext::charge_work for the checked input extent; use a slice decoder".to_owned(),
         "decompress" | "decompress_stream" | "lzma_decompress_with_options" => "begin_expand",
-        "by_index" | "by_index_raw" => return "cadmpeg_container::ArchiveSnapshot::new followed by ArchiveSnapshot::open; DecodeContext::begin_expand admits decompression".to_owned(),
+        "by_index" | "by_index_raw" => return "cadmpeg_container::ArchiveSnapshot::probe_readable_names for tolerant name probes; ArchiveSnapshot::new followed by ArchiveSnapshot::open for payload reads; DecodeContext::begin_expand admits decompression".to_owned(),
         "comparison" | "custom comparison work" => "equal",
         _ => return "DecodeContext::charge_work for the resolved operand extent and DecodeContext::reserve_scoped for checked temporary bytes; resolve the concrete implementation and retain unproven status until its bound is known".to_owned(),
     };

@@ -91,6 +91,11 @@ pub fn empty_and_borrowed(ctx: &DecodeContext, text: &str, values: &mut Vec<u8>)
     let _copy = text.repeat(1); // finding: uncharged_decode_allocation, uncharged_decode_work
 }
 
+pub fn possibly_owned_cow(ctx: &DecodeContext, value: std::borrow::Cow<'_, str>) {
+    let _ctx = ctx;
+    let _owned = value.into_owned(); // finding: uncharged_decode_work, unproven_decode_charge
+}
+
 pub fn storage_and_count(ctx: &DecodeContext, bytes: &[u8], n: usize) {
     let _ctx = ctx;
     let _length = bytes.iter().count();
@@ -225,7 +230,7 @@ pub fn named_charge(reader: &WrappedContext<'_>, bytes: &[u8]) -> Result<(), ()>
     reader.charge_work(bytes.len() as u64, "not a core charge")?;
     let _count = bytes.iter().fold(0usize, |n, _| n + 1); // finding: unproven_decode_charge
     for _byte in bytes {
-        // finding: unproven_decode_charge
+        // finding: uncharged_decode_work
         reader.charge_work(1, "not a core charge")?;
     }
     Ok(())
