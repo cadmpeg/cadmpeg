@@ -409,14 +409,15 @@ pub(crate) fn bind_pattern_inputs(
                     }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
                 ) {
                     if let Some((spacing, count)) =
-                        object_start.filter(|start| *start < end).and_then(|start| {
+                        object_start.filter(|start| *start < end).map(|start| {
                             typed_linear_pattern_dimensions(
+                                ctx,
                                 feature,
                                 lane,
                                 start,
                                 pattern_object_end(),
                             )
-                        })
+                        }).transpose()?.flatten()
                     {
                         let admitted = PatternKind::new(PatternTransform::Linear {
                             direction: None,
