@@ -26,11 +26,11 @@ fn identity_cache_node_work() -> u64 {
 fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
     use cadmpeg_core::decode::u64_from_index;
     let source = "test:model:point#one";
-    // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, eleven comparisons and one copy.
+    // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, one comparison with the single stored key and one copy.
     let source_bytes = u64_from_index(source.len());
     let first_work =
         4 * source_bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
-    let repeat_work = 12 * source_bytes + 1;
+    let repeat_work = 2 * source_bytes + 1;
     for allowance in 0..=first_work + repeat_work {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
@@ -96,7 +96,8 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
         panic!("comparison must refuse");
     };
     assert_eq!(original.operation, "refused identity comparison");
-    assert_eq!(original.additional, 11 * source_bytes);
+    // The cache holds one key, so the lookup compares against it once.
+    assert_eq!(original.additional, source_bytes);
     assert!(
         matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
@@ -307,7 +308,7 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
     use cadmpeg_core::decode::u64_from_index;
     for source in ["a:b:c#one", "a:b:c#é:部"] {
         let bytes = u64_from_index(source.len());
-        // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, eleven comparisons and one copy.
+        // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, one comparison with the single stored key and one copy.
         let first_work =
             4 * bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
         let repeat_work = 12 * bytes + 1;
