@@ -214,13 +214,13 @@ pub(super) fn decode(
             }
         }
     }
-    ir.model.points.retain(|point| {
+    ctx.retain_vec(&mut ir.model.points, |point| {
         // A point whose identity names no entity is not a validation point.
         let Some(id) = step_id(point.id.as_str()) else {
-            return true;
+            return Ok(true);
         };
-        !validation_points.contains(&id) || referenced_validation_points.contains(&id)
-    });
+        Ok(!validation_points.contains(&id) || referenced_validation_points.contains(&id))
+    }, "STEP validation point retention")?;
     Ok(StageOutcome {
         value: (),
         claims: typed,

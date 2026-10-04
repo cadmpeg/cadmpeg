@@ -180,6 +180,8 @@ checked_feature_geometry!(
     value.is_finite(),
     "FinitePoint3 coordinates must be finite", get, as_raw
 );
+decode_cost_record!([] FinitePoint3; Self(field_0) => [field_0: Point3]);
+
 impl FinitePoint3 {
     /// The model origin.
     pub const ZERO: Self = Self(Point3 {
@@ -247,6 +249,8 @@ checked_feature_geometry!(
     value.is_finite(),
     "FiniteVector3 components must be finite", get, as_raw
 );
+decode_cost_record!([] FiniteVector3; Self(field_0) => [field_0: Vector3]);
+
 impl FiniteVector3 {
     /// The zero displacement.
     pub const ZERO: Self = Self(Vector3 {
@@ -6274,6 +6278,11 @@ pub enum FaceSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct NonEmptyMembers<T>(Vec<T>);
+
+decode_cost_record!(
+    [T: cadmpeg_core::decode::cost::DecodeCost] NonEmptyMembers<T>;
+    Self(field_0) => [field_0: Vec<T>]
+);
 
 impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {
     type Error = BodySelectionError;

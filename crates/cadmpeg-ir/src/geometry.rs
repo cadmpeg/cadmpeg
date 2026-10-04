@@ -100,6 +100,13 @@ pub enum LegacyExtensionFlags {
     },
 }
 
+decode_cost_enum!(
+    [] LegacyExtensionFlags;
+    Self::Absent {  } => [],
+    Self::Disabled {  } => [],
+    Self::Enabled { secondary, tertiary } => [secondary, tertiary],
+);
+
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
 // A source states raw scalars; an `OffsetSurfaceConstruction` holds the
 // admitted extension, whose scalars are `FiniteReal` values.
@@ -126,6 +133,12 @@ pub enum OffsetExtension<R = f64> {
         form: Box<RevisionSurfaceForm<[bool; 4], R>>,
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] OffsetExtension<R>;
+    Self::Legacy { flags, cache } => [flags, cache],
+    Self::Revision { form } => [form],
+);
 
 /// Analytic, NURBS, or opaque surface geometry established without a
 /// construction.
@@ -171,6 +184,19 @@ pub enum SolvedSurfaceGeometry {
         record: Option<UnknownId>,
     },
 }
+
+decode_cost_enum!(
+    [] SolvedSurfaceGeometry, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self::Plane(field_0) => [field_0],
+    Self::Cylinder(field_0) => [field_0],
+    Self::Cone(field_0) => [field_0],
+    Self::Sphere(field_0) => [field_0],
+    Self::Torus(field_0) => [field_0],
+    Self::Nurbs(field_0) => [field_0],
+    Self::Polygonal(field_0) => [field_0],
+    Self::Transformed(field_0) => [field_0],
+    Self::Unknown { record } => [record],
+);
 
 impl SolvedSurfaceGeometry {
     /// Copy retained geometry through the caller's decode budget.
@@ -240,6 +266,11 @@ pub struct PlacedSurface {
     #[serde(skip)]
     depth: usize,
 }
+
+decode_cost_record!(
+    [] PlacedSurface, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self { basis, transform, depth } => [basis:  Box<SolvedSurfaceGeometry>, transform:  Transform, depth:  usize]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -325,6 +356,12 @@ pub enum SurfaceGeometry {
     Solved(SolvedSurfaceGeometry),
 }
 
+decode_cost_enum!(
+    [] SurfaceGeometry;
+    Self::Procedural { construction, cache } => [construction, cache],
+    Self::Solved(field_0) => [field_0],
+);
+
 impl SurfaceGeometry {
     /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
@@ -394,6 +431,11 @@ pub struct Surface {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
+decode_cost_record!(
+    [] Surface;
+    Self { id, geometry, source_object } => [id:  SurfaceId, geometry:  SurfaceGeometry, source_object:  Option<SourceObjectAssociation>]
+);
+
 impl Surface {
     /// Copy the carrier, retained identity and source metadata under caller limits.
     pub fn try_clone_for_decode(
@@ -460,6 +502,21 @@ pub enum SolvedCurveGeometry {
         record: Option<UnknownId>,
     },
 }
+
+decode_cost_enum!(
+    [] SolvedCurveGeometry, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self::Line(field_0) => [field_0],
+    Self::Circle(field_0) => [field_0],
+    Self::Ellipse(field_0) => [field_0],
+    Self::Parabola(field_0) => [field_0],
+    Self::Hyperbola(field_0) => [field_0],
+    Self::Degenerate(field_0) => [field_0],
+    Self::Composite { segments, self_intersect } => [segments, self_intersect],
+    Self::Nurbs(field_0) => [field_0],
+    Self::Polyline(field_0) => [field_0],
+    Self::Transformed(field_0) => [field_0],
+    Self::Unknown { record } => [record],
+);
 
 impl SolvedCurveGeometry {
     /// Copy retained geometry through the caller's decode budget.
@@ -553,6 +610,11 @@ pub struct PlacedCurve {
     depth: usize,
 }
 
+decode_cost_record!(
+    [] PlacedCurve, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self { basis, transform, depth } => [basis:  Box<SolvedCurveGeometry>, transform:  Transform, depth:  usize]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -637,6 +699,12 @@ pub enum CurveGeometry {
     Solved(SolvedCurveGeometry),
 }
 
+decode_cost_enum!(
+    [] CurveGeometry;
+    Self::Procedural { construction, cache } => [construction, cache],
+    Self::Solved(field_0) => [field_0],
+);
+
 impl CurveGeometry {
     /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
@@ -702,6 +770,11 @@ impl CurveGeometry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CompositeCurveSegments(Vec<CompositeCurveSegment>);
 
+decode_cost_record!(
+    [] CompositeCurveSegments;
+    Self(field_0) => [field_0: Vec<CompositeCurveSegment>]
+);
+
 impl TryFrom<Vec<CompositeCurveSegment>> for CompositeCurveSegments {
     type Error = &'static str;
 
@@ -749,6 +822,11 @@ pub struct CompositeCurveSegment {
     pub transition: CompositeCurveTransition,
 }
 
+decode_cost_record!(
+    [] CompositeCurveSegment;
+    Self { curve, same_sense, transition } => [curve:  CurveId, same_sense:  bool, transition:  CompositeCurveTransition]
+);
+
 /// STEP composite-curve transition continuity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -764,6 +842,8 @@ pub enum CompositeCurveTransition {
     /// Positional, tangent, and curvature continuity.
     ContSameGradientSameCurvature,
 }
+
+decode_cost_enum!(CompositeCurveTransition);
 
 /// Derive a stable in-plane reference direction from an axis.
 ///
@@ -819,6 +899,11 @@ pub struct Curve {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
+decode_cost_record!(
+    [] Curve;
+    Self { id, geometry, source_object } => [id:  CurveId, geometry:  CurveGeometry, source_object:  Option<SourceObjectAssociation>]
+);
+
 /// Four optional finite parameter bounds retained from one native surface
 /// record.
 ///
@@ -829,6 +914,11 @@ pub struct Curve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "[Option<f64>; 4]", into = "[Option<f64>; 4]")]
 pub struct RecordBounds([Option<f64>; 4]);
+
+decode_cost_record!(
+    [] RecordBounds;
+    Self(field_0) => [field_0: [Option<f64>; 4]]
+);
 
 /// A record-bound quartet contained a non-finite value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -912,6 +1002,11 @@ pub struct ProceduralSurface {
     record_bounds: Option<RecordBounds>,
 }
 
+decode_cost_record!(
+    [] ProceduralSurface;
+    Self { id, definition, record_bounds } => [id:  ProceduralSurfaceId, definition:  ProceduralSurfaceDefinition, record_bounds:  Option<RecordBounds>]
+);
+
 /// Parameter fields carried by exact and loft spline-surface constructions.
 // A source states raw scalars; a `LoftSurfacePayload` holds the admitted
 // fields, whose scalars are `FiniteReal` values.
@@ -936,6 +1031,12 @@ pub enum SplineSurfaceParameters<R = f64> {
         intervals: [[Option<R>; 2]; 2],
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] SplineSurfaceParameters<R>;
+    Self::OrderedRanges { ranges } => [ranges],
+    Self::RevisionRanges { intervals } => [intervals],
+);
 
 /// Mutually exclusive legacy and revision-gated exact-spline layouts.
 // A source states raw scalars; an `ExactSurfacePayload` holds the admitted
@@ -970,6 +1071,12 @@ pub enum ExactSpline<R = f64> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] ExactSpline<R>;
+    Self::Legacy { ranges, extension, cache } => [ranges, extension, cache],
+    Self::Revision { intervals, extension, form } => [intervals, extension, form],
+);
+
 /// One component and its native construction scalar.
 // A source states a raw scalar; a compound construction holds the admitted
 // component, whose scalar is a `FiniteReal`.
@@ -982,6 +1089,11 @@ pub struct CompoundComponent<T, R = f64> {
     /// Component geometry or its resolved identity.
     pub component: T,
 }
+
+decode_cost_record!(
+    [T: cadmpeg_core::decode::cost::DecodeCost, R: cadmpeg_core::decode::cost::DecodeCost] CompoundComponent<T, R>;
+    Self { parameter, component } => [parameter:  R, component:  T]
+);
 
 /// A non-empty compound curve with finite construction parameters.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -999,6 +1111,11 @@ pub struct CompoundCurveConstruction {
     )]
     cache: Option<LegacyCache>,
 }
+
+decode_cost_record!(
+    [] CompoundCurveConstruction;
+    Self { parameters, components, cache } => [parameters:  Vec<FiniteReal>, components:  Vec<CompoundComponent<CurveId, FiniteReal>>, cache:  Option<LegacyCache>]
+);
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1185,6 +1302,44 @@ pub enum ProceduralSurfaceDefinition {
         cache: Option<LegacyCache>,
     },
 }
+
+decode_cost_enum!(
+    [] ProceduralSurfaceDefinition;
+    Self::Exact(field_0) => [field_0],
+    Self::Compound(field_0) => [field_0],
+    Self::SubSurface(field_0) => [field_0],
+    Self::Taper(field_0) => [field_0],
+    Self::Loft(field_0) => [field_0],
+    Self::CompoundLoft(field_0) => [field_0],
+    Self::RevisionCompoundLoft { construction } => [construction],
+    Self::ScaledCompoundLoft(field_0) => [field_0],
+    Self::Skin(field_0) => [field_0],
+    Self::Law(field_0) => [field_0],
+    Self::Net(field_0) => [field_0],
+    Self::G2Blend(field_0) => [field_0],
+    Self::RevisionG2Blend { construction } => [construction],
+    Self::VariableBlend(field_0) => [field_0],
+    Self::VertexBlend(field_0) => [field_0],
+    Self::Extrusion(field_0) => [field_0],
+    Self::LinearSweep(field_0) => [field_0],
+    Self::Revolution(field_0) => [field_0],
+    Self::AxisRevolution(field_0) => [field_0],
+    Self::Sum(field_0) => [field_0],
+    Self::Sweep(field_0) => [field_0],
+    Self::TSpline { construction } => [construction],
+    Self::Helix { construction } => [construction],
+    Self::Deformable(field_0) => [field_0],
+    Self::Offset(field_0) => [field_0],
+    Self::Subset(field_0) => [field_0],
+    Self::Replica { source, transform } => [source, transform],
+    Self::ParallelOffset(field_0) => [field_0],
+    Self::DegenerateTorus { select_outer } => [select_outer],
+    Self::CurveBounded { support, boundaries, boundary_pcurves, implicit_outer } => [support, boundaries, boundary_pcurves, implicit_outer],
+    Self::Ruled { first, second, cache } => [first, second, cache],
+    Self::Blend(field_0) => [field_0],
+    Self::RollingBallJet(field_0) => [field_0],
+    Self::Unknown { record, cache } => [record, cache],
+);
 
 #[derive(Deserialize)]
 #[serde(
@@ -1452,6 +1607,11 @@ const fn clear_revision_form_tolerance<P>(
 #[serde(try_from = "f64", into = "f64")]
 pub struct FitTolerance(f64);
 
+decode_cost_record!(
+    [] FitTolerance;
+    Self(field_0) => [field_0: f64]
+);
+
 impl FitTolerance {
     /// A zero fit tolerance.
     pub const ZERO: Self = Self(0.0);
@@ -1514,6 +1674,11 @@ pub struct LegacyCache {
     pub fit_tolerance: FitTolerance,
 }
 
+decode_cost_record!(
+    [] LegacyCache;
+    Self { fit_tolerance } => [fit_tolerance:  FitTolerance]
+);
+
 impl LegacyCache {
     /// A legacy cache with this fit tolerance.
     #[must_use]
@@ -1549,6 +1714,12 @@ pub enum CacheContract<F> {
         form: F,
     },
 }
+
+decode_cost_enum!(
+    [F: cadmpeg_core::decode::cost::DecodeCost] CacheContract<F>;
+    Self::Legacy { cache } => [cache],
+    Self::Revision { form } => [form],
+);
 
 impl<F> CacheContract<F> {
     /// A legacy layout with no solved-cache tolerance.
@@ -2258,6 +2429,16 @@ pub enum DeformableSurfaceData<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] DeformableSurfaceData<R, V, P>;
+    Self::Full { leading_vectors, leading_parameter, leading_flags, selector, surface, native_id, flag, first_parameter, version_value, second_parameter, curve, frames, trailing_value } => [leading_vectors, leading_parameter, leading_flags, selector, surface, native_id, flag, first_parameter, version_value, second_parameter, curve, frames, trailing_value],
+    Self::SurfaceCurve { surface, native_id, flag, first_parameter, selector, second_parameter, curve, vectors, frame_parameter, flags, parameter_triples } => [surface, native_id, flag, first_parameter, selector, second_parameter, curve, vectors, frame_parameter, flags, parameter_triples],
+    Self::Plain { frame, parameter_triples } => [frame, parameter_triples],
+    Self::Guided { frame, selector, guide_parameter } => [frame, selector, guide_parameter],
+    Self::Minimal { vectors, selector } => [vectors, selector],
+    Self::RevisionMode3 { leading_vectors, leading_parameter, leading_flags, trailing_point, trailing_vectors, frame_parameter, frame_flags, parameters, trailing_flags, trailing_parameter, trailing_value } => [leading_vectors, leading_parameter, leading_flags, trailing_point, trailing_vectors, frame_parameter, frame_flags, parameters, trailing_flags, trailing_parameter, trailing_value],
+);
+
 /// Four-vector frame used by full deformable surfaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2270,6 +2451,11 @@ pub struct DeformableVectorFrame<R = f64, V = Vector3> {
     /// Three ordered flags.
     pub flags: [bool; 3],
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] DeformableVectorFrame<R, V>;
+    Self { vectors, parameter, flags } => [vectors:  [V; 4], parameter:  R, flags:  [bool; 3]]
+);
 
 /// Shared frame payload of deformable-surface modes 1 and 3.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2293,6 +2479,11 @@ pub struct DeformableSurfaceFrame<R = f64, V = Vector3, P = Point3> {
     /// Five trailing frame flags.
     pub trailing_flags: [bool; 5],
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] DeformableSurfaceFrame<R, V, P>;
+    Self { leading_vectors, leading_parameter, leading_flags, secondary_vectors, secondary_parameter, secondary_flags, point, trailing_flags } => [leading_vectors:  [V; 4], leading_parameter:  R, leading_flags:  [bool; 3], secondary_vectors:  [V; 3], secondary_parameter:  R, secondary_flags:  [bool; 2], point:  P, trailing_flags:  [bool; 5]]
+);
 
 /// Complete native deformable-surface construction.
 // A source states raw values; a `DeformableSurfacePayload` holds the admitted
@@ -2323,6 +2514,11 @@ pub struct DeformableSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     pub discontinuity_flag: bool,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] DeformableSurfaceConstruction<R, V, P>;
+    Self { support, data, cache, discontinuities, discontinuity_flag } => [support:  SurfaceId, data:  DeformableSurfaceData<R, V, P>, cache:  CacheContract<RevisionSurfaceForm<Vec<bool>, R>>, discontinuities:  [Vec<R>; 6], discontinuity_flag:  bool]
+);
+
 const EPS_HELIX_SURFACE_RADIUS_RELATIVE: f64 = 1.0e-9;
 const EPS_HELIX_CURVE_RADIUS: f64 = 1.0e-9;
 
@@ -2339,6 +2535,11 @@ pub struct HelixPathConstruction {
     apex_factor: FiniteReal,
     axis: FiniteVector3,
 }
+
+decode_cost_record!(
+    [] HelixPathConstruction;
+    Self { angle_range, center, major, minor, pitch, apex_factor, axis } => [angle_range:  FiniteVector<2>, center:  FinitePoint3, major:  FiniteVector3, minor:  FiniteVector3, pitch:  FiniteVector3, apex_factor:  FiniteReal, axis:  FiniteVector3]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2525,6 +2726,11 @@ pub struct HelixCurveConstruction {
     )]
     cache: Option<LegacyCache>,
 }
+
+decode_cost_record!(
+    [] HelixCurveConstruction;
+    Self { angle_range, center, major, minor, pitch, apex_factor, axis, cache } => [angle_range:  FiniteVector<2>, center:  FinitePoint3, major:  FiniteVector3, minor:  FiniteVector3, pitch:  FiniteVector3, apex_factor:  FiniteReal, axis:  FiniteVector3, cache:  Option<LegacyCache>]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2752,6 +2958,11 @@ pub struct HelixCircleProfile {
     radius: FiniteReal,
 }
 
+decode_cost_record!(
+    [] HelixCircleProfile;
+    Self { length, radius } => [length:  FiniteReal, radius:  FiniteReal]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2800,6 +3011,11 @@ pub struct HelixLineProfile {
     direction: FiniteVector3,
 }
 
+decode_cost_record!(
+    [] HelixLineProfile;
+    Self { direction } => [direction:  FiniteVector3]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2844,6 +3060,12 @@ pub enum HelixSurfaceProfile {
     Line(HelixLineProfile),
 }
 
+decode_cost_enum!(
+    [] HelixSurfaceProfile;
+    Self::Circle(field_0) => [field_0],
+    Self::Line(field_0) => [field_0],
+);
+
 /// Complete helix-surface construction with finite native intervals.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2854,6 +3076,11 @@ pub struct HelixSurfaceConstruction {
     path: HelixPathConstruction,
     profile: HelixSurfaceProfile,
 }
+
+decode_cost_record!(
+    [] HelixSurfaceConstruction;
+    Self { angle_range, dimension_range, path, profile } => [angle_range:  FiniteVector<2>, dimension_range:  FiniteVector<2>, path:  HelixPathConstruction, profile:  HelixSurfaceProfile]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2931,6 +3158,11 @@ impl TryFrom<HelixSurfaceConstructionWire> for HelixSurfaceConstruction {
 #[serde(try_from = "i64", into = "i64")]
 pub struct SubtypeTableIndex(i64);
 
+decode_cost_record!(
+    [] SubtypeTableIndex;
+    Self(field_0) => [field_0: i64]
+);
+
 impl SubtypeTableIndex {
     /// Admit a non-negative native subtype-table index.
     pub fn try_new(index: i64) -> Result<Self, &'static str> {
@@ -2977,6 +3209,11 @@ pub struct InlineTSplineSubtransform {
     /// Companion values program.
     pub values: cadmpeg_core::text::NonBlankString,
 }
+
+decode_cost_record!(
+    [] InlineTSplineSubtransform;
+    Self { program, separator, values } => [program:  cadmpeg_core::text::NonBlankString, separator:  Option<bool>, values:  cadmpeg_core::text::NonBlankString]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3058,6 +3295,12 @@ pub enum TSplineSubtransform {
         transform: Box<InlineTSplineSubtransform>,
     },
 }
+
+decode_cost_enum!(
+    [] TSplineSubtransform;
+    Self::Inline(field_0) => [field_0],
+    Self::Resolved { index, transform } => [index, transform],
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3165,6 +3408,11 @@ pub struct TSplineSurfaceConstruction {
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
+
+decode_cost_record!(
+    [] TSplineSurfaceConstruction;
+    Self { parameter_ranges, type_code, subtransform, trailing_value, discontinuities, discontinuity_flag, cache } => [parameter_ranges:  [crate::topology::ParameterInterval; 2], type_code:  i64, subtransform:  TSplineSubtransform, trailing_value:  i64, discontinuities:  [Vec<FiniteReal>; 6], discontinuity_flag:  bool, cache:  CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>]
+);
 
 impl TSplineSurfaceConstruction {
     /// Admit finite ordered ranges, finite discontinuities, a valid revision
@@ -3291,6 +3539,11 @@ pub struct BlendSupport {
     pub reversed: bool,
 }
 
+decode_cost_record!(
+    [] BlendSupport;
+    Self { surface, reversed } => [surface:  SurfaceId, reversed:  bool]
+);
+
 /// One parameter station of a rolling-ball jet, with its complete value rows.
 // A source states raw values; `RollingBallJetStations` holds the admitted
 // station, whose scalars, vectors and points are checked.
@@ -3305,6 +3558,11 @@ pub struct RollingBallJetStation<R = f64, V = Vector3, P = Point3> {
     /// Values and derivatives at this parameter.
     pub site: RollingBallJetSite<R, V, P>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] RollingBallJetStation<R, V, P>;
+    Self { knot, multiplicity, site } => [knot:  R, multiplicity:  u32, site:  RollingBallJetSite<R, V, P>]
+);
 
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 
@@ -3337,6 +3595,11 @@ pub struct RollingBallJetStations {
     #[cfg_attr(feature = "schema", schemars(with = "Vec<RollingBallJetStation>"))]
     stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
+
+decode_cost_record!(
+    [] RollingBallJetStations;
+    Self { degree, stations } => [degree:  u32, stations:  Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>]
+);
 
 /// Station invariant or context-free reconstruction failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -3551,6 +3814,11 @@ pub struct RollingBallJetSite<R = f64, V = Vector3, P = Point3> {
     pub second_derivative: RollingBallJetDerivative<R, V>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] RollingBallJetSite<R, V, P>;
+    Self { first_limit, second_limit, center, angle, first_derivative, second_derivative } => [first_limit:  P, second_limit:  P, center:  P, angle:  R, first_derivative:  RollingBallJetDerivative<R, V>, second_derivative:  RollingBallJetDerivative<R, V>]
+);
+
 /// One derivative row for the four channels of a rolling-ball jet.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3566,6 +3834,11 @@ pub struct RollingBallJetDerivative<R = f64, V = Vector3> {
     pub angle: R,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] RollingBallJetDerivative<R, V>;
+    Self { first_limit, second_limit, center, angle } => [first_limit:  V, second_limit:  V, center:  V, angle:  R]
+);
+
 /// Cross-section family of a procedural blend.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3579,6 +3852,8 @@ pub enum BlendCrossSection {
     /// Free-form polynomial cross-section.
     Polynomial,
 }
+
+decode_cost_enum!(BlendCrossSection);
 
 /// Shared fields of a revision-gated spline-surface form: the revision
 /// integer, optional support bounds and reference-curve endpoints, a
@@ -3622,6 +3897,11 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>, R = f64> {
     pub trailing_flags: Vec<bool>,
 }
 
+decode_cost_record!(
+    [F: Default + cadmpeg_core::decode::cost::DecodeCost, R: cadmpeg_core::decode::cost::DecodeCost] RevisionSurfaceForm<F, R>;
+    Self { revision, support_bounds, reference_endpoints, second_endpoints, flags, cache, discontinuities, tail_flag, trailing_flags } => [revision:  PositiveI64, support_bounds:  [Option<R>; 4], reference_endpoints:  [Option<R>; 2], second_endpoints:  [Option<R>; 2], flags:  F, cache:  RevisionCacheForm<RevisionSurfaceParameterization<R>>, discontinuities:  [Vec<R>; 6], tail_flag:  bool, trailing_flags:  Vec<bool>]
+);
+
 /// Mutually exclusive payloads of a revision-gated approximation cache.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3635,6 +3915,12 @@ pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
     /// Parameterization stored in place of a solved cache.
     Parameterization(P),
 }
+
+decode_cost_enum!(
+    [P: cadmpeg_core::decode::cost::DecodeCost] RevisionCacheForm<P>;
+    Self::SolvedCache { fit_tolerance } => [fit_tolerance],
+    Self::Parameterization(field_0) => [field_0],
+);
 
 impl<P> RevisionCacheForm<P> {
     /// State the fit tolerance this form carries for its solved cache.
@@ -3705,6 +3991,13 @@ pub enum VariableBlendCache<R = f64> {
         parameterization: RevisionSurfaceParameterization<R>,
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] VariableBlendCache<R>;
+    Self::Current { shape_prefix, fit_tolerance } => [shape_prefix, fit_tolerance],
+    Self::Stale {  } => [],
+    Self::Parameterization { shape_prefix, parameterization } => [shape_prefix, parameterization],
+);
 
 impl<R> VariableBlendCache<R> {
     /// Scale the tolerance only when this cache carries a solved one.
@@ -3783,6 +4076,11 @@ pub struct RevisionSurfaceParameterization<R = f64> {
     pub v_singularity: i64,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] RevisionSurfaceParameterization<R>;
+    Self { u_interval, v_interval, u_closure, v_closure, u_singularity, v_singularity } => [u_interval:  [Option<R>; 2], v_interval:  [Option<R>; 2], u_closure:  i64, v_closure:  i64, u_singularity:  i64, v_singularity:  i64]
+);
+
 impl<R> Default for RevisionSurfaceParameterization<R> {
     /// Absent interval bounds and zero enums.
     fn default() -> Self {
@@ -3848,6 +4146,16 @@ pub enum TaperSurfaceKind<R = f64, V = Vector3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] TaperSurfaceKind<R, V>;
+    Self::Standard {  } => [],
+    Self::Orthogonal { sense } => [sense],
+    Self::Edge { draft } => [draft],
+    Self::Shadow { draft, sine, cosine } => [draft, sine, cosine],
+    Self::Ruled { draft, sine, cosine, factor } => [draft, sine, cosine, factor],
+    Self::Swept { draft, sine, cosine } => [draft, sine, cosine],
+);
+
 /// One scalar row in native loft subdata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3868,6 +4176,11 @@ pub struct LoftSubdataRow<R = f64> {
     pub extra: Option<[R; 2]>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftSubdataRow<R>;
+    Self { parameters, columns, extra } => [parameters:  [R; 2], columns:  Vec<[R; 2]>, extra:  Option<[R; 2]>]
+);
+
 /// Native loft constraint table with structurally consistent dimensions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3885,6 +4198,12 @@ pub enum LoftSubdata<R = f64> {
     Table(LoftSubdataTable<R>),
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftSubdata<R>;
+    Self::Type211 { dimensions, row } => [dimensions, row],
+    Self::Table(field_0) => [field_0],
+);
+
 /// Checked non-211 loft table payload.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3900,6 +4219,11 @@ pub struct LoftSubdataTable<R = f64> {
     row_count: i64,
     column_count: i64,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftSubdataTable<R>;
+    Self { type_code, rows, row_count, column_count } => [type_code:  i64, rows:  Vec<LoftSubdataRow<R>>, row_count:  i64, column_count:  i64]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4055,6 +4379,11 @@ pub struct ClassicLoftProfileData<R = f64, V = Vector3> {
     pub direction: Option<V>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] ClassicLoftProfileData<R, V>;
+    Self { surface, pcurve, first_flag, asm_extension, subdata, direction } => [surface:  SurfaceId, pcurve:  Option<PcurveGeometry>, first_flag:  bool, asm_extension:  i64, subdata:  LoftSubdata<R>, direction:  Option<V>]
+);
+
 /// Type-selected fields of one loft profile member.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4143,6 +4472,12 @@ pub enum LoftMemberForm<R = f64, V = Vector3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] LoftMemberForm<R, V>;
+    Self::Support { type_code, surface, support_bounds, pcurve, first_flag, asm_extension, subdata, direction } => [type_code, surface, support_bounds, pcurve, first_flag, asm_extension, subdata, direction],
+    Self::PcurvePair { pcurve, secondary_pcurve, asm_extension, subdata, direction } => [pcurve, secondary_pcurve, asm_extension, subdata, direction],
+);
+
 impl<R, V> LoftMemberForm<R, V> {
     /// Return the native type code selected by this form.
     #[must_use]
@@ -4200,6 +4535,11 @@ pub struct LoftPathCurve<R = f64> {
     pub endpoints: Option<[Option<R>; 2]>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftPathCurve<R>;
+    Self { id, endpoints } => [id:  CurveId, endpoints:  Option<[Option<R>; 2]>]
+);
+
 /// One curve member of a loft profile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4214,6 +4554,11 @@ pub struct LoftProfileMember<R = f64, V = Vector3> {
     /// Structurally selected surface-side constraint form.
     pub form: LoftMemberForm<R, V>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] LoftProfileMember<R, V>;
+    Self { profile, form } => [profile:  LoftPathCurve<R>, form:  LoftMemberForm<R, V>]
+);
 
 /// Native path data attached to one loft section entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4235,6 +4580,11 @@ pub struct LoftPath<R = f64> {
     pub flag: i64,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftPath<R>;
+    Self { path, auxiliaries, flag } => [path:  Option<LoftPathCurve<R>>, auxiliaries:  Vec<CurveId>, flag:  i64]
+);
+
 /// One parameterized entry in a native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4251,6 +4601,11 @@ pub struct LoftSectionEntry<R = f64, V = Vector3> {
     /// Native path data.
     pub path: LoftPath<R>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] LoftSectionEntry<R, V>;
+    Self { parameter, profile, path } => [parameter:  R, profile:  Vec<LoftProfileMember<R, V>>, path:  LoftPath<R>]
+);
 
 /// Revision-gated `loft_spl_sur` form fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4276,6 +4631,11 @@ pub struct LoftRevisionForm<R = f64> {
     pub tail_flag: bool,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftRevisionForm<R>;
+    Self { revision, flags, ints, cache, discontinuities, tail_flag } => [revision:  PositiveI64, flags:  [bool; 4], ints:  [i64; 2], cache:  RevisionCacheForm<RevisionSurfaceParameterization<R>>, discontinuities:  [Vec<R>; 6], tail_flag:  bool]
+);
+
 /// Ordered native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4288,6 +4648,11 @@ pub struct LoftSection<R = f64, V = Vector3> {
     /// Ordered entries in the section.
     pub entries: Vec<LoftSectionEntry<R, V>>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] LoftSection<R, V>;
+    Self { entries } => [entries:  Vec<LoftSectionEntry<R, V>>]
+);
 
 /// Token retained from the variable bridge preceding a loft solved cache.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4307,6 +4672,15 @@ pub enum LoftBridgeToken<R = f64> {
     Enum(i64),
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LoftBridgeToken<R>;
+    Self::Boolean(field_0) => [field_0],
+    Self::Integer(field_0) => [field_0],
+    Self::Double(field_0) => [field_0],
+    Self::Text(field_0) => [field_0],
+    Self::Enum(field_0) => [field_0],
+);
+
 /// Common carrier fields of one G2 blend side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4323,6 +4697,11 @@ pub struct G2BlendSide<V = Vector3> {
     /// Native side direction.
     pub direction: V,
 }
+
+decode_cost_record!(
+    [V: cadmpeg_core::decode::cost::DecodeCost] G2BlendSide<V>;
+    Self { label, surface, curve, pcurves, direction } => [label:  String, surface:  SurfaceId, curve:  CurveId, pcurves:  [Option<PcurveGeometry>; 2], direction:  V]
+);
 
 /// Singularity-specific payload of the first G2 blend side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4364,6 +4743,12 @@ pub enum G2BlendFirstShape<R = f64> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] G2BlendFirstShape<R>;
+    Self::Full { support } => [support],
+    Self::None { coefficients, tolerance, extension, pcurve } => [coefficients, tolerance, extension, pcurve],
+);
+
 /// Exact support surface and fit tolerance of a full G2 first-side shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4374,6 +4759,11 @@ pub struct G2BlendFullSupport {
     /// Fit tolerance of the support, in document length units.
     pub tolerance: FitTolerance,
 }
+
+decode_cost_record!(
+    [] G2BlendFullSupport;
+    Self { surface, tolerance } => [surface:  SurfaceId, tolerance:  FitTolerance]
+);
 
 /// Full native G2 blend construction graph.
 // A source states raw values; a `G2BlendSurfacePayload` holds the admitted
@@ -4410,6 +4800,11 @@ pub struct G2BlendConstruction<R = f64, V = Vector3> {
     pub discontinuities: [Vec<R>; 3],
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] G2BlendConstruction<R, V>;
+    Self { first, singularity, first_shape, second, second_exact_surface, center_curve, center_parameters, center_flag, parameter_ranges, trailing_parameters, discontinuities } => [first:  G2BlendSide<V>, singularity:  i64, first_shape:  G2BlendFirstShape<R>, second:  G2BlendSide<V>, second_exact_surface:  SurfaceId, center_curve:  CurveId, center_parameters:  [R; 2], center_flag:  i64, parameter_ranges:  [[R; 2]; 2], trailing_parameters:  [R; 4], discontinuities:  [Vec<R>; 3]]
+);
+
 /// A present rolling-ball support surface and its native UV bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4421,6 +4816,11 @@ pub struct RollingBallSupportSurface<S = SurfaceId, R = f64> {
     pub parameter_ranges: [[Option<R>; 2]; 2],
 }
 
+decode_cost_record!(
+    [S: cadmpeg_core::decode::cost::DecodeCost, R: cadmpeg_core::decode::cost::DecodeCost] RollingBallSupportSurface<S, R>;
+    Self { surface, parameter_ranges } => [surface:  S, parameter_ranges:  [[Option<R>; 2]; 2]]
+);
+
 /// A present rolling-ball side curve and its native parameter bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4431,6 +4831,11 @@ pub struct RollingBallSupportCurve<C = CurveId, R = f64> {
     /// Optional native parameter endpoints.
     pub parameter_range: [Option<R>; 2],
 }
+
+decode_cost_record!(
+    [C: cadmpeg_core::decode::cost::DecodeCost, R: cadmpeg_core::decode::cost::DecodeCost] RollingBallSupportCurve<C, R>;
+    Self { curve, parameter_range } => [curve:  C, parameter_range:  [Option<R>; 2]]
+);
 
 /// The optional rolling-ball extension clause.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4444,6 +4849,11 @@ pub struct RollingBallSideExtension<P = PcurveGeometry> {
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     pub pcurve: Option<P>,
 }
+
+decode_cost_record!(
+    [P: cadmpeg_core::decode::cost::DecodeCost] RollingBallSideExtension<P>;
+    Self { value, pcurve } => [value:  i64, pcurve:  Option<P>]
+);
 
 /// One complete native rolling-ball support side.
 // A source states raw values; a blend construction holds the admitted side,
@@ -4504,6 +4914,11 @@ pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry, R = f
     pub extension: Option<RollingBallSideExtension<P>>,
 }
 
+decode_cost_record!(
+    [S: cadmpeg_core::decode::cost::DecodeCost, C: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost, R: cadmpeg_core::decode::cost::DecodeCost, L: cadmpeg_core::decode::cost::DecodeCost] RollingBallSide<S, C, P, R, L>;
+    Self { support_kind, surface, curve, pcurve, location, secondary_pcurve, extension } => [support_kind:  VariableBlendSupportKind, surface:  Option<RollingBallSupportSurface<S, R>>, curve:  Option<RollingBallSupportCurve<C, R>>, pcurve:  Option<P>, location:  L, secondary_pcurve:  Option<P>, extension:  Option<RollingBallSideExtension<P>>]
+);
+
 /// Third support graph appended by `sss_blend_spl_sur`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4544,6 +4959,11 @@ pub struct RollingBallThirdSide<V = Vector3> {
     pub flag: bool,
 }
 
+decode_cost_record!(
+    [V: cadmpeg_core::decode::cost::DecodeCost] RollingBallThirdSide<V>;
+    Self { label, surface, curve, pcurve, direction, secondary_pcurve, extension, tertiary_pcurve, flag } => [label:  String, surface:  SurfaceId, curve:  CurveId, pcurve:  Option<PcurveGeometry>, direction:  V, secondary_pcurve:  Option<PcurveGeometry>, extension:  i64, tertiary_pcurve:  Option<PcurveGeometry>, flag:  bool]
+);
+
 /// Native optional-radius selector in a rolling-ball construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4557,6 +4977,12 @@ pub enum RollingBallRadiusSelector<T = f64> {
         value: T,
     },
 }
+
+decode_cost_enum!(
+    [T: cadmpeg_core::decode::cost::DecodeCost] RollingBallRadiusSelector<T>;
+    Self::None {  } => [],
+    Self::Value { value } => [value],
+);
 
 /// Complete byte-backed rolling-ball or three-surface blend context.
 // A source states raw values; a `BlendSurfacePayload` holds the admitted
@@ -4614,6 +5040,11 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
     pub tail_extensions: [i64; 3],
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] RollingBallConstruction<R, V, P>;
+    Self { revision, sides, slice, slice_range, offsets, radius_selector, u_range, v_range, shape_prefix, parameters, tail, cache, discontinuities, tail_flag, third, tail_extensions } => [revision:  PositiveI64, sides:  [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2], slice:  CurveId, slice_range:  [Option<R>; 2], offsets:  [R; 2], radius_selector:  RollingBallRadiusSelector<R>, u_range:  [Option<R>; 2], v_range:  [Option<R>; 2], shape_prefix:  i64, parameters:  [R; 2], tail:  i64, cache:  RevisionCacheForm<RevisionSurfaceParameterization<R>>, discontinuities:  [Vec<R>; 6], tail_flag:  bool, third:  Option<Box<RollingBallThirdSide<V>>>, tail_extensions:  [i64; 3]]
+);
+
 /// Geometry role selected by a variable-blend support-side discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4632,6 +5063,8 @@ pub enum VariableBlendSupportKind {
     ZeroCurve,
 }
 
+decode_cost_enum!(VariableBlendSupportKind);
+
 /// Convexity selected for a variable-radius blend surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4644,6 +5077,8 @@ pub enum VariableBlendConvexity {
     Concave,
 }
 
+decode_cost_enum!(VariableBlendConvexity);
+
 /// Solved-surface representation selected for a variable-radius blend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4655,6 +5090,8 @@ pub enum VariableBlendRenderMode {
     /// The solved surface is a rolling-ball snapshot.
     RollingBallSnapshot,
 }
+
+decode_cost_enum!(VariableBlendRenderMode);
 
 /// One interpolation control point in a variable blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4673,6 +5110,11 @@ pub struct VariableBlendInterpolationPoint<R = f64, V = Vector3, P = Point3> {
     pub normal: V,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VariableBlendInterpolationPoint<R, V, P>;
+    Self { parameter, radius, tangents, location, normal } => [parameter:  R, radius:  R, tangents:  [Option<R>; 2], location:  P, normal:  V]
+);
+
 /// Native edge-offset blend-value sub-discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4683,6 +5125,8 @@ pub enum EdgeOffsetDiscriminator {
     /// One sub-discriminator, including the elided default.
     One,
 }
+
+decode_cost_enum!(EdgeOffsetDiscriminator);
 
 impl EdgeOffsetDiscriminator {
     /// Admit the two native edge-offset codes.
@@ -4734,6 +5178,12 @@ pub enum VariableBlendTerminal<R = f64> {
     Text(String),
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] VariableBlendTerminal<R>;
+    Self::Double(field_0) => [field_0],
+    Self::Text(field_0) => [field_0],
+);
+
 /// Complete recursive native `getBlendValues` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4746,6 +5196,11 @@ pub struct VariableBlendValue<R = f64, V = Vector3, P = Point3> {
     /// Type-specific payload with its native sub-discriminator.
     pub payload: VariableBlendValuePayload<R, V, P>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VariableBlendValue<R, V, P>, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self { modern_flag, calibrated, payload } => [modern_flag:  bool, calibrated:  i64, payload:  VariableBlendValuePayload<R, V, P>]
+);
 
 /// Type-specific payload of a variable blend value.
 ///
@@ -4835,6 +5290,16 @@ pub enum VariableBlendValuePayload<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VariableBlendValuePayload<R, V, P>, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self::TwoEnds { discriminator, parameters, radii } => [discriminator, parameters, radii],
+    Self::FixedWidth { discriminator, parameters, width } => [discriminator, parameters, width],
+    Self::EdgeOffset { discriminator, scalars, lengths } => [discriminator, scalars, lengths],
+    Self::Functional { discriminator, parameter, radius, function, terminal } => [discriminator, parameter, radius, function, terminal],
+    Self::Constant { discriminator, parameters, radius, variable_chamfer, chamfer_type, nested } => [discriminator, parameters, radius, variable_chamfer, chamfer_type, nested],
+    Self::Interpolated { discriminator, parameter, radius, function, enum_count, enum_tagged, points } => [discriminator, parameter, radius, function, enum_count, enum_tagged, points],
+);
+
 impl<R, V, P> VariableBlendValuePayload<R, V, P> {
     /// Native sub-discriminator preceding the calibrated enum.
     pub const fn discriminator(&self) -> i64 {
@@ -4879,6 +5344,12 @@ pub enum VariableBlendRadii<R = f64, V = Vector3, P = Point3> {
         second: VariableBlendValue<R, V, P>,
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VariableBlendRadii<R, V, P>;
+    Self::Single { value } => [value],
+    Self::Two { first, second } => [first, second],
+);
 
 impl<R, V, P> VariableBlendRadii<R, V, P> {
     /// First radius law in native order.
@@ -4948,6 +5419,15 @@ pub enum VariableBlendCrossSection<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VariableBlendCrossSection<R, V, P>;
+    Self::Circular {  } => [],
+    Self::Thumbweights { parameters } => [parameters],
+    Self::RoundedChamfer { radius } => [radius],
+    Self::G2Round { parameters } => [parameters],
+    Self::UnclassifiedBare { selector } => [selector],
+);
+
 /// Native zero-width variable-blend cross-section selectors whose framing is
 /// established while their geometric laws remain unclassified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -4964,6 +5444,8 @@ pub enum VariableBlendBareCrossSection {
     /// Native selector `6`.
     Selector6 = 6,
 }
+
+decode_cost_enum!(VariableBlendBareCrossSection);
 
 impl VariableBlendBareCrossSection {
     /// Numeric selector stored in the native variable-blend record.
@@ -5009,6 +5491,8 @@ pub enum VariableBlendSurfaceSubtype {
     /// Free surface-curve variable blend.
     SurfaceCurveFree,
 }
+
+decode_cost_enum!(VariableBlendSurfaceSubtype);
 
 /// Complete native variable-radius blend construction graph.
 // A source states raw values; a `VariableBlendSurfacePayload` holds the
@@ -5105,6 +5589,11 @@ pub struct VariableBlendConstruction<R = f64, V = Vector3, P = Point3> {
     pub post_pcurve: Option<PcurveGeometry>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VariableBlendConstruction<R, V, P>;
+    Self { subtype, revision, sides, slice, slice_range, offsets, radii, cross_section, u_range, v_lower, shape_parameter, shape_length, shape_tail, cache, discontinuities, tail_flag, tail_extensions, secondary_curve, convexity, render_mode, post_range, post_curve, post_pcurve } => [subtype:  VariableBlendSurfaceSubtype, revision:  PositiveI64, sides:  [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2], slice:  CurveId, slice_range:  [Option<R>; 2], offsets:  [R; 2], radii:  VariableBlendRadii<R, V, P>, cross_section:  Option<VariableBlendCrossSection<R, V, P>>, u_range:  [R; 2], v_lower:  Option<R>, shape_parameter:  R, shape_length:  R, shape_tail:  i64, cache:  VariableBlendCache<R>, discontinuities:  [Vec<R>; 6], tail_flag:  bool, tail_extensions:  [i64; 3], secondary_curve:  Option<RollingBallSupportCurve<CurveId, R>>, convexity:  VariableBlendConvexity, render_mode:  VariableBlendRenderMode, post_range:  [Option<R>; 2], post_curve:  Option<CurveId>, post_pcurve:  Option<PcurveGeometry>]
+);
+
 /// Complete native revision-gated `g2_blend_spl_sur` construction. The
 /// revision layout stores the two support sides in the variable-blend side
 /// layout and ends with the shared revision-gated surface tail.
@@ -5134,6 +5623,11 @@ pub struct RevisionG2BlendConstruction {
     tail_flag: bool,
     tail_extensions: [i64; 3],
 }
+
+decode_cost_record!(
+    [] RevisionG2BlendConstruction;
+    Self { revision, leading_parameters, sides, center, center_range, radii, radius_selector, u_range, v_range, shape_prefix, shape_parameter, shape_length, shape_tail, cache, discontinuities, tail_flag, tail_extensions } => [revision:  PositiveI64, leading_parameters:  [FiniteReal; 2], sides:  [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, FiniteReal, FinitePoint3>; 2], center:  CurveId, center_range:  [Option<FiniteReal>; 2], radii:  [FiniteReal; 2], radius_selector:  RollingBallRadiusSelector<PositiveI64>, u_range:  [Option<FiniteReal>; 2], v_range:  [Option<FiniteReal>; 2], shape_prefix:  i64, shape_parameter:  FiniteReal, shape_length:  FiniteReal, shape_tail:  i64, cache:  RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>>, discontinuities:  [Vec<FiniteReal>; 6], tail_flag:  bool, tail_extensions:  [i64; 3]]
+);
 
 /// Stored fields of a revision-gated `g2_blend_spl_sur` construction before
 /// admission. This is the wire shape the deserializer reads and the only
@@ -5378,6 +5872,11 @@ pub struct RevisionCompoundLoftConstruction {
     tail: RevisionCompoundLoftTail<CurveId, FiniteReal>,
 }
 
+decode_cost_record!(
+    [] RevisionCompoundLoftConstruction;
+    Self { revision, cache, discontinuities, tail_flag, base_profile, base_path, entries, flags, kind_flags, direction, tail } => [revision:  PositiveI64, cache:  RevisionCacheForm<RevisionSurfaceParameterization<FiniteReal>>, discontinuities:  [Vec<FiniteReal>; 6], tail_flag:  bool, base_profile:  Vec<LoftProfileMember<FiniteReal, FiniteVector3>>, base_path:  LoftPath<FiniteReal>, entries:  Vec<LoftSectionEntry<FiniteReal, FiniteVector3>>, flags:  [bool; 2], kind_flags:  [bool; 2], direction:  CompoundLoftDirection<FiniteVector3>, tail:  RevisionCompoundLoftTail<CurveId, FiniteReal>]
+);
+
 /// Stored fields of a revision-gated `cl_loft_spl_sur` construction before
 /// admission. This is the wire shape the deserializer reads and the only
 /// input `RevisionCompoundLoftConstruction::admit` accepts.
@@ -5582,6 +6081,14 @@ pub enum RevisionCompoundLoftTail<T, S = f64> {
     },
 }
 
+decode_cost_enum!(
+    [T: cadmpeg_core::decode::cost::DecodeCost, S: cadmpeg_core::decode::cost::DecodeCost] RevisionCompoundLoftTail<T, S>;
+    Self::Unbounded {  } => [],
+    Self::LowerBound { lower } => [lower],
+    Self::UpperBound { upper } => [upper],
+    Self::Curve { interval, curve } => [interval, curve],
+);
+
 impl<T> RevisionCompoundLoftTail<T> {
     /// The tail with admitted bounds, absent when a stored bound is not
     /// finite.
@@ -5651,6 +6158,11 @@ pub struct VertexBlendBoundary<R = f64, V = Vector3, P = Point3> {
     pub geometry: VertexBlendBoundaryGeometry<R, V, P>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VertexBlendBoundary<R, V, P>;
+    Self { boundary_type, magic, u_smoothing, v_smoothing, fullness, geometry } => [boundary_type:  bool, magic:  V, u_smoothing:  bool, v_smoothing:  bool, fullness:  R, geometry:  VertexBlendBoundaryGeometry<R, V, P>]
+);
+
 /// Twist payload selected by a vertex-blend circle form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5670,6 +6182,13 @@ pub enum VertexBlendTwists<P = Point3> {
         twists: [P; 2],
     },
 }
+
+decode_cost_enum!(
+    [P: cadmpeg_core::decode::cost::DecodeCost] VertexBlendTwists<P>;
+    Self::None {  } => [],
+    Self::One { twist } => [twist],
+    Self::Two { twists } => [twists],
+);
 
 impl<P> VertexBlendTwists<P> {
     /// Native form selected by the twist payload.
@@ -5764,6 +6283,14 @@ pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VertexBlendBoundaryGeometry<R, V, P>;
+    Self::Circle { curve, curve_endpoints, twists, parameters, sense } => [curve, curve_endpoints, twists, parameters, sense],
+    Self::Degenerate { location, normals } => [location, normals],
+    Self::Pcurve { surface, support_bounds, pcurve, sense, fit_tolerance } => [surface, support_bounds, pcurve, sense, fit_tolerance],
+    Self::Plane { normal, parameters, curve, curve_endpoints } => [normal, parameters, curve, curve_endpoints],
+);
+
 /// Complete native vertex-blend surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5791,6 +6318,11 @@ pub struct VertexBlendConstruction<R = f64, V = Vector3, P = Point3> {
     pub fit_tolerance: FitTolerance,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] VertexBlendConstruction<R, V, P>;
+    Self { revision, boundaries, grid_size, fit_tolerance } => [revision:  Option<PositiveI64>, boundaries:  Vec<VertexBlendBoundary<R, V, P>>, grid_size:  i64, fit_tolerance:  FitTolerance]
+);
+
 /// One member of a compound-loft scale block.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5807,6 +6339,11 @@ pub struct CompoundLoftScaleMember<R = f64, V = Vector3> {
     /// Native loft constraint data.
     pub data: ClassicLoftProfileData<R, V>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] CompoundLoftScaleMember<R, V>;
+    Self { type_code, curve, data } => [type_code:  i64, curve:  CurveId, data:  ClassicLoftProfileData<R, V>]
+);
 
 /// Complete `_readScaleClLoft` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5827,6 +6364,11 @@ pub struct CompoundLoftScale<R = f64, V = Vector3> {
     pub tail: [i64; 2],
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] CompoundLoftScale<R, V>;
+    Self { members, path, auxiliaries, tail } => [members:  Vec<CompoundLoftScaleMember<R, V>>, path:  CurveId, auxiliaries:  Vec<CurveId>, tail:  [i64; 2]]
+);
+
 /// Direction carrier in the zero-kind compound-loft tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5845,6 +6387,12 @@ pub enum CompoundLoftDirection<V = Vector3> {
         selector: NonZeroI64,
     },
 }
+
+decode_cost_enum!(
+    [V: cadmpeg_core::decode::cost::DecodeCost] CompoundLoftDirection<V>;
+    Self::Vector { value } => [value],
+    Self::Curve { curve, selector } => [curve, selector],
+);
 
 impl<V> CompoundLoftDirection<V> {
     /// Native selector for this direction form.
@@ -5916,6 +6464,13 @@ pub enum CompoundLoftTail<R = f64, V = Vector3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] CompoundLoftTail<R, V>;
+    Self::Six { flags, scale, selector, direction, parameter_range, curve } => [flags, scale, selector, direction, parameter_range, curve],
+    Self::Seven { first_flag, first_scale, second_flag, second_scale, selector, direction, trailing_flags } => [first_flag, first_scale, second_flag, second_scale, selector, direction, trailing_flags],
+    Self::Zero { flags, direction, trailing_flags } => [flags, direction, trailing_flags],
+);
+
 /// A bounded list of compound-loft scales.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
@@ -5924,6 +6479,11 @@ pub enum CompoundLoftTail<R = f64, V = Vector3> {
 )]
 pub struct CompoundLoftScales<const CAPACITY: usize, R = f64, V = Vector3>(
     Vec<CompoundLoftScale<R, V>>,
+);
+
+decode_cost_record!(
+    [const CAPACITY: usize, R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] CompoundLoftScales<CAPACITY, R, V>;
+    Self(field_0) => [field_0: Vec<CompoundLoftScale<R, V>>]
 );
 
 impl<const CAPACITY: usize, R: Serialize, V: Serialize> Serialize
@@ -6011,6 +6571,11 @@ pub struct CompoundLoftConstruction<R = f64, V = Vector3> {
     pub tail: CompoundLoftTail<R, V>,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] CompoundLoftConstruction<R, V>;
+    Self { scales, flags, tail } => [scales:  CompoundLoftScales<5, R, V>, flags:  [bool; 2], tail:  CompoundLoftTail<R, V>]
+);
+
 /// Initial solved-shape branch of a scaled compound loft.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6027,6 +6592,12 @@ pub enum ScaledCompoundLoftShape<R = f64> {
         parameters: [Vec<R>; 2],
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] ScaledCompoundLoftShape<R>;
+    Self::Full {  } => [],
+    Self::None { parameter_ranges, parameters } => [parameter_ranges, parameters],
+);
 
 /// Structurally selected middle branch of a scaled compound loft.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6080,6 +6651,13 @@ pub enum ScaledCompoundLoftBranch<R = f64, V = Vector3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] ScaledCompoundLoftBranch<R, V>;
+    Self::ExtendedVector { first_scale, second_scale, selector, direction } => [first_scale, second_scale, selector, direction],
+    Self::ExtendedCurve { scale, flag, singularity, curve } => [scale, flag, singularity, curve],
+    Self::Direct { flag, direction } => [flag, direction],
+);
+
 /// Complete native scaled compound-loft construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6117,6 +6695,11 @@ pub struct ScaledCompoundLoftConstruction<R = f64, V = Vector3> {
     pub tail_curve: CurveId,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] ScaledCompoundLoftConstruction<R, V>;
+    Self { singularity, shape, discontinuities, discontinuity_flag, scales, flags, selector, branch, trailing_flags, tail_kind, tail_directions, tail_singularity, tail_curve } => [singularity:  i64, shape:  ScaledCompoundLoftShape<R>, discontinuities:  [Vec<R>; 6], discontinuity_flag:  bool, scales:  CompoundLoftScales<3, R, V>, flags:  [bool; 2], selector:  i64, branch:  ScaledCompoundLoftBranch<R, V>, trailing_flags:  [bool; 2], tail_kind:  i64, tail_directions:  [V; 2], tail_singularity:  i64, tail_curve:  CurveId]
+);
+
 /// One recursively framed native law formula.
 // A source states raw values; a law store holds the admitted formula, whose
 // scalars, vectors and points are checked.
@@ -6141,6 +6724,12 @@ pub enum LawFormula<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] LawFormula<R, V, P>;
+    Self::Null {  } => [],
+    Self::Named { name, variables } => [name, variables],
+);
+
 impl<R, V, P> LawFormula<R, V, P> {
     /// Ordered recursive variables; empty for the null variant.
     #[must_use]
@@ -6162,6 +6751,11 @@ impl<R, V, P> LawFormula<R, V, P> {
 pub struct FiniteLawFormula(
     #[cfg_attr(feature = "schema", schemars(with = "LawFormula"))]
     LawFormula<FiniteReal, FiniteVector3, FinitePoint3>,
+);
+
+decode_cost_record!(
+    [] FiniteLawFormula;
+    Self(field_0) => [field_0: LawFormula<FiniteReal, FiniteVector3, FinitePoint3>]
 );
 
 impl TryFrom<LawFormula> for FiniteLawFormula {
@@ -6221,6 +6815,11 @@ pub struct LawSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     pub discontinuities: [Vec<R>; 6],
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] LawSurfaceConstruction<R, V, P>;
+    Self { parameter_ranges, primary, additional, tail, discontinuities } => [parameter_ranges:  Option<[[R; 2]; 2]>, primary:  LawFormula<R, V, P>, additional:  Vec<LawFormula<R, V, P>>, tail:  LawSurfaceTail<R>, discontinuities:  [Vec<R>; 6]]
+);
+
 /// Mode-specific payload of a native law surface's standard surface tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6257,6 +6856,15 @@ pub enum LawSurfaceTail<R = f64> {
     /// Selector 4; no mode-specific payload.
     Optimal {},
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] LawSurfaceTail<R>;
+    Self::Full { cache } => [cache],
+    Self::Summary { parameters, fit_tolerance, closures, singularities } => [parameters, fit_tolerance, closures, singularities],
+    Self::None { parameter_ranges, closures, singularities } => [parameter_ranges, closures, singularities],
+    Self::Historical {  } => [],
+    Self::Optimal {  } => [],
+);
 
 /// One native law-expression node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6341,6 +6949,21 @@ pub enum LawExpression<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] LawExpression<R, V, P>, depth cadmpeg_core::decode::DepthGuard<'_>;
+    Self::Null {  } => [],
+    Self::Text { value } => [value],
+    Self::Integer { value } => [value],
+    Self::Double { value } => [value],
+    Self::Point { value } => [value],
+    Self::Vector { value } => [value],
+    Self::Transform { scalars, enums } => [scalars, enums],
+    Self::TransformVec { vectors, scale, flags } => [vectors, scale, flags],
+    Self::Edge { curve, parameters } => [curve, parameters],
+    Self::Spline { native_id, knots, controls, point } => [native_id, knots, controls, point],
+    Self::Algebraic { operator, operands } => [operator, operands],
+);
+
 /// One profile entry in the expanded skin layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6357,6 +6980,11 @@ pub struct SkinSurfaceProfile<R = f64, V = Vector3> {
     /// Native loft constraint data.
     pub data: ClassicLoftProfileData<R, V>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] SkinSurfaceProfile<R, V>;
+    Self { type_code, curve, data } => [type_code:  i64, curve:  CurveId, data:  ClassicLoftProfileData<R, V>]
+);
 
 /// Structurally selected native skin payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6392,6 +7020,12 @@ pub enum SkinSurfaceLayout<R = f64, V = Vector3> {
         second_tail: i64,
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost] SkinSurfaceLayout<R, V>;
+    Self::Profiles { profiles, path, tail } => [profiles, path, tail],
+    Self::Compact { inner_count, curve, subdata, first_tail, secondary_curve, second_tail } => [inner_count, curve, subdata, first_tail, secondary_curve, second_tail],
+);
 
 impl<R, V> SkinSurfaceLayout<R, V> {
     /// Native inner count, derived from the profile list in the expanded form.
@@ -6446,6 +7080,11 @@ pub struct SkinSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     pub discontinuity_flag: bool,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] SkinSurfaceConstruction<R, V, P>;
+    Self { surface_boolean, surface_normal, surface_direction, count, parameter, layout, direction, trailing_parameter, formula, parameter_curve, discontinuities, discontinuity_flag } => [surface_boolean:  i64, surface_normal:  i64, surface_direction:  i64, count:  i64, parameter:  R, layout:  SkinSurfaceLayout<R, V>, direction:  V, trailing_parameter:  R, formula:  LawFormula<R, V, P>, parameter_curve:  CurveId, discontinuities:  [Vec<R>; 6], discontinuity_flag:  bool]
+);
+
 /// Complete native `net_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6472,6 +7111,11 @@ pub struct NetSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] NetSurfaceConstruction<R, V, P>;
+    Self { sections, frame_parameters, flag, directions, formulas, discontinuities, discontinuity_flag } => [sections:  Box<[LoftSection<R, V>; 2]>, frame_parameters:  [R; 12], flag:  i64, directions:  [V; 4], formulas:  Box<[LawFormula<R, V, P>; 4]>, discontinuities:  [Vec<R>; 6], discontinuity_flag:  bool]
+);
 
 /// Structurally selected native sweep payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6630,6 +7274,15 @@ pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] SweepSurfaceLayout<R, V, P>;
+    Self::ProfileFirst { secondary_kind, directions, origin, parameters, formulas } => [secondary_kind, directions, origin, parameters, formulas],
+    Self::ExplicitFormula { mode, profile_range, profile_frame, origin, directions, trajectory_flag, path_range, path_parameter, formula_flag, formula, trailing_flag } => [mode, profile_range, profile_frame, origin, directions, trajectory_flag, path_range, path_parameter, formula_flag, formula, trailing_flag],
+    Self::ExplicitGuide { mode, profile_range, profile_frame, origin, directions, trajectory_flag, path_range, path_parameter, guide_flags, guide_curve, guide_range, guide_modes, guide_parameters, trailing_flags } => [mode, profile_range, profile_frame, origin, directions, trajectory_flag, path_range, path_parameter, guide_flags, guide_curve, guide_range, guide_modes, guide_parameters, trailing_flags],
+    Self::ExplicitSurface { mode, profile_range, profile_frame, origin, directions, trajectory_flag, path_range, path_parameter, singularity, support_surface, auxiliary_curve, support_flag, legacy_flag } => [mode, profile_range, profile_frame, origin, directions, trajectory_flag, path_range, path_parameter, singularity, support_surface, auxiliary_curve, support_flag, legacy_flag],
+    Self::LawDriven { mode, profile_range, profile_frame, origin, directions, first_law, first_mode, first_range, law_direction, path_mode, path_flag, path_range, path_parameter, second_law_flag, second_law, formula_mode, formula, trailing_flag } => [mode, profile_range, profile_frame, origin, directions, first_law, first_mode, first_range, law_direction, path_mode, path_flag, path_range, path_parameter, second_law_flag, second_law, formula_mode, formula, trailing_flag],
+);
+
 /// Revision-gated `sweep_sur` form fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6650,6 +7303,11 @@ pub struct SweepRevisionForm<R = f64> {
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
 }
+
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] SweepRevisionForm<R>;
+    Self { revision, primary_flag, profile_endpoints, path_endpoints, cache } => [revision:  PositiveI64, primary_flag:  bool, profile_endpoints:  [Option<R>; 2], path_endpoints:  [Option<R>; 2], cache:  RevisionCacheForm<RevisionSurfaceParameterization<R>>]
+);
 
 /// Complete native `sweep_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6677,6 +7335,11 @@ pub struct SweepSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     pub discontinuity_flag: bool,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] SweepSurfaceConstruction<R, V, P>;
+    Self { primary_kind, cache, layout, discontinuities, discontinuity_flag } => [primary_kind:  i64, cache:  CacheContract<SweepRevisionForm<R>>, layout:  SweepSurfaceLayout<R, V, P>, discontinuities:  [Vec<R>; 6], discontinuity_flag:  bool]
+);
+
 /// Radius law for a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6701,6 +7364,13 @@ pub enum BlendRadiusLaw {
         curve: NurbsCurve,
     },
 }
+
+decode_cost_enum!(
+    [] BlendRadiusLaw;
+    Self::Constant { signed_radius } => [signed_radius],
+    Self::Linear { start, end } => [start, end],
+    Self::Law { curve } => [curve],
+);
 
 /// The refusal of a blend radius law with a non-finite radius.
 const NON_FINITE_BLEND_RADIUS: ProceduralGeometryError =
@@ -6737,6 +7407,11 @@ pub struct ProceduralCurve {
     definition: ProceduralCurveDefinition,
 }
 
+decode_cost_record!(
+    [] ProceduralCurve;
+    Self { id, definition } => [id:  ProceduralCurveId, definition:  ProceduralCurveDefinition]
+);
+
 /// A parameter-space support curve and its optional affine parameter map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6752,6 +7427,11 @@ pub struct SupportPcurve {
     )]
     pub parameter_range: Option<DirectedParameterRange>,
 }
+
+decode_cost_record!(
+    [] SupportPcurve;
+    Self { geometry, parameter_range } => [geometry:  PcurveGeometry, parameter_range:  Option<DirectedParameterRange>]
+);
 
 impl SupportPcurve {
     /// Pair a pcurve geometry with an optional checked parameter interval.
@@ -6778,6 +7458,11 @@ impl From<PcurveGeometry> for SupportPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct DirectedParameterRange([f64; 2]);
+
+decode_cost_record!(
+    [] DirectedParameterRange;
+    Self(field_0) => [field_0: [f64; 2]]
+);
 
 /// Error returned when a directed parameter range cannot be admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6877,6 +7562,11 @@ pub struct IntcurveSupportSide {
     pub pcurve: Option<SupportPcurve>,
 }
 
+decode_cost_record!(
+    [] IntcurveSupportSide;
+    Self { surface, pcurve } => [surface:  Option<SurfaceId>, pcurve:  Option<SupportPcurve>]
+);
+
 impl IntcurveSupportSide {
     /// Return the mapped pcurve interval, when this side's pcurve states one.
     #[must_use]
@@ -6961,6 +7651,11 @@ pub struct LawCurveVersionForm {
     parameter_range: [Option<FiniteReal>; 2],
 }
 
+decode_cost_record!(
+    [] LawCurveVersionForm;
+    Self { stamp, post_enum, parameter_range } => [stamp:  i64, post_enum:  i64, parameter_range:  [Option<FiniteReal>; 2]]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -7025,6 +7720,11 @@ pub struct IntcurveSupportContext {
     parameter_range: crate::topology::ParameterInterval,
     discontinuities: [Vec<FiniteReal>; 3],
 }
+
+decode_cost_record!(
+    [] IntcurveSupportContext;
+    Self { sides, parameter_range, discontinuities } => [sides:  [IntcurveSupportSide; 2], parameter_range:  crate::topology::ParameterInterval, discontinuities:  [Vec<FiniteReal>; 3]]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7162,6 +7862,11 @@ pub struct TolerantIntersectionConstruction {
     tolerance: NonNegativeReal,
 }
 
+decode_cost_record!(
+    [] TolerantIntersectionConstruction;
+    Self { supports, endpoints, tolerance } => [supports:  [SurfaceId; 2], endpoints:  [FinitePoint3; 2], tolerance:  NonNegativeReal]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -7252,6 +7957,11 @@ pub struct TolerantIntersectionParameterization {
     parameter_range: crate::topology::IncreasingParameterInterval,
 }
 
+decode_cost_record!(
+    [] TolerantIntersectionParameterization;
+    Self { pcurves, parameter_range } => [pcurves:  [PcurveGeometry; 2], parameter_range:  crate::topology::IncreasingParameterInterval]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -7316,6 +8026,11 @@ pub struct CacheFirstCurveForm<R = f64> {
     pub extension: i64,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] CacheFirstCurveForm<R>;
+    Self { revision, cache, support_bounds, solved_range, extension } => [revision:  PositiveI64, cache:  RevisionCacheForm<CacheFirstCurveParameterization<R>>, support_bounds:  [[Option<R>; 4]; 2], solved_range:  [Option<R>; 2], extension:  i64]
+);
+
 /// One support slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7332,6 +8047,12 @@ pub enum SpringSupport<R = f64> {
     Ranges([[R; 2]; 2]),
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] SpringSupport<R>;
+    Self::Surface(field_0) => [field_0],
+    Self::Ranges(field_0) => [field_0],
+);
+
 /// First pcurve slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7347,6 +8068,12 @@ pub enum SpringPcurve<R = f64> {
     /// Native interval stored in place of `nullbs`.
     Range([R; 2]),
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] SpringPcurve<R>;
+    Self::Pcurve(field_0) => [field_0],
+    Self::Range(field_0) => [field_0],
+);
 
 /// Mutually exclusive spring construction layouts.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7390,6 +8117,12 @@ pub enum SpringLayout<R = f64, I = [f64; 2]> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, I: cadmpeg_core::decode::cost::DecodeCost] SpringLayout<R, I>;
+    Self::ContextFirst { supports, first_pcurve, second_pcurve, parameter_range, discontinuities, discontinuity_flag, cache } => [supports, first_pcurve, second_pcurve, parameter_range, discontinuities, discontinuity_flag, cache],
+    Self::CacheFirst { context, form } => [context, form],
+);
+
 impl<R, I> SpringLayout<R, I> {
     fn cache_first(&self) -> Option<&CacheFirstCurveForm<R>> {
         match self {
@@ -7429,6 +8162,11 @@ pub struct CacheFirstCurveParameterization<R = f64> {
     pub closed_form: i64,
 }
 
+decode_cost_record!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] CacheFirstCurveParameterization<R>;
+    Self { interval, closed_form } => [interval:  [Option<R>; 2], closed_form:  i64]
+);
+
 /// Family-independent tail fields carried by a cache-first surface curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7451,6 +8189,11 @@ pub struct SurfaceCurveTail {
     #[serde(default)]
     solved_range: [Option<FiniteReal>; 2],
 }
+
+decode_cost_record!(
+    [] SurfaceCurveTail;
+    Self { extension, revision, cache, support_bounds, solved_range } => [extension:  i64, revision:  PositiveI64, cache:  RevisionCacheForm<CacheFirstCurveParameterization<FiniteReal>>, support_bounds:  [RecordBounds; 2], solved_range:  [Option<FiniteReal>; 2]]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7557,6 +8300,11 @@ pub struct SurfaceCurveCacheFirst<F> {
     pub flags: F,
 }
 
+decode_cost_record!(
+    [F: cadmpeg_core::decode::cost::DecodeCost] SurfaceCurveCacheFirst<F>;
+    Self { form, flags } => [form:  SurfaceCurveTail, flags:  F]
+);
+
 /// Two terminating flags carried only by a parametric surface curve.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7572,6 +8320,11 @@ pub struct ParametricSurfaceCurveFlags {
     )]
     pub second_flag: Option<bool>,
 }
+
+decode_cost_record!(
+    [] ParametricSurfaceCurveFlags;
+    Self { flag, second_flag } => [flag:  bool, second_flag:  Option<bool>]
+);
 
 /// Mutually exclusive tail forms of a native projected intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7594,6 +8347,12 @@ pub enum ProjectionTail<R = f64> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] ProjectionTail<R>;
+    Self::EarlyClose { flag } => [flag],
+    Self::Ranged { flag, parameter_range, role } => [flag, parameter_range, role],
+);
+
 /// Support selected by a ranged projection tail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7605,6 +8364,8 @@ pub enum ProjectionRole {
     #[serde(rename = "surf2")]
     Surf2,
 }
+
+decode_cost_enum!(ProjectionRole);
 
 impl ProjectionRole {
     /// Parse the native ASM identifier.
@@ -7694,6 +8455,14 @@ pub enum SurfaceCurveFamily {
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
 }
+
+decode_cost_enum!(
+    [] SurfaceCurveFamily;
+    Self::Blend { context, tail } => [context, tail],
+    Self::SurfaceConstrained { context, tail } => [context, tail],
+    Self::Parametric { context, tail } => [context, tail],
+    Self::Skin { context, tail } => [context, tail],
+);
 
 /// Discriminant of a native surface-curve family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -7795,6 +8564,13 @@ pub enum SilhouetteKind {
     },
 }
 
+decode_cost_enum!(
+    [] SilhouetteKind;
+    Self::Standard {  } => [],
+    Self::Parametric {  } => [],
+    Self::Taper { draft_factor } => [draft_factor],
+);
+
 /// Discriminator-specific payload of a deformable native intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7835,6 +8611,12 @@ pub enum DeformableCurveData<R = f64, V = Vector3, P = Point3> {
     },
 }
 
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost, V: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] DeformableCurveData<R, V, P>;
+    Self::VectorField { vectors, parameter_pairs } => [vectors, parameter_pairs],
+    Self::Mode3 { leading_vectors, leading_parameter, leading_flags, trailing_point, trailing_vectors, frame_parameter, frame_flags, parameters, trailing_flags, trailing_parameter, trailing_value } => [leading_vectors, leading_parameter, leading_flags, trailing_point, trailing_vectors, frame_parameter, frame_flags, parameters, trailing_flags, trailing_parameter, trailing_value],
+);
+
 /// Source slot of a deformable native intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7854,6 +8636,12 @@ pub enum DeformableCurveSource {
         index: i64,
     },
 }
+
+decode_cost_enum!(
+    [] DeformableCurveSource;
+    Self::Curve { curve } => [curve],
+    Self::NativeReference { flag, index } => [flag, index],
+);
 
 /// Orientation carrier of a planar curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7879,6 +8667,12 @@ pub enum OffsetSide<V = Vector3> {
     },
 }
 
+decode_cost_enum!(
+    [V: cadmpeg_core::decode::cost::DecodeCost] OffsetSide<V>;
+    Self::PlaneNormal { normal } => [normal],
+    Self::Direction { direction, support } => [direction, support],
+);
+
 /// Parameter interval and optional variable-distance law of a curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7899,6 +8693,12 @@ pub enum CurveOffsetRange<R = f64> {
         distance_law: CurveOffsetDistanceLaw<R>,
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] CurveOffsetRange<R>;
+    Self::Uniform { parameter_range } => [parameter_range],
+    Self::Variable { parameter_range, distance_law } => [parameter_range, distance_law],
+);
 
 /// The refusal of a curve offset whose distance, side, range or law is
 /// invalid.
@@ -8055,6 +8855,31 @@ pub enum ProceduralCurveDefinition {
     },
 }
 
+decode_cost_enum!(
+    [] ProceduralCurveDefinition;
+    Self::Exact { cache } => [cache],
+    Self::Law { context, version, extension, primary, additional, cache } => [context, version, extension, primary, additional, cache],
+    Self::Compound(field_0) => [field_0],
+    Self::Helix(field_0) => [field_0],
+    Self::Intersection { context, discontinuity_flag, cache } => [context, discontinuity_flag, cache],
+    Self::TolerantIntersection { construction, parameterization, cache } => [construction, parameterization, cache],
+    Self::ThreeSurfaceIntersection(field_0) => [field_0],
+    Self::SurfaceCurve { family } => [family],
+    Self::Silhouette(field_0) => [field_0],
+    Self::SurfaceOffset(field_0) => [field_0],
+    Self::Spring(field_0) => [field_0],
+    Self::Deformable(field_0) => [field_0],
+    Self::Projection(field_0) => [field_0],
+    Self::Offset(field_0) => [field_0],
+    Self::SpatialOffset(field_0) => [field_0],
+    Self::TwoSidedOffset(field_0) => [field_0],
+    Self::VectorOffset(field_0) => [field_0],
+    Self::Subset(field_0) => [field_0],
+    Self::Replica { source, transform } => [source, transform],
+    Self::BlendSpine { blend_surface } => [blend_surface],
+    Self::Unknown { native_kind, record, cache } => [native_kind, record, cache],
+);
+
 #[derive(Deserialize)]
 #[serde(
     remote = "ProceduralCurveDefinition",
@@ -8185,6 +9010,11 @@ pub struct VectorOffsetRoles {
     /// Code of the offset role.
     pub offset: i64,
 }
+
+decode_cost_record!(
+    [] VectorOffsetRoles;
+    Self { source, offset } => [source:  i64, offset:  i64]
+);
 
 impl ProceduralCurveDefinition {
     fn revision_cache(
@@ -8388,11 +9218,18 @@ pub enum CurveOffsetLawBasis {
     Parameter,
 }
 
+decode_cost_enum!(CurveOffsetLawBasis);
+
 /// A one-based coordinate of a curve-offset distance function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
 pub struct CurveOffsetCoordinate(u8);
+
+decode_cost_record!(
+    [] CurveOffsetCoordinate;
+    Self(field_0) => [field_0: u8]
+);
 
 impl CurveOffsetCoordinate {
     /// Admit coordinate one, two, or three.
@@ -8452,6 +9289,12 @@ pub enum CurveOffsetDistanceLaw<R = f64> {
         function_parameter_scale: R,
     },
 }
+
+decode_cost_enum!(
+    [R: cadmpeg_core::decode::cost::DecodeCost] CurveOffsetDistanceLaw<R>;
+    Self::Linear { basis, distances, control_range } => [basis, distances, control_range],
+    Self::Coordinate { function, coordinate, basis, function_parameter_offset, function_parameter_scale } => [function, coordinate, basis, function_parameter_offset, function_parameter_scale],
+);
 
 impl CurveOffsetDistanceLaw {
     /// Admit a linear law over strictly increasing controls, with the refusal

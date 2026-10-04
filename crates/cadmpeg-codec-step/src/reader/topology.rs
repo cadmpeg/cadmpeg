@@ -2360,27 +2360,11 @@ fn drop_committed_surfaces(
     session: &mut CommitSession<'_, &mut CadIr>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        u64_from_index(draft.model().surfaces.len()),
+    ctx.retain_vec(
+        &mut draft.model_mut().surfaces,
+        |surface| Ok(!session.contains(surface.id.as_str())?),
         "filter committed surfaces",
-    )?;
-    let mut refusal = None;
-    draft.model_mut().surfaces.retain(|surface| {
-        if refusal.is_some() {
-            return true;
-        }
-        match session.contains(surface.id.as_str()) {
-            Ok(contains) => !contains,
-            Err(error) => {
-                refusal = Some(error);
-                true
-            }
-        }
-    });
-    match refusal {
-        Some(error) => Err(error),
-        None => Ok(()),
-    }
+    )
 }
 
 #[cfg(test)]

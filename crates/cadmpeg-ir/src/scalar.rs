@@ -184,6 +184,11 @@ impl From<UnitBinary32> for f32 {
 #[serde(try_from = "i64", into = "i64")]
 pub struct PositiveI64(i64);
 
+decode_cost_record!(
+    [] PositiveI64;
+    Self(field_0) => [field_0: i64]
+);
+
 impl PositiveI64 {
     /// Admit a positive signed 64-bit integer.
     pub const fn new(value: i64) -> Option<Self> {
@@ -221,6 +226,7 @@ macro_rules! checked_scalar {
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(f64);
+        decode_cost_record!([] $name; Self(field_0) => [field_0: f64]);
         rewrite_scalar!($name);
 
         impl $name {

@@ -50,6 +50,8 @@ pub enum CodecFormat {
     Step,
 }
 
+decode_cost_enum!(CodecFormat);
+
 impl CodecFormat {
     /// Parse a generated registry format id.
     #[must_use]
@@ -238,6 +240,11 @@ pub struct SourceObjectAssociation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_path: Vec<String>,
 }
+
+decode_cost_record!(
+    [] SourceObjectAssociation;
+    Self { format, object_id, name, color, visible, layer, instance_path } => [format:  CodecFormat, object_id:  cadmpeg_core::text::NonBlankString, name:  Option<String>, color:  Option<Color>, visible:  Option<bool>, layer:  Option<String>, instance_path:  Vec<String>]
+);
 
 impl SourceObjectAssociation {
     /// Copy source identity and display text under the caller's limits.

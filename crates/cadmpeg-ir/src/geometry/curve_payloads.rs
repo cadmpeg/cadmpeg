@@ -68,6 +68,11 @@ pub struct SurfaceOffsetCurveConstruction {
     scale: FiniteReal,
 }
 
+decode_cost_record!(
+    [] SurfaceOffsetCurveConstruction;
+    Self { context, discontinuity_flag, base_u_range, base_v_range, base, base_range, base_endpoints, cache, distance, shift, scale } => [context:  IntcurveSupportContext, discontinuity_flag:  bool, base_u_range:  ParameterInterval, base_v_range:  ParameterInterval, base:  CurveId, base_range:  ParameterInterval, base_endpoints:  [Option<FiniteReal>; 2], cache:  CacheContract<CacheFirstCurveForm<FiniteReal>>, distance:  FiniteReal, shift:  FiniteReal, scale:  FiniteReal]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -229,6 +234,11 @@ pub struct DeformableCurveConstruction {
     data: DeformableCurveData<FiniteReal, FiniteVector3, FinitePoint3>,
 }
 
+decode_cost_record!(
+    [] DeformableCurveConstruction;
+    Self { context, cache_first, source, source_parameter_range, data } => [context:  IntcurveSupportContext, cache_first:  CacheFirstCurveForm<FiniteReal>, source:  DeformableCurveSource, source_parameter_range:  [Option<FiniteReal>; 2], data:  DeformableCurveData<FiniteReal, FiniteVector3, FinitePoint3>]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -341,6 +351,11 @@ pub struct OffsetCurveConstruction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     range: Option<CurveOffsetRange<FiniteReal>>,
 }
+
+decode_cost_record!(
+    [] OffsetCurveConstruction;
+    Self { source, distance, side, range } => [source:  CurveId, distance:  FiniteReal, side:  OffsetSide<FiniteVector3>, range:  Option<CurveOffsetRange<FiniteReal>>]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -521,6 +536,11 @@ pub struct SpatialOffsetCurveConstruction {
     self_intersect: Option<bool>,
 }
 
+decode_cost_record!(
+    [] SpatialOffsetCurveConstruction;
+    Self { source, distance, reference_direction, self_intersect } => [source:  CurveId, distance:  FiniteReal, reference_direction:  UnitVector3, self_intersect:  Option<bool>]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -616,6 +636,11 @@ pub struct TwoSidedOffsetCurveConstruction {
     cache: Option<LegacyCache>,
 }
 
+decode_cost_record!(
+    [] TwoSidedOffsetCurveConstruction;
+    Self { context, discontinuity_flag, offsets, cache } => [context:  IntcurveSupportContext, discontinuity_flag:  bool, offsets:  FiniteVector<2>, cache:  Option<LegacyCache>]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -695,6 +720,11 @@ pub struct VectorOffsetCurveConstruction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cache: Option<LegacyCache>,
 }
+
+decode_cost_record!(
+    [] VectorOffsetCurveConstruction;
+    Self { source, parameter_range, offset, roles, cache } => [source:  CurveId, parameter_range:  ParameterInterval, offset:  FiniteVector3, roles:  VectorOffsetRoles, cache:  Option<LegacyCache>]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -786,6 +816,11 @@ pub struct SubsetCurveConstruction {
     cache: Option<LegacyCache>,
 }
 
+decode_cost_record!(
+    [] SubsetCurveConstruction;
+    Self { source, parameter_range, sense, cache } => [source:  CurveId, parameter_range:  ParameterInterval, sense:  bool, cache:  Option<LegacyCache>]
+);
+
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -869,6 +904,11 @@ pub struct SilhouetteCurveConstruction {
     /// Native model-space light direction.
     light_direction: FiniteVector3,
 }
+
+decode_cost_record!(
+    [] SilhouetteCurveConstruction;
+    Self { context, silhouette, cast_surface, light_direction } => [context:  IntcurveSupportContext, silhouette:  SilhouetteKind, cast_surface:  SurfaceId, light_direction:  FiniteVector3]
+);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -994,6 +1034,11 @@ pub struct SpringCurvePayload {
     context: IntcurveSupportContext,
     direction: i64,
 }
+
+decode_cost_record!(
+    [] SpringCurvePayload;
+    Self { layout, context, direction } => [layout:  SpringLayout<FiniteReal, ParameterInterval>, context:  IntcurveSupportContext, direction:  i64]
+);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1092,6 +1137,11 @@ pub struct ThreeSurfaceIntersectionCurvePayload {
 
     third: IntcurveSupportSide,
 }
+
+decode_cost_record!(
+    [] ThreeSurfaceIntersectionCurvePayload;
+    Self { context, selector, third } => [context:  IntcurveSupportContext, selector:  i64, third:  IntcurveSupportSide]
+);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1162,6 +1212,11 @@ pub struct ProjectionCurvePayload {
 
     tail: ProjectionTail<FiniteReal>,
 }
+
+decode_cost_record!(
+    [] ProjectionCurvePayload;
+    Self { context, discontinuity_flag, source, tail } => [context:  IntcurveSupportContext, discontinuity_flag:  bool, source:  CurveId, tail:  ProjectionTail<FiniteReal>]
+);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

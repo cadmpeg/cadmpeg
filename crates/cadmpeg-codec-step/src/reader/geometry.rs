@@ -2609,18 +2609,18 @@ pub(super) fn decode(
         }
     }
     for surface in &mut ir.model.procedural_surfaces {
-        surface.edit_definition(|definition| {
+        surface.edit_definition(|definition| -> Result<(), CodecError> {
             let ProceduralSurfaceDefinition::CurveBounded {
                 boundary_pcurves, ..
             } = definition
             else {
-                return;
+                return Ok(());
             };
-            boundary_pcurves.retain(|pcurve| {
+            ctx.retain_vec(boundary_pcurves, |pcurve| Ok(
                 step_instance_id(pcurve.as_str())
                     .is_some_and(|id| decoded_pcurve_steps.contains(&id))
-            });
-        });
+            ), "STEP decoded boundary pcurve retention")
+        })?;
     }
 
     for (id, record) in exchange.entities(ctx, "DEGENERATE_TOROIDAL_SURFACE")? {
