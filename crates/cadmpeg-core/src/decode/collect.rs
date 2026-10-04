@@ -336,7 +336,6 @@ impl DecodeContext<'_> {
         owned_bytes: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge_work(u64_from_index(groups.len()) + 1, operation)?;
         reservation.with_storage(|| {
             if let Some(values) = self.get_mut_btree_map(groups, &key, operation)? {
                 self.reserve_vec(values, 1, operation)?;
@@ -410,12 +409,6 @@ impl DecodeContext<'_> {
                 let Some((key, value)) = self.next_charged(&mut input, operation)? else {
                     break;
                 };
-                self.charge_work(
-                    u64_from_index(entries.len())
-                        .checked_add(1)
-                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                    operation,
-                )?;
                 self.insert_btree_map(&mut entries, key, value, operation)?;
             }
             Ok::<(), CodecError>(())
