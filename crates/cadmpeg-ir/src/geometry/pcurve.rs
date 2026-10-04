@@ -1825,6 +1825,31 @@ pub struct PcurveNurbs {
     periodic: bool,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PcurveNurbs {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        // Each knot is one scalar; each pole has two coordinates and an optional rational weight.
+        let (pole_count, scalar_count) = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => (points.len(), 2u64),
+            PcurveNurbsPoles::Rational { points } => (points.len(), 3u64),
+        };
+        let knots = cadmpeg_core::decode::u64_from_index(self.knots.as_slice().len())
+            .checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let poles = cadmpeg_core::decode::u64_from_index(pole_count)
+            .checked_mul(scalar_count)
+            .and_then(|count| count.checked_mul(8))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        // Degree, pole-form tag and periodic flag use four, one and one bytes.
+        knots.checked_add(poles).and_then(|bytes| bytes.checked_add(6))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
+
 impl PcurveNurbs {
     /// Copy the admitted knot and pole lanes through the decode budget.
     pub fn try_clone_for_decode(

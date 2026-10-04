@@ -28,7 +28,7 @@ pub(crate) fn validate_native(
     };
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT validation workspace")?;
     let mut findings = Vec::new();
-    for history in &native.feature_histories {
+    for history in ctx.admit_iter(&native.feature_histories, "scan SLDPRT native histories")? {
         if let Err(error) = crate::writer::validate_feature_graph(ctx, &history.features) {
             if matches!(error, CodecError::ResourceLimit(_)) {
                 return Err(error);
@@ -47,50 +47,39 @@ pub(crate) fn validate_native(
         }
         if !history.content.is_empty() {
             let configurations = temporary.with_storage(|| {
-                collect_history_ids(
-                    ctx,
-                    history
-                        .configurations
-                        .iter()
+                ctx.collect_hash_set(
+                    ctx.admit_iter(&history.configurations, "scan SLDPRT native configurations")?
                         .map(|configuration| configuration.id.as_str()),
+                    "index SLDPRT native history content",
                 )
             })?;
             let root_features = temporary.with_storage(|| {
-                collect_history_ids(
-                    ctx,
-                    history
-                        .features
-                        .iter()
+                ctx.collect_hash_set(
+                    ctx.admit_iter(&history.features, "scan SLDPRT native features")?
                         .filter(|feature| feature.tree_parent.is_none())
                         .map(|feature| feature.id.as_str()),
+                    "index SLDPRT native history content",
                 )
             })?;
             let all_features = temporary.with_storage(|| {
-                collect_history_ids(
-                    ctx,
-                    history.features.iter().map(|feature| feature.id.as_str()),
+                ctx.collect_hash_set(
+                    ctx.admit_iter(&history.features, "scan SLDPRT native features")?.map(|feature| feature.id.as_str()),
+                    "index SLDPRT native history content",
                 )
             })?;
             let mut seen_configurations = HashSet::new();
             let mut seen_features = HashSet::new();
-            for item in &history.content {
+            for item in ctx.admit_iter(&history.content, "scan SLDPRT native history content")? {
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
-                        temporary.with_storage(|| {
-                            ctx.reserve_set(
-                                &mut seen_configurations,
-                                1,
-                                "index SLDPRT native history content",
-                            )
-                        })?;
-                        if !configurations.contains(id.as_str()) {
+                        if !ctx.contains_hash_set(&configurations, id.as_str(), "find SLDPRT native history content")? {
                             Some(ctx.format_retained(
                                 format_args!(
                                     "SolidWorks history root references missing configuration {id}"
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !seen_configurations.insert(id.as_str()) {
+                        } else if !temporary.with_storage(|| ctx.insert_hash_set(&mut seen_configurations, id.as_str(), "index SLDPRT native history content"))? {
                             Some(ctx.format_retained(
                                 format_args!("SolidWorks history root repeats configuration {id}"),
                                 "format SLDPRT native finding",
@@ -100,28 +89,21 @@ pub(crate) fn validate_native(
                         }
                     }
                     crate::records::HistoryContent::Feature(id) => {
-                        temporary.with_storage(|| {
-                            ctx.reserve_set(
-                                &mut seen_features,
-                                1,
-                                "index SLDPRT native history content",
-                            )
-                        })?;
-                        if !all_features.contains(id.as_str()) {
+                        if !ctx.contains_hash_set(&all_features, id.as_str(), "find SLDPRT native history content")? {
                             Some(ctx.format_retained(
                                 format_args!(
                                     "SolidWorks history root references missing feature {id}"
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !root_features.contains(id.as_str()) {
+                        } else if !ctx.contains_hash_set(&root_features, id.as_str(), "find SLDPRT native history content")? {
                             Some(ctx.format_retained(
                                 format_args!(
                                     "SolidWorks history root references nested feature {id}"
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !seen_features.insert(id.as_str()) {
+                        } else if !temporary.with_storage(|| ctx.insert_hash_set(&mut seen_features, id.as_str(), "index SLDPRT native history content"))? {
                             Some(ctx.format_retained(
                                 format_args!("SolidWorks history root repeats feature {id}"),
                                 "format SLDPRT native finding",
@@ -145,7 +127,10 @@ pub(crate) fn validate_native(
                     )?;
                 }
             }
-            for missing in configurations.difference(&seen_configurations) {
+            for missing in ctx.admit_iter(&configurations, "scan SLDPRT omitted history content")? {
+                if ctx.contains_hash_set(&seen_configurations, *missing, "find SLDPRT native history content")? {
+                    continue;
+                }
                 push_finding(
                     ctx,
                     &mut findings,
@@ -160,7 +145,10 @@ pub(crate) fn validate_native(
                     },
                 )?;
             }
-            for missing in root_features.difference(&seen_features) {
+            for missing in ctx.admit_iter(&root_features, "scan SLDPRT omitted history content")? {
+                if ctx.contains_hash_set(&seen_features, *missing, "find SLDPRT native history content")? {
+                    continue;
+                }
                 push_finding(
                     ctx,
                     &mut findings,
@@ -188,9 +176,7 @@ pub(crate) fn validate_native(
     let (history_lanes, _lane_reservation) =
         ctx.with_scoped_storage("validate SLDPRT history lanes", || {
             ctx.try_collect_retained_with(
-                native
-                    .feature_input_lanes
-                    .iter()
+                ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")?
                     .filter(|lane| !is_supplemental_config_lane(lane)),
                 "validate SLDPRT history lanes",
                 |record| record.clone_charged(ctx, "validate SLDPRT history lanes"),
@@ -203,9 +189,9 @@ pub(crate) fn validate_native(
             &history_lanes,
         )
     })?;
-    for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
-        for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
-            if feature.input_class != expected_feature.input_class {
+    for (history, expected_history) in ctx.admit_iter(&native.feature_histories, "scan SLDPRT expected histories")?.zip(&expected_histories) {
+        for (feature, expected_feature) in ctx.admit_iter(&history.features, "scan SLDPRT expected history features")?.zip(&expected_history.features) {
+            if !ctx.equal(&feature.input_class, &expected_feature.input_class, "compare SLDPRT feature classes")? {
                 push_finding(ctx, &mut findings, Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
@@ -221,13 +207,11 @@ pub(crate) fn validate_native(
         pairs: expected_lanes,
         storage: _expected_lanes_reservation,
     } = crate::native::lanes::expected_lanes_charged(ctx, &native)?;
-    for (lane, expected_lane) in expected_lanes {
-        for (entity, expected_entity) in lane
-            .sketch_entities
-            .iter()
+    for (lane, expected_lane) in ctx.admit_iter(&expected_lanes, "scan SLDPRT expected lanes")? {
+        for (entity, expected_entity) in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT expected sketch entities")?
             .zip(&expected_lane.sketch_entities)
         {
-            if entity.feature_ref != expected_entity.feature_ref {
+            if !ctx.equal(&entity.feature_ref, &expected_entity.feature_ref, "compare SLDPRT sketch ownership")? {
                 push_finding(
                     ctx,
                     &mut findings,
@@ -241,7 +225,7 @@ pub(crate) fn validate_native(
                     },
                 )?;
             }
-            if entity.links != expected_entity.links {
+            if !ctx.equal(&entity.links, &expected_entity.links, "compare SLDPRT sketch links")? {
                 push_finding(
                     ctx,
                     &mut findings,
@@ -308,18 +292,6 @@ fn push_finding(
     ctx.reserve_vec(findings, 1, "collect SLDPRT native findings")?;
     findings.push(finding);
     Ok(())
-}
-
-fn collect_history_ids<'a>(
-    ctx: &DecodeContext<'_>,
-    items: impl Iterator<Item = &'a str>,
-) -> Result<HashSet<&'a str>, CodecError> {
-    let mut ids = HashSet::new();
-    for id in items {
-        ctx.reserve_set(&mut ids, 1, "index SLDPRT native history content")?;
-        ids.insert(id);
-    }
-    Ok(ids)
 }
 
 #[cfg(test)]

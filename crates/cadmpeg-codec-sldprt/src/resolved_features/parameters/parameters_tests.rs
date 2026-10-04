@@ -166,19 +166,26 @@ fn fillet_display_placeholder_establishes_length_unit() {
         text: None,
         content: Vec::new(),
     };
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "D1"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "D1")
+            .expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "missing"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "missing")
+            .expect("unit inference succeeds"),
         None
     );
     let mut numeric = feature;
     numeric
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
-    assert_eq!(scalar_unit_from_feature_parameter(&numeric, "D1"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&ctx, &numeric, "D1")
+            .expect("unit inference succeeds"),
+        None
+    );
 
     let mut cosmetic_thread = numeric.clone();
     cosmetic_thread.kind = "CosmeticThread".into();
@@ -188,7 +195,8 @@ fn fillet_display_placeholder_establishes_length_unit() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&cosmetic_thread, "D2"),
+        scalar_unit_from_feature_parameter(&ctx, &cosmetic_thread, "D2")
+            .expect("unit inference succeeds"),
         None
     );
 
@@ -202,14 +210,20 @@ fn fillet_display_placeholder_establishes_length_unit() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D01"), "R0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D0"),
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D0")
+            .expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D01"),
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D01")
+            .expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
-    assert_eq!(scalar_unit_from_feature_parameter(&variable, "D1"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D1")
+            .expect("unit inference succeeds"),
+        None
+    );
 }
 
 #[test]
@@ -236,13 +250,19 @@ fn thin_cut_native_dimensions_are_lengths() {
         content: Vec::new(),
     };
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     for name in ["D5", "D6", "D7"] {
         assert_eq!(
-            scalar_unit_from_feature_parameter(&feature, name),
+            scalar_unit_from_feature_parameter(&ctx, &feature, name)
+                .expect("unit inference succeeds"),
             Some(ScalarUnit::Length)
         );
     }
-    assert_eq!(scalar_unit_from_feature_parameter(&feature, "D8"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&ctx, &feature, "D8")
+            .expect("unit inference succeeds"),
+        None
+    );
 }
 
 #[test]
@@ -272,16 +292,20 @@ fn sketch_source_dimension_establishes_scalar_unit() {
         ],
     };
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "depth"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "depth")
+            .expect("unit inference succeeds"),
         Some(ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "angle"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "angle")
+            .expect("unit inference succeeds"),
         Some(ScalarUnit::Angle)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "unowned"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "unowned")
+            .expect("unit inference succeeds"),
         None
     );
 }

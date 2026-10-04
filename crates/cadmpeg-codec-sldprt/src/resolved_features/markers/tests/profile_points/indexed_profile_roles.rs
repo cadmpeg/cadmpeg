@@ -1,13 +1,12 @@
 use crate::records::SketchInputKind;
 use crate::resolved_features::markers::indexed_profile_vertex;
 use crate::resolved_features::markers::legacy_extended_profile_curve_kind;
-use crate::resolved_features::markers::marker_coordinates;
 use crate::resolved_features::markers::marker_is_geometry_locus;
 use crate::resolved_features::selections::coordinate_marker_local_links;
 use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::resolved_features::SKETCH_MARKER;
 
-use super::super::raw2;
+use super::super::{marker_coordinates, raw2};
 #[test]
 fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
     let mut vertex = vec![0; 74];

@@ -53,7 +53,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputLane, FeatureInputRelationFamily, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -100,28 +100,38 @@ pub(crate) fn bind_sketch_profiles(
         annotations,
     } = arenas;
 
-    let declared_carriers =
-        declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)?;
+    let mut declared_carriers_storage =
+        ctx.reserve_scoped(0, "collect SLDPRT declared circular carriers")?;
+    let declared_carriers = declared_carriers_storage.with_storage(|| {
+        declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)
+    })?;
+    let mut superseded_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut superseded = HashSet::new();
-    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let mut metadata_ids_storage = ctx.reserve_scoped(0, "index SLDPRT profile metadata")?;
+    let metadata_ids = metadata_ids_storage.with_storage(|| history_metadata_ids(ctx, histories))?;
+    let mut native_features_storage =
+        ctx.reserve_scoped(0, "index SLDPRT profile source features")?;
     let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-        ctx.insert_hash_map(
-            &mut native_features,
-            feature.id.as_str(),
-            feature,
-            OPERATION,
-        )?;
+    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT profiles source records")? {
+        for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT profiles records")? {
+            native_features_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut native_features,
+                    feature.id.as_str(),
+                    feature,
+                    OPERATION,
+                )
+            })?;
+        }
     }
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let mut starts_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
-        for feature in native_features.values() {
-            ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-            if metadata_ids.contains(feature.id.as_str()) {
+        for feature in ctx.admit_iter(&native_features, "scan SLDPRT profiles records")?.map(|(_, value)| value) {
+            if ctx.contains_hash_set(&metadata_ids, feature.id.as_str(), "resolve SLDPRT profiles keys")? {
                 continue;
             }
-            for name in &lane.names {
+            for name in ctx.admit_iter(&(lane.names)[..], "scan SLDPRT profiles records")? {
                 let work = u64_from_index(name.value.len())
                     .checked_add(u64_from_index(feature.name.len()))
                     .and_then(|work| work.checked_add(2))
@@ -132,79 +142,99 @@ pub(crate) fn bind_sketch_profiles(
                 continue;
             };
             let ordinal = starts.len();
-            ctx.reserve_vec(&mut starts, 1, OPERATION)?;
-            starts.push((name.offset, ordinal, feature));
+            starts_storage.with_storage(|| {
+                ctx.reserve_vec(&mut starts, 1, OPERATION)?;
+                starts.push((name.offset, ordinal, feature));
+                Ok::<(), CodecError>(())
+            })?;
         }
         ctx.sort_unstable_by_key(&mut starts, |value| (value.0, value.1), Ord::cmp, OPERATION)?;
-        for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
-            for feature in features.iter() {
-                let work = u64_from_index(feature.native_ref.as_ref().map_or(0, String::len))
-                    .checked_add(u64_from_index(native_feature.id.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
+        for (index, &(start, _, native_feature)) in ctx.admit_iter(&starts[..], "scan SLDPRT profiles records")?.enumerate() {
+            let mut matching_feature_index = None;
+            for (feature_index, feature) in ctx.admit_iter(&features[..], OPERATION)?.enumerate() {
+                let matches = match feature.native_ref.as_deref() {
+                    Some(native_ref) => ctx.equal(native_ref, native_feature.id.as_str(), OPERATION)?,
+                    None => false,
+                };
+                if matches {
+                    matching_feature_index = Some(feature_index);
+                    break;
+                }
             }
-            let Some(feature) = features
-                .iter_mut()
-                .find(|feature| feature.native_ref.as_deref() == Some(native_feature.id.as_str()))
-            else {
+            let Some(feature_index) = matching_feature_index else {
                 continue;
             };
+            let feature = &mut features[feature_index];
             let end = starts.get(index + 1).map(|next| next.0);
-            for sketch in sketches.iter() {
-                let work = u64_from_index(sketch.native_ref.as_ref().map_or(0, String::len))
-                    .checked_add(u64_from_index(lane.id.len()))
-                    .and_then(|work| work.checked_add(u64_from_index(sketch.id.as_str().len())))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
+            let mut enclosed_index = None;
+            let mut duplicate_enclosed = false;
+            for (sketch_index, sketch) in
+                ctx.admit_iter(&sketches[..], "scan SLDPRT profiles records")?.enumerate()
+            {
+                let belongs_to_lane = match sketch.native_ref.as_deref() {
+                    Some(native_ref) => ctx.equal(native_ref, lane.id.as_str(), OPERATION)?,
+                    None => false,
+                };
+                if !belongs_to_lane {
+                    continue;
+                }
+                let Some(source) = ctx.get_btree_map(
+                    &annotations.provenance,
+                    sketch.id.as_str(),
+                    OPERATION,
+                )? else {
+                    continue;
+                };
+                if source.offset <= start || end.is_some_and(|end| source.offset >= end) {
+                    continue;
+                }
+                if enclosed_index.replace(sketch_index).is_some() {
+                    duplicate_enclosed = true;
+                    break;
+                }
             }
-            let mut enclosed = sketches.iter_mut().filter(|sketch| {
-                sketch.native_ref.as_deref() == Some(lane.id.as_str())
-                    && annotations
-                        .provenance
-                        .get(sketch.id.as_str())
-                        .is_some_and(|source| {
-                            source.offset > start && end.is_none_or(|end| source.offset < end)
-                        })
-            });
-            let Some(sketch) = enclosed.next() else {
+            if duplicate_enclosed {
+                continue;
+            }
+            let Some(sketch_index) = enclosed_index else {
                 continue;
             };
-            if enclosed.next().is_some() {
-                continue;
-            }
-            if declared_carriers
-                .get(native_feature.id.as_str())
-                .is_some_and(|carriers| {
-                    !nested_profile_contains_declared_circular_carriers(
-                        sketch,
-                        sketch_entities,
-                        carriers,
-                    )
-                })
-            {
-                ctx.reserve_set(&mut superseded, 1, OPERATION)?;
-                superseded.insert(copy_profile_text(ctx, sketch.id.as_str(), OPERATION)?);
-                continue;
+            let sketch = &mut sketches[sketch_index];
+            if let Some(carriers) = ctx.get_hash_map(
+                &declared_carriers,
+                native_feature.id.as_str(),
+                OPERATION,
+            )? {
+                if !nested_profile_contains_declared_circular_carriers(
+                    ctx, sketch, sketch_entities, carriers,
+                )? {
+            superseded_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut superseded,
+                    copy_profile_text(ctx, sketch.id.as_str(), OPERATION)?,
+                    OPERATION,
+                )
+            })?;
+                    continue;
+                }
             }
             let replace = match feature.evaluation.definition() {
                 FeatureDefinition::Operation(FeatureOperation::Sketch { .. }) => true,
                 FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                     shape.section_is_unresolved()
                 }
-                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                    matches!(profile,
-                    cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
-                        if owner == &native_feature.id)
-                }
+                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => match profile {
+                    cadmpeg_ir::features::ProfileRef::Planar(
+                        cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner),
+                    ) => ctx.equal(owner, &native_feature.id, OPERATION)?,
+                    _ => false,
+                },
                 _ => false,
             };
             if !replace {
                 continue;
             }
-            let sketch_id = SketchId::mint(copy_profile_text(ctx, sketch.id.as_str(), OPERATION)?)
-                .map_err(|_| CodecError::malformed("invalid SLDPRT profile sketch identity"))?;
+            let sketch_id = copy_profile_sketch_id(ctx, &sketch.id, OPERATION)?;
             if matches!(
                 feature.evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
@@ -232,42 +262,62 @@ pub(crate) fn bind_sketch_profiles(
                 });
         }
     }
+    let mut removed_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut removed = HashSet::new();
-    for id in superseded
-        .iter()
-        .map(String::as_str)
-        .chain(
-            sketch_entities
-                .iter()
-                .filter(|entity| superseded.contains(entity.sketch.as_str()))
-                .map(|entity| entity.id().as_str()),
-        )
-        .chain(
-            sketch_constraints
-                .iter()
-                .filter(|constraint| superseded.contains(constraint.sketch.as_str()))
-                .map(|constraint| constraint.id.as_str()),
-        )
-    {
-        ctx.charge_work(u64_from_index(id.len()), OPERATION)?;
-        ctx.reserve_set(&mut removed, 1, OPERATION)?;
-        removed.insert(copy_profile_text(ctx, id, OPERATION)?);
+    for id in ctx.admit_iter(&superseded, OPERATION)? {
+        removed_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut removed,
+                copy_profile_text(ctx, id, OPERATION)?,
+                OPERATION,
+            )
+        })?;
     }
-    sketches.retain(|sketch| !superseded.contains(sketch.id.as_str()));
-    sketch_entities.retain(|entity| !superseded.contains(entity.sketch.as_str()));
-    sketch_constraints.retain(|constraint| !superseded.contains(constraint.sketch.as_str()));
+    for entity in ctx.admit_iter(&sketch_entities[..], OPERATION)? {
+        if ctx.contains_hash_set(&superseded, entity.sketch.as_str(), OPERATION)? {
+            removed_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut removed,
+                    copy_profile_text(ctx, entity.id().as_str(), OPERATION)?,
+                    OPERATION,
+                )
+            })?;
+        }
+    }
+    for constraint in ctx.admit_iter(&sketch_constraints[..], OPERATION)? {
+        if ctx.contains_hash_set(&superseded, constraint.sketch.as_str(), OPERATION)? {
+            removed_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut removed,
+                    copy_profile_text(ctx, constraint.id.as_str(), OPERATION)?,
+                    OPERATION,
+                )
+            })?;
+        }
+    }
+    ctx.retain_vec(
+        sketches,
+        |sketch| Ok(!ctx.contains_hash_set(&superseded, sketch.id.as_str(), OPERATION)?),
+        OPERATION,
+    )?;
+    ctx.retain_vec(
+        sketch_entities,
+        |entity| Ok(!ctx.contains_hash_set(&superseded, entity.sketch.as_str(), OPERATION)?),
+        OPERATION,
+    )?;
+    ctx.retain_vec(
+        sketch_constraints,
+        |constraint| {
+            Ok(!ctx.contains_hash_set(
+                &superseded,
+                constraint.sketch.as_str(),
+                OPERATION,
+            )?)
+        },
+        OPERATION,
+    )?;
     let mut keep = |id: &str| {
-        let work = removed
-            .len()
-            .checked_add(1)
-            .and_then(|count| {
-                id.len()
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(u64_from_index(work), OPERATION)?;
-        Ok(!removed.contains(id))
+        Ok(!ctx.contains_hash_set(&removed, id, OPERATION)?)
     };
     annotations.retain_provenance(ctx, &mut keep)?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
@@ -288,27 +338,36 @@ fn declared_entity_handle_circular_carriers(
 ) -> Result<HashMap<String, Vec<CircleCarrier>>, CodecError> {
     const OPERATION: &str = "collect SLDPRT declared circular carriers";
 
-    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
+    let mut ownership_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let ownership = ownership_storage
+        .with_storage(|| owned_relation_parameters(ctx, features, parameters, lanes))?;
+    let mut parameters_by_id_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut parameters_by_id = HashMap::new();
-    for parameter in parameters {
-        ctx.charge_work(u64_from_index(parameter.id.as_str().len()), OPERATION)?;
-        ctx.insert_hash_map(&mut parameters_by_id, &parameter.id, parameter, OPERATION)?;
+    for parameter in ctx.admit_iter(parameters, "scan SLDPRT profiles records")? {
+        parameters_by_id_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut parameters_by_id, &parameter.id, parameter, OPERATION)
+        })?;
     }
     let mut carriers = HashMap::<String, Vec<CircleCarrier>>::new();
-    for lane in lanes {
-        for relation in lane
-            .relation_instances
-            .iter()
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        for relation in ctx
+            .admit_iter(&lane.relation_instances, OPERATION)?
             .filter(|relation| relation.family == FeatureInputRelationFamily::CircleDiameter)
         {
             let [operand] = relation.operands.as_slice() else {
                 continue;
             };
-            let Some(parameter) = ownership
-                .get(&relation.id)
+            let Some(parameter_id) = ctx
+                .get_hash_map(&ownership, &relation.id, "resolve SLDPRT profiles keys")?
                 .and_then(Option::as_ref)
-                .and_then(|id| parameters_by_id.get(id))
             else {
+                continue;
+            };
+            let Some(parameter) = ctx.get_hash_map(
+                &parameters_by_id,
+                &parameter_id,
+                "resolve SLDPRT profiles keys",
+            )? else {
                 continue;
             };
             let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
@@ -332,22 +391,18 @@ fn declared_entity_handle_circular_carriers(
             let Some(coordinates) = center.coordinates_m else {
                 continue;
             };
-            ctx.charge_work(
-                u64_from_index(relation.feature_ref.len())
-                    .checked_mul(3)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if !carriers.contains_key(relation.feature_ref.as_str()) {
+            if !ctx.contains_key_hash_map(&carriers, relation.feature_ref.as_str(), "resolve SLDPRT profiles keys")? {
                 let key = copy_profile_text(ctx, &relation.feature_ref, OPERATION)?;
                 ctx.insert_hash_map(&mut carriers, key, Vec::new(), OPERATION)?;
             }
-            if let Some(votes) = carriers.get_mut(relation.feature_ref.as_str()) {
+            if let Some(votes) = ctx.get_mut_hash_map(&mut carriers, relation.feature_ref.as_str(), "resolve SLDPRT profiles keys")? {
                 ctx.reserve_vec(votes, 1, OPERATION)?;
                 votes.push(CircleCarrier(coordinates.get(), encoded_radius));
             }
         }
     }
+    drop(ownership);
+    drop(ownership_storage);
     Ok(carriers)
 }
 
@@ -364,41 +419,54 @@ fn copy_profile_text(
 }
 
 pub(super) fn nested_profile_contains_declared_circular_carriers(
+    ctx: &DecodeContext<'_>,
     sketch: &Sketch,
     entities: &[SketchEntity],
     declared: &[CircleCarrier],
-) -> bool {
+) -> Result<bool, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    const OPERATION: &str = "match declared circular profile carriers";
 
     let Some(transform) = sketch_frame_marker_transform(sketch, QUANTUM) else {
-        return true;
+        return Ok(true);
     };
-    declared.iter().all(|CircleCarrier([u, v], radius)| {
+    for CircleCarrier([u, v], radius) in ctx.admit_iter(declared, OPERATION)? {
         let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
         let Some((center_u, center_v)) = transform.apply(native) else {
-            return true;
+            continue;
         };
         let center = (center_u, center_v);
-        entities.iter().any(|entity| {
-            entity.sketch == sketch.id
-                && match entity.geometry.definition() {
-                    SketchGeometryDefinition::Circle {
-                        center: existing,
-                        radius: existing_radius,
-                    }
-                    | SketchGeometryDefinition::Arc {
-                        center: existing,
-                        radius: existing_radius,
-                        ..
-                    } => {
-                        quantize(existing.get(), QUANTUM) == center
-                            && same_dimension_length(existing_radius.get(), *radius)
-                    }
-                    _ => false,
+        let mut found = false;
+        for entity in ctx.admit_iter(entities, OPERATION)? {
+            if !ctx.equal(entity.sketch.as_str(), sketch.id.as_str(), OPERATION)? {
+                continue;
+            }
+            let matches = match entity.geometry.definition() {
+                SketchGeometryDefinition::Circle {
+                    center: existing,
+                    radius: existing_radius,
                 }
-        })
-    })
+                | SketchGeometryDefinition::Arc {
+                    center: existing,
+                    radius: existing_radius,
+                    ..
+                } => {
+                    quantize(existing.get(), QUANTUM) == center
+                        && same_dimension_length(existing_radius.get(), *radius)
+                }
+                _ => false,
+            };
+            if matches {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub(crate) fn project_compact_sketch_profiles(
@@ -413,60 +481,69 @@ pub(crate) fn project_compact_sketch_profiles(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     const OPERATION: &str = "project SLDPRT compact sketch profiles";
-    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let mut metadata_ids_storage = ctx.reserve_scoped(0, "index SLDPRT profile metadata")?;
+    let metadata_ids = metadata_ids_storage.with_storage(|| history_metadata_ids(ctx, histories))?;
 
+    let mut native_features_storage =
+        ctx.reserve_scoped(0, "index SLDPRT compact profile features")?;
     let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-        ctx.insert_hash_map(
-            &mut native_features,
-            feature.id.as_str(),
-            feature,
-            OPERATION,
-        )?;
+    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT profiles source records")? {
+        for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT profiles records")? {
+            native_features_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut native_features,
+                    feature.id.as_str(),
+                    feature,
+                    OPERATION,
+                )
+            })?;
+        }
     }
-    for lane in lanes {
-        let plane_frames = lane_sketch_plane_frames(ctx, features, histories, lane)?;
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let mut plane_frames_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let plane_frames = plane_frames_storage
+            .with_storage(|| lane_sketch_plane_frames(ctx, features, histories, lane))?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
-        for feature in native_features.values() {
+        for feature in ctx.admit_iter(&native_features, "scan SLDPRT profiles records")?.map(|(_, value)| value) {
             charge_profile_comparisons(
                 ctx,
-                lane.names.iter().map(|name| name.value.as_str()),
+                &lane.names,
+                |name| name.value.as_str(),
                 &feature.name,
                 OPERATION,
             )?;
-            charge_profile_comparisons(
-                ctx,
-                lane.sketch_entities
-                    .iter()
-                    .map(|marker| marker.feature_ref.as_deref().unwrap_or_default()),
-                &feature.id,
-                OPERATION,
-            )?;
         }
-        let mut objects = collect_profile_items(
-            ctx,
-            native_features
-                .values()
-                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-                .filter_map(|feature| {
-                    let start = feature_object_name(feature, lane)
-                        .map(|name| name.offset)
-                        .or_else(|| {
-                            lane.sketch_entities
-                                .iter()
-                                .filter(|marker| {
-                                    marker.feature_ref.as_deref() == Some(feature.id.as_str())
-                                })
-                                .map(crate::records::SketchInputEntity::offset)
-                                .min()
-                        })?;
-                    Some((start, *feature))
-                })
-                .enumerate()
-                .map(|(ordinal, (offset, feature))| (offset, ordinal, feature)),
-            OPERATION,
-        )?;
+        let mut objects_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut objects = Vec::new();
+        for (_, feature) in ctx.admit_iter(&native_features, OPERATION)? {
+            let feature = *feature;
+            if ctx.contains_hash_set(&metadata_ids, feature.id.as_str(), OPERATION)? {
+                continue;
+            }
+            let start = if let Some(name) = feature_object_name(feature, lane) {
+                Some(name.offset)
+            } else {
+                let mut start = None;
+                for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
+                    let Some(feature_ref) = marker.feature_ref.as_deref() else {
+                        continue;
+                    };
+                    if ctx.equal(feature_ref, feature.id.as_str(), OPERATION)? {
+                        start = Some(start.map_or(marker.offset(), |value: u64| {
+                            value.min(marker.offset())
+                        }));
+                    }
+                }
+                start
+            };
+            let Some(start) = start else {
+                continue;
+            };
+            let ordinal = objects.len();
+            objects_storage.with_storage(|| {
+                ctx.push_vec(&mut objects, (start, ordinal, feature), OPERATION)
+            })?;
+        }
         ctx.sort_unstable_by_key(
             &mut objects,
             |value| {
@@ -476,51 +553,14 @@ pub(crate) fn project_compact_sketch_profiles(
             Ord::cmp,
             OPERATION,
         )?;
-        for (object_index, &(start, _, native_feature)) in objects.iter().enumerate() {
-            charge_profile_comparisons(
-                ctx,
-                features
-                    .iter()
-                    .map(|feature| feature.native_ref.as_deref().unwrap_or_default()),
-                &native_feature.id,
-                OPERATION,
-            )?;
-            charge_profile_comparisons(
-                ctx,
-                lane.sketch_entities
-                    .iter()
-                    .map(|marker| marker.feature_ref.as_deref().unwrap_or_default()),
-                &native_feature.id,
-                OPERATION,
-            )?;
-            charge_profile_comparisons(
-                ctx,
-                lane.relation_instances
-                    .iter()
-                    .map(|relation| relation.feature_ref.as_str()),
-                &native_feature.id,
-                OPERATION,
-            )?;
-            for relation in &lane.relation_instances {
-                if relation.feature_ref == native_feature.id {
-                    if let Some(scalar) = relation.parameter_scalar_ref() {
-                        charge_profile_comparisons(
-                            ctx,
-                            lane.scalars.iter().map(|record| record.id.as_str()),
-                            scalar,
-                            OPERATION,
-                        )?;
-                    }
-                }
-            }
-            ctx.charge_work(
-                u64_from_index(lane.classes.len())
-                    .checked_mul(2)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            let Some(feature_index) = features.iter().position(|feature| {
-                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
+        for (object_index, &(start, _, native_feature)) in ctx.admit_iter(&objects[..], "scan SLDPRT profiles records")?.enumerate() {
+            let mut matching_feature_index = None;
+            for (feature_index, feature) in ctx.admit_iter(&features[..], OPERATION)?.enumerate() {
+                let matches = match feature.native_ref.as_deref() {
+                    Some(native_ref) => ctx.equal(native_ref, native_feature.id.as_str(), OPERATION)?,
+                    None => false,
+                };
+                if matches
                     && matches!(
                         feature.evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -531,7 +571,12 @@ pub(crate) fn project_compact_sketch_profiles(
                             }
                         )
                     )
-            }) else {
+                {
+                    matching_feature_index = Some(feature_index);
+                    break;
+                }
+            }
+            let Some(feature_index) = matching_feature_index else {
                 continue;
             };
             let end = objects.get(object_index + 1).map_or(
@@ -547,94 +592,149 @@ pub(crate) fn project_compact_sketch_profiles(
             let region_addresses = compact_line_region_addresses(ctx, interval)?;
             let chain_addresses = compact_line_chain_addresses(ctx, interval)?;
             let addresses = region_addresses.as_ref().or(chain_addresses.as_ref());
-            let owned_markers = collect_profile_items(
-                ctx,
-                lane.sketch_entities.iter().filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                }),
-                OPERATION,
-            )?;
-            let dimensions = collect_profile_items(
-                ctx,
-                lane.relation_instances
-                    .iter()
-                    .filter(|relation| relation.feature_ref == native_feature.id)
-                    .filter(|relation| {
-                        !matches!(
-                            relation.family,
-                            FeatureInputRelationFamily::Angle
-                                | FeatureInputRelationFamily::CircleDiameter
-                        )
-                    })
-                    .filter_map(|relation| relation.parameter_scalar_ref())
-                    .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
-                    .map(|scalar| scalar.value.get() * NATIVE_TO_IR),
-                OPERATION,
-            )?;
+            let mut owned_markers_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut owned_markers = Vec::new();
+            for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
+                let Some(feature_ref) = marker.feature_ref.as_deref() else {
+                    continue;
+                };
+                if ctx.equal(feature_ref, native_feature.id.as_str(), OPERATION)? {
+                    owned_markers_storage.with_storage(|| {
+                        ctx.push_vec(&mut owned_markers, marker, OPERATION)
+                    })?;
+                }
+            }
+            let mut dimensions_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut dimensions = Vec::new();
+            for relation in ctx.admit_iter(&lane.relation_instances, OPERATION)? {
+                if !ctx.equal(
+                    relation.feature_ref.as_str(),
+                    native_feature.id.as_str(),
+                    OPERATION,
+                )? || matches!(
+                    relation.family,
+                    FeatureInputRelationFamily::Angle
+                        | FeatureInputRelationFamily::CircleDiameter
+                ) {
+                    continue;
+                }
+                let Some(scalar_ref) = relation.parameter_scalar_ref() else {
+                    continue;
+                };
+                let mut matching_scalar_index = None;
+                for (scalar_index, scalar) in ctx
+                    .admit_iter(&lane.scalars[..], OPERATION)?
+                    .enumerate()
+                {
+                    if ctx.equal(scalar.id.as_str(), scalar_ref, OPERATION)? {
+                        matching_scalar_index = Some(scalar_index);
+                        break;
+                    }
+                }
+                let Some(scalar_index) = matching_scalar_index else {
+                    continue;
+                };
+                let Some(scalar) = lane.scalars.get(scalar_index) else {
+                    continue;
+                };
+                dimensions_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut dimensions,
+                        scalar.value.get() * NATIVE_TO_IR,
+                        OPERATION,
+                    )
+                })?;
+            }
             let dimensioned_rectangle = if addresses.is_none() {
                 unique_dimensioned_rectangle_markers(ctx, &owned_markers, &dimensions)?
             } else {
                 None
             };
+            let mut markers_storage = ctx.reserve_scoped(0, OPERATION)?;
             let markers = if let Some(rectangle) = dimensioned_rectangle {
-                collect_profile_items(ctx, rectangle, OPERATION)?
+                markers_storage.with_storage(|| ctx.collect_vec(rectangle, OPERATION))?
             } else if region_addresses.is_some() {
-                let line_classes = collect_profile_items(
-                    ctx,
-                    lane.classes.iter().filter(|class| {
-                        class.name == "sgLineHandle"
-                            && class.offset >= u64_from_index(start)
-                            && class.offset < u64_from_index(end)
-                    }),
-                    OPERATION,
-                )?;
+                let mut line_classes_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut line_classes = Vec::new();
+                for class in ctx.admit_iter(&lane.classes, OPERATION)? {
+                    if ctx.equal(class.name.as_str(), "sgLineHandle", OPERATION)?
+                        && class.offset >= u64_from_index(start)
+                        && class.offset < u64_from_index(end)
+                    {
+                        line_classes_storage.with_storage(|| {
+                            ctx.push_vec(&mut line_classes, class, OPERATION)
+                        })?;
+                    }
+                }
                 let [line_class] = line_classes.as_slice() else {
                     continue;
                 };
-                if lane.classes.iter().any(|class| {
-                    class.name == "sgArcHandle"
+                let mut has_arc_class = false;
+                for class in ctx.admit_iter(&lane.classes[..], OPERATION)? {
+                    if ctx.equal(class.name.as_str(), "sgArcHandle", OPERATION)?
                         && class.offset >= u64_from_index(start)
                         && class.offset < u64_from_index(end)
-                }) {
+                    {
+                        has_arc_class = true;
+                        break;
+                    }
+                }
+                if has_arc_class {
                     continue;
                 }
-                let Some(first_marker) = owned_markers
-                    .iter()
-                    .copied()
+                let Some(first_marker) = ctx
+                    .max_by_key(
+                        &owned_markers,
+                        |marker| Ok((marker.offset() <= line_class.offset, marker.offset())),
+                        |left, right| ctx.compare(left, right, OPERATION),
+                        OPERATION,
+                    )?
                     .filter(|marker| marker.offset() <= line_class.offset)
-                    .max_by_key(|marker| marker.offset())
+                    .copied()
                 else {
                     continue;
                 };
-                collect_profile_items(
-                    ctx,
-                    owned_markers
-                        .iter()
-                        .copied()
-                        .skip_while(|marker| marker.offset() < first_marker.offset())
-                        .take_while(|marker| marker.coordinates_m.is_some()),
-                    OPERATION,
-                )?
+                let mut markers = Vec::new();
+                let mut started = false;
+                for marker in ctx.admit_iter(&owned_markers, OPERATION)? {
+                    let marker = *marker;
+                    if !started {
+                        if marker.offset() < first_marker.offset() {
+                            continue;
+                        }
+                        started = true;
+                    }
+                    if marker.coordinates_m.is_none() {
+                        break;
+                    }
+                    markers_storage.with_storage(|| {
+                        ctx.push_vec(&mut markers, marker, OPERATION)
+                    })?;
+                }
+                markers
             } else {
-                let runs = collect_profile_items(
-                    ctx,
-                    owned_markers
-                        .split(|marker| {
-                            marker.coordinates_m.is_none()
-                                || !matches!(
-                                    marker.kind(),
-                                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                                )
-                        })
-                        .filter(|run| {
-                            addresses.is_some_and(|addresses| run.len() == addresses.len())
-                        }),
-                    OPERATION,
-                )?;
+                let mut runs_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let runs = runs_storage.with_storage(|| {
+                    collect_profile_items(
+                        ctx,
+                        owned_markers
+                            .split(|marker| {
+                                marker.coordinates_m.is_none()
+                                    || !matches!(
+                                        marker.kind(),
+                                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                                    )
+                            })
+                            .filter(|run| {
+                                addresses.is_some_and(|addresses| run.len() == addresses.len())
+                            }),
+                        OPERATION,
+                    )
+                })?;
                 let [run] = runs.as_slice() else {
                     continue;
                 };
-                collect_profile_items(ctx, run.iter().copied(), OPERATION)?
+                markers_storage.with_storage(|| ctx.collect_vec(run.iter().copied(), OPERATION))?
             };
             if addresses.is_some_and(|addresses| markers.len() != addresses.len())
                 || markers.len() < 3
@@ -658,27 +758,28 @@ pub(crate) fn project_compact_sketch_profiles(
             else {
                 continue;
             };
-            let lane_key = lane
-                .id
-                .rsplit_once('#')
+            let lane_key = ctx.rsplit_once(&lane
+                .id, "#", "resolve SLDPRT profiles keys")?
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-            let Ok(sketch_id) = SketchId::mint(ctx.format_retained(
+            let sketch_text = ctx.format_retained(
                 format_args!(
                     "sldprt:model:sketch#compact:{lane_key}:{}",
                     native_feature.ordinal
                 ),
                 OPERATION,
-            )?) else {
+            )?;
+            ctx.charge_work(u64_from_index(sketch_text.len()), OPERATION)?;
+            let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                 continue;
             };
-            charge_profile_comparisons(
-                ctx,
-                sketches.iter().map(|sketch| sketch.id.as_str()),
-                sketch_id.as_str(),
-                OPERATION,
-            )?;
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            let mut sketch_already_exists = false;
+            for sketch in ctx.admit_iter(&sketches[..], "find SLDPRT profile sketch")? {
+                if ctx.equal(&sketch.id, &sketch_id, "compare SLDPRT profile sketch identity")? {
+                    sketch_already_exists = true;
+                    break;
+                }
+            }
+            if sketch_already_exists {
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -719,50 +820,60 @@ pub(crate) fn project_compact_sketch_profiles(
             )?;
             let entity_start = sketch_entities.len();
             if dimensioned_rectangle.is_some() {
-                let points = collect_profile_items(
-                    ctx,
-                    markers.iter().filter_map(|marker| {
-                        let [u, v] = marker.coordinates_m?.get();
-                        let native =
-                            quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                        let point = transform.apply(native)?;
+                let mut points_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut points = Vec::new();
+                for marker in ctx.admit_iter(&markers, OPERATION)? {
+                    let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else {
+                        continue;
+                    };
+                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    let Some(point) = transform.apply(native).and_then(|point| {
                         Some(Point2::new(
                             f64_from_i64(point.0)? * QUANTUM,
                             f64_from_i64(point.1)? * QUANTUM,
                         ))
-                    }),
-                    OPERATION,
-                )?;
+                    }) else {
+                        continue;
+                    };
+                    points_storage.with_storage(|| ctx.push_vec(&mut points, point, OPERATION))?;
+                }
                 let Some(corners) = ordered_rectangle_corners(ctx, &points)? else {
                     continue;
                 };
-                let Some(corner_markers) = collect_optional_profile_items(
-                    ctx,
-                    corners.iter().map(|corner| {
-                        points
-                            .iter()
-                            .position(|point| point == corner)
-                            .and_then(|index| markers.get(index).copied())
-                    }),
-                    OPERATION,
-                )?
+                let mut corner_markers_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let corner_markers = corner_markers_storage.with_storage(|| {
+                    ctx.collect_fallible_options(
+                        corners.iter().map(|corner| {
+                            let mut position = None;
+                            for (index, point) in ctx.admit_iter(&points[..], OPERATION)?.enumerate() {
+                                if ctx.equal(point, corner, OPERATION)? {
+                                    position = Some(index);
+                                    break;
+                                }
+                            }
+                            Ok::<_, CodecError>(position.and_then(|index| markers.get(index).copied()))
+                        }),
+                        OPERATION,
+                    )
+                })?;
+                let Some(corner_markers) = corner_markers
                 else {
                     continue;
                 };
                 let mut profile = Vec::new();
-                ctx.reserve_vec(&mut profile, corners.len(), OPERATION)?;
                 for (index, start) in corners.iter().enumerate() {
                     let end = corners[(index + 1) % corners.len()];
                     let start_marker = corner_markers[index];
                     let end_marker = corner_markers[(index + 1) % corner_markers.len()];
-                    ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                    let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(
+                    let entity_text = ctx.format_retained(
                         format_args!(
                             "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                             native_feature.ordinal
                         ),
                         OPERATION,
-                    )?) else {
+                    )?;
+                    ctx.charge_work(u64_from_index(entity_text.len()), OPERATION)?;
+                    let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                         continue;
                     };
                     let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -771,10 +882,14 @@ pub(crate) fn project_compact_sketch_profiles(
                     }) else {
                         continue;
                     };
-                    profile.push(SketchEntityUse {
-                        entity: copy_profile_entity_id(ctx, &entity_id, OPERATION)?,
-                        reversed: false,
-                    });
+                    ctx.push_vec(
+                        &mut profile,
+                        SketchEntityUse {
+                            entity: copy_profile_entity_id(ctx, &entity_id, OPERATION)?,
+                            reversed: false,
+                        },
+                        OPERATION,
+                    )?;
                     let entity = profile_entity(
                         ctx,
                         entity_id,
@@ -791,14 +906,17 @@ pub(crate) fn project_compact_sketch_profiles(
                 if profile.is_empty() {
                     ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
                     let error = "sketch profile chain must be nonempty";
-                    sketch_entities.truncate(entity_start);
-                    ctx.reserve_vec(losses, 1, OPERATION)?;
-                    losses.push(crate::loss::SldprtLossCode::SketchProfileRejected.note(
-                        ctx.format_retained(
-                            format_args!("Sketch {sketch_id} profile was not transferred: {error}"),
-                            OPERATION,
-                        )?,
-                    ));
+                    ctx.truncate_vec(sketch_entities, entity_start, OPERATION)?;
+                    ctx.push_vec(
+                        losses,
+                        crate::loss::SldprtLossCode::SketchProfileRejected.note(
+                            ctx.format_retained(
+                                format_args!("Sketch {sketch_id} profile was not transferred: {error}"),
+                                OPERATION,
+                            )?,
+                        ),
+                        OPERATION,
+                    )?;
                     continue;
                 }
                 let mut profiles = Vec::new();
@@ -830,9 +948,14 @@ pub(crate) fn project_compact_sketch_profiles(
                         f64_from_i64(point.1)? * QUANTUM,
                     ))
                 };
+                let mut lines_storage = ctx.reserve_scoped(0, OPERATION)?;
                 let mut lines = Vec::new();
-                for (index, (curve, vertex)) in curves.iter().zip(vertices).enumerate() {
-                    ctx.charge_work(1, OPERATION)?;
+                let admitted_curves = ctx.admit_iter(curves, OPERATION)?;
+                let admitted_vertices = ctx.admit_iter(vertices, OPERATION)?;
+                for (index, (curve, vertex)) in admitted_curves
+                    .zip(admitted_vertices)
+                    .enumerate()
+                {
                     let Some((curve, vertex, start, end)) = (|| {
                         let curve = markers.get(usize::from(*curve).checked_sub(1)?)?;
                         let vertex = markers.get(usize::from(*vertex).checked_sub(1)?)?;
@@ -842,22 +965,27 @@ pub(crate) fn project_compact_sketch_profiles(
                     })() else {
                         continue;
                     };
-                    ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                    let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(
+                    let entity_text = ctx.format_retained(
                         format_args!(
                             "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                             native_feature.ordinal,
                         ),
                         OPERATION,
-                    )?) else {
+                    )?;
+                    ctx.charge_work(u64_from_index(entity_text.len()), OPERATION)?;
+                    let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                         continue;
                     };
-                    ctx.reserve_vec(&mut lines, 1, OPERATION)?;
-                    lines.push((entity_id, curve, vertex, start, end));
+                    lines_storage.with_storage(|| {
+                        ctx.reserve_vec(&mut lines, 1, OPERATION)?;
+                        lines.push((entity_id, curve, vertex, start, end));
+                        Ok::<(), CodecError>(())
+                    })?;
                 }
                 let profile = if let Some(profile) =
                     complete_ordered_compact_line_profile(ctx, &lines, markers.len())?
                 {
+                    let mut projected_storage = ctx.reserve_scoped(0, OPERATION)?;
                     let mut projected = Vec::new();
                     let mut complete = true;
                     for (entity_id, marker, vertex, start, end) in lines {
@@ -876,54 +1004,68 @@ pub(crate) fn project_compact_sketch_profiles(
                             Some([marker.id(), vertex.id()]),
                             OPERATION,
                         )?;
-                        ctx.reserve_vec(&mut projected, 1, OPERATION)?;
-                        projected.push(entity);
+                        projected_storage.with_storage(|| {
+                            ctx.reserve_vec(&mut projected, 1, OPERATION)?;
+                            projected.push(entity);
+                            Ok::<(), CodecError>(())
+                        })?;
                     }
                     if !complete {
                         continue;
                     }
-                    ctx.reserve_vec(sketch_entities, projected.len(), OPERATION)?;
-                    sketch_entities.extend(projected);
+                    ctx.extend_vec(sketch_entities, projected, OPERATION)?;
                     profile
                 } else {
-                    let Some(points) = collect_optional_profile_items(
-                        ctx,
-                        markers.iter().map(|marker| project(marker)),
-                        OPERATION,
-                    )?
-                    else {
+                    let mut points_storage = ctx.reserve_scoped(0, OPERATION)?;
+                    let mut points = Vec::new();
+                    let mut complete = true;
+                    for marker in ctx.admit_iter(&markers, OPERATION)? {
+                        let Some(point) = project(marker) else {
+                            complete = false;
+                            break;
+                        };
+                        points_storage.with_storage(|| ctx.push_vec(&mut points, point, OPERATION))?;
+                    }
+                    if !complete {
                         continue;
-                    };
+                    }
                     let Some(corners) = ordered_rectangle_corners(ctx, &points)? else {
                         continue;
                     };
-                    let Some(corner_markers) = collect_optional_profile_items(
-                        ctx,
-                        corners.iter().map(|corner| {
-                            points
-                                .iter()
-                                .position(|point| point == corner)
-                                .and_then(|index| markers.get(index).copied())
-                        }),
-                        OPERATION,
-                    )?
+                    let mut corner_markers_storage = ctx.reserve_scoped(0, OPERATION)?;
+                    let corner_markers = corner_markers_storage.with_storage(|| {
+                        ctx.collect_fallible_options(
+                            corners.iter().map(|corner| {
+                                let mut position = None;
+                                for (index, point) in ctx.admit_iter(&points[..], OPERATION)?.enumerate() {
+                                    if ctx.equal(point, corner, OPERATION)? {
+                                        position = Some(index);
+                                        break;
+                                    }
+                                }
+                                Ok::<_, CodecError>(position.and_then(|index| markers.get(index).copied()))
+                            }),
+                            OPERATION,
+                        )
+                    })?;
+                    let Some(corner_markers) = corner_markers
                     else {
                         continue;
                     };
                     let mut profile = Vec::new();
-                    ctx.reserve_vec(&mut profile, corners.len(), OPERATION)?;
                     for (index, start) in corners.iter().enumerate() {
                         let end = corners[(index + 1) % corners.len()];
                         let start_marker = corner_markers[index];
                         let end_marker = corner_markers[(index + 1) % corner_markers.len()];
-                        ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                        let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(
+                        let entity_text = ctx.format_retained(
                             format_args!(
                                 "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                                 native_feature.ordinal
                             ),
                             OPERATION,
-                        )?) else {
+                        )?;
+                        ctx.charge_work(u64_from_index(entity_text.len()), OPERATION)?;
+                        let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                             continue;
                         };
                         let Ok(geometry) =
@@ -934,10 +1076,14 @@ pub(crate) fn project_compact_sketch_profiles(
                         else {
                             continue;
                         };
-                        profile.push(SketchEntityUse {
-                            entity: copy_profile_entity_id(ctx, &entity_id, OPERATION)?,
-                            reversed: false,
-                        });
+                        ctx.push_vec(
+                            &mut profile,
+                            SketchEntityUse {
+                                entity: copy_profile_entity_id(ctx, &entity_id, OPERATION)?,
+                                reversed: false,
+                            },
+                            OPERATION,
+                        )?;
                         let entity = profile_entity(
                             ctx,
                             entity_id,
@@ -956,14 +1102,17 @@ pub(crate) fn project_compact_sketch_profiles(
                 if profile.is_empty() {
                     ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
                     let error = "sketch profile chain must be nonempty";
-                    sketch_entities.truncate(entity_start);
-                    ctx.reserve_vec(losses, 1, OPERATION)?;
-                    losses.push(crate::loss::SldprtLossCode::SketchProfileRejected.note(
-                        ctx.format_retained(
-                            format_args!("Sketch {sketch_id} profile was not transferred: {error}"),
-                            OPERATION,
-                        )?,
-                    ));
+                    ctx.truncate_vec(sketch_entities, entity_start, OPERATION)?;
+                    ctx.push_vec(
+                        losses,
+                        crate::loss::SldprtLossCode::SketchProfileRejected.note(
+                            ctx.format_retained(
+                                format_args!("Sketch {sketch_id} profile was not transferred: {error}"),
+                                OPERATION,
+                            )?,
+                        ),
+                        OPERATION,
+                    )?;
                     continue;
                 }
                 let mut profiles = Vec::new();
@@ -986,43 +1135,62 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(addresses) = addresses else {
                 continue;
             };
-            let points = collect_profile_items(
-                ctx,
-                addresses.iter().filter_map(|address| {
-                    let marker = markers.get(usize::from(*address).checked_sub(1)?)?;
-                    let [u, v] = marker.coordinates_m?.get();
-                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                    let point = transform.apply(native)?;
-                    Some((
-                        *marker,
-                        Point2::new(
-                            f64_from_i64(point.0)? * QUANTUM,
-                            f64_from_i64(point.1)? * QUANTUM,
-                        ),
+            let mut points_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut points = Vec::new();
+            for address in ctx.admit_iter(addresses, OPERATION)? {
+                let Some(marker) = usize::from(*address)
+                    .checked_sub(1)
+                    .and_then(|index| markers.get(index))
+                else {
+                    continue;
+                };
+                let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else {
+                    continue;
+                };
+                let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                let Some(point) = transform.apply(native).and_then(|point| {
+                    Some(Point2::new(
+                        f64_from_i64(point.0)? * QUANTUM,
+                        f64_from_i64(point.1)? * QUANTUM,
                     ))
-                }),
-                OPERATION,
-            )?;
-            if points.len() != addresses.len()
-                || points
-                    .iter()
-                    .enumerate()
-                    .any(|(index, (_, point))| *point == points[(index + 1) % points.len()].1)
-            {
+                }) else {
+                    continue;
+                };
+                points_storage.with_storage(|| {
+                    ctx.push_vec(&mut points, (*marker, point), OPERATION)
+                })?;
+            }
+            let duplicate_adjacent_points = if points.len() != addresses.len() {
+                false
+            } else {
+                let mut duplicate = false;
+                for (index, (_, point)) in ctx.admit_iter(&points[..], OPERATION)?.enumerate() {
+                    if ctx.equal(
+                        point,
+                        &points[(index + 1) % points.len()].1,
+                        "compare SLDPRT profile adjacent points",
+                    )? {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                duplicate
+            };
+            if points.len() != addresses.len() || duplicate_adjacent_points {
                 continue;
             }
             let mut profile = Vec::new();
-            ctx.reserve_vec(&mut profile, points.len(), OPERATION)?;
-            for (index, (marker, start)) in points.iter().enumerate() {
+            for (index, (marker, start)) in ctx.admit_iter(&points[..], "scan SLDPRT profiles records")?.enumerate() {
                 let end = points[(index + 1) % points.len()].1;
-                ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(
+                let entity_text = ctx.format_retained(
                     format_args!(
                         "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
                         native_feature.ordinal
                     ),
                     OPERATION,
-                )?) else {
+                )?;
+                ctx.charge_work(u64_from_index(entity_text.len()), OPERATION)?;
+                let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                     continue;
                 };
                 let Ok(geometry) =
@@ -1030,10 +1198,14 @@ pub(crate) fn project_compact_sketch_profiles(
                 else {
                     continue;
                 };
-                profile.push(SketchEntityUse {
-                    entity: copy_profile_entity_id(ctx, &entity_id, OPERATION)?,
-                    reversed: false,
-                });
+                ctx.push_vec(
+                    &mut profile,
+                    SketchEntityUse {
+                        entity: copy_profile_entity_id(ctx, &entity_id, OPERATION)?,
+                        reversed: false,
+                    },
+                    OPERATION,
+                )?;
                 let entity = profile_entity(
                     ctx,
                     entity_id,
@@ -1050,14 +1222,17 @@ pub(crate) fn project_compact_sketch_profiles(
             if profile.is_empty() {
                 ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
                 let error = "sketch profile chain must be nonempty";
-                sketch_entities.truncate(entity_start);
-                ctx.reserve_vec(losses, 1, OPERATION)?;
-                losses.push(crate::loss::SldprtLossCode::SketchProfileRejected.note(
-                    ctx.format_retained(
-                        format_args!("Sketch {sketch_id} profile was not transferred: {error}"),
-                        OPERATION,
-                    )?,
-                ));
+                ctx.truncate_vec(sketch_entities, entity_start, OPERATION)?;
+                ctx.push_vec(
+                    losses,
+                    crate::loss::SldprtLossCode::SketchProfileRejected.note(
+                        ctx.format_retained(
+                            format_args!("Sketch {sketch_id} profile was not transferred: {error}"),
+                            OPERATION,
+                        )?,
+                    ),
+                    OPERATION,
+                )?;
                 continue;
             }
             let mut profiles = Vec::new();
@@ -1078,13 +1253,15 @@ pub(crate) fn project_compact_sketch_profiles(
     Ok(())
 }
 
-fn charge_profile_comparisons<'a>(
+fn charge_profile_comparisons<'a, T>(
     ctx: &DecodeContext<'_>,
-    texts: impl IntoIterator<Item = &'a str>,
+    values: &'a [T],
+    mut text: impl FnMut(&'a T) -> &'a str,
     compared: &str,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    for text in texts {
+    for value in ctx.admit_iter(values, operation)? {
+        let text = text(value);
         let work = u64_from_index(text.len())
             .checked_add(u64_from_index(compared.len()))
             .and_then(|work| work.checked_add(1))
@@ -1108,30 +1285,12 @@ fn collect_profile_items<T>(
     Ok(result)
 }
 
-fn collect_optional_profile_items<T>(
-    ctx: &DecodeContext<'_>,
-    items: impl IntoIterator<Item = Option<T>>,
-    operation: &'static str,
-) -> Result<Option<Vec<T>>, CodecError> {
-    let mut result = Vec::new();
-    for item in items {
-        ctx.charge_work(1, operation)?;
-        let Some(item) = item else {
-            return Ok(None);
-        };
-        ctx.reserve_vec(&mut result, 1, operation)?;
-        result.push(item);
-    }
-    Ok(Some(result))
-}
-
 fn copy_profile_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &SketchId,
     operation: &'static str,
 ) -> Result<SketchId, CodecError> {
-    SketchId::mint(copy_profile_text(ctx, id.as_str(), operation)?)
-        .map_err(|_| CodecError::malformed("invalid SLDPRT profile sketch identity"))
+    id.try_clone_for_decode(ctx, operation)
 }
 
 fn copy_profile_entity_id(
@@ -1139,8 +1298,7 @@ fn copy_profile_entity_id(
     id: &SketchEntityId,
     operation: &'static str,
 ) -> Result<SketchEntityId, CodecError> {
-    SketchEntityId::mint(copy_profile_text(ctx, id.as_str(), operation)?)
-        .map_err(|_| CodecError::malformed("invalid SLDPRT profile entity identity"))
+    id.try_clone_for_decode(ctx, operation)
 }
 
 fn profile_entity(
@@ -1174,17 +1332,19 @@ fn copy_profile_sketch(
     operation: &'static str,
 ) -> Result<Sketch, CodecError> {
     let mut profiles = Vec::new();
-    ctx.reserve_vec(&mut profiles, sketch.profiles.len(), operation)?;
-    for profile in &sketch.profiles {
+    for profile in ctx.admit_iter(sketch.profiles.as_slice(), "scan SLDPRT profiles records")? {
         let mut copied = Vec::new();
-        ctx.reserve_vec(&mut copied, profile.len(), operation)?;
-        for member in profile {
-            copied.push(SketchEntityUse {
-                entity: copy_profile_entity_id(ctx, &member.entity, operation)?,
-                reversed: member.reversed,
-            });
+        for member in ctx.admit_iter(profile, operation)? {
+            ctx.push_vec(
+                &mut copied,
+                SketchEntityUse {
+                    entity: copy_profile_entity_id(ctx, &member.entity, operation)?,
+                    reversed: member.reversed,
+                },
+                operation,
+            )?;
         }
-        profiles.push(copied);
+        ctx.push_vec(&mut profiles, copied, operation)?;
     }
     Ok(Sketch {
         id: copy_profile_sketch_id(ctx, &sketch.id, operation)?,
@@ -1229,15 +1389,9 @@ fn collect_marker_arc_centers(
 ) -> Result<Vec<Point2>, CodecError> {
     const OPERATION: &str = "collect SLDPRT marker arc center candidates";
     let mut candidates = Vec::new();
-    for marker in markers {
-        let work = u64_from_index(marker.id().len())
-            .checked_add(u64_from_index(first.len()))
-            .and_then(|work| work.checked_add(u64_from_index(second.len())))
-            .and_then(|work| work.checked_mul(2))
-            .and_then(|work| work.checked_add(64))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        if marker.id() == first || marker.id() == second {
+    for marker in ctx.admit_iter(markers, "scan SLDPRT profiles records")? {
+        ctx.charge_work(64, OPERATION)?;
+        if ctx.equal(marker.id(), first, OPERATION)? || ctx.equal(marker.id(), second, OPERATION)? {
             continue;
         }
         let Some([u, v]) = marker
@@ -1252,33 +1406,31 @@ fn collect_marker_arc_centers(
     Ok(candidates)
 }
 
-fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
-    if !matches!(
-        marker.kind(),
-        SketchInputKind::LineOrCircle | SketchInputKind::Arc
-    ) || marker.coordinates_m.is_some()
-    {
-        return false;
+fn terminal_relation_display_carrier(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+    marker: &SketchInputEntity,
+) -> Result<bool, CodecError> {
+    if !matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)
+        || marker.coordinates_m.is_some() { return Ok(false); }
+    let Some(feature_ref) = marker.feature_ref.as_deref() else { return Ok(false); };
+    let Some(offset) = index_from_u64(marker.offset()) else { return Ok(false); };
+    let Some(class_offset) = terminal_relation_class_offset(&lane.native_payload, offset) else { return Ok(false); };
+    let mut matching_class = None;
+    for class in ctx.admit_iter(&lane.classes[..], "find SLDPRT terminal relation class")? {
+        if class.offset == u64_from_index(class_offset) {
+            matching_class = Some(class);
+            break;
+        }
     }
-    let Some(feature_ref) = marker.feature_ref.as_deref() else {
-        return false;
-    };
-    let Some(offset) = index_from_u64(marker.offset()) else {
-        return false;
-    };
-    let Some(class_offset) = terminal_relation_class_offset(&lane.native_payload, offset) else {
-        return false;
-    };
-    let Some(class) = lane
-        .classes
-        .iter()
-        .find(|class| class.offset == u64_from_index(class_offset))
-    else {
-        return false;
-    };
-    lane.relation_instances
-        .iter()
-        .any(|relation| relation.feature_ref == feature_ref && relation.class_ref == class.id)
+    let Some(class) = matching_class else { return Ok(false); };
+    for relation in ctx.admit_iter(&lane.relation_instances, "find SLDPRT terminal display carrier")? {
+        if ctx.equal(relation.feature_ref.as_str(), feature_ref, "compare SLDPRT terminal relation feature")?
+            && ctx.equal(&relation.class_ref, &class.id, "compare SLDPRT terminal relation class")? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub(crate) fn project_marker_backed_sketches(
@@ -1291,30 +1443,46 @@ pub(crate) fn project_marker_backed_sketches(
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
-    let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let mut metadata_ids_storage =
+        ctx.reserve_scoped(0, "index SLDPRT marker profile metadata")?;
+    let metadata_ids =
+        metadata_ids_storage.with_storage(|| history_metadata_ids(ctx, histories))?;
 
+    let mut native_features_storage =
+        ctx.reserve_scoped(0, "index SLDPRT marker profile native features")?;
     let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.insert_hash_map(
-            &mut native_features,
-            feature.id.as_str(),
-            feature,
-            "index SLDPRT marker profile native features",
-        )?;
+    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT profiles source records")? {
+        for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT profiles records")? {
+            native_features_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut native_features,
+                    feature.id.as_str(),
+                    feature,
+                    "index SLDPRT marker profile native features",
+                )
+            })?;
+        }
     }
+    let mut marker_owners_storage =
+        ctx.reserve_scoped(0, "index SLDPRT marker profile owners")?;
     let mut marker_owners = HashSet::new();
-    for owner in lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .filter_map(|marker| marker.feature_ref.as_deref())
-    {
-        ctx.insert_hash_set(
-            &mut marker_owners,
-            owner,
-            "index SLDPRT marker profile owners",
-        )?;
+    for lane in ctx.admit_iter(lanes, "index SLDPRT marker profile owners")? {
+        for marker in ctx.admit_iter(&lane.sketch_entities, "index SLDPRT marker profile owners")? {
+            if let Some(owner) = marker.feature_ref.as_deref() {
+                marker_owners_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut marker_owners,
+                        owner,
+                        "index SLDPRT marker profile owners",
+                    )
+                })?;
+            }
+        }
     }
-    let feature_frames = sketch_feature_frames(ctx, features, histories, lanes)?;
+    let mut feature_frames_storage =
+        ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
+    let feature_frames = feature_frames_storage
+        .with_storage(|| sketch_feature_frames(ctx, features, histories, lanes))?;
     project_detached_legacy_config_sketches(
         ctx,
         features,
@@ -1324,41 +1492,54 @@ pub(crate) fn project_marker_backed_sketches(
         lanes,
         &feature_frames,
     )?;
-    for lane in lanes {
-        let plane_frames = lane_sketch_plane_frames(ctx, features, histories, lane)?;
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let mut plane_frames_storage = ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
+        let plane_frames = plane_frames_storage
+            .with_storage(|| lane_sketch_plane_frames(ctx, features, histories, lane))?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
+        let mut markers_by_id_storage = ctx.reserve_scoped(0, "index SLDPRT profile markers")?;
         let mut markers_by_id = HashMap::new();
-        for marker in &lane.sketch_entities {
-            ctx.insert_hash_map(
-                &mut markers_by_id,
-                marker.id(),
-                marker,
-                "index SLDPRT profile markers",
-            )?;
+        for marker in ctx.admit_iter(&(lane.sketch_entities)[..], "scan SLDPRT profiles records")? {
+            markers_by_id_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut markers_by_id,
+                    marker.id(),
+                    marker,
+                    "index SLDPRT profile markers",
+                )
+            })?;
         }
+        let mut objects_storage = ctx.reserve_scoped(0, "collect SLDPRT marker profile objects")?;
         let mut objects = Vec::new();
-        for feature in native_features
-            .values()
-            .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-        {
-            let Some((start, feature)) = (|| {
-                let start = feature_object_name(feature, lane)
-                    .map(|name| name.offset)
-                    .or_else(|| {
-                        lane.sketch_entities
-                            .iter()
-                            .filter(|marker| {
-                                marker.feature_ref.as_deref() == Some(feature.id.as_str())
-                            })
-                            .map(crate::records::SketchInputEntity::offset)
-                            .min()
-                    })?;
-                Some((start, *feature))
-            })() else {
+        for (_, native_feature) in ctx.admit_iter(&native_features, "scan SLDPRT profiles records")? {
+            let feature = *native_feature;
+            if ctx.contains_hash_set(&metadata_ids, feature.id.as_str(), "resolve SLDPRT profiles keys")? {
                 continue;
+            }
+            let start = if let Some(name) = feature_object_name(feature, lane) {
+                Some(name.offset)
+            } else {
+                let mut start = None;
+                for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT profiles records")? {
+                    let Some(feature_ref) = marker.feature_ref.as_deref() else {
+                        continue;
+                    };
+                    if ctx.equal(feature_ref, feature.id.as_str(), "resolve SLDPRT profiles keys")? {
+                        start = Some(start.map_or(marker.offset(), |value: u64| {
+                            value.min(marker.offset())
+                        }));
+                    }
+                }
+                start
             };
-            ctx.reserve_vec(&mut objects, 1, "collect SLDPRT marker profile objects")?;
-            objects.push((start, feature));
+            let Some(start) = start else { continue; };
+            objects_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut objects,
+                    (start, feature),
+                    "collect SLDPRT marker profile objects",
+                )
+            })?;
         }
         ctx.stable_sort_by(
             &mut objects,
@@ -1366,56 +1547,69 @@ pub(crate) fn project_marker_backed_sketches(
             Ord::cmp,
             "sort SLDPRT profile objects",
         )?;
-        for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
-            let Some((feature_index, bound_sketch, block_definition)) =
-                features.iter().enumerate().find_map(|(index, feature)| {
-                    if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
-                        return None;
-                    }
-                    match feature.evaluation.definition() {
+        for (object_index, &(start, native_feature)) in ctx.admit_iter(&objects[..], "scan SLDPRT profiles records")?.enumerate() {
+            let mut matching_feature_index = None;
+            for (feature_index, feature) in ctx.admit_iter(&features[..], "find SLDPRT marker profile feature")?.enumerate() {
+                let matches = match feature.native_ref.as_deref() {
+                    Some(native_ref) => ctx.equal(
+                        native_ref,
+                        native_feature.id.as_str(),
+                        "compare SLDPRT marker profile feature identity",
+                    )?,
+                    None => false,
+                };
+                if matches
+                    && matches!(
+                        feature.evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
-                        ) => Some((index, sketch.id(), false)),
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition {
-                                sketch,
-                            },
-                        ) => Some((index, sketch.as_ref(), true)),
-                        _ => None,
-                    }
-                })
-            else {
+                            cadmpeg_ir::features::FeatureOperation::Sketch { .. }
+                                | cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition { .. }
+                        )
+                    )
+                {
+                    matching_feature_index = Some(feature_index);
+                    break;
+                }
+            }
+            let Some(feature_index) = matching_feature_index else {
                 continue;
             };
-            let bound_sketch = match bound_sketch {
-                Some(id) => {
-                    let id_text = ctx.format_retained(
-                        format_args!("{}", id.as_str()),
-                        "copy SLDPRT bound marker sketch identity",
-                    )?;
-                    let Ok(id) = SketchId::mint(id_text) else {
-                        continue;
-                    };
-                    Some(id)
-                }
-                None => None,
+            let (bound_sketch, block_definition) = match features[feature_index].evaluation.definition() {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
+                ) => (sketch.id(), false),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition { sketch },
+                ) => (sketch.as_ref(), true),
+                _ => continue,
             };
             let end = objects
                 .get(object_index + 1)
                 .map_or(u64_from_index(lane.native_payload.len()), |(offset, _)| {
                     *offset
                 });
+            let mut object_markers_storage =
+                ctx.reserve_scoped(0, "collect SLDPRT profile object markers")?;
             let mut object_markers = Vec::new();
-            for marker in &lane.sketch_entities {
-                if marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                    && marker.offset() < end
-                {
-                    ctx.reserve_vec(
-                        &mut object_markers,
-                        1,
-                        "collect SLDPRT profile object markers",
-                    )?;
-                    object_markers.push(marker);
+            for marker in ctx.admit_iter(&(lane.sketch_entities)[..], "scan SLDPRT profiles records")? {
+                let belongs_to_feature = match marker.feature_ref.as_deref() {
+                    Some(feature_ref) => ctx.equal(
+                        feature_ref,
+                        native_feature.id.as_str(),
+                        "compare SLDPRT profile object feature identity",
+                    )?,
+                    None => false,
+                };
+                if belongs_to_feature && marker.offset() < end {
+                    object_markers_storage.with_storage(|| {
+                        ctx.reserve_vec(
+                            &mut object_markers,
+                            1,
+                            "collect SLDPRT profile object markers",
+                        )?;
+                        object_markers.push(marker);
+                        Ok::<(), CodecError>(())
+                    })?;
                 }
             }
             let context_start = object_index
@@ -1438,18 +1632,25 @@ pub(crate) fn project_marker_backed_sketches(
                 start,
                 end,
             )?;
-            let frame = frame
-                .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
-                .or_else(|| {
-                    block_definition.then_some((
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    ))
-                });
-            let lane_key = lane
-                .id
-                .rsplit_once('#')
+            let frame = match frame {
+                Some(frame) => Some(frame),
+                None => ctx
+                    .get_hash_map(
+                        &feature_frames,
+                        native_feature.id.as_str(),
+                        "resolve SLDPRT feature frame",
+                    )?
+                    .copied()
+                    .or_else(|| {
+                        block_definition.then_some((
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        ))
+                    }),
+            };
+            let lane_key = ctx.rsplit_once(&lane
+                .id, "#", "resolve SLDPRT profiles keys")?
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let sketch_text = ctx.format_retained(
                 format_args!(
@@ -1458,11 +1659,17 @@ pub(crate) fn project_marker_backed_sketches(
                 ),
                 "format SLDPRT marker profile sketch identity",
             )?;
+            ctx.charge_work(
+                u64_from_index(sketch_text.len()),
+                "validate SLDPRT marker profile sketch identity",
+            )?;
             let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                 continue;
             };
+            let mut markers_storage =
+                ctx.reserve_scoped(0, "collect SLDPRT profile geometry markers")?;
             let mut markers = Vec::new();
-            for marker in object_markers.iter().copied() {
+            for marker in ctx.admit_iter(&object_markers[..], "scan SLDPRT profiles records")?.copied() {
                 if !matches!(
                     marker.kind(),
                     SketchInputKind::Point
@@ -1481,32 +1688,56 @@ pub(crate) fn project_marker_backed_sketches(
                             marker,
                             &object_markers,
                         )?
-                        || terminal_relation_display_carrier(lane, marker)
+                        || terminal_relation_display_carrier(ctx, lane, marker)?
                     {
                         continue;
                     }
                 }
-                ctx.reserve_vec(&mut markers, 1, "collect SLDPRT profile geometry markers")?;
-                markers.push(marker);
+                markers_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut markers, 1, "collect SLDPRT profile geometry markers")?;
+                    markers.push(marker);
+                    Ok::<(), CodecError>(())
+                })?;
             }
             if markers.is_empty() {
-                let has_unbound_marker = lane.sketch_entities.iter().any(|marker| {
-                    marker.offset() > u64_from_index(start) && marker.offset() < u64_from_index(end)
-                });
+                let mut has_unbound_marker = false;
+                for marker in ctx.admit_iter(
+                    &lane.sketch_entities[..],
+                    "scan SLDPRT profiles records",
+                )? {
+                    if marker.offset() > u64_from_index(start)
+                        && marker.offset() < u64_from_index(end)
+                    {
+                        has_unbound_marker = true;
+                        break;
+                    }
+                }
                 if object_markers.is_empty()
                     && !has_unbound_marker
-                    && !marker_owners.contains(native_feature.id.as_str())
+                    && !ctx.contains_hash_set(&marker_owners, native_feature.id.as_str(), "resolve SLDPRT profiles keys")?
                     && bound_sketch.is_none()
                     && !block_definition
                 {
-                    if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                        let id_text = ctx.format_retained(
-                            format_args!("{}", sketch_id.as_str()),
+                    let mut sketch_already_exists = false;
+                    for sketch in ctx.admit_iter(
+                        &sketches[..],
+                        "compare SLDPRT profile sketch identities",
+                    )? {
+                        if ctx.equal(
+                            &sketch.id,
+                            &sketch_id,
+                            "compare SLDPRT profile sketch identities",
+                        )? {
+                            sketch_already_exists = true;
+                            break;
+                        }
+                    }
+                    if !sketch_already_exists {
+                        let id = copy_profile_sketch_id(
+                            ctx,
+                            &sketch_id,
                             "copy SLDPRT empty marker sketch identity",
                         )?;
-                        let Ok(id) = SketchId::mint(id_text) else {
-                            continue;
-                        };
                         let name = ctx.format_retained(
                             format_args!("{}", native_feature.name),
                             "copy SLDPRT empty marker sketch name",
@@ -1559,7 +1790,21 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 continue;
             }
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            let mut sketch_already_exists = false;
+            for sketch in ctx.admit_iter(
+                &sketches[..],
+                "compare SLDPRT profile sketch identities",
+            )? {
+                if ctx.equal(
+                    &sketch.id,
+                    &sketch_id,
+                    "compare SLDPRT profile sketch identities",
+                )? {
+                    sketch_already_exists = true;
+                    break;
+                }
+            }
+            if sketch_already_exists {
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -1579,19 +1824,20 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 continue;
             }
-            if bound_sketch
-                .as_ref()
-                .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
-            {
-                continue;
+            if let Some(bound_sketch) = bound_sketch.as_ref() {
+                if !ctx.contains_text(
+                    bound_sketch.as_str(),
+                    "sketch#compact:",
+                    "check SLDPRT bound marker sketch identity",
+                )? {
+                    continue;
+                }
             }
-            let id_text = ctx.format_retained(
-                format_args!("{}", sketch_id.as_str()),
+            let sketch_copy = copy_profile_sketch_id(
+                ctx,
+                &sketch_id,
                 "copy SLDPRT marker sketch identity",
             )?;
-            let Ok(sketch_copy) = SketchId::mint(id_text) else {
-                continue;
-            };
             let name = ctx.format_retained(
                 format_args!("{}", native_feature.name),
                 "copy SLDPRT marker sketch name",
@@ -1635,8 +1881,10 @@ pub(crate) fn project_marker_backed_sketches(
             let encoded_rectangle =
                 indexed_rectangle_from_line_cycle(ctx, &lane.native_payload, &object_markers)?;
             let inferred_points = std::cell::OnceCell::new();
+            let mut projected_storage =
+                ctx.reserve_scoped(0, "collect SLDPRT projected marker entities")?;
             let mut projected = Vec::new();
-            for marker in markers.iter().copied() {
+            for marker in ctx.admit_iter(&markers[..], "scan SLDPRT profiles records")?.copied() {
                 let native_kind = cadmpeg_core::nonblank_literal!(
                     ctx,
                     "sldprt:marker-geometry:{}",
@@ -2135,13 +2383,17 @@ pub(crate) fn project_marker_backed_sketches(
                                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
                                         });
                                         let roster_center_witness = roster_center.is_some();
-                                        let candidates = collect_marker_arc_centers(
-                                            ctx,
-                                            &object_markers,
-                                            endpoints[0].id(),
-                                            endpoints[1].id(),
-                                            NATIVE_TO_IR,
-                                        )?;
+                                        let mut candidates_storage =
+                                            ctx.reserve_scoped(0, "collect SLDPRT marker arc center candidates")?;
+                                        let candidates = candidates_storage.with_storage(|| {
+                                            collect_marker_arc_centers(
+                                                ctx,
+                                                &object_markers,
+                                                endpoints[0].id(),
+                                                endpoints[1].id(),
+                                                NATIVE_TO_IR,
+                                            )
+                                        })?;
                                         let (center_start, center_end) =
                                             if current_indexed_arc_reverses_center_sweep(
                                                 &lane.native_payload,
@@ -2214,13 +2466,17 @@ pub(crate) fn project_marker_backed_sketches(
                                         .coordinates_m
                                         .ok_or(MarkerGeometryFailure::Absent)?
                                         .get();
-                                    let candidates = collect_marker_arc_centers(
-                                        ctx,
-                                        &object_markers,
-                                        start_marker.id(),
-                                        end_marker.id(),
-                                        NATIVE_TO_IR,
-                                    )?;
+                                    let mut candidates_storage =
+                                        ctx.reserve_scoped(0, "collect SLDPRT marker arc center candidates")?;
+                                    let candidates = candidates_storage.with_storage(|| {
+                                        collect_marker_arc_centers(
+                                            ctx,
+                                            &object_markers,
+                                            start_marker.id(),
+                                            end_marker.id(),
+                                            NATIVE_TO_IR,
+                                        )
+                                    })?;
                                     if let Some(center) = unique_arc_center_marker(
                                         ctx,
                                         Point2::new(start_u * NATIVE_TO_IR, start_v * NATIVE_TO_IR),
@@ -2337,7 +2593,10 @@ pub(crate) fn project_marker_backed_sketches(
                             &markers_by_id,
                             &object_markers,
                         )?;
-                        for endpoint in endpoints {
+                        for endpoint in ctx.admit_iter(
+                            &endpoints,
+                            "collect SLDPRT marker endpoint references",
+                        )? {
                             let reference = ctx.format_retained(
                                 format_args!("{}", endpoint.id()),
                                 "copy SLDPRT marker endpoint reference",
@@ -2358,16 +2617,18 @@ pub(crate) fn project_marker_backed_sketches(
                         ),
                         "format SLDPRT marker entity identity",
                     )?;
+                    ctx.charge_work(
+                        u64_from_index(id_text.len()),
+                        "validate SLDPRT marker entity identity",
+                    )?;
                     let Ok(entity_id) = SketchEntityId::mint(id_text) else {
                         continue;
                     };
-                    let sketch_text = ctx.format_retained(
-                        format_args!("{}", sketch_id.as_str()),
+                    let owner = copy_profile_sketch_id(
+                        ctx,
+                        &sketch_id,
                         "copy SLDPRT marker entity sketch identity",
                     )?;
-                    let Ok(owner) = SketchId::mint(sketch_text) else {
-                        continue;
-                    };
                     let native_ref = ctx.format_retained(
                         format_args!("{}", marker.id()),
                         "copy SLDPRT marker native reference",
@@ -2376,17 +2637,22 @@ pub(crate) fn project_marker_backed_sketches(
                         .with_construction(construction)
                         .with_native_ref(Some(native_ref))
                         .with_endpoint_refs(endpoint_refs);
-                    ctx.reserve_vec(
-                        &mut projected,
-                        1,
-                        "collect SLDPRT projected marker entities",
-                    )?;
-                    projected.push(entity);
+                    projected_storage.with_storage(|| {
+                        ctx.reserve_vec(
+                            &mut projected,
+                            1,
+                            "collect SLDPRT projected marker entities",
+                        )?;
+                        projected.push(entity);
+                        Ok::<(), CodecError>(())
+                    })?;
                 }
             }
             if let Some(rectangle) = encoded_rectangle {
+                let mut rectangle_marker_refs_storage =
+                    ctx.reserve_scoped(0, "index SLDPRT rectangle marker references")?;
                 let mut rectangle_marker_refs = HashSet::new();
-                for marker in &object_markers {
+                for marker in ctx.admit_iter(&(object_markers)[..], "scan SLDPRT profiles records")? {
                     let Some(marker_id) = (|| {
                         let offset = index_from_u64(marker.offset())?;
                         compact_legacy_curve_endpoint_indices(&lane.native_payload, offset)
@@ -2421,18 +2687,26 @@ pub(crate) fn project_marker_backed_sketches(
                     })() else {
                         continue;
                     };
-                    ctx.insert_hash_set(
-                        &mut rectangle_marker_refs,
-                        marker_id,
-                        "index SLDPRT rectangle marker references",
-                    )?;
+                    rectangle_marker_refs_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut rectangle_marker_refs,
+                            marker_id,
+                            "index SLDPRT rectangle marker references",
+                        )
+                    })?;
                 }
-                projected.retain(|entity| {
-                    entity
-                        .native_ref
-                        .as_deref()
-                        .is_none_or(|native| !rectangle_marker_refs.contains(native))
-                });
+                ctx.retain_vec(
+                    &mut projected,
+                    |entity| match entity.native_ref.as_deref() {
+                        Some(native) => Ok(!ctx.contains_hash_set(
+                            &rectangle_marker_refs,
+                            native,
+                            "filter SLDPRT rectangle marker references",
+                        )?),
+                        None => Ok(true),
+                    },
+                    "filter SLDPRT rectangle marker references",
+                )?;
                 let corners = rectangle.map(|point| {
                     let point = transform.apply(quantize(
                         Point2::new(point.u * NATIVE_TO_IR, point.v * NATIVE_TO_IR),
@@ -2489,10 +2763,17 @@ pub(crate) fn project_marker_backed_sketches(
                     else {
                         continue;
                     };
-                    let Some(marker) = entity
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| markers_by_id.get(native).copied())
+                    let marker = match entity.native_ref.as_deref() {
+                        Some(native) => ctx
+                            .get_hash_map(
+                                &markers_by_id,
+                                native,
+                                "resolve SLDPRT profile native marker",
+                            )?
+                            .copied(),
+                        None => None,
+                    };
+                    let Some(marker) = marker
                     else {
                         continue;
                     };
@@ -2544,24 +2825,29 @@ pub(crate) fn project_marker_backed_sketches(
                         ),
                         "format SLDPRT rectangle edge identity",
                     )?;
+                    ctx.charge_work(
+                        u64_from_index(id_text.len()),
+                        "validate SLDPRT rectangle edge identity",
+                    )?;
                     let Ok(entity_id) = SketchEntityId::mint(id_text) else {
                         continue;
                     };
-                    let sketch_text = ctx.format_retained(
-                        format_args!("{}", sketch_id.as_str()),
+                    let owner = copy_profile_sketch_id(
+                        ctx,
+                        &sketch_id,
                         "copy SLDPRT rectangle sketch identity",
                     )?;
-                    let Ok(owner) = SketchId::mint(sketch_text) else {
-                        continue;
-                    };
                     let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: *start,
                         end: corners[(index + 1) % corners.len()],
                     }) else {
                         continue;
                     };
-                    ctx.reserve_vec(&mut projected, 1, "append SLDPRT rectangle edges")?;
-                    projected.push(SketchEntity::new(entity_id, owner, geometry));
+                    projected_storage.with_storage(|| {
+                        ctx.reserve_vec(&mut projected, 1, "append SLDPRT rectangle edges")?;
+                        projected.push(SketchEntity::new(entity_id, owner, geometry));
+                        Ok::<(), CodecError>(())
+                    })?;
                 }
             }
             resolve_two_center_semicircle_profile(
@@ -2589,15 +2875,34 @@ pub(crate) fn project_marker_backed_sketches(
                 continue;
             }
             if let Some(bound_sketch) = &bound_sketch {
-                sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
-                sketches.retain(|sketch| sketch.id != *bound_sketch);
+                ctx.retain_vec(
+                    sketch_entities,
+                    |entity| {
+                        Ok(!ctx.equal(
+                            entity.sketch.as_str(),
+                            bound_sketch.as_str(),
+                            "remove prior SLDPRT marker sketch entities",
+                        )?)
+                    },
+                    "remove prior SLDPRT marker sketch entities",
+                )?;
+                ctx.retain_vec(
+                    sketches,
+                    |sketch| {
+                        Ok(!ctx.equal(
+                            sketch.id.as_str(),
+                            bound_sketch.as_str(),
+                            "remove prior SLDPRT marker sketches",
+                        )?)
+                    },
+                    "remove prior SLDPRT marker sketches",
+                )?;
             }
-            ctx.reserve_capacity(
+            ctx.extend_vec(
                 sketch_entities,
-                projected.len(),
+                projected,
                 "append SLDPRT projected marker entities",
             )?;
-            sketch_entities.extend(projected);
             ctx.reserve_vec(sketches, 1, "append SLDPRT marker sketch")?;
             sketches.push(sketch);
             features[feature_index]
@@ -2635,9 +2940,10 @@ struct SketchBlockInstancePlacement {
     transform: Transform,
 }
 
-struct AssembledSketchBlockProfile {
+struct AssembledSketchBlockProfile<'a> {
     sketch: Sketch,
     entities: Vec<SketchEntity>,
+    _entities_storage: ScopedReservation<'a>,
 }
 
 struct SketchBlockProfileInput<'a> {
@@ -2666,21 +2972,26 @@ pub(crate) fn project_sketch_block_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    for lane in lanes {
-        for history in histories {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        for history in ctx.admit_iter(histories, "scan SLDPRT profiles records")? {
+            let mut objects_storage =
+                ctx.reserve_scoped(0, "collect SLDPRT sketch block history objects")?;
             let mut objects = Vec::new();
-            for (ordinal, feature) in history.features.iter().enumerate() {
+            for (ordinal, feature) in ctx.admit_iter(&history.features[..], "scan SLDPRT profiles records")?.enumerate() {
                 if let Some(name) = feature_object_name(feature, lane) {
                     if !crate::history::classify::is_history_metadata_record(
                         feature,
                         &history.features,
                     ) {
-                        ctx.reserve_vec(
-                            &mut objects,
-                            1,
-                            "collect SLDPRT sketch block history objects",
-                        )?;
-                        objects.push((name.offset, feature, ordinal));
+                        objects_storage.with_storage(|| {
+                            ctx.reserve_vec(
+                                &mut objects,
+                                1,
+                                "collect SLDPRT sketch block history objects",
+                            )?;
+                            objects.push((name.offset, feature, ordinal));
+                            Ok::<(), CodecError>(())
+                        })?;
                     }
                 }
             }
@@ -2694,44 +3005,67 @@ pub(crate) fn project_sketch_block_profiles(
                 "sort SLDPRT sketch block objects",
             )?;
 
-            for (profile_position, (_, native_profile, _)) in objects.iter().enumerate() {
+            for (profile_position, (_, native_profile, _)) in ctx.admit_iter(&objects[..], "scan SLDPRT profiles records")?.enumerate() {
                 if !super::component_paths::is_profile_feature_object(native_profile) {
                     continue;
                 }
+                let mut explicit_children_storage =
+                    ctx.reserve_scoped(0, "collect SLDPRT dissectable child sources")?;
                 let explicit_children = native_profile
                     .properties
                     .get("DissectableChildren")
-                    .map(|value| dissectable_child_sources(ctx, value))
+                    .map(|value| {
+                        explicit_children_storage
+                            .with_storage(|| dissectable_child_sources(ctx, value))
+                    })
                     .transpose()?;
                 if explicit_children.as_ref().is_some_and(Option::is_none) {
                     continue;
                 }
-                let end = objects
-                    .iter()
+                let search_start = profile_position
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("find SLDPRT sketch block profile end", u64::MAX - 1, u64::MAX))?;
+                let mut first_non_block = None;
+                for (position, (_, feature, _)) in ctx
+                    .admit_iter(&objects[search_start..], "find SLDPRT sketch block profile end")?
                     .enumerate()
-                    .skip(profile_position + 1)
-                    .find(|(_, (_, feature, _))| !is_sketch_block_object(feature))
-                    .map_or(objects.len(), |(index, _)| index);
+                {
+                    if !is_sketch_block_object(feature) {
+                        first_non_block = Some(position);
+                        break;
+                    }
+                }
+                let end = match first_non_block {
+                    Some(position) => search_start
+                        .checked_add(position)
+                        .ok_or_else(|| ctx.refuse_codec_limit("find SLDPRT sketch block profile end", u64::MAX - 1, u64::MAX))?,
+                    None => objects.len(),
+                };
                 let intervening = &objects[profile_position + 1..end];
                 if !super::component_paths::profile_owns_intervening_sketch_blocks(
                     ctx,
                     native_profile,
-                    intervening.iter().map(|(_, feature, _)| *feature),
+                    ctx.admit_iter(intervening, "scan SLDPRT sketch block ownership")?
+                        .map(|(_, feature, _)| *feature),
                 )? {
                     continue;
                 }
+                let mut inferred_children_storage =
+                    ctx.reserve_scoped(0, "collect SLDPRT sketch block children")?;
                 let inferred_children = if explicit_children.is_none() {
                     let mut children = HashSet::new();
-                    for (_, feature, _) in intervening.iter().filter(|(_, feature, _)| {
+                    for (_, feature, _) in ctx.admit_iter(intervening, "collect SLDPRT sketch block children")?.filter(|(_, feature, _)| {
                         native_object_class(feature.input_class.as_deref().unwrap_or_default())
                             == NativeClassKind::SketchBlockDefinition
                     }) {
                         if let Some(source) = feature.source_value() {
-                            ctx.insert_hash_set(
-                                &mut children,
-                                source,
-                                "collect SLDPRT sketch block children",
-                            )?;
+                            inferred_children_storage.with_storage(|| {
+                                ctx.insert_hash_set(
+                                    &mut children,
+                                    source,
+                                    "collect SLDPRT sketch block children",
+                                )
+                            })?;
                         }
                     }
                     (!children.is_empty()).then_some(children)
@@ -2741,9 +3075,25 @@ pub(crate) fn project_sketch_block_profiles(
                 let Some(children) = explicit_children.flatten().or(inferred_children) else {
                     continue;
                 };
-                let Some(profile_index) = features.iter().position(|feature| {
-                    feature.native_ref.as_deref() == Some(native_profile.id.as_str())
-                }) else {
+                let mut matching_profile_index = None;
+                for (profile_index, feature) in
+                    ctx.admit_iter(&features[..], "find SLDPRT sketch block profile feature")?
+                        .enumerate()
+                {
+                    let matches = match feature.native_ref.as_deref() {
+                        Some(native_ref) => ctx.equal(
+                            native_ref,
+                            native_profile.id.as_str(),
+                            "compare SLDPRT sketch block profile feature",
+                        )?,
+                        None => false,
+                    };
+                    if matches {
+                        matching_profile_index = Some(profile_index);
+                        break;
+                    }
+                }
+                let Some(profile_index) = matching_profile_index else {
                     continue;
                 };
                 if !matches!(
@@ -2757,23 +3107,47 @@ pub(crate) fn project_sketch_block_profiles(
                     continue;
                 }
 
+                let mut block_sketches_storage =
+                    ctx.reserve_scoped(0, "index SLDPRT sketch block definitions")?;
                 let mut block_sketches = HashMap::<u32, SketchId>::new();
+                let mut block_feature_ids_storage =
+                    ctx.reserve_scoped(0, "index SLDPRT sketch block feature identities")?;
                 let mut block_feature_ids = HashMap::<u32, String>::new();
                 let mut definitions_complete = true;
-                for (_, native_definition, _) in intervening.iter().filter(|(_, feature, _)| {
+                for (_, native_definition, _) in ctx.admit_iter(intervening, "scan SLDPRT sketch block definitions")?.filter(|(_, feature, _)| {
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockDefinition
                 }) {
-                    let Some(source) = native_definition
-                        .source_value()
-                        .filter(|source| children.contains(source))
-                    else {
+                    let Some(source) = native_definition.source_value() else {
                         definitions_complete = false;
                         break;
                     };
-                    let Some(definition_index) = features.iter().position(|feature| {
-                        feature.native_ref.as_deref() == Some(native_definition.id.as_str())
-                    }) else {
+                    if !ctx.contains_hash_set(&children, &source, "find SLDPRT sketch block child")? {
+                        definitions_complete = false;
+                        break;
+                    }
+                    let mut matching_definition_index = None;
+                    for (definition_index, feature) in ctx
+                        .admit_iter(
+                            &features[..],
+                            "find SLDPRT sketch block definition feature",
+                        )?
+                        .enumerate()
+                    {
+                        let matches = match feature.native_ref.as_deref() {
+                            Some(native_ref) => ctx.equal(
+                                native_ref,
+                                native_definition.id.as_str(),
+                                "compare SLDPRT sketch block definition feature",
+                            )?,
+                            None => false,
+                        };
+                        if matches {
+                            matching_definition_index = Some(definition_index);
+                            break;
+                        }
+                    }
+                    let Some(definition_index) = matching_definition_index else {
                         definitions_complete = false;
                         break;
                     };
@@ -2784,66 +3158,112 @@ pub(crate) fn project_sketch_block_profiles(
                         definitions_complete = false;
                         break;
                     };
-                    let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id)
-                    else {
+                    let mut matching_sketch = None;
+                    for sketch in ctx.admit_iter(&sketches[..], "find SLDPRT block sketch")? {
+                        if ctx.equal(
+                            &sketch.id,
+                            sketch_id,
+                            "compare SLDPRT block sketch identity",
+                        )? {
+                            matching_sketch = Some(sketch);
+                            break;
+                        }
+                    }
+                    let Some(sketch) = matching_sketch else {
                         definitions_complete = false;
                         break;
                     };
-                    if sketch.native_ref.as_deref() != Some(lane.id.as_str()) {
+                    let belongs_to_lane = match sketch.native_ref.as_deref() {
+                        Some(native_ref) => ctx.equal(
+                            native_ref,
+                            lane.id.as_str(),
+                            "compare SLDPRT block sketch lane",
+                        )?,
+                        None => false,
+                    };
+                    if !belongs_to_lane {
                         definitions_complete = false;
                         break;
                     }
-                    let sketch_text = ctx.format_retained(
-                        format_args!("{}", sketch_id.as_str()),
-                        "copy SLDPRT sketch block definition identity",
-                    )?;
-                    let Ok(sketch_copy) = SketchId::mint(sketch_text) else {
-                        definitions_complete = false;
-                        break;
-                    };
-                    ctx.insert_hash_map(
-                        &mut block_sketches,
-                        source,
-                        sketch_copy,
-                        "index SLDPRT sketch block definitions",
-                    )?;
-                    let feature_id = ctx.format_retained(
-                        format_args!("{}", features[definition_index].id.as_str()),
-                        "copy SLDPRT sketch block feature identity",
-                    )?;
-                    ctx.insert_hash_map(
-                        &mut block_feature_ids,
-                        source,
-                        feature_id,
-                        "index SLDPRT sketch block feature identities",
-                    )?;
+                    block_sketches_storage.with_storage(|| {
+                        let sketch_copy = copy_profile_sketch_id(
+                            ctx,
+                            sketch_id,
+                            "copy SLDPRT sketch block definition identity",
+                        )?;
+                        ctx.insert_hash_map(
+                            &mut block_sketches,
+                            source,
+                            sketch_copy,
+                            "index SLDPRT sketch block definitions",
+                        )
+                    })?;
+                    block_feature_ids_storage.with_storage(|| {
+                        let feature_id = ctx.format_retained(
+                            format_args!("{}", features[definition_index].id.as_str()),
+                            "copy SLDPRT sketch block feature identity",
+                        )?;
+                        ctx.insert_hash_map(
+                            &mut block_feature_ids,
+                            source,
+                            feature_id,
+                            "index SLDPRT sketch block feature identities",
+                        )
+                    })?;
                 }
                 if !definitions_complete || block_sketches.len() != children.len() {
                     continue;
                 }
 
+                let mut instances_storage =
+                    ctx.reserve_scoped(0, "collect SLDPRT sketch block instances")?;
                 let mut instances = Vec::new();
                 let mut instances_complete = true;
-                for (_, native_instance, _) in intervening.iter().filter(|(_, feature, _)| {
+                for (_, native_instance, _) in ctx.admit_iter(intervening, "scan SLDPRT sketch block instances")?.filter(|(_, feature, _)| {
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockInstance
                 }) {
-                    let Some(instance_index) = features.iter().position(|feature| {
-                        feature.native_ref.as_deref() == Some(native_instance.id.as_str())
-                    }) else {
+                    let mut matching_instance_index = None;
+                    for (instance_index, feature) in ctx
+                        .admit_iter(&features[..], "find SLDPRT sketch block instance feature")?
+                        .enumerate()
+                    {
+                        let matches = match feature.native_ref.as_deref() {
+                            Some(native_ref) => ctx.equal(
+                                native_ref,
+                                native_instance.id.as_str(),
+                                "compare SLDPRT sketch block instance feature",
+                            )?,
+                            None => false,
+                        };
+                        if matches {
+                            matching_instance_index = Some(instance_index);
+                            break;
+                        }
+                    }
+                    let Some(instance_index) = matching_instance_index else {
                         instances_complete = false;
                         break;
                     };
-                    let Some(block_source_number) = features[instance_index]
+                    let source_text = match features[instance_index]
                         .source_properties
                         .get("BlockDefinition")
-                        .or_else(|| native_instance.properties.get("BlockDefinition"))
-                        .and_then(|source| source.parse::<u32>().ok())
-                        .filter(|source| children.contains(source))
-                    else {
+                    {
+                        Some(source) => Some(source),
+                        None => native_instance.properties.get("BlockDefinition"),
+                    };
+                    let Some(source_text) = source_text else {
                         instances_complete = false;
                         break;
                     };
+                    let Ok(block_source_number) = ctx.parse_text::<u32>(source_text, "parse SLDPRT sketch block source")? else {
+                        instances_complete = false;
+                        break;
+                    };
+                    if !ctx.contains_hash_set(&children, &block_source_number, "find SLDPRT sketch block child")? {
+                        instances_complete = false;
+                        break;
+                    }
                     let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
                         block: Some(block),
                         placement: Some(transform),
@@ -2852,33 +3272,55 @@ pub(crate) fn project_sketch_block_profiles(
                         instances_complete = false;
                         break;
                     };
-                    if !block_sketches.contains_key(&block_source_number)
-                        || block_feature_ids
-                            .get(&block_source_number)
-                            .map(String::as_str)
-                            != Some(block.as_str())
-                    {
+                    let has_block_sketch = ctx.contains_key_hash_map(
+                        &block_sketches,
+                        &block_source_number,
+                        "find SLDPRT sketch block source",
+                    )?;
+                    let matches_block = if has_block_sketch {
+                        match ctx.get_hash_map(
+                            &block_feature_ids,
+                            &block_source_number,
+                            "find SLDPRT sketch block feature",
+                        )? {
+                            Some(feature_id) => ctx.equal(
+                                feature_id.as_str(),
+                                block.as_str(),
+                                "compare SLDPRT sketch block feature",
+                            )?,
+                            None => false,
+                        }
+                    } else {
+                        false
+                    };
+                    if !has_block_sketch || !matches_block {
                         instances_complete = false;
                         break;
                     }
-                    let feature_id = ctx.format_retained(
-                        format_args!("{}", features[instance_index].id.as_str()),
-                        "copy SLDPRT sketch block instance identity",
-                    )?;
-                    ctx.reserve_vec(&mut instances, 1, "collect SLDPRT sketch block instances")?;
-                    instances.push(SketchBlockInstancePlacement {
-                        feature_id,
-                        block_source: block_source_number,
-                        transform: *transform,
-                    });
+                    instances_storage.with_storage(|| {
+                        let feature_id = ctx.format_retained(
+                            format_args!("{}", features[instance_index].id.as_str()),
+                            "copy SLDPRT sketch block instance identity",
+                        )?;
+                        ctx.reserve_vec(
+                            &mut instances,
+                            1,
+                            "collect SLDPRT sketch block instances",
+                        )?;
+                        instances.push(SketchBlockInstancePlacement {
+                            feature_id,
+                            block_source: block_source_number,
+                            transform: *transform,
+                        });
+                        Ok::<(), CodecError>(())
+                    })?;
                 }
                 if !instances_complete || instances.is_empty() {
                     continue;
                 }
 
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
+                let lane_key = ctx.rsplit_once(&lane
+                    .id, "#", "resolve SLDPRT profiles keys")?
                     .map_or(lane.id.as_str(), |(_, key)| key);
                 let sketch_text = ctx.format_retained(
                     format_args!(
@@ -2886,6 +3328,10 @@ pub(crate) fn project_sketch_block_profiles(
                         native_profile.ordinal
                     ),
                     "format SLDPRT sketch block profile identity",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(sketch_text.len()),
+                    "validate SLDPRT sketch block profile identity",
                 )?;
                 let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                     continue;
@@ -2906,13 +3352,22 @@ pub(crate) fn project_sketch_block_profiles(
                 else {
                     continue;
                 };
-                if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                    ctx.reserve_capacity(
-                        sketch_entities,
-                        assembled.entities.len(),
-                        "append SLDPRT sketch block entities",
-                    )?;
-                    sketch_entities.extend(assembled.entities);
+                let mut assembled_sketch_exists = false;
+                for sketch in ctx.admit_iter(
+                    &sketches[..],
+                    "find SLDPRT assembled sketch",
+                )? {
+                    if ctx.equal(
+                        &sketch.id,
+                        &sketch_id,
+                        "compare SLDPRT assembled sketch identity",
+                    )? {
+                        assembled_sketch_exists = true;
+                        break;
+                    }
+                }
+                if !assembled_sketch_exists {
+                    ctx.extend_vec(sketch_entities, assembled.entities, "append SLDPRT sketch block entities")?;
                     ctx.reserve_vec(sketches, 1, "append SLDPRT assembled sketch block")?;
                     sketches.push(assembled.sketch);
                 }
@@ -2931,21 +3386,41 @@ fn dissectable_child_sources(
     ctx: &DecodeContext<'_>,
     value: &str,
 ) -> Result<Option<HashSet<u32>>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT dissectable child sources";
     let mut values = HashSet::new();
-    for part in value.split(',') {
-        let Ok(source) = part.trim().parse::<u32>() else {
-            return Ok(None);
-        };
-        ctx.insert_hash_set(
-            &mut values,
-            source,
-            "collect SLDPRT dissectable child sources",
-        )?;
+    let mut start = 0usize;
+    let mut position = 0usize;
+    for character in ctx.admit_iter(value, OPERATION)? {
+        if character == ',' {
+            let Some(part) = value.get(start..position) else {
+                return Err(CodecError::malformed("invalid SLDPRT child source text boundary"));
+            };
+            let Ok(source) = ctx.parse_text::<u32>(ctx.trim_text(part, OPERATION)?, OPERATION)? else {
+                return Ok(None);
+            };
+            ctx.insert_hash_set(&mut values, source, OPERATION)?;
+            start = position.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        position = position.checked_add(character.len_utf8()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    Ok(
-        (!values.is_empty() && !values.contains(&0) && values.len() == value.split(',').count())
-            .then_some(values),
-    )
+    let Some(part) = value.get(start..position) else {
+        return Err(CodecError::malformed("invalid SLDPRT child source text boundary"));
+    };
+    let Ok(source) = ctx.parse_text::<u32>(ctx.trim_text(part, OPERATION)?, OPERATION)? else {
+        return Ok(None);
+    };
+    ctx.insert_hash_set(&mut values, source, OPERATION)?;
+    if values.is_empty() || ctx.contains_hash_set(&values, &0, OPERATION)? {
+        return Ok(None);
+    }
+    let separator_count = ctx
+        .admit_iter(value, OPERATION)?
+        .filter(|character| *character == ',')
+        .count();
+    let parts = separator_count
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    Ok((values.len() == parts).then_some(values))
 }
 
 fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
@@ -2955,82 +3430,111 @@ fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
     )
 }
 
-fn assemble_sketch_block_profile(
-    ctx: &DecodeContext<'_>,
+fn assemble_sketch_block_profile<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     input: &SketchBlockProfileInput<'_>,
-) -> Result<Option<AssembledSketchBlockProfile>, CodecError> {
-    let Some((placement, rotations)) = sketch_block_assembly_frame(ctx, input.instances)? else {
+) -> Result<Option<AssembledSketchBlockProfile<'ctx>>, CodecError> {
+    let mut rotations_storage = ctx.reserve_scoped(0, "collect SLDPRT sketch block rotations")?;
+    let Some((placement, rotations)) = rotations_storage
+        .with_storage(|| sketch_block_assembly_frame(ctx, input.instances))?
+    else {
         return Ok(None);
     };
     let mut assembled_profiles = Vec::new();
+    let mut assembled_entities_storage =
+        ctx.reserve_scoped(0, "collect SLDPRT assembled sketch block entities")?;
     let mut assembled_entities = Vec::new();
-    for (instance, rotation) in input.instances.iter().zip(rotations) {
-        let Some(source_sketch_id) = input.block_sketches.get(&instance.block_source) else {
+    for (instance, rotation) in ctx
+        .admit_iter(input.instances, "scan SLDPRT sketch block instances")?
+        .zip(ctx.admit_iter(&rotations, "scan SLDPRT sketch block rotations")?)
+    {
+        let Some(source_sketch_id) = ctx.get_hash_map(
+            input.block_sketches,
+            &instance.block_source,
+            "resolve SLDPRT sketch block definition",
+        )? else {
             return Ok(None);
         };
-        let Some(source_sketch) = input
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == *source_sketch_id)
-        else {
-            return Ok(None);
-        };
-        let mut source_entities = Vec::new();
-        for entity in input.sketch_entities {
-            if entity.sketch == source_sketch.id {
-                ctx.reserve_vec(
-                    &mut source_entities,
-                    1,
-                    "collect SLDPRT sketch block source entities",
-                )?;
-                source_entities.push(entity);
+        let mut matching_source_sketch = None;
+        for sketch in ctx.admit_iter(
+            input.sketches,
+            "find SLDPRT sketch block definition",
+        )? {
+            if ctx.equal(
+                &sketch.id,
+                source_sketch_id,
+                "compare SLDPRT sketch block definition identity",
+            )? {
+                matching_source_sketch = Some(sketch);
+                break;
             }
         }
-        let mut entity_ids = HashMap::new();
-        for entity in &source_entities {
-            let id_text = ctx.format_retained(
-                format_args!(
-                    "sldprt:model:sketch-entity#{}:instance:{}:entity:{}",
-                    id_key(input.sketch_id.as_str()),
-                    id_key(&instance.feature_id),
-                    id_key(entity.id().as_str())
-                ),
-                "format SLDPRT sketch block entity identity",
-            )?;
-            let Ok(id) = SketchEntityId::mint(id_text) else {
-                return Ok(None);
-            };
-            ctx.insert_hash_map(
-                &mut entity_ids,
-                entity.id(),
-                id,
-                "index SLDPRT sketch block entity identities",
-            )?;
+        let Some(source_sketch) = matching_source_sketch else {
+            return Ok(None);
+        };
+        let mut source_entities_storage =
+            ctx.reserve_scoped(0, "collect SLDPRT sketch block source entities")?;
+        let mut source_entities = Vec::new();
+        for entity in ctx.admit_iter(input.sketch_entities, "scan SLDPRT sketch block source entities")? {
+            if ctx.equal(&entity.sketch, &source_sketch.id, "compare SLDPRT sketch block source entity")? {
+                source_entities_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut source_entities,
+                        entity,
+                        "collect SLDPRT sketch block source entities",
+                    )
+                })?;
+            }
         }
-        for source_entity in &source_entities {
-            let Some(id) = entity_ids.get(source_entity.id()) else {
+        let mut entity_ids_storage =
+            ctx.reserve_scoped(0, "index SLDPRT sketch block entity identities")?;
+        let mut entity_ids = HashMap::new();
+        for entity in ctx.admit_iter(&(source_entities)[..], "scan SLDPRT profiles records")? {
+            let inserted = entity_ids_storage.with_storage(|| -> Result<bool, CodecError> {
+                let id_text = ctx.format_retained(
+                    format_args!(
+                        "sldprt:model:sketch-entity#{}:instance:{}:entity:{}",
+                        ctx.rsplit_once(input.sketch_id.as_str(), "#", "read SLDPRT sketch identity key")?.map_or(input.sketch_id.as_str(), |(_, key)| key),
+                        ctx.rsplit_once(&instance.feature_id, "#", "read SLDPRT sketch identity key")?.map_or(instance.feature_id.as_str(), |(_, key)| key),
+                        ctx.rsplit_once(entity.id().as_str(), "#", "read SLDPRT sketch identity key")?.map_or(entity.id().as_str(), |(_, key)| key)
+                    ),
+                    "format SLDPRT sketch block entity identity",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(id_text.len()),
+                    "validate SLDPRT sketch block entity identity",
+                )?;
+                let Ok(id) = SketchEntityId::mint(id_text) else {
+                    return Ok(false);
+                };
+                ctx.insert_hash_map(
+                    &mut entity_ids,
+                    entity.id(),
+                    id,
+                    "index SLDPRT sketch block entity identities",
+                )?;
+                Ok(true)
+            })?;
+            if !inserted {
+                return Ok(None);
+            }
+        }
+        for source_entity in ctx.admit_iter(&(source_entities)[..], "scan SLDPRT profiles records")? {
+            let Some(id) = ctx.get_hash_map(&entity_ids, source_entity.id(), "resolve SLDPRT profiles keys")? else {
                 return Ok(None);
             };
-            let id_text = ctx.format_retained(
-                format_args!("{}", id.as_str()),
-                "copy SLDPRT sketch block entity identity",
-            )?;
-            let Ok(id) = SketchEntityId::mint(id_text) else {
-                return Ok(None);
-            };
-            let sketch_text = ctx.format_retained(
-                format_args!("{}", input.sketch_id.as_str()),
+            let id = copy_profile_entity_id(ctx, id, "copy SLDPRT sketch block entity identity")?;
+            let sketch_id = copy_profile_sketch_id(
+                ctx,
+                input.sketch_id,
                 "copy SLDPRT sketch block sketch identity",
             )?;
-            let Ok(sketch_id) = SketchId::mint(sketch_text) else {
-                return Ok(None);
-            };
             let Some(geometry) = transform_sketch_block_geometry(
                 ctx,
                 &source_entity.geometry,
                 instance.transform,
                 placement,
-                rotation,
+                *rotation,
             )?
             else {
                 return Ok(None);
@@ -3054,7 +3558,7 @@ fn assemble_sketch_block_profile(
                 None => None,
             };
             let mut endpoint_refs = Vec::new();
-            for reference in &source_entity.endpoint_refs {
+            for reference in ctx.admit_iter(&(source_entity.endpoint_refs)[..], "scan SLDPRT profiles records")? {
                 let reference = ctx.format_retained(
                     format_args!("{reference}"),
                     "copy SLDPRT sketch block endpoint reference",
@@ -3066,18 +3570,21 @@ fn assemble_sketch_block_profile(
                 )?;
                 endpoint_refs.push(reference);
             }
-            ctx.reserve_vec(
-                &mut assembled_entities,
-                1,
-                "collect SLDPRT assembled sketch block entities",
-            )?;
-            assembled_entities.push(
-                SketchEntity::new(id, sketch_id, geometry)
-                    .with_construction(source_entity.construction)
-                    .with_native_ref(Some(native_ref))
-                    .with_geometry_ref(geometry_ref)
-                    .with_endpoint_refs(endpoint_refs),
-            );
+            assembled_entities_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut assembled_entities,
+                    1,
+                    "collect SLDPRT assembled sketch block entities",
+                )?;
+                assembled_entities.push(
+                    SketchEntity::new(id, sketch_id, geometry)
+                        .with_construction(source_entity.construction)
+                        .with_native_ref(Some(native_ref))
+                        .with_geometry_ref(geometry_ref)
+                        .with_endpoint_refs(endpoint_refs),
+                );
+                Ok::<(), CodecError>(())
+            })?;
         }
         let recovered_profiles = if source_sketch.profiles.is_empty() {
             Some(closed_marker_profiles_allowing_shared_endpoints(
@@ -3090,19 +3597,17 @@ fn assemble_sketch_block_profile(
         let source_profiles = recovered_profiles
             .as_deref()
             .unwrap_or(source_sketch.profiles.as_slice());
-        for profile in source_profiles {
+        for profile in ctx.admit_iter(source_profiles, "scan SLDPRT sketch block profiles")? {
             let mut assembled_profile = Vec::new();
-            for use_ in profile {
-                let Some(id) = entity_ids.get(&use_.entity) else {
+            for use_ in ctx.admit_iter(profile, "scan SLDPRT sketch block profile members")? {
+                let Some(id) = ctx.get_hash_map(&entity_ids, &use_.entity, "resolve SLDPRT profiles keys")? else {
                     return Ok(None);
                 };
-                let id_text = ctx.format_retained(
-                    format_args!("{}", id.as_str()),
+                let id = copy_profile_entity_id(
+                    ctx,
+                    id,
                     "copy SLDPRT sketch block profile entity identity",
                 )?;
-                let Ok(id) = SketchEntityId::mint(id_text) else {
-                    return Ok(None);
-                };
                 ctx.reserve_vec(
                     &mut assembled_profile,
                     1,
@@ -3132,13 +3637,11 @@ fn assemble_sketch_block_profile(
     let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(assembled_profiles) else {
         return Ok(None);
     };
-    let sketch_text = ctx.format_retained(
-        format_args!("{}", input.sketch_id.as_str()),
+    let sketch_id = copy_profile_sketch_id(
+        ctx,
+        input.sketch_id,
         "copy SLDPRT assembled sketch block identity",
     )?;
-    let Ok(sketch_id) = SketchId::mint(sketch_text) else {
-        return Ok(None);
-    };
     let name = ctx.format_retained(
         format_args!("{}", input.native_profile.name),
         "copy SLDPRT assembled sketch block name",
@@ -3165,11 +3668,8 @@ fn assemble_sketch_block_profile(
             native_ref: Some(native_ref),
         },
         entities: assembled_entities,
+        _entities_storage: assembled_entities_storage,
     }))
-}
-
-fn id_key(id: &str) -> &str {
-    id.rsplit_once('#').map_or(id, |(_, key)| key)
 }
 
 fn sketch_block_assembly_frame(
@@ -3206,7 +3706,7 @@ fn sketch_block_assembly_frame(
         u_axis,
     } = frame;
     let mut rotations = Vec::new();
-    for instance in instances {
+    for instance in ctx.admit_iter(instances, "scan SLDPRT profiles records")? {
         let placement = instance.transform;
         if !placement.is_proper_rigid() {
             return Ok(None);
@@ -3461,38 +3961,31 @@ fn project_detached_legacy_config_sketches(
     const QUANTUM: f64 = 1.0e-8;
     const OPERATION: &str = "project SLDPRT detached configuration sketches";
 
-    for lane in lanes
-        .iter()
+    for lane in ctx
+        .admit_iter(lanes, OPERATION)?
         .filter(|lane| is_supplemental_config_lane(lane))
     {
-        let lane_key = lane
-            .id
-            .rsplit_once('#')
+        let lane_key = ctx.rsplit_once(&lane
+            .id, "#", "resolve SLDPRT profiles keys")?
             .map_or(lane.id.as_str(), |(_, key)| key);
         let detached_frame = {
-            for marker in &lane.sketch_entities {
-                ctx.charge_work(
-                    u64_from_index(marker.feature_ref.as_ref().map_or(0, String::len))
-                        .checked_add(1)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
+            let mut frames_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut frames = Vec::new();
+            for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
+                let Some(feature) = marker.feature_ref.as_deref() else {
+                    continue;
+                };
+                if let Some(frame) = ctx.get_hash_map(feature_frames, feature, OPERATION)? {
+                    frames_storage.with_storage(|| ctx.push_vec(&mut frames, *frame, OPERATION))?;
+                }
             }
-            let mut frames = collect_profile_items(
-                ctx,
-                lane.sketch_entities
-                    .iter()
-                    .filter_map(|marker| marker.feature_ref.as_deref())
-                    .filter_map(|feature| feature_frames.get(feature).copied()),
-                OPERATION,
-            )?;
             ctx.sort_unstable_by_key(
                 &mut frames,
                 reference_plane_frame_key,
                 Ord::cmp,
                 "sort SLDPRT legacy config sketch frames",
             )?;
-            frames.dedup();
+            ctx.dedup_vec(&mut frames, OPERATION)?;
             let [frame] = frames.as_slice() else {
                 continue;
             };
@@ -3513,39 +4006,36 @@ fn project_detached_legacy_config_sketches(
                 ) {
                     break 'feature_edit;
                 }
-                let Some(native_feature) = native_features.get(native_ref).copied() else {
+                let Some(native_feature) = ctx.get_hash_map(&native_features, native_ref, "resolve SLDPRT profiles keys")?.copied() else {
                     break 'feature_edit;
                 };
-                charge_profile_comparisons(
-                    ctx,
-                    lane.sketch_entities
-                        .iter()
-                        .map(|marker| marker.feature_ref.as_deref().unwrap_or_default()),
-                    native_ref,
-                    OPERATION,
-                )?;
-                let markers = collect_profile_items(
-                    ctx,
-                    lane.sketch_entities
-                        .iter()
-                        .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref)),
-                    OPERATION,
-                )?;
+                let mut markers_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut markers = Vec::new();
+                for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
+                    let belongs_to_feature = match marker.feature_ref.as_deref() {
+                        Some(feature_ref) => ctx.equal(feature_ref, native_ref, OPERATION)?,
+                        None => false,
+                    };
+                    if belongs_to_feature {
+                        markers_storage
+                            .with_storage(|| ctx.push_vec(&mut markers, marker, OPERATION))?;
+                    }
+                }
                 if markers.is_empty() {
                     break 'feature_edit;
                 }
-                let (origin, normal, u_axis) = feature_frames
-                    .get(native_ref)
+                let (origin, normal, u_axis) = ctx.get_hash_map(&feature_frames, native_ref, "resolve SLDPRT profiles keys")?
                     .copied()
                     .unwrap_or(detached_frame);
-                ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                let Ok(sketch_id) = SketchId::mint(ctx.format_retained(
+                let sketch_text = ctx.format_retained(
                     format_args!(
                         "sldprt:model:sketch#legacy-config:{lane_key}:{}",
                         native_feature.ordinal
                     ),
                     OPERATION,
-                )?) else {
+                )?;
+                ctx.charge_work(u64_from_index(sketch_text.len()), OPERATION)?;
+                let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                     break 'feature_edit;
                 };
                 let sketch = Sketch {
@@ -3581,37 +4071,54 @@ fn project_detached_legacy_config_sketches(
                     ))
                 };
 
-                let projected = match legacy_config_hex_sketch(
-                    ctx,
-                    native_feature,
-                    &sketch,
-                    &markers,
-                    &project,
-                )? {
-                    Some(projected) => Some(projected),
-                    None => legacy_config_collinear_sketch(
+                let (entities_storage, projected) = {
+                    let mut hex_entities_storage = ctx.reserve_scoped(0, OPERATION)?;
+                    match legacy_config_hex_sketch(
                         ctx,
-                        lane,
                         native_feature,
                         &sketch,
                         &markers,
                         &project,
-                    )?,
+                        &mut hex_entities_storage,
+                    )? {
+                        Some(projected) => (hex_entities_storage, Some(projected)),
+                        None => {
+                            drop(hex_entities_storage);
+                            let mut collinear_entities_storage =
+                                ctx.reserve_scoped(0, OPERATION)?;
+                            let projected = legacy_config_collinear_sketch(
+                                ctx,
+                                lane,
+                                native_feature,
+                                &sketch,
+                                &markers,
+                                &project,
+                                &mut collinear_entities_storage,
+                            )?;
+                            (collinear_entities_storage, projected)
+                        }
+                    }
                 };
                 let Some((sketch, mut entities)) = projected else {
                     break 'feature_edit;
                 };
-                if entities.iter().any(|entity| {
-                    matches!(
+                let mut contains_native_entity = false;
+                for entity in ctx.admit_iter(&entities[..], OPERATION)? {
+                    if matches!(
                         entity.geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
-                    )
-                }) {
+                    ) {
+                        contains_native_entity = true;
+                        break;
+                    }
+                }
+                if contains_native_entity {
                     break 'feature_edit;
                 }
                 let sketch_id = copy_profile_sketch_id(ctx, &sketch.id, OPERATION)?;
-                ctx.reserve_vec(sketch_entities, entities.len(), OPERATION)?;
-                sketch_entities.append(&mut entities);
+                ctx.append_vec(sketch_entities, &mut entities, OPERATION)?;
+                drop(entities);
+                drop(entities_storage);
                 ctx.reserve_vec(sketches, 1, OPERATION)?;
                 sketches.push(sketch);
                 feature
@@ -3631,6 +4138,7 @@ fn legacy_config_hex_sketch(
     sketch: &Sketch,
     markers: &[&SketchInputEntity],
     project: &impl Fn([f64; 2]) -> Option<Point2>,
+    entities_storage: &mut ScopedReservation<'_>,
 ) -> Result<Option<(Sketch, Vec<SketchEntity>)>, CodecError> {
     const OPERATION: &str = "project SLDPRT legacy hex sketch";
     ctx.charge_work(
@@ -3639,13 +4147,12 @@ fn legacy_config_hex_sketch(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    let mut curves = collect_profile_items(
-        ctx,
-        markers.iter().copied().filter(|marker| {
+    let mut curves_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut curves = curves_storage.with_storage(|| {
+        ctx.collect_vec(ctx.admit_iter(markers, OPERATION)?.copied().filter(|marker| {
             marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
-        }),
-        OPERATION,
-    )?;
+        }), OPERATION)
+    })?;
     ctx.sort_unstable_by_key(
         &mut curves,
         |value| value.offset(),
@@ -3759,21 +4266,20 @@ fn legacy_config_hex_sketch(
         return Ok(None);
     };
     let point = |marker: &SketchInputEntity| project(marker.coordinates_m?.get());
-    let sketch_key = sketch
+    let sketch_key = ctx.rsplit_once(&sketch
         .id
-        .as_str()
-        .rsplit_once('#')
+        .as_str(), "#", "resolve SLDPRT profiles keys")?
         .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| -> Result<Option<SketchEntityId>, CodecError> {
-        ctx.charge_work(u64_from_index(sketch_key.len()), OPERATION)?;
-        Ok(SketchEntityId::mint(ctx.format_retained(
+        let identity = ctx.format_retained(
             format_args!(
                 "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
                 native_feature.ordinal,
             ),
             OPERATION,
-        )?)
-        .ok())
+        )?;
+        ctx.charge_work(u64_from_index(identity.len()), OPERATION)?;
+        Ok(SketchEntityId::mint(identity).ok())
     };
     let mut entities = Vec::new();
     for (index, (curve, endpoints)) in [(horizontal_curve, horizontal), (vertical_curve, vertical)]
@@ -3802,8 +4308,7 @@ fn legacy_config_hex_sketch(
             OPERATION,
         )?
         .with_construction(true);
-        ctx.reserve_vec(&mut entities, 1, OPERATION)?;
-        entities.push(entity);
+        entities_storage.with_storage(|| ctx.push_vec(&mut entities, entity, OPERATION))?;
     }
     for (index, center, radius, curve, endpoints, construction) in [
         (
@@ -3847,8 +4352,7 @@ fn legacy_config_hex_sketch(
         if construction {
             entity = entity.with_construction(true);
         }
-        ctx.reserve_vec(&mut entities, 1, OPERATION)?;
-        entities.push(entity);
+        entities_storage.with_storage(|| ctx.push_vec(&mut entities, entity, OPERATION))?;
     }
     let mut outer_profile = Vec::new();
     for (index, curve) in [line0, line1, line2, line3, line4, line5]
@@ -3883,8 +4387,7 @@ fn legacy_config_hex_sketch(
             Some([start.id(), end.id()]),
             OPERATION,
         )?;
-        ctx.reserve_vec(&mut entities, 1, OPERATION)?;
-        entities.push(entity);
+        entities_storage.with_storage(|| ctx.push_vec(&mut entities, entity, OPERATION))?;
     }
     let mut copied = copy_profile_sketch(ctx, sketch, OPERATION)?;
     let Some(circle_id) = entity_id("circle", 0)? else {
@@ -3914,6 +4417,7 @@ fn legacy_config_collinear_sketch(
     sketch: &Sketch,
     markers: &[&SketchInputEntity],
     project: &impl Fn([f64; 2]) -> Option<Point2>,
+    entities_storage: &mut ScopedReservation<'_>,
 ) -> Result<Option<(Sketch, Vec<SketchEntity>)>, CodecError> {
     const OPERATION: &str = "project SLDPRT legacy collinear sketch";
     ctx.charge_work(
@@ -3922,13 +4426,12 @@ fn legacy_config_collinear_sketch(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    let mut curves = collect_profile_items(
-        ctx,
-        markers.iter().copied().filter(|marker| {
+    let mut curves_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut curves = curves_storage.with_storage(|| {
+        ctx.collect_vec(ctx.admit_iter(markers, OPERATION)?.copied().filter(|marker| {
             marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
-        }),
-        OPERATION,
-    )?;
+        }), OPERATION)
+    })?;
     ctx.sort_unstable_by_key(
         &mut curves,
         |value| value.offset(),
@@ -3963,17 +4466,15 @@ fn legacy_config_collinear_sketch(
     let Some((negative_u, line_curves)) = prepared else {
         return Ok(None);
     };
-    let mut chain = collect_profile_items(
-        ctx,
-        markers
-            .iter()
+    let mut chain_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut chain = chain_storage.with_storage(|| {
+        ctx.collect_vec(ctx.admit_iter(markers, OPERATION)?
             .copied()
             .filter(|marker| matches!(marker.object_index(), Some(18 | 19 | 21)))
             .filter_map(|marker| Some((marker, marker.coordinates_m?.get())))
             .enumerate()
-            .map(|(ordinal, (marker, point))| (marker, point, ordinal)),
-        OPERATION,
-    )?;
+            .map(|(ordinal, (marker, coordinates))| (marker, coordinates, ordinal)), OPERATION)
+    })?;
     let Some(origin) = markers
         .iter()
         .copied()
@@ -3996,32 +4497,37 @@ fn legacy_config_collinear_sketch(
         },
         "sort SLDPRT legacy collinear sketch chain",
     )?;
-    chain.dedup_by(|left, right| {
-        same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
-    });
+    ctx.dedup_by(
+        &mut chain,
+        |left, right| {
+            Ok(same_dimension_length(left.1[0], right.1[0])
+                && same_dimension_length(left.1[1], right.1[1]))
+        },
+        "deduplicate SLDPRT legacy collinear sketch chain",
+    )?;
     if chain.len() != 4
-        || chain.iter().any(|(_, coordinates, _)| {
-            !same_dimension_length(coordinates[1], origin.1[1]) || coordinates[0] < 0.0
+        || ctx.admit_iter(&(chain)[..], "scan SLDPRT profiles records")?.any(|value| {
+            !same_dimension_length(value.1[1], origin.1[1])
+                || value.1[0] < 0.0
         })
     {
         return Ok(None);
     }
     let negative = [negative_u, origin.1[1]];
-    let sketch_key = sketch
+    let sketch_key = ctx.rsplit_once(&sketch
         .id
-        .as_str()
-        .rsplit_once('#')
+        .as_str(), "#", "resolve SLDPRT profiles keys")?
         .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| -> Result<Option<SketchEntityId>, CodecError> {
-        ctx.charge_work(u64_from_index(sketch_key.len()), OPERATION)?;
-        Ok(SketchEntityId::mint(ctx.format_retained(
+        let identity = ctx.format_retained(
             format_args!(
                 "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
                 native_feature.ordinal,
             ),
             OPERATION,
-        )?)
-        .ok())
+        )?;
+        ctx.charge_work(u64_from_index(identity.len()), OPERATION)?;
+        Ok(SketchEntityId::mint(identity).ok())
     };
     let segments = [
         (negative, origin.1),
@@ -4052,20 +4558,17 @@ fn legacy_config_collinear_sketch(
             None,
             OPERATION,
         )?;
-        ctx.reserve_vec(&mut entities, 1, OPERATION)?;
-        entities.push(entity);
+        entities_storage.with_storage(|| ctx.push_vec(&mut entities, entity, OPERATION))?;
     }
-    let mut points = collect_profile_items(
-        ctx,
-        markers
-            .iter()
+    let mut points_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut points = points_storage.with_storage(|| {
+        ctx.collect_vec(ctx.admit_iter(markers, OPERATION)?
             .copied()
             .filter_map(|marker| Some((Some(marker), marker.coordinates_m?.get())))
             .chain(std::iter::once((None, negative)))
             .enumerate()
-            .map(|(ordinal, (marker, point))| (marker, point, ordinal)),
-        OPERATION,
-    )?;
+            .map(|(ordinal, (marker, coordinates))| (marker, coordinates, ordinal)), OPERATION)
+    })?;
     ctx.sort_unstable_by_key(
         &mut points,
         |value| (value.1[0], value.1[1], value.2),
@@ -4077,16 +4580,21 @@ fn legacy_config_collinear_sketch(
         },
         "sort SLDPRT legacy collinear sketch points",
     )?;
-    points.dedup_by(|left, right| {
-        same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
-    });
-    for (index, (marker, coordinates, _)) in points.into_iter().enumerate() {
+    ctx.dedup_by(
+        &mut points,
+        |left, right| {
+            Ok(same_dimension_length(left.1[0], right.1[0])
+                && same_dimension_length(left.1[1], right.1[1]))
+        },
+        "deduplicate SLDPRT legacy collinear sketch points",
+    )?;
+    for (index, point) in ctx.admit_iter(&points[..], OPERATION)?.enumerate() {
         let Some(id) = entity_id("point", index)? else {
             return Ok(None);
         };
         let Some(geometry) = (|| {
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: project(coordinates)?,
+                position: project(point.1)?,
             })
             .ok()
         })() else {
@@ -4097,12 +4605,11 @@ fn legacy_config_collinear_sketch(
             id,
             &sketch.id,
             geometry,
-            marker.map(SketchInputEntity::id),
+            point.0.map(SketchInputEntity::id),
             None,
             OPERATION,
         )?;
-        ctx.reserve_vec(&mut entities, 1, OPERATION)?;
-        entities.push(entity);
+        entities_storage.with_storage(|| ctx.push_vec(&mut entities, entity, OPERATION))?;
     }
     Ok(Some((
         copy_profile_sketch(ctx, sketch, OPERATION)?,
@@ -4617,25 +5124,23 @@ mod detached_legacy_sketch_tests {
             sketch_entities: Vec::new(),
         };
 
-        assert!(terminal_relation_display_carrier(&lane, &carrier));
+        assert!(terminal_relation_display_carrier(&cadmpeg_test_support::service_decode_context(), &lane, &carrier).unwrap());
 
         let mut wrong_feature = lane.relation_instances[0].clone();
         wrong_feature.feature_ref = "other-feature".into();
         let mut wrong_feature_lane = lane.clone();
         wrong_feature_lane.relation_instances = vec![wrong_feature];
         assert!(!terminal_relation_display_carrier(
-            &wrong_feature_lane,
-            &carrier
-        ));
+            &cadmpeg_test_support::service_decode_context(), &wrong_feature_lane, &carrier
+        ).unwrap());
 
         let mut wrong_class = lane.relation_instances[0].clone();
         wrong_class.class_ref = "other-class".into();
         let mut wrong_class_lane = lane;
         wrong_class_lane.relation_instances = vec![wrong_class];
         assert!(!terminal_relation_display_carrier(
-            &wrong_class_lane,
-            &carrier
-        ));
+            &cadmpeg_test_support::service_decode_context(), &wrong_class_lane, &carrier
+        ).unwrap());
     }
 
     #[test]
@@ -4916,10 +5421,18 @@ mod detached_legacy_sketch_tests {
                 markers.push(marker(ordinal, None, SketchInputKind::LineOrCircle, None));
             }
             let refs = markers.iter().collect::<Vec<_>>();
+            let mut entities_storage = ctx
+                .reserve_scoped(0, "project SLDPRT legacy hex sketch")
+                .unwrap();
             let (projected, entities) =
-                legacy_config_hex_sketch(&ctx, &feature(), &sketch(), &refs, &|coordinates| {
-                    Some(Point2::new(coordinates[0], coordinates[1]))
-                })
+                legacy_config_hex_sketch(
+                    &ctx,
+                    &feature(),
+                    &sketch(),
+                    &refs,
+                    &|coordinates| Some(Point2::new(coordinates[0], coordinates[1])),
+                    &mut entities_storage,
+                )
                 .unwrap()
                 .expect("exact hex grammar");
 
@@ -5002,6 +5515,9 @@ mod detached_legacy_sketch_tests {
             sketch_entities: markers,
         };
         let refs = lane.sketch_entities.iter().collect::<Vec<_>>();
+        let mut entities_storage = ctx
+            .reserve_scoped(0, "project SLDPRT legacy collinear sketch")
+            .unwrap();
         let (_, entities) = legacy_config_collinear_sketch(
             &ctx,
             &lane,
@@ -5009,6 +5525,7 @@ mod detached_legacy_sketch_tests {
             &sketch(),
             &refs,
             &|coordinates| Some(Point2::new(coordinates[0], coordinates[1])),
+            &mut entities_storage,
         )
         .unwrap()
         .expect("exact collinear grammar");

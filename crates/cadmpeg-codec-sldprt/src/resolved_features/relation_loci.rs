@@ -594,29 +594,18 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             cadmpeg_core::decode::u64_from_index(sketch_entities.len()),
             SCAN,
         )?;
-        let geometry_work = sketch_entities.iter().try_fold(0u64, |work, entity| {
-            cadmpeg_core::decode::u64_from_index(entity.geometry_ref.as_deref().map_or(0, str::len))
-                .checked_add(cadmpeg_core::decode::u64_from_index(relation.id.len()))
-                .and_then(|bytes| bytes.checked_add(1))
-                .and_then(|bytes| bytes.checked_mul(8))
-                .and_then(|bytes| work.checked_add(bytes))
-                .ok_or_else(|| ctx.refuse_codec_limit(SCAN, u64::MAX - 1, u64::MAX))
-        })?;
-        ctx.charge_work(geometry_work, SCAN)?;
-        if let Some(entity) = sketch_entities
-            .iter()
-            .find(|entity| {
-                entity.geometry_ref.as_deref().is_some_and(|geometry_ref| {
-                    relation_operand_geometry_ref_matches(geometry_ref, relation, index)
-                })
-            })
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Point { .. }
-                )
-            })
-        {
+        let mut selected_geometry = None;
+        for entity in sketch_entities {
+            if let Some(geometry_ref) = entity.geometry_ref.as_deref() {
+                if relation_operand_geometry_ref_matches(ctx, geometry_ref, relation, index)? {
+                    selected_geometry = Some(entity);
+                    break;
+                }
+            }
+        }
+        if let Some(entity) = selected_geometry.filter(|entity| {
+            matches!(*entity.geometry.definition(), SketchGeometryDefinition::Point { .. })
+        })        {
             return super::transforms::SketchLocusRole::Entity
                 .copy_locus(ctx, entity.id(), "retain SLDPRT relation point identity")
                 .map(Some);
@@ -692,7 +681,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             },
         }
     };
-    if relation_uses_solver_points(relation) && (point(0)?.is_none() || point(1)?.is_none()) {
+    if relation_uses_solver_points(ctx, relation)? && (point(0)?.is_none() || point(1)?.is_none()) {
         return Ok(None);
     }
     let dynamic_point_pair = if dynamic {
@@ -1708,24 +1697,19 @@ fn solver_line_entity(
             [
                 entity.sketch.as_str(),
                 sketch.as_str(),
-                entity.geometry_ref.as_deref().unwrap_or(""),
-                relation.feature_ref.as_str(),
+
             ],
             32,
             OPERATION,
         )?;
-        if entity.sketch != *sketch
-            || !entity.geometry_ref.as_deref().is_some_and(|geometry_ref| {
-                solver_line_geometry_ref_matches(
-                    geometry_ref,
-                    &relation.feature_ref,
-                    operand.entity_index,
-                )
-            })
-            || !matches!(
-                entity.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
-            )
+        if entity.sketch != *sketch { continue; }
+        let matches_geometry = match entity.geometry_ref.as_deref() {
+            Some(geometry_ref) => solver_line_geometry_ref_matches(
+                ctx, geometry_ref, &relation.feature_ref, operand.entity_index)?,
+            None => false,
+        };
+        if !matches_geometry
+            || !matches!(entity.geometry.definition(), SketchGeometryDefinition::Line { .. })
         {
             continue;
         }

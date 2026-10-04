@@ -60,7 +60,7 @@ fn relation_ownership_refuses_collection_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT relation lanes"
+                && limit.operation == "index SLDPRT relation parameter ownership"
     ));
 }
 
@@ -92,6 +92,31 @@ fn relation_ownership_refuses_work_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan SLDPRT relation ownership"
+                && limit.operation == "scan SLDPRT relation ownership lanes"
     ));
+}
+
+#[test]
+fn relation_ownership_uses_last_parameter_for_duplicate_scalar_reference() {
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers};
+    use std::collections::BTreeMap;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parameter = |suffix: &str| DesignParameter {
+        id: ParameterId::mint(format!("synthetic:test:parameter#{suffix}")).unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "1".into(),
+        display: None,
+        value: None,
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("scalar".into()),
+    };
+    let first = parameter("first");
+    let last = parameter("last");
+    let expected = last.id.clone();
+    let ownership = owned_relation_parameters(&ctx, &[], &[first, last], &[relation_lane()]).unwrap();
+    assert_eq!(ownership.get("relation"), Some(&Some(expected)));
 }

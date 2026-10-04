@@ -527,10 +527,11 @@ pub(crate) fn project_configuration_design_states(
                     // fields while preserving authored local placements.
                     let inherit_placements =
                         !crate::resolved_features::holes::hole_position_carrier_present(
+                            ctx,
                             &feature,
                             histories,
                             scoped_lanes,
-                        );
+                        )?;
                     let mut result = Ok(());
                     feature.evaluation.edit(|definition, _| {
                         result = inherit_configuration_hole_semantics(

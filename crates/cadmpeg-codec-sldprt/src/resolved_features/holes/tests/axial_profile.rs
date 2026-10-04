@@ -893,7 +893,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
             &ctx,
             &histories[0].features[0],
             &histories,
-            |id| model_sketches.get(id),
+            |id| Ok(model_sketches.get(id)),
             &entities,
         )
         .unwrap()
@@ -913,7 +913,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
             &ctx,
             &single_child_history.features[0],
             std::slice::from_ref(&single_child_history),
-            |id| model_sketches.get(id),
+            |id| Ok(model_sketches.get(id)),
             &entities,
         )
         .unwrap()
@@ -928,7 +928,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
             &ctx,
             &single_child_history.features[0],
             std::slice::from_ref(&single_child_history),
-            |id| model_sketches.get(id),
+            |id| Ok(model_sketches.get(id)),
             &entities,
         )
         .unwrap()
