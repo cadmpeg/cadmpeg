@@ -71,9 +71,8 @@ fn geometric_nurbs_surface_route_refuses_scoped_limit() {
     )
     .unwrap()
     .get();
-    // Three f64 basis lanes for both degree-two axes require 144 live bytes.
-    // merge: recheck total
-    let bytes = 3 * (3 + 3) * std::mem::size_of::<f64>();
+    // Two basis and two derivative vectors each reserve four f64 slots.
+    let bytes = 4 * 4 * std::mem::size_of::<f64>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::try_from(bytes - 1).unwrap();
@@ -82,7 +81,7 @@ fn geometric_nurbs_surface_route_refuses_scoped_limit() {
         crate::brep::evaluation::nurbs_surface_parameter_near_point(&ctx, &surface, point, None)
             .unwrap_err();
     assert!(matches!(&error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "project SLDPRT NURBS surface point"));
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "IR B-spline derivative basis"));
     policy.limits.max_materialized_bytes = u64::try_from(bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(crate::brep::evaluation::nurbs_surface_parameter_near_point(
