@@ -146,7 +146,7 @@ pub(crate) fn decode(
             ));
         }
         output.write(&[final_byte])?;
-        stack.reverse();
+        ctx.reverse(stack.as_mut_slice(), "creo LZW stack reversal")?;
         output.write(&stack)?;
         stack.clear();
         written = next_written;
@@ -526,4 +526,19 @@ mod tests {
             ));
         });
     }
+    #[test]
+    fn lzw_stack_reversal_refuses_work() {
+        let mut stream = vec![0x1f, 0x9d, 0x10];
+        stream.extend(codes(&[65, 66, 256]));
+        assert_eq!(decode(&stream, 4), Some(b"ABAB".to_vec()));
+        let error = crate::test_support::last_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "creo LZW stack reversal",
+            |ctx| super::decode(ctx, &stream, 4),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && resource.operation == "creo LZW stack reversal"));
+    }
+
 }
