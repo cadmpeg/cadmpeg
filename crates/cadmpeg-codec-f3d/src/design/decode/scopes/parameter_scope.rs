@@ -589,11 +589,11 @@ pub(crate) fn admit_history_bound_scope_variants(
                 continue;
             };
             let Some(previous_state_id) =
-                crate::history::effective_scope_previous_history_state_id(scope, histories)
+                crate::history::effective_scope_previous_history_state_id(ctx, scope, histories)?
             else {
                 continue;
             };
-            if crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+            if crate::history::unique_history_state_pair(ctx, histories, state_id, previous_state_id)?
                 .is_some()
                 && history_bound.replace(*index).is_some()
             {

@@ -316,7 +316,9 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
             },
         ]
     );
-    assert_eq!(unique_entity_selection_edge(&candidates), Some(17));
+    assert_eq!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_entity_selection_edge(decode_ctx, &candidates)
+    }).unwrap(), Some(17));
 }
 
 #[test]
@@ -380,7 +382,10 @@ fn a_retained_state_beside_a_complete_snapshot_resolves_no_reconstructed_revisio
         ]
     });
     let history: AsmHistory = serde_json::from_value(document).unwrap();
-    assert!(!history.projection_finalized());
+    assert!(!crate::test_support::with_decode_context(|decode_ctx| {
+        history.projection_finalized(decode_ctx)
+    })
+    .unwrap());
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
             decode_ctx,

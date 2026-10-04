@@ -86,15 +86,16 @@ impl<'a> ExtrudeProfileResolution<'a> {
 }
 
 fn histories_for_scope<'a>(
+    ctx: &DecodeContext<'_>,
     scope_id: &str,
     scope_histories: &HashMap<String, String>,
     histories: &'a [crate::history_records::AsmHistory],
-) -> &'a [crate::history_records::AsmHistory] {
+) -> Result<&'a [crate::history_records::AsmHistory], CodecError> {
     if scope_histories.contains_key(scope_id) {
-        crate::history::bound_scope_history(scope_id, scope_histories, histories)
-            .map_or(&[], std::slice::from_ref)
+        Ok(crate::history::bound_scope_history(ctx, scope_id, scope_histories, histories)?
+            .map_or(&[], std::slice::from_ref))
     } else {
-        histories
+        Ok(histories)
     }
 }
 
@@ -457,16 +458,18 @@ pub(crate) fn bind_extrude_profile_selections(
                         break 'feature_edit;
                     };
                     let scoped_histories = histories_for_scope(
+                        resolution.ctx,
                         &scope.id,
                         resolution.scope_histories,
                         resolution.histories,
-                    );
+                    )?;
                     let scoped_resolution = resolution.scoped(scoped_histories);
                     let effective_previous_history_state_id =
                         crate::history::effective_scope_previous_history_state_id(
+                            resolution.ctx,
                             scope,
                             scoped_histories,
-                        );
+                        )?;
                     let mut matching_groups = Vec::new();
                     for group in groups.iter().filter(|group| {
                         native_stream(&group.id) == native_stream(&scope.id)

@@ -2,7 +2,9 @@
 //! Admission limits for historical state indexes and change chains.
 
 use crate::history::resolve_pattern_face_by_surface_radius;
-use crate::history::selection::{historical_identity_edge, HistoricalIdentityIndex};
+use crate::history::selection::{
+    historical_identity_edge, unique_entity_selection_edge, HistoricalIdentityIndex,
+};
 use crate::history::{
     collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index,
     face_boundary_edges, historical_edge_axis, historical_face_support_contexts,
@@ -13,6 +15,7 @@ use crate::history::{
 };
 use crate::history::{
     edge_changes_across_state_chain, face_changes_across_state_chain, history_state_index,
+    unique_history_state,
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
@@ -172,6 +175,58 @@ fn history_state_index_refuses_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D history states")
+    );
+}
+
+#[test]
+fn unique_history_state_propagates_work_refusal() {
+    let histories = [AsmHistory {
+        id: "f3d:history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![change_state(1)],
+    }];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D history state",
+        0,
+        |decode| unique_history_state(decode, &histories, 1).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D history state")
+    );
+}
+
+#[test]
+fn unique_entity_selection_edge_propagates_membership_refusal() {
+    use crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate;
+    let candidates = [
+        DesignEntitySelectionEdgeCandidate {
+            identity_ordinal: 0,
+            local_id: 700,
+            historical_entity_kind: AsmHistoricalEntityKind::Edge,
+            historical_entity_ref: 42,
+            edge_slots: vec![17],
+        },
+        DesignEntitySelectionEdgeCandidate {
+            identity_ordinal: 1,
+            local_id: 800,
+            historical_entity_kind: AsmHistoricalEntityKind::Vertex,
+            historical_entity_ref: 50,
+            edge_slots: vec![17, 18],
+        },
+    ];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D common candidate edge",
+        0,
+        |decode| unique_entity_selection_edge(decode, &candidates).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D common candidate edge")
     );
 }
 

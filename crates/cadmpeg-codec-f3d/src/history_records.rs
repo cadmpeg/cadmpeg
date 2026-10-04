@@ -29,12 +29,18 @@ impl AsmHistory {
     /// Historical projection consumers finished and every temporary complete
     /// topology snapshot this history holds was released. A history with no
     /// states has released nothing and is not finalized.
-    pub(crate) fn projection_finalized(&self) -> bool {
-        !self.states.is_empty()
-            && self
-                .states
-                .iter()
-                .all(super::history_records::AsmDeltaState::projection_released)
+    pub(crate) fn projection_finalized(
+        &self,
+        decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        if self.states.is_empty() {
+            return Ok(false);
+        }
+        decode.all_by(
+            &self.states,
+            |state| Ok(state.projection_released()),
+            "check F3D history projection finalization",
+        )
     }
 
     pub(crate) fn stream_size(&self) -> Option<i64> {
