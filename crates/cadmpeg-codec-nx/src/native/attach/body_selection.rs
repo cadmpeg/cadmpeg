@@ -68,6 +68,9 @@ impl FeatureBodySelection<'_> {
                     Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                         return Err(limit.into())
                     }
+                    Err(cadmpeg_ir::features::FeatureCollectionError::Codec(error)) => {
+                        return Err(error)
+                    }
                     Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
                         return Ok(BodySelection::Native(native))
                     }

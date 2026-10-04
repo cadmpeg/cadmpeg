@@ -411,7 +411,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 "creo sketch incident comparison sort",
             )?;
             derived.dedup();
-            if derived != *entities {
+            if !ctx.equal(&derived, entities, "creo incident derived entity agreement")? {
                 continue;
             }
             let copied = ctx.collect_vec(
@@ -470,11 +470,10 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         {
             continue;
         }
-        if explicit_incident
-            .as_ref()
-            .is_some_and(|explicit| explicit.get(&vertex) != Some(&entities))
-        {
-            continue;
+        if let Some(explicit) = &explicit_incident {
+            if !ctx.equal(&explicit.get(&vertex), &Some(&entities), "creo explicit incident entity agreement")? {
+                continue;
+            }
         }
         // A unique shared endpoint coordinate is a trim witness even when a
         // complete carrier cannot be evaluated from the remaining points.

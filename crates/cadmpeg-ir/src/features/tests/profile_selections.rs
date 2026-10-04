@@ -414,11 +414,14 @@ fn profile_and_path_constructors_propagate_scoped_index_refusals() {
     let sketch = SketchId::mint("test:test:sketch#one").unwrap();
     let spatial = SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap();
     let entity = SketchEntityId::mint("test:test:sketch-entity#one").unwrap();
-    for limit in [
+    for error in [
         PlanarProfileRef::sketch_profiles(sketch.clone(), vec![0], &ctx).unwrap_err(),
         ProfileRef::spatial_sketch_selection(spatial, vec!["group".into()], &ctx).unwrap_err(),
         PathRef::sketch_curves(sketch, vec![entity], &ctx).unwrap_err(),
     ] {
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("profile membership resource refusal required");
+        };
         assert_eq!(
             limit.dimension,
             cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -472,7 +475,11 @@ fn every_profile_constructor_uses_the_caller_session_for_membership() {
                 )
                 .map(|result| result.map(|_| ())),
             };
-            let limit = result.expect_err("constructor must use its supplied session");
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                result.expect_err("constructor must use its supplied session")
+            else {
+                panic!("profile membership resource refusal required");
+            };
             assert_eq!(limit.dimension, dimension);
             assert!(
                 matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural grammar for legacy ASCII persistence records.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
@@ -89,6 +90,18 @@ impl std::fmt::Display for PrincipalUnitSystem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Real(u64);
 
+impl DecodeCost for Real {
+    const FIXED_BYTES: Option<u64> = <u64 as DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
+
 impl Real {
     /// Construct a real from its exact stored IEEE-754 bits.
     #[cfg(test)]
@@ -120,6 +133,23 @@ pub(crate) struct NumericRun<T> {
     pub(crate) value: T,
 }
 
+impl<T: DecodeCost> DecodeCost for NumericRun<T> {
+    const FIXED_BYTES: Option<u64> = match T::FIXED_BYTES {
+        Some(value_bytes) => value_bytes.checked_add(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>(),
+        )),
+        None => None,
+    };
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.count, &self.value).decode_cost(ctx, operation)
+    }
+}
+
 /// Complete semantic payload of one numeric legacy value row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
@@ -148,6 +178,19 @@ impl<T> NumericPayload<T> {
         match self {
             Self::Scalar { .. } => 1,
             Self::Array(array) => array.element_count(),
+        }
+    }
+}
+
+impl<T: DecodeCost> DecodeCost for NumericPayload<T> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Scalar { value } => (0_u8, value).decode_cost(ctx, operation),
+            Self::Array(array) => (1_u8, array).decode_cost(ctx, operation),
         }
     }
 }
@@ -222,6 +265,31 @@ where
 
 impl<K: LegacyCode> Eq for ValueRecord<K> where K::Payload: Eq {}
 
+impl<K> DecodeCost for ValueRecord<K>
+where
+    K: LegacyCode,
+    K::Payload: DecodeCost,
+{
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let fields = (
+            &self.name,
+            self.attribute_id,
+            self.scope_offset,
+            self.parent,
+            self.depth,
+            &self.payload,
+        )
+            .decode_cost(ctx, operation)?;
+        fields
+            .checked_add(self.offset.decode_cost(ctx, operation)?)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
 /// One run in a type-2 real array.
 #[cfg(test)]
 pub(crate) type RealRun = NumericRun<Real>;
@@ -273,6 +341,25 @@ pub(crate) enum ObjectPayload {
         /// Uninterpreted payload bytes after the attribute identifier.
         bytes: Vec<u8>,
     },
+}
+
+impl DecodeCost for ObjectPayload {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Arrow => (0_u8,).decode_cost(ctx, operation),
+            Self::Inline => (1_u8,).decode_cost(ctx, operation),
+            Self::Null => (2_u8,).decode_cost(ctx, operation),
+            Self::Array {
+                dimensions,
+                elements,
+            } => (3_u8, dimensions, elements).decode_cost(ctx, operation),
+            Self::Opaque { bytes } => (4_u8, bytes).decode_cost(ctx, operation),
+        }
+    }
 }
 
 impl ObjectPayload {
@@ -350,6 +437,27 @@ pub(crate) struct ObjectRecord {
     pub(crate) offset: usize,
 }
 
+impl DecodeCost for ObjectRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let fields = (
+            &self.name,
+            self.attribute_id,
+            self.scope_offset,
+            self.parent,
+            self.depth,
+            &self.payload,
+        )
+            .decode_cost(ctx, operation)?;
+        fields
+            .checked_add(self.offset.decode_cost(ctx, operation)?)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
 /// One legacy byte string or null element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
@@ -366,6 +474,20 @@ pub(crate) enum StringValue {
         /// Exact uninterpreted source bytes.
         bytes: Vec<u8>,
     },
+}
+
+impl DecodeCost for StringValue {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Null => (0_u8,).decode_cost(ctx, operation),
+            Self::Utf8 { text } => (1_u8, text).decode_cost(ctx, operation),
+            Self::Bytes { bytes } => (2_u8, bytes).decode_cost(ctx, operation),
+        }
+    }
 }
 
 impl StringValue {
@@ -392,6 +514,37 @@ pub(crate) enum StringPayload {
         /// Continuation rows attached to the array header.
         continuation: Option<Continuation>,
     },
+}
+
+impl DecodeCost for StringPayload {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Scalar { value } => (0_u8, value).decode_cost(ctx, operation),
+            Self::Array {
+                dimensions,
+                values,
+                continuation,
+            } => {
+                let mut bytes = (1_u8, dimensions).decode_cost(ctx, operation)?;
+                for value in ctx.admit_iter(values, operation)? {
+                    let value_bytes = match value {
+                        Ok(value) => (0_u8, value).decode_cost(ctx, operation)?,
+                        Err(continuation) => (1_u8, continuation).decode_cost(ctx, operation)?,
+                    };
+                    bytes = bytes
+                        .checked_add(value_bytes)
+                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                }
+                bytes
+                    .checked_add(continuation.decode_cost(ctx, operation)?)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+            }
+        }
+    }
 }
 
 impl Serialize for StringPayload {
@@ -487,6 +640,16 @@ pub(crate) struct AttributeDeclaration {
     offset: usize,
 }
 
+impl DecodeCost for AttributeDeclaration {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.id, &self.name, &self.type_code, self.offset).decode_cost(ctx, operation)
+    }
+}
+
 /// One `<depth> <attribute-id> <payload>` value row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AttributeValue {
@@ -502,6 +665,24 @@ struct AttributeValue {
     continuation: Option<Continuation>,
 }
 
+impl DecodeCost for AttributeValue {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            self.depth,
+            self.attribute_id,
+            self.offset,
+            self.payload.start,
+            self.payload.end,
+            &self.continuation,
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// A nonempty sequence of continuation rows following one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Continuation {
@@ -509,6 +690,16 @@ pub(crate) struct Continuation {
     rows: Range<usize>,
     /// Number of rows in the source range.
     count: NonZeroUsize,
+}
+
+impl DecodeCost for Continuation {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.rows.start, self.rows.end, self.count).decode_cost(ctx, operation)
+    }
 }
 
 /// Declarations and values owned by one outer object or named ASCII section.
@@ -526,6 +717,24 @@ pub(crate) struct Scope {
     conflicting_declaration_count: usize,
 }
 
+impl DecodeCost for Scope {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            self.range.start,
+            self.range.end,
+            &self.declarations,
+            &self.values,
+            self.unresolved_value_count,
+            self.conflicting_declaration_count,
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// Parsed rows and unresolved-row count for one legacy declaration type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TypedValues<T> {
@@ -533,6 +742,16 @@ pub(crate) struct TypedValues<T> {
     pub(crate) rows: Vec<T>,
     /// Source rows not represented by a complete typed value.
     pub(crate) unresolved_count: usize,
+}
+
+impl<T: DecodeCost> DecodeCost for TypedValues<T> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.rows, self.unresolved_count).decode_cost(ctx, operation)
+    }
 }
 
 impl<T> Default for TypedValues<T> {
@@ -579,6 +798,44 @@ pub(crate) struct Persistence {
     pub(crate) type_9_values: TypedValues<Type9Record>,
     /// Type-11 unsigned-decimal scalars and arrays in source order.
     pub(crate) type_11_values: TypedValues<Type11Record>,
+}
+
+impl DecodeCost for Persistence {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let first = (
+            &self.scopes,
+            &self.real_values,
+            &self.integer_values,
+            &self.objects,
+            self.incomplete_object_array_count,
+            self.unresolved_object_value_count,
+        )
+            .decode_cost(ctx, operation)?;
+        let second = (
+            &self.string_values,
+            self.incomplete_string_array_count,
+            self.unresolved_string_value_count,
+            &self.type_3_values,
+            &self.type_4_values,
+            &self.type_5_values,
+        )
+            .decode_cost(ctx, operation)?;
+        let third = (
+            &self.type_6_values,
+            &self.type_7_values,
+            &self.type_9_values,
+            &self.type_11_values,
+        )
+            .decode_cost(ctx, operation)?;
+        first
+            .checked_add(second)
+            .and_then(|bytes| bytes.checked_add(third))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
 }
 
 impl Persistence {

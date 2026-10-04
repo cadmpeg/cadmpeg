@@ -19,6 +19,7 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
@@ -110,6 +111,21 @@ pub(crate) enum Layout {
     Unknown(UnknownLayout),
 }
 
+impl DecodeCost for Layout {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Nd => (0_u8,).decode_cost(ctx, operation),
+            Self::Depdb => (1_u8,).decode_cost(ctx, operation),
+            Self::LegacyAscii(framing) => (2_u8, framing).decode_cost(ctx, operation),
+            Self::Unknown(layout) => (3_u8, layout).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Why no verified Creo persistence layout matched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UnknownLayout {
@@ -117,6 +133,23 @@ pub(crate) enum UnknownLayout {
     DepdbRootMissing,
     /// No DEPDB root, ND decoration, or complete legacy object was present.
     NoDiscriminant,
+}
+
+impl DecodeCost for UnknownLayout {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<u8>(),
+    ));
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::DepdbRootMissing => (0_u8,).decode_cost(ctx, operation),
+            Self::NoDiscriminant => (1_u8,).decode_cost(ctx, operation),
+        }
+    }
 }
 
 /// Header metadata from a complete legacy ASCII `P_OBJECT` frame.
@@ -132,6 +165,23 @@ pub(crate) struct LegacyAsciiFraming {
     object_offset: usize,
     /// Structurally resolved attribute declarations and value rows.
     pub(crate) persistence: legacy::Persistence,
+}
+
+impl DecodeCost for LegacyAsciiFraming {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.schema,
+            &self.product_release,
+            self.banner_offset,
+            self.object_offset,
+            &self.persistence,
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 impl Layout {

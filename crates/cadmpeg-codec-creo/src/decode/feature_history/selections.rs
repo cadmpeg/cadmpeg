@@ -117,7 +117,11 @@ pub(in super::super) fn feature_edge_selection(
         for edge in ctx.admit_iter(&edges, "creo feature selection edge references")? {
             let mut found = false;
             for candidate in ctx.admit_iter(&ir.model.edges, "creo model edge lookup")? {
-                if candidate.id == *edge {
+                if ctx.equal(
+                    &candidate.id,
+                    edge,
+                    "creo selected model edge identity comparison",
+                )? {
                     found = true;
                     break;
                 }
@@ -137,7 +141,11 @@ pub(in super::super) fn feature_edge_selection(
         let mut any_model_edge_present = false;
         for edge in ctx.admit_iter(&edges, "creo feature selection edge references")? {
             for candidate in ctx.admit_iter(&ir.model.edges, "creo model edge lookup")? {
-                if candidate.id == *edge {
+                if ctx.equal(
+                    &candidate.id,
+                    edge,
+                    "creo selected model edge identity comparison",
+                )? {
                     any_model_edge_present = true;
                     break;
                 }

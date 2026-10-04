@@ -5,6 +5,8 @@ use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -26,18 +28,29 @@ pub(in super::super) fn feature_recipe_effect(
 }
 
 pub(in super::super) fn feature_section_sweep_semantics_conflict(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> bool {
-    current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
-        operation.recipe.is_conflicting()
-            || (operation.display_state_conflict
-                && matches!(
-                    operation.recipe,
-                    crate::feature::operations::RecipeResolution::None
-                )
-                && operation.kind == crate::feature::operations::OperationKind::Native)
-    })
+) -> Result<bool, CodecError> {
+    let Some(operation) = current_feature_operation(&scan.features.operations, feature_id) else {
+        return Ok(false);
+    };
+    if operation.recipe.is_conflicting() {
+        return Ok(true);
+    }
+    if !operation.display_state_conflict
+        || !matches!(
+            operation.recipe,
+            crate::feature::operations::RecipeResolution::None
+        )
+    {
+        return Ok(false);
+    }
+    ctx.equal(
+        &operation.kind,
+        &crate::feature::operations::OperationKind::Native,
+        "creo feature operation kind comparison",
+    )
 }
 
 pub(in super::super) fn current_additive_feature_recipe(

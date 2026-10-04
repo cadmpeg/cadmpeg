@@ -8,6 +8,7 @@
 pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -90,6 +91,18 @@ impl SurfaceKind {
     }
 }
 
+impl DecodeCost for SurfaceKind {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        self.canonical_type_byte().decode_cost(ctx, operation)
+    }
+}
+
 /// Encoding variant of an extrusion surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExtrusionVariant {
@@ -97,6 +110,22 @@ pub(crate) enum ExtrusionVariant {
     Linear,
     /// `geom_type = 0x2c`.
     TabulatedCylinder,
+}
+
+impl DecodeCost for ExtrusionVariant {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let type_byte: u8 = match self {
+            Self::Linear => 0x2a,
+            Self::TabulatedCylinder => 0x2c,
+        };
+        type_byte.decode_cost(ctx, operation)
+    }
 }
 
 /// Admitted surface-row boundary codes.
@@ -363,6 +392,24 @@ pub(crate) enum SurfaceBodyBoundary {
     SectionEnd,
 }
 
+impl DecodeCost for SurfaceBodyBoundary {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let boundary_tag = match self {
+            Self::CompoundClose => 0_u8,
+            Self::NextRow => 1,
+            Self::NamedRecord => 2,
+            Self::SectionEnd => 3,
+        };
+        boundary_tag.decode_cost(ctx, operation)
+    }
+}
+
 /// Bounded analytic parameter body from one positional `srf_array` row.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceParameterRecord {
@@ -386,11 +433,45 @@ pub(crate) struct SurfaceParameterRecord {
     pub(crate) body_offset: usize,
 }
 
+impl DecodeCost for SurfaceParameterRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            (
+                &self.surface_id,
+                &self.body,
+                &self.scalar_tokens,
+                &self.opaque_spans,
+                &self.scalar_frames,
+                &self.carrier,
+            ),
+            (&self.boundary, &self.offset, &self.body_offset),
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// Decoded carrier or the declared kind of an unresolved parameter body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
     Resolved(InlineSurfaceCarrier),
+}
+
+impl DecodeCost for SurfaceParameterCarrier {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Unresolved(kind) => (0_u8, kind).decode_cost(ctx, operation),
+            Self::Resolved(carrier) => (1_u8, carrier).decode_cost(ctx, operation),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -764,6 +845,18 @@ pub(crate) struct TabulatedCylinderFrame {
     prefixes: [u8; 6],
 }
 
+impl DecodeCost for TabulatedCylinderFrame {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let values = self.values().get();
+        let prefixes = self.prefixes();
+        (&values, &prefixes).decode_cost(ctx, operation)
+    }
+}
+
 impl TabulatedCylinderFrame {
     /// Admits six finite frame coordinates with their scalar prefixes.
     pub(crate) fn new(values: [f64; 6], prefixes: [u8; 6]) -> Option<Self> {
@@ -795,6 +888,18 @@ impl TabulatedCylinderFrame {
 pub(crate) struct PositionalFrame {
     origin: FinitePoint3,
     frame: OrthonormalFrame3,
+}
+
+impl DecodeCost for PositionalFrame {
+    const FIXED_BYTES: Option<u64> = Some(9 * 8);
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.origin(), &self.axis(), &self.ref_direction()).decode_cost(ctx, operation)
+    }
 }
 
 impl PositionalFrame {
@@ -854,6 +959,21 @@ pub(crate) struct PositionalCylinderFrame {
     length: Option<PositiveLength>,
 }
 
+impl DecodeCost for PositionalCylinderFrame {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.frame,
+            &self.radius.get(),
+            &self.length.map(|length| length.get()),
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 impl PositionalCylinderFrame {
     /// Admits a finite frame with valid directions and dimensions.
     pub(crate) fn new(
@@ -905,6 +1025,16 @@ pub(crate) struct PositionalConeFrame {
     half_angle: ApexConeHalfAngle,
 }
 
+impl DecodeCost for PositionalConeFrame {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.frame, &self.half_angle.get().get()).decode_cost(ctx, operation)
+    }
+}
+
 impl PositionalConeFrame {
     /// Admits a finite apex and valid directions around an admitted half angle.
     pub(crate) fn new(
@@ -936,6 +1066,21 @@ pub(crate) struct PositionalTorusFrame {
     major_radius: NonNegativeLength,
     /// Minor radius.
     minor_radius: PositiveLength,
+}
+
+impl DecodeCost for PositionalTorusFrame {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.frame,
+            &self.major_radius.get(),
+            &self.minor_radius.get(),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 impl PositionalTorusFrame {
@@ -1095,6 +1240,16 @@ pub(crate) struct SurfaceParameterScalarFrame {
     pub(crate) slots: Vec<SurfaceParameterScalar>,
 }
 
+impl DecodeCost for SurfaceParameterScalarFrame {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.offset, &self.slots).decode_cost(ctx, operation)
+    }
+}
+
 /// One maximal unframed span inside a positional surface parameter body.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceParameterOpaqueSpan {
@@ -1102,6 +1257,16 @@ pub(crate) struct SurfaceParameterOpaqueSpan {
     pub(crate) raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
+}
+
+impl DecodeCost for SurfaceParameterOpaqueSpan {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.raw, &self.offset).decode_cost(ctx, operation)
+    }
 }
 
 impl serde::Serialize for SurfaceParameterOpaqueSpan {
@@ -1125,6 +1290,16 @@ pub(crate) struct SurfaceParameterScalar {
     pub(crate) raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
+}
+
+impl DecodeCost for SurfaceParameterScalar {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.value, &self.raw, &self.offset).decode_cost(ctx, operation)
+    }
 }
 
 fn six_finite_scalar_values(slots: &[SurfaceParameterScalar]) -> Option<[f64; 6]> {
@@ -4352,6 +4527,25 @@ pub(crate) enum InlineSurfaceCarrier {
         variant: ExtrusionVariant,
         frame: TabulatedCylinderFrame,
     },
+}
+
+impl DecodeCost for InlineSurfaceCarrier {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Cylinder {
+                frame,
+                split_bounds,
+            } => (0_u8, frame, split_bounds).decode_cost(ctx, operation),
+            Self::CylinderBounds(bounds) => (1_u8, bounds).decode_cost(ctx, operation),
+            Self::Cone(frame) => (2_u8, frame).decode_cost(ctx, operation),
+            Self::Torus(frame) => (3_u8, frame).decode_cost(ctx, operation),
+            Self::Tabulated { variant, frame } => (4_u8, variant, frame).decode_cost(ctx, operation),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

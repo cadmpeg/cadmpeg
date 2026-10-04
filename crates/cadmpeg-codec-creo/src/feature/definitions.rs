@@ -399,6 +399,22 @@ pub(crate) enum FeatureSegmentKind {
     Point(u32),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSegmentKind {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        match self {
+            Self::Line(points) => DecodeCost::decode_cost(&(0_u8, points), ctx, operation),
+            Self::Arc(points) => DecodeCost::decode_cost(&(1_u8, points), ctx, operation),
+            Self::Point(point) => DecodeCost::decode_cost(&(2_u8, point), ctx, operation),
+        }
+    }
+}
+
 /// One positional `segtab_ptr` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureSegment {
@@ -424,6 +440,36 @@ pub(crate) struct FeatureSegment {
     pub(crate) body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
     pub(crate) offset: usize,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureSegment {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        let fields = DecodeCost::decode_cost(
+            &(
+                &self.kind,
+                &self.directions,
+                &self.center_id,
+                &self.arc_orientation,
+                &self.vertical_horizontal,
+                &self.radius_ref,
+            ),
+            ctx,
+            operation,
+        )?;
+        let remaining = DecodeCost::decode_cost(
+                &(&self.radius2_ref, &self.external_id, &self.body, &self.offset),
+                ctx,
+                operation,
+            )?;
+        fields.checked_add(remaining)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
 }
 
 impl FeatureSegment {
@@ -8758,6 +8804,9 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod owners_tests;
+
+#[cfg(test)]
+mod cost_tests;
 
 #[cfg(test)]
 mod saved_tests;

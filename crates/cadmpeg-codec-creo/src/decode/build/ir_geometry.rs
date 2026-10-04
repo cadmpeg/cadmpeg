@@ -370,18 +370,27 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &ir.model.surfaces,
         &ir.model.procedural_surfaces,
     )?;
-    let decoded_type24_round_edge_envelope_count = ctx.admit_iter(&scan.surfaces.parameters, "creo parameters transfer coverage traversal")?
-        .filter_map(|record| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-                .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)?;
-            (crate::surface::unique_surface_parameter(
-                &scan.surfaces.parameters,
-                record.surface_id,
-            ) == Some(record))
-            .then_some(())?;
-            record.type24_round_edge_envelope()
-        })
-        .count();
+    let mut decoded_type24_round_edge_envelope_count = 0usize;
+    for record in ctx.admit_iter(&scan.surfaces.parameters, "creo parameters transfer coverage traversal")? {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id) else {
+            continue;
+        };
+        if row.kind != crate::surface::SurfaceKind::Cylinder {
+            continue;
+        }
+        if !ctx.equal(
+            &crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id),
+            &Some(record),
+            "creo round edge envelope parameter agreement",
+        )? {
+            continue;
+        }
+        if record.type24_round_edge_envelope().is_some() {
+            decoded_type24_round_edge_envelope_count = decoded_type24_round_edge_envelope_count
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("creo round edge envelope count", u64::MAX, u64::MAX))?;
+        }
+    }
     let curve_coverage =
         curve_transfer_coverage(ctx, &scan.curves.topology_rows, &ir.model.curves)?;
     {

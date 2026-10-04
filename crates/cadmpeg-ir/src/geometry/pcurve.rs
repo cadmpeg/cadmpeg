@@ -2179,6 +2179,30 @@ impl PcurveNurbs {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for PcurveNurbs {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        let scalar_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
+        let point_bytes = 2_u64.checked_mul(scalar_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let pole_bytes = match self.pole_rows() {
+            PcurveNurbsPoles::Polynomial { points } => 1_u64.checked_add((cadmpeg_core::decode::u64_from_index(points.len())).checked_mul(point_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+            PcurveNurbsPoles::Rational { points } => {
+                let row_bytes = (point_bytes).checked_add(scalar_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                1_u64.checked_add((cadmpeg_core::decode::u64_from_index(points.len())).checked_mul(row_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+            }
+        };
+        let fields = DecodeCost::decode_cost(&self.degree(), ctx, operation)?;
+        let fields = (fields).checked_add(DecodeCost::decode_cost(self.knots().as_slice(), ctx, operation)?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let fields = (fields).checked_add(pole_bytes).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        (fields).checked_add(DecodeCost::decode_cost(&self.periodic(), ctx, operation)?).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
 impl<'de> Deserialize<'de> for PcurveNurbs {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

@@ -678,7 +678,14 @@ pub(super) fn transfer_fc05_cap_circles(
             circle.curve_id,
             "creo FC05 cap circle identity",
         )?;
-        if !ctx.admit_iter(&ir.model.curves, "creo cap circle model curve search")?.any(|curve| curve.id == id) {
+        let mut identity_present = false;
+        for curve in ctx.admit_iter(&ir.model.curves, "creo cap circle model curve search")? {
+            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if !identity_present {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
                 Vector3::from(axis),
@@ -733,9 +740,14 @@ pub(super) fn transfer_fc05_cap_circles(
             cylinder_id,
             "creo FC05 axis cylinder identity",
         )?;
-        if ctx.admit_iter(&ir.model.surfaces, "creo cap circle model surface search")?
-            .any(|surface| surface.id == surface_id)
-        {
+        let mut identity_present = false;
+        for surface in ctx.admit_iter(&ir.model.surfaces, "creo cap circle model surface search")? {
+            if ctx.equal(&surface.id, &surface_id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

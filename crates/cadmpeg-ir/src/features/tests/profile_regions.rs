@@ -220,7 +220,9 @@ fn whole_loop_constructors_preserve_original_refusals_and_release_scoped_members
             } else {
                 SketchProfileLoops::new(0, vec![2, 1], &ctx).map(|_| ())
             };
-            let limit = result.unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                panic!("whole-loop membership resource refusal required");
+            };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, "validate distinct decoded members");
             assert!(

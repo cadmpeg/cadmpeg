@@ -22,7 +22,6 @@ use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
     sketch_identity_scope,
 };
-use super::super::uniqueness::exactly_one;
 
 fn insert_dimension_property(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -66,13 +65,18 @@ fn push_feature_source_parameter(
         cadmpeg_core::decode::u64_from_index(content.len()),
         "creo feature source content",
     )?;
-    if ctx
-        .admit_iter(&**content, "creo feature source content uniqueness")?
-        .any(|entry| matches!(entry, FeatureSourceContent::Parameter(existing) if existing == &id))
-    {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "source_content repeats a parameter or child-feature reference".into(),
-        ));
+    for entry in ctx.admit_iter(&**content, "creo feature source content uniqueness")? {
+        if let FeatureSourceContent::Parameter(existing) = entry {
+            if ctx.equal(
+                existing,
+                &id,
+                "creo feature source parameter identity comparison",
+            )? {
+                return Err(cadmpeg_core::CodecError::Malformed(
+                    "source_content repeats a parameter or child-feature reference".into(),
+                ));
+            }
+        }
     }
     content.reserve_for_decode(ctx, 1, "creo feature source content")?;
     content
@@ -551,12 +555,23 @@ pub(in super::super) fn transfer_feature_dimensions(
                 native_ref: Some(feature_sketch_record_id_in_scan(ctx, scan, definition)?),
             },
         )?;
-        let owner_index = exactly_one(
-            ctx.admit_iter(&ir.model.features, "creo dimension owner feature lookup")?
-                .enumerate()
-                .filter(|(_, feature)| feature.id == owner_id),
-        )
-        .map(|(index, _)| index);
+        let mut owner_index = None;
+        for (index, feature) in
+            ctx.admit_iter(&ir.model.features, "creo dimension owner feature lookup")?.enumerate()
+        {
+            if !ctx.equal(
+                &feature.id,
+                &owner_id,
+                "creo dimension owner feature identity comparison",
+            )? {
+                continue;
+            }
+            if owner_index.is_some() {
+                owner_index = None;
+                break;
+            }
+            owner_index = Some(index);
+        }
         if let Some(index) = owner_index {
             push_feature_source_parameter(ctx, &mut ir.model.features[index].source_content, id)?;
         }

@@ -1199,3 +1199,57 @@ fn container_framing_misses_and_text_copies_refuse_work() {
 mod unit_selection;
 
 mod work_admission;
+
+#[test]
+fn legacy_layout_equality_refuses_work_for_nested_strings_and_numeric_runs() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @root 1 0\n@numbers 2 5\n@names 3 10\n0 1 ->\n\
+        1 2 [3]\n$0,2*144\n1 3 [2][81]\n2 3 first\n2 3 second\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+    let scan = container::scan_bytes_ok(data);
+    let layout = &scan.framing.layout;
+    let container::Layout::LegacyAscii(framing) = layout else {
+        panic!("legacy layout fixture");
+    };
+    assert_eq!(framing.persistence.type_5_values.rows.len(), 1);
+    let crate::legacy::NumericPayload::Array(numbers) =
+        &framing.persistence.type_5_values.rows[0].payload
+    else {
+        panic!("numeric run array fixture");
+    };
+    assert_eq!(numbers.dimensions(), [3]);
+    assert_eq!(numbers.runs().len(), 2);
+    assert_eq!(framing.persistence.string_values.len(), 1);
+    let crate::legacy::StringPayload::Array { values, .. } =
+        &framing.persistence.string_values[0].payload
+    else {
+        panic!("nested string array fixture");
+    };
+    assert_eq!(values.len(), 2);
+    assert!(matches!(&values[0], Ok(crate::legacy::StringValue::Utf8 { text }) if text == "first"));
+    assert!(matches!(&values[1], Ok(crate::legacy::StringValue::Utf8 { text }) if text == "second"));
+
+    use cadmpeg_core::decode::cost::DecodeCost;
+    let mut expanded = layout.clone();
+    let container::Layout::LegacyAscii(expanded_framing) = &mut expanded else {
+        panic!("legacy layout copy");
+    };
+    let crate::legacy::StringPayload::Array { values, .. } =
+        &mut expanded_framing.persistence.string_values[0].payload
+    else {
+        panic!("nested string array copy");
+    };
+    values[0] = Ok(crate::legacy::StringValue::Utf8 { text: "firsté".to_owned() });
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let original_cost = layout.decode_cost(ctx, "creo legacy Layout equality")?;
+        let expanded_cost = expanded.decode_cost(ctx, "creo legacy Layout equality")?;
+        // The added UTF-8 character contributes two retained string bytes.
+        assert_eq!(expanded_cost.checked_sub(original_cost), Some(2));
+        assert!(!ctx.equal(layout, &expanded, "creo legacy Layout equality")?);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    }).expect("nested string cost admitted");
+
+    crate::test_support::assert_work_boundaries(&["creo legacy Layout equality"], |ctx| {
+        ctx.equal(layout, layout, "creo legacy Layout equality")
+    });
+}

@@ -43,14 +43,25 @@ pub(in super::super) fn filled_surface_feature_definition(
         None => None,
     };
     let boundary = match sketch {
-        Some(sketch)
-            if ctx
-                .admit_iter(&ir.model.sketches, "creo model sketch lookup")?
-                .any(|candidate| candidate.id == sketch) =>
-        {
-            SurfaceBoundary::Path(PathRef::Sketch(sketch))
+        Some(sketch) => {
+            let mut sketch_found = false;
+            for candidate in ctx.admit_iter(&ir.model.sketches, "creo model sketch lookup")? {
+                if ctx.equal(
+                    &candidate.id,
+                    &sketch,
+                    "creo model sketch identity comparison",
+                )? {
+                    sketch_found = true;
+                    break;
+                }
+            }
+            if sketch_found {
+                SurfaceBoundary::Path(PathRef::Sketch(sketch))
+            } else {
+                SurfaceBoundary::Edges(EdgeSelection::Unresolved)
+            }
         }
-        _ => SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        None => SurfaceBoundary::Edges(EdgeSelection::Unresolved),
     };
     Ok(IrFeatureDefinition::Operation(
         IrFeatureOperation::FilledSurface {

@@ -187,13 +187,27 @@ pub(in super::super) fn fc14_held_coordinate(
         let Some(token) = tokens.next() else {
             return Ok(None);
         };
-        if token.raw != first.raw || token.value_mm != first.value_mm {
+        if !ctx.equal(
+            &token.raw,
+            &first.raw,
+            "creo FC14 coordinate token bytes comparison",
+        )? || token.value_mm != first.value_mm {
             return Ok(None);
         }
     }
-    Ok((first.value_mm.is_finite()
-        && tokens.all(|token| token.raw == first.raw && token.value_mm == first.value_mm))
-    .then_some(first.value_mm))
+    if !first.value_mm.is_finite() {
+        return Ok(None);
+    }
+    for token in tokens {
+        if !ctx.equal(
+            &token.raw,
+            &first.raw,
+            "creo FC14 coordinate token bytes comparison",
+        )? || token.value_mm != first.value_mm {
+            return Ok(None);
+        }
+    }
+    Ok(Some(first.value_mm))
 }
 
 pub(in super::super) fn select_fc14_axis_coordinate_candidate(

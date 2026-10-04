@@ -165,6 +165,23 @@ pub(crate) enum OperationKind {
     Native,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for OperationKind {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        match self {
+            Self::Stored(value) => DecodeCost::decode_cost(&(0_u8, value.as_str()), ctx, operation),
+            Self::Extrude => DecodeCost::decode_cost(&(1_u8,), ctx, operation),
+            Self::Revolve => DecodeCost::decode_cost(&(2_u8,), ctx, operation),
+            Self::Native => DecodeCost::decode_cost(&(3_u8,), ctx, operation),
+        }
+    }
+}
+
 impl OperationKind {
     pub(crate) fn as_str(&self) -> &str {
         match self {
@@ -895,6 +912,7 @@ pub(crate) fn operations(
 #[cfg(test)]
 mod tests {
     mod resource_limits;
+    mod decode_cost;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

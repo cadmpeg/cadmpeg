@@ -778,10 +778,18 @@ pub(in super::super) fn transfer_sketches(
             let Some(id) = sketch_entity_id_admitted(ctx, &sketch_id, external_id)? else {
                 continue;
             };
-            if ctx
-                .admit_iter(&entities, "creo transferred sketch entities")?
-                .any(|entity| entity.id() == &id)
-            {
+            let mut already_present = false;
+            for entity in ctx.admit_iter(&entities, "creo transferred sketch entities")? {
+                if ctx.equal(
+                    entity.id(),
+                    &id,
+                    "creo transferred sketch entity ID comparison",
+                )? {
+                    already_present = true;
+                    break;
+                }
+            }
+            if already_present {
                 continue;
             }
             annotate(

@@ -79,7 +79,7 @@ fn name_only_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    if feature_section_sweep_semantics_conflict(scan, feature_id)
+    if feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && (matches!(kind, "Protrusion" | "Cut" | "Extrude" | "Revolve")
             || numbered_feature_name_has_family(ctx, kind, "Extrude")?
             || numbered_feature_name_has_family(ctx, kind, "Revolve")?)
@@ -213,7 +213,11 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         return Ok(None);
     };
     let reference_name = decoded_feature_reference_name(ctx, reference_name)?;
-    if reference_name == kind {
+    if ctx.equal(
+        reference_name.as_ref(),
+        kind,
+        "creo named feature reference comparison",
+    )? {
         return Ok(None);
     }
     named_feature_definition(ctx, scan, ir, source_carriers, feature_id, &reference_name)

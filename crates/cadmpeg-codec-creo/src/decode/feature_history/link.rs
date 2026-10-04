@@ -70,12 +70,23 @@ fn unique_model_feature_index(
     ir: &CadIr,
     feature_id: &IrFeatureId,
 ) -> Result<Option<usize>, CodecError> {
-    Ok(exactly_one(
-        ctx.admit_iter(&ir.model.features, "creo linked model feature lookup")?
-            .enumerate()
-            .filter(|(_, feature)| feature.id == *feature_id),
-    )
-    .map(|(index, _)| index))
+    let mut matching_index = None;
+    for (index, feature) in
+        ctx.admit_iter(&ir.model.features, "creo linked model feature lookup")?.enumerate()
+    {
+        if !ctx.equal(
+            &feature.id,
+            feature_id,
+            "creo linked model feature identity comparison",
+        )? {
+            continue;
+        }
+        if matching_index.is_some() {
+            return Ok(None);
+        }
+        matching_index = Some(index);
+    }
+    Ok(matching_index)
 }
 
 pub(in super::super) fn surface_kind_for_geometry(

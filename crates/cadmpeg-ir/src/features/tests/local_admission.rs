@@ -15,9 +15,15 @@ fn invalid_membership_constructors_preserve_an_existing_refusal() {
         BodySelectionError, EdgeSelection, FaceSelection, FeatureCollectionError, NativeSelections,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
+    use cadmpeg_core::CodecError;
 
-    fn refusal<T>(result: Result<Result<T, BodySelectionError>, ResourceLimit>) -> ResourceLimit {
-        result.err().expect("original resource refusal")
+    fn refusal<T, E: Into<CodecError>>(
+        result: Result<Result<T, BodySelectionError>, E>,
+    ) -> ResourceLimit {
+        match result.err().expect("original resource refusal").into() {
+            CodecError::ResourceLimit(limit) => limit,
+            error => panic!("expected original resource refusal, got {error}"),
+        }
     }
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -58,10 +64,10 @@ fn invalid_membership_constructors_preserve_an_existing_refusal() {
         refusal(PlanarProfileRef::generated(Vec::new(), String::new(), &ctx)),
         original
     );
-    assert_eq!(
-        TreeChildren::new(Vec::new(), Some(feature_id("missing")), &ctx).unwrap_err(),
-        FeatureCollectionError::Resource(original)
-    );
+    assert!(matches!(
+        TreeChildren::new(Vec::new(), Some(feature_id("missing")), &ctx),
+        Err(FeatureCollectionError::Resource(limit)) if limit == original
+    ));
     assert!(
         matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
     );
@@ -183,8 +189,79 @@ fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
 }
 
 #[test]
+fn body_members_deserialize_standard_keys_without_decode_cost() {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    struct StandardBody(u8);
+
+    let wire = serde_json::json!([{"body": 7, "native": "member#1"}]);
+    let members = serde_json::from_value::<BodyMembers<StandardBody>>(wire.clone())
+        .expect("standard body keys need no decode-cost policy");
+
+    assert_eq!(members.count(), 1);
+    assert_eq!(serde_json::to_value(members).unwrap(), wire);
+}
+
+#[test]
+fn body_members_deserialize_nonstatic_borrowed_keys_without_decode_cost() {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    struct StandardBody<'a>(#[serde(borrow)] &'a str);
+
+    let wire = String::from(r#"[{"body":"borrowed-body","native":"member#1"}]"#);
+    let members = serde_json::from_str::<BodyMembers<StandardBody<'_>>>(&wire)
+        .expect("standard borrowed body keys need no decode-cost policy");
+
+    assert_eq!(members.count(), 1);
+    assert_eq!(members.iter().next().unwrap().body().0, "borrowed-body");
+    let expected = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
+    assert_eq!(serde_json::to_value(members).unwrap(), expected);
+}
+
+#[test]
+fn feature_content_skips_repeated_text_and_admits_reference_comparison_cost() {
+    use crate::features::{FeatureContent, FeatureCollectionError, FeatureSourceContent};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let text = "repeated literal text".repeat(16);
+    let values = vec![
+        FeatureSourceContent::Text(text.clone()),
+        FeatureSourceContent::Text(text),
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 4;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let content = FeatureContent::new(values.clone(), &ctx, "feature content text").unwrap();
+    assert_eq!(&*content, values.as_slice());
+    ctx.finish_session().unwrap();
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut content = FeatureContent::default();
+    let reference = FeatureSourceContent::Parameter(
+        crate::features::ParameterId::mint("test:model:parameter#shared").unwrap(),
+    );
+    content
+        .push(reference.clone(), &ctx, "feature content reference")
+        .unwrap();
+    let Err(FeatureCollectionError::Resource(limit)) =
+        content.push(reference, &ctx, "feature content reference")
+    else {
+        panic!("reference comparison cost must be admitted");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "feature content reference");
+    assert_eq!(content.len(), 1);
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+    );
+}
+
+#[test]
 fn charged_native_selections_refuse_uniqueness_index_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
@@ -195,7 +272,7 @@ fn charged_native_selections_refuse_uniqueness_index_limit() {
         &ctx,
         "test native selection uniqueness",
     );
-    assert!(matches!(result, Err(failure)
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "test native selection uniqueness"));
 }
@@ -234,7 +311,9 @@ fn local_and_generated_body_constructors_use_the_caller_session() {
             } else {
                 BodySelection::local(vec!["body".into()], "native".into(), &ctx)
             };
-            let limit = result.unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                panic!("original membership resource refusal required");
+            };
             assert_eq!(limit.dimension, dimension);
             assert!(
                 matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
@@ -402,7 +481,9 @@ fn feature_result_members_admit_each_arena_and_release_the_index() {
                 "result membership",
             );
             if let Some(dimension) = dimension {
-                let limit = result.unwrap_err();
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                    panic!("result membership resource refusal required");
+                };
                 assert_eq!(limit.dimension, dimension);
                 assert_eq!(limit.operation, "result membership");
                 assert!(
@@ -595,7 +676,7 @@ fn charged_selection_members_refuse_uniqueness_index_limit() {
         SelectionMembers::new(
             vec!["first", "second"], &ctx, "selection uniqueness",
         ),
-        Err(failure)
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "selection uniqueness"
                 && failure.dimension == ResourceDimension::CollectionItems
     ));
@@ -1260,10 +1341,10 @@ fn tree_children_wire_and_decode_share_membership_validation() {
             .unwrap_err()
             .to_string();
         assert!(error.contains(message), "{error}");
-        assert_eq!(
-            TreeChildren::new(children, active, &ctx).unwrap_err(),
-            FeatureCollectionError::Invalid(message)
-        );
+        assert!(matches!(
+            TreeChildren::new(children, active, &ctx),
+            Err(FeatureCollectionError::Invalid(actual)) if actual == message
+        ));
     }
     let children = TreeChildren::new(vec![second, first.clone()], Some(first), &ctx).unwrap();
     let wire = serde_json::to_value(&children).unwrap();
@@ -1282,12 +1363,8 @@ fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
     };
     let first = feature_id("left");
     let second = feature_id("next");
-    for cap in [
-        0,
-        1,
-        u64_from_index(first.as_str().len()) + 1,
-        u64_from_index(first.as_str().len()) + 2,
-    ] {
+    let key_bytes = u64_from_index(first.as_str().len());
+    for cap in [0, 1, key_bytes + 1, 1 + 2 * key_bytes, 2 + 2 * key_bytes] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -1314,10 +1391,11 @@ fn tree_child_admission_preserves_first_and_later_active_comparison_refusals() {
     .unwrap();
     assert_eq!(&children[..], &[second.clone(), first.clone()]);
     assert_eq!(children.active_child(), &Some(first.clone()));
-    assert_eq!(
-        TreeChildren::new(vec![first], Some(second), &ctx).unwrap_err(),
-        FeatureCollectionError::Invalid("active_child must belong to children")
-    );
+    assert!(matches!(
+        TreeChildren::new(vec![first], Some(second), &ctx),
+        Err(FeatureCollectionError::Invalid(message))
+            if message == "active_child must belong to children"
+    ));
     ctx.finish_session().unwrap();
 }
 

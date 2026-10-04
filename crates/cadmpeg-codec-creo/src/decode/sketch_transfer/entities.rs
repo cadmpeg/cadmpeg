@@ -801,10 +801,18 @@ pub(super) fn transfer_section_entities(
         let Some(entity_id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             return Ok(ControlFlow::Continue(()));
         };
-        if ctx
-            .admit_iter(&entities, "creo saved section entity identities")?
-            .any(|entity| entity.id() == &entity_id)
-        {
+        let mut already_present = false;
+        for entity in ctx.admit_iter(&entities, "creo saved section entity identities")? {
+            if ctx.equal(
+                entity.id(),
+                &entity_id,
+                "creo saved section entity identity comparison",
+            )? {
+                already_present = true;
+                break;
+            }
+        }
+        if already_present {
             return Ok(ControlFlow::Continue(()));
         }
         let generated = if let Some(external_id) = external_id {
@@ -965,10 +973,18 @@ pub(super) fn transfer_section_entities(
         let curve_id = CurveId::try_from(curve_text).map_err(|_| {
             cadmpeg_core::CodecError::malformed("saved spline curve identity is invalid")
         })?;
-        if ctx
-            .admit_iter(&entities, "creo saved spline entity identities")?
-            .any(|entity| entity.id() == &entity_id)
-        {
+        let mut already_present = false;
+        for entity in ctx.admit_iter(&entities, "creo saved spline entity identities")? {
+            if ctx.equal(
+                entity.id(),
+                &entity_id,
+                "creo saved spline entity identity comparison",
+            )? {
+                already_present = true;
+                break;
+            }
+        }
+        if already_present {
             return Ok(ControlFlow::Continue(()));
         }
         annotate(
@@ -1024,10 +1040,18 @@ pub(super) fn transfer_section_entities(
         else {
             return Ok(ControlFlow::Continue(()));
         };
-        if ctx
-            .admit_iter(&entities, "creo unresolved entity identities")?
-            .any(|existing| existing.id() == entity.id())
-        {
+        let mut already_present = false;
+        for existing in ctx.admit_iter(&entities, "creo unresolved entity identities")? {
+            if ctx.equal(
+                existing.id(),
+                entity.id(),
+                "creo unresolved saved section entity identity comparison",
+            )? {
+                already_present = true;
+                break;
+            }
+        }
+        if already_present {
             return Ok(ControlFlow::Continue(()));
         }
         annotate(
@@ -1076,10 +1100,20 @@ pub(super) fn transfer_section_entities(
             let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
-            if ctx
-                .admit_iter(&ir.model.curves, "creo existing placed section curves")?
-                .any(|existing| existing.id == id)
+            let mut already_present = false;
+            for existing in
+                ctx.admit_iter(&ir.model.curves, "creo existing placed section curves")?
             {
+                if ctx.equal(
+                    &existing.id,
+                    &id,
+                    "creo existing placed section curve ID comparison",
+                )? {
+                    already_present = true;
+                    break;
+                }
+            }
+            if already_present {
                 continue;
             }
             annotate(
@@ -1131,10 +1165,20 @@ pub(super) fn transfer_section_entities(
                 let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                     continue;
                 };
-                if ctx
-                    .admit_iter(&ir.model.curves, "creo existing placed circle curves")?
-                    .any(|existing| existing.id == id)
+                let mut already_present = false;
+                for existing in
+                    ctx.admit_iter(&ir.model.curves, "creo existing placed circle curves")?
                 {
+                    if ctx.equal(
+                        &existing.id,
+                        &id,
+                        "creo existing placed circle curve ID comparison",
+                    )? {
+                        already_present = true;
+                        break;
+                    }
+                }
+                if already_present {
                     continue;
                 }
                 annotate(
@@ -1188,10 +1232,20 @@ pub(super) fn transfer_section_entities(
                 let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                     continue;
                 };
-                if ctx
+                let mut already_present = false;
+                for existing in ctx
                     .admit_iter(&ir.model.curves, "creo existing placed centered-line curves")?
-                    .any(|existing| existing.id == id)
                 {
+                    if ctx.equal(
+                        &existing.id,
+                        &id,
+                        "creo existing placed centered-line curve ID comparison",
+                    )? {
+                        already_present = true;
+                        break;
+                    }
+                }
+                if already_present {
                     continue;
                 }
                 annotate(
@@ -1223,10 +1277,20 @@ pub(super) fn transfer_section_entities(
         }
     }
         for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
-            if ctx
-                .admit_iter(&ir.model.curves, "creo existing placed saved curves")?
-                .any(|existing| existing.id == id)
+            let mut already_present = false;
+            for existing in
+                ctx.admit_iter(&ir.model.curves, "creo existing placed saved curves")?
             {
+                if ctx.equal(
+                    &existing.id,
+                    &id,
+                    "creo existing placed saved curve ID comparison",
+                )? {
+                    already_present = true;
+                    break;
+                }
+            }
+            if already_present {
                 continue;
             }
             let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {

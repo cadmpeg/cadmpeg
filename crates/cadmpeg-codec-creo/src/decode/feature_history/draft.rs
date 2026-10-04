@@ -136,10 +136,18 @@ pub(super) fn thicken_feature_definition(
         }
         let mut all_faces_resolved = true;
         for face in ctx.admit_iter(&faces, "creo thicken resolved face IDs")? {
-            if !ctx
-                .admit_iter(&ir.model.faces, "creo thicken model face lookup")?
-                .any(|candidate| candidate.id == *face)
-            {
+            let mut face_found = false;
+            for candidate in ctx.admit_iter(&ir.model.faces, "creo thicken model face lookup")? {
+                if ctx.equal(
+                    &candidate.id,
+                    face,
+                    "creo thicken model face identity comparison",
+                )? {
+                    face_found = true;
+                    break;
+                }
+            }
+            if !face_found {
                 all_faces_resolved = false;
                 break;
             }
@@ -201,9 +209,17 @@ fn hole_face_selection(
         format_args!("creo:visibgeom:face#{surface_id}"),
         "creo hole candidate face ID",
     )?;
-    let resolved = ctx
-        .admit_iter(&ir.model.faces, "creo hole face lookup")?
-        .any(|candidate| candidate.id.as_str() == candidate_id);
+    let mut resolved = false;
+    for candidate in ctx.admit_iter(&ir.model.faces, "creo hole face lookup")? {
+        if ctx.equal(
+            candidate.id.as_str(),
+            candidate_id.as_str(),
+            "creo hole face identity comparison",
+        )? {
+            resolved = true;
+            break;
+        }
+    }
     if resolved {
         let face = FaceId::mint(ctx.copy_retained_text(&candidate_id, "creo hole face IDs")?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -368,14 +384,23 @@ pub(in super::super) fn schema_feature_definition(
         };
         let sketch = match definition {
             Some(definition) => match model_sketch_id(ctx, scan, definition)? {
-                Some(sketch)
-                    if ctx
-                        .admit_iter(&ir.model.sketches, "creo schema sketch model lookup")?
-                        .any(|candidate| candidate.id == sketch) =>
-                {
-                    Some(sketch)
+                Some(sketch) => {
+                    let mut sketch_found = false;
+                    for candidate in
+                        ctx.admit_iter(&ir.model.sketches, "creo schema sketch model lookup")?
+                    {
+                        if ctx.equal(
+                            &candidate.id,
+                            &sketch,
+                            "creo schema sketch identity comparison",
+                        )? {
+                            sketch_found = true;
+                            break;
+                        }
+                    }
+                    sketch_found.then_some(sketch)
                 }
-                _ => None,
+                None => None,
             },
             None => None,
         };
@@ -693,7 +718,7 @@ pub(in super::super) fn schema_feature_definition(
         }));
     }
     if schema_class == Some(SchemaClass::Protrusion)
-        && !feature_section_sweep_semantics_conflict(scan, feature_id)
+        && !feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
         if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
@@ -802,7 +827,7 @@ pub(in super::super) fn schema_feature_definition(
         ));
     }
     let recipe = feature_recipe(scan, feature_id);
-    if (!feature_section_sweep_semantics_conflict(scan, feature_id)
+    if (!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && section_sweep_allows_linear_extrusion(schema_class, recipe))
         || feature_is_sheet_extrusion(ctx, scan, feature_id)?
     {
@@ -1189,7 +1214,7 @@ pub(in super::super) fn feature_allows_linear_extrusion(
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let schema_class = feature_schema_class(ctx, scan, feature_id)?;
-    Ok((!feature_section_sweep_semantics_conflict(scan, feature_id)
+    Ok((!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && schema_class.is_some_and(|schema_class| {
             section_sweep_allows_linear_extrusion(
                 Some(schema_class),
@@ -1204,7 +1229,7 @@ pub(in super::super) fn feature_allows_additive_linear_extrusion(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(!feature_section_sweep_semantics_conflict(scan, feature_id)
+    Ok(!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && feature_schema_class(ctx, scan, feature_id)? == Some(SchemaClass::Protrusion)
         && section_sweep_allows_linear_extrusion(
             Some(SchemaClass::Protrusion),
