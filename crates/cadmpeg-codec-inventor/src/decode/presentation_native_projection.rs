@@ -5,7 +5,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
-    rendering_style_issue, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
     PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
     PmGraphicsStyleCollectionRecord,
 };
@@ -31,11 +31,10 @@ pub(super) fn project(
         graphics_style_collections: Vec::new(),
         graphics_primary_color_styles: Vec::new(),
     };
-    for style in &inventory.default_styles {
+    for style in ctx.admit_iter(&inventory.default_styles, "visit Inventor decode/presentation_native_projection items")? {
         let token = style.identity.segment_token.as_str();
-        ctx.charge_collection_items(1, "collect Inventor native default style")?;
         ctx.charge_entities(1, "admit Inventor native default style")?;
-        projection.default_styles.push(PmAppDefaultStyleRecord {
+        ctx.push_vec(&mut projection.default_styles, PmAppDefaultStyleRecord {
             id: ctx.format_retained(
                 format_args!(
                     "inventor:presentation:default-style#{token}-{}",
@@ -59,9 +58,9 @@ pub(super) fn project(
                 style.suffix.window(),
                 "retain Inventor default style suffix digest",
             )?,
-        });
+        }, "collect Inventor native default style")?;
     }
-    for style in &inventory.rendering_styles {
+    for style in ctx.admit_iter(&inventory.rendering_styles, "visit Inventor decode/presentation_native_projection items")? {
         let token = style.identity.segment_token.as_str();
         let extension = style.extension.as_ref();
         let wire = PmAppRenderingStyleRecordWire {
@@ -136,38 +135,25 @@ pub(super) fn project(
             )
             .map(String::from)?,
         };
-        if let Some(detail) = rendering_style_issue(
-            style.segment_version_major,
-            &style.comment,
-            style.extension.is_some(),
-        ) {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(detail.len()),
-                "retain Inventor rendering conversion issue",
-            )?;
-        }
-        match PmAppRenderingStyleRecord::try_from(wire) {
+        match wire.into_record(ctx) {
             Ok(record) => {
-                ctx.charge_collection_items(1, "collect Inventor native rendering style")?;
                 ctx.charge_entities(1, "admit Inventor native rendering style")?;
-                projection.rendering_styles.push(record);
+                ctx.push_vec(&mut projection.rendering_styles, record, "collect Inventor native rendering style")?;
             }
-            Err(detail) => {
-                ctx.charge_collection_items(1, "collect Inventor rendering conversion issue")?;
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(CodecError::Malformed(detail)) => {
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
-                inventory.issues.push(RecordIssue {
+                ctx.push_vec(&mut inventory.issues, RecordIssue {
                     family: RecordIssueFamily::Presentation,
-                    segment_token: cadmpeg_ir::ids::IdentityKey::try_new(
-                        ctx.copy_retained_text(token, "retain Inventor rendering issue token")?,
-                    )
-                    .map_err(CodecError::malformed)?,
+                    segment_token: style.identity.segment_token.try_clone_for_decode(ctx, "retain Inventor rendering issue token")?,
                     record_ordinal: style.identity.record_ordinal,
                     detail,
-                });
+                }, "collect Inventor rendering conversion issue")?;
             }
+            Err(error) => return Err(error),
         }
     }
-    for face in &inventory.graphics_faces {
+    for face in ctx.admit_iter(&inventory.graphics_faces, "visit Inventor decode/presentation_native_projection items")? {
         let token = face.identity.segment_token.as_str();
         let id = ctx.format_retained(
             format_args!(
@@ -177,13 +163,8 @@ pub(super) fn project(
             "retain Inventor graphics face id",
         )?;
         let segment_token = ctx.copy_retained_text(token, "retain Inventor graphics face token")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(face.edge_references.references().len()),
-            "copy Inventor graphics face edge references",
-        )?;
-        ctx.charge_collection_items(1, "collect Inventor native graphics face")?;
         ctx.charge_entities(1, "admit Inventor native graphics face")?;
-        projection.graphics_faces.push(PmGraphicsFaceRecord {
+        ctx.push_vec(&mut projection.graphics_faces, PmGraphicsFaceRecord {
             id,
             segment_token,
             record_ordinal: face.identity.record_ordinal,
@@ -195,14 +176,14 @@ pub(super) fn project(
             surface: face.surface,
             parent: face.parent,
             state: face.state,
-            edge_references: face.edge_references.clone(),
+            edge_references: face.edge_references.try_clone_for_decode(ctx, "copy Inventor graphics face edge references")?,
             visibility_state: face.visibility_state,
             bounds: face.bounds,
             key: face.key,
             values: face.values,
-        });
+        }, "collect Inventor native graphics face")?;
     }
-    for collection in &inventory.graphics_style_collections {
+    for collection in ctx.admit_iter(&inventory.graphics_style_collections, "visit Inventor decode/presentation_native_projection items")? {
         let token = collection.identity.segment_token.as_str();
         let id = ctx.format_retained(
             format_args!(
@@ -211,33 +192,20 @@ pub(super) fn project(
             ),
             "retain Inventor graphics style collection id",
         )?;
-        let segment_token =
-            ctx.copy_retained_text(token, "retain Inventor graphics style collection token")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(collection.style_references.references().len()),
-            "copy Inventor graphics style references",
-        )?;
-        ctx.charge_collection_items(1, "collect Inventor native graphics style collection")?;
         ctx.charge_entities(1, "admit Inventor native graphics style collection")?;
-        projection.graphics_style_collections.push(
-            PmGraphicsStyleCollectionRecord::new(
-                id,
-                cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
-                    .map_err(CodecError::malformed)?,
+        ctx.push_vec(&mut projection.graphics_style_collections, PmGraphicsStyleCollectionRecord::new(
+                ctx, id,
+                collection.identity.segment_token.try_clone_for_decode(ctx, "retain Inventor graphics style collection token")?,
                 collection.identity.record_ordinal,
                 collection.segment_version_major,
-                collection.style_references.clone(),
+                collection.style_references.try_clone_for_decode(ctx, "copy Inventor graphics style references")?,
             )
-            .map_err(CodecError::malformed)?,
-        );
+            ?, "collect Inventor native graphics style collection")?;
     }
-    for style in &inventory.graphics_primary_color_styles {
+    for style in ctx.admit_iter(&inventory.graphics_primary_color_styles, "visit Inventor decode/presentation_native_projection items")? {
         let token = style.identity.segment_token.as_str();
-        ctx.charge_collection_items(1, "collect Inventor native primary color style")?;
         ctx.charge_entities(1, "admit Inventor native primary color style")?;
-        projection
-            .graphics_primary_color_styles
-            .push(PmGraphicsPrimaryColorStyleRecord {
+        ctx.push_vec(&mut projection.graphics_primary_color_styles, PmGraphicsPrimaryColorStyleRecord {
                 id: ctx.format_retained(
                     format_args!(
                         "inventor:presentation:graphics-primary-color#{token}-{}",
@@ -257,7 +225,7 @@ pub(super) fn project(
                 state: style.state,
                 values: style.values,
                 terminal_state: style.terminal_state,
-            });
+            }, "collect Inventor native primary color style")?;
     }
     Ok(projection)
 }

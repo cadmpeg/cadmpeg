@@ -201,7 +201,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")));
     let native_findings = validation_findings(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
@@ -230,7 +230,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         // The structural fixture has no `RSeDb` stream and no segment, so it
         // declares neither version this codec gates on and is admitted
         // unverified.
-        [InventorLossCode::SourceDialectUnverified.kind()]
+        [InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")]
     );
     let namespace = container_only
         .ir()
@@ -353,7 +353,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")));
 
     let native = decoded
         .ir()
@@ -497,7 +497,7 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == InventorLossCode::KernelDialectUnverified.kind())
+            .any(|loss| loss.code == InventorLossCode::KernelDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code"))
     };
     assert!(charged(&unverified));
     assert!(!charged(&verified));

@@ -26,11 +26,17 @@ impl Clone for PmDcListCloneProbe {
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// Append `bytes` to `text` as lowercase hexadecimal digit pairs.
-pub(crate) fn push_hex(text: &mut String, bytes: &[u8]) {
-    for byte in bytes {
+pub(crate) fn push_hex(
+    ctx: &DecodeContext<'_>,
+    text: &mut String,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    for byte in ctx.admit_iter(bytes, operation)? {
         text.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
         text.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
     }
+    Ok(())
 }
 
 /// Builds an Inventor type identifier from the `time_low` field of its GUID.
@@ -42,10 +48,15 @@ pub(crate) const fn inventor_id(time_low: u32) -> [u8; 16] {
     ]
 }
 
-pub(crate) fn type_id_string(value: [u8; 16]) -> String {
-    let mut result = String::with_capacity(32);
-    push_hex(&mut result, &value);
-    result
+pub(crate) fn type_id_string(
+    ctx: &DecodeContext<'_>,
+    value: [u8; 16],
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut result = String::new();
+    ctx.try_reserve_retained_text(&mut result, 32, operation)?;
+    push_hex(ctx, &mut result, &value, operation)?;
+    Ok(result)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,22 +110,27 @@ impl PmDcReference {
         self.qualified
     }
 
-    pub(crate) fn zip(indices: Vec<u32>, qualifiers: Vec<bool>) -> Result<Vec<Self>, String> {
+    pub(crate) fn zip(
+        ctx: &DecodeContext<'_>,
+        indices: Vec<u32>,
+        qualifiers: Vec<bool>,
+    ) -> Result<Vec<Self>, CodecError> {
         if indices.len() != qualifiers.len() {
-            return Err(format!(
+            return Err(CodecError::malformed(format_args!(
                 "reference count {} differs from qualifier count {}",
                 indices.len(),
                 qualifiers.len()
-            ));
+            )));
         }
-        indices
-            .into_iter()
-            .zip(qualifiers)
-            .map(|(index, qualified)| {
+        let indices = ctx.admit_iter(&indices, "visit Inventor PmDc reference indices")?;
+        let qualifiers = ctx.admit_iter(&qualifiers, "visit Inventor PmDc reference qualifiers")?;
+        ctx.try_collect_vec(
+            indices.copied().zip(qualifiers.copied()).map(|(index, qualified)| {
                 Self::new(index, qualified)
-                    .ok_or_else(|| "reference index exceeds 31 bits".to_owned())
-            })
-            .collect()
+                    .ok_or_else(|| CodecError::malformed("reference index exceeds 31 bits"))
+            }),
+            "collect Inventor PmDc references",
+        )
     }
 
     /// The zero-based record ordinal this reference names.
@@ -264,6 +280,31 @@ impl<M> PmDcPairedReferenceList<M> {
         self.items
             .as_ref()
             .map_or(&[], |(_, references)| references.as_slice())
+    }
+
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError>
+    where
+        M: Copy,
+    {
+        let items = match self.items.as_ref() {
+            None => None,
+            Some((metadata, references)) => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<M>()),
+                    operation,
+                )?;
+                Some((*metadata, ctx.copy_slice(references, operation)?))
+            }
+        };
+        Ok(Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
+            items,
+        })
     }
 
     pub(crate) fn into_references(self) -> Vec<PmDcReference> {
@@ -761,7 +802,12 @@ mod tests {
     #[test]
     fn references_reject_high_indices_on_every_construction_path() {
         assert!(super::PmDcReference::new(0x8000_0000, false).is_none());
-        assert!(super::PmDcReference::zip(vec![0x8000_0000], vec![false]).is_err());
+        assert!(super::PmDcReference::zip(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![0x8000_0000],
+            vec![false],
+        )
+        .is_err());
         assert!(serde_json::from_value::<super::PmDcReference>(
             serde_json::json!({"index": 2_147_483_648_u32, "qualified": false})
         )

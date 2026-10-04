@@ -18,6 +18,8 @@
 //! added later, and the categories this codec spans have no honest common
 //! default.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::{
     loss::{LossKind, LossNote, LossTaxonomy},
     Severity,
@@ -231,27 +233,30 @@ impl InventorLossCode {
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
-    #[must_use]
-    pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+    pub(crate) fn kind(self, ctx: &DecodeContext<'_>) -> Result<LossKind, CodecError> {
+        let code = ctx.copy_retained_text(self.code(), "retain Inventor loss code")?;
+        ctx.charge_work(8, "copy Inventor loss namespace")?;
+        ctx.charge_retained(8, "retain Inventor loss namespace")?;
+        Ok(LossKind::namespaced(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("inventor") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }
             },
-            self.code(),
+            code,
             self.shared_taxonomy(),
-        )
+        ))
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `inventor/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
-    #[must_use]
-    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
-        LossNote::new(self.kind(), message).with_severity(self.severity())
+    pub(crate) fn note(self, ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>, operation: &'static str) -> Result<LossNote, CodecError> {
+        let kind = self.kind(ctx)?;
+        let message = ctx.format_retained(message, operation)?;
+        Ok(LossNote::new(kind, message).with_severity(self.severity()))
     }
 }
 
@@ -324,8 +329,11 @@ mod tests {
     /// The note builder fixes severity from the codec-specific code.
     #[test]
     fn note_takes_severity_from_the_code() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         for code in InventorLossCode::ALL {
-            let note = code.note("x");
+            let note = code.note(&ctx, format_args!("x"), "retain Inventor loss test message").expect("loss note fits test budget");
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert_eq!(note.code.namespace(), "inventor");

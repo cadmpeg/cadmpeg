@@ -42,6 +42,18 @@ pub(crate) enum MetaSectionNumber {
     Eleven = 11,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for MetaSectionNumber {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(1)
+    }
+}
+
 impl TryFrom<u8> for MetaSectionNumber {
     type Error = String;
 
@@ -322,14 +334,16 @@ pub(crate) fn frame_bulk_records<'a>(
     tables: &MetaTables<'_>,
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
-    let stored_count = tables.blocks.iter().filter(|block| block.stored).count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(stored_count),
-        "admit Inventor RSe record frames",
-    )?;
+    let stored_count = ctx
+        .admit_iter(&tables.blocks, "count stored Inventor RSe blocks")?
+        .filter(|block| block.stored)
+        .count();
     let mut cursor = Cursor::new(bulk);
     let mut records = ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
-    for block in tables.blocks.iter().filter(|block| block.stored) {
+    for block in ctx
+        .admit_iter(&tables.blocks, "scan stored Inventor RSe blocks")?
+        .filter(|block| block.stored)
+    {
         let selector = cursor.u32("record type selector")?;
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
@@ -359,15 +373,19 @@ pub(crate) fn frame_bulk_records<'a>(
             parse_extended_record_trailer(ctx, &mut cursor)?;
         }
         let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
-        records.push(RseRecordFrame {
-            ordinal: block.ordinal,
-            selector,
-            type_id: descriptor.id,
-            payload_offset,
-            payload,
-            trailing_length_written: trailing_payload_len != 0,
-            trailer,
-        });
+        ctx.push_vec(
+            &mut records,
+            RseRecordFrame {
+                ordinal: block.ordinal,
+                selector,
+                type_id: descriptor.id,
+                payload_offset,
+                payload,
+                trailing_length_written: trailing_payload_len != 0,
+                trailer,
+            },
+            "admit Inventor RSe record frames",
+        )?;
     }
     let trailer_start = cursor.position();
     let trailer_marker = cursor.u32("stream trailer marker")?;

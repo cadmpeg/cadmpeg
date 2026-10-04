@@ -49,6 +49,7 @@ fn point_tail_borrowed_wire_refuses_retained_limit_before_clone() {
 
 #[test]
 fn transform_payload_streams_flat_matrix_under_retained_limit() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let reference = PmDcReference::new(3, false).expect("test reference index fits 31 bits");
     let transform = PmDcTransformPayload {
         save_version_major: 16,
@@ -61,7 +62,8 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
             source_index: 1,
         },
         prefix_present: true,
-        matrix: CompactMatrix::try_from_rows(0, 0, [[2.0; 4]; 4]).expect("finite compact matrix"),
+        matrix: CompactMatrix::try_from_rows(&ctx, 0, 0, [[2.0; 4]; 4])
+            .expect("finite compact matrix"),
     };
     let wire = PmDcTransformPayloadWire::from(transform.clone());
     assert_eq!(

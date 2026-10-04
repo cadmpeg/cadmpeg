@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::text::NonBlankString;
 
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
@@ -114,6 +115,22 @@ pub enum PrototypeReference {
     Unresolved {},
 }
 
+impl DecodeCost for PrototypeReference {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Local { definition } => (0_u8, definition).decode_cost(ctx, operation),
+            Self::External { document, object } => {
+                (1_u8, document, object.as_deref()).decode_cost(ctx, operation)
+            }
+            Self::Unresolved {} => (2_u8, ()).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Typed identity or explicit absence of an external document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -131,6 +148,22 @@ pub enum ExternalDocument {
     },
     /// Persisted reference was empty or structurally unusable.
     Missing {},
+}
+
+impl DecodeCost for ExternalDocument {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Path { path } => (0_u8, path.as_str()).decode_cost(ctx, operation),
+            Self::DocumentId { document_id } => {
+                (1_u8, document_id.as_str()).decode_cost(ctx, operation)
+            }
+            Self::Missing {} => (2_u8, ()).decode_cost(ctx, operation),
+        }
+    }
 }
 
 impl ExternalDocument {
@@ -173,6 +206,22 @@ pub enum CopyOnChangePolicy {
     Native(String),
 }
 
+impl DecodeCost for CopyOnChangePolicy {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Disabled => (0_u8, ()).decode_cost(ctx, operation),
+            Self::Enabled => (1_u8, ()).decode_cost(ctx, operation),
+            Self::Owned => (2_u8, ()).decode_cost(ctx, operation),
+            Self::Tracking => (3_u8, ()).decode_cost(ctx, operation),
+            Self::Native(value) => (4_u8, value).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Position of an occurrence in the canonical placed-instance tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -186,6 +235,19 @@ pub enum OccurrenceParent {
         /// Containing occurrence identity.
         occurrence: OccurrenceId,
     },
+}
+
+impl DecodeCost for OccurrenceParent {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Root {} => (0_u8, ()).decode_cost(ctx, operation),
+            Self::Occurrence { occurrence } => (1_u8, occurrence).decode_cost(ctx, operation),
+        }
+    }
 }
 
 /// One placed use, including an element of a link array.
@@ -243,6 +305,44 @@ pub struct Occurrence {
     pub native_ref: Option<String>,
 }
 
+impl DecodeCost for Occurrence {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            &self.id,
+            (
+                &self.prototype,
+                (
+                    &self.parent,
+                    (
+                        self.ordinal,
+                        (
+                            &self.transform,
+                            (
+                                self.linked_prototype.as_ref(),
+                                (
+                                    self.scale.map(FiniteReal::get),
+                                    (
+                                        self.name.as_deref(),
+                                        (
+                                            self.visible,
+                                            (self.link.as_ref(), self.native_ref.as_deref()),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// One member of an `App::Link` occurrence state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -281,6 +381,23 @@ pub struct LinkState {
     element_component: Option<ProductDefinitionId>,
     claim_child: Option<bool>,
     copy_on_change: Option<CopyOnChange>,
+}
+
+impl DecodeCost for LinkState {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            self.linked_subelements.as_slice(),
+            (
+                self.element_component.as_ref(),
+                (self.claim_child, self.copy_on_change.as_ref()),
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 /// `FreeCAD` `App::Link`-specific occurrence state.
@@ -443,6 +560,23 @@ pub struct CopyOnChange {
         deserialize_with = "deserialize_touched"
     )]
     pub touched: Option<bool>,
+}
+
+impl DecodeCost for CopyOnChange {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            &self.policy,
+            (
+                self.source.as_ref(),
+                (self.group.as_ref(), self.touched),
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");

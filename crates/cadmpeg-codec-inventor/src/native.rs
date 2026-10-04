@@ -8,7 +8,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{
-    de::Error as _,
     ser::{SerializeSeq, SerializeStruct},
     Deserialize, Serialize,
 };
@@ -385,8 +384,8 @@ impl AssemblyOccurrenceRecord {
             &occurrence.segment_token,
             "retain Inventor assembly occurrence token",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(occurrence.related_references.len()),
+        let related_references = ctx.copy_slice(
+            &occurrence.related_references,
             "copy Inventor assembly related references",
         )?;
         Ok(Self {
@@ -401,15 +400,14 @@ impl AssemblyOccurrenceRecord {
             node_index: occurrence.node_index,
             state: occurrence.state,
             ordinal_key: occurrence.ordinal_key,
-            related_references: occurrence.related_references.clone(),
+            related_references,
             child_reference: occurrence.child_reference,
             occurrence_id: occurrence.occurrence_id,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AssemblyPlacementRecordWire")]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AssemblyPlacementRecord {
     pub(crate) id: String,
     segment_token: String,
@@ -419,7 +417,6 @@ pub(crate) struct AssemblyPlacementRecord {
     attribute_reference: u32,
     state: u8,
     transform_prefix: bool,
-    #[serde(flatten, with = "crate::compact_matrix::assembly_wire")]
     pub(crate) transform: crate::compact_matrix::CompactMatrix,
     branch: u8,
     graphics_state: u8,
@@ -428,6 +425,31 @@ pub(crate) struct AssemblyPlacementRecord {
     object_reference: u32,
     suffix_len: std::num::NonZeroU64,
     suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+}
+
+impl Serialize for AssemblyPlacementRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (value_mask, zero_mask) = self.transform.masks();
+        let mut fields = serializer.serialize_struct("AssemblyPlacementRecordWire", 17)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("segment_token", &self.segment_token)?;
+        fields.serialize_field("record_ordinal", &self.record_ordinal)?;
+        fields.serialize_field("header_id", &self.header_id)?;
+        fields.serialize_field("owner_reference", &self.owner_reference)?;
+        fields.serialize_field("attribute_reference", &self.attribute_reference)?;
+        fields.serialize_field("state", &self.state)?;
+        fields.serialize_field("transform_prefix", &self.transform_prefix)?;
+        fields.serialize_field("transform_encoding", &[value_mask, zero_mask])?;
+        fields.serialize_field("transform", &self.transform.rows())?;
+        fields.serialize_field("branch", &self.branch)?;
+        fields.serialize_field("graphics_state", &self.graphics_state)?;
+        fields.serialize_field("occurrence_id", &self.occurrence_id)?;
+        fields.serialize_field("graphics_index", &self.graphics_index)?;
+        fields.serialize_field("object_reference", &self.object_reference)?;
+        fields.serialize_field("suffix_len", &self.suffix_len.get())?;
+        fields.serialize_field("suffix_sha256", &self.suffix_sha256)?;
+        fields.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -440,8 +462,8 @@ pub(crate) struct AssemblyPlacementRecordWire {
     pub(crate) attribute_reference: u32,
     pub(crate) state: u8,
     pub(crate) transform_prefix: bool,
-    #[serde(flatten, with = "crate::compact_matrix::assembly_wire")]
-    pub(crate) transform: crate::compact_matrix::CompactMatrix,
+    pub(crate) transform_encoding: [u16; 2],
+    pub(crate) transform: [[f64; 4]; 4],
     pub(crate) branch: u8,
     pub(crate) graphics_state: u8,
     pub(crate) occurrence_id: u32,
@@ -474,7 +496,11 @@ impl AssemblyPlacementRecordWire {
             attribute_reference: placement.attribute_reference,
             state: placement.state,
             transform_prefix: placement.transform_prefix,
-            transform: placement.transform,
+            transform_encoding: {
+                let (value_mask, zero_mask) = placement.transform.masks();
+                [value_mask, zero_mask]
+            },
+            transform: placement.transform.rows(),
             branch: placement.branch,
             graphics_state: placement.graphics_state,
             occurrence_id: placement.occurrence_id,
@@ -490,28 +516,54 @@ impl AssemblyPlacementRecordWire {
     }
 }
 
-impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
-    type Error = String;
-    fn try_from(wire: AssemblyPlacementRecordWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            segment_token: wire.segment_token,
-            record_ordinal: wire.record_ordinal,
-            header_id: wire.header_id,
-            owner_reference: wire.owner_reference,
-            attribute_reference: wire.attribute_reference,
-            state: wire.state,
-            transform_prefix: wire.transform_prefix,
-            transform: wire.transform,
-            branch: wire.branch,
-            graphics_state: wire.graphics_state,
-            occurrence_id: wire.occurrence_id,
-            graphics_index: wire.graphics_index,
-            object_reference: wire.object_reference,
-            suffix_len: std::num::NonZeroU64::new(wire.suffix_len)
-                .ok_or("suffix_len must not be zero")?,
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.suffix_sha256)
-                .map_err(|error| format!("suffix_sha256: {error}"))?,
+impl AssemblyPlacementRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<AssemblyPlacementRecord, CodecError> {
+        let transform = crate::compact_matrix::CompactMatrix::try_from_rows(
+            ctx,
+            self.transform_encoding[0],
+            self.transform_encoding[1],
+            self.transform,
+        )?;
+        let suffix_len = match std::num::NonZeroU64::new(self.suffix_len) {
+            Some(suffix_len) => suffix_len,
+            None => {
+                return Err(CodecError::Malformed(ctx.copy_retained_text(
+                    "suffix_len must not be zero",
+                    "retain Inventor placement conversion issue",
+                )?));
+            }
+        };
+        let suffix_sha256 = match
+            cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256)
+        {
+            Ok(suffix_sha256) => suffix_sha256,
+            Err(error) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("suffix_sha256: {error}"),
+                    "retain Inventor placement conversion issue",
+                )?));
+            }
+        };
+        Ok(AssemblyPlacementRecord {
+            id: self.id,
+            segment_token: self.segment_token,
+            record_ordinal: self.record_ordinal,
+            header_id: self.header_id,
+            owner_reference: self.owner_reference,
+            attribute_reference: self.attribute_reference,
+            state: self.state,
+            transform_prefix: self.transform_prefix,
+            transform,
+            branch: self.branch,
+            graphics_state: self.graphics_state,
+            occurrence_id: self.occurrence_id,
+            graphics_index: self.graphics_index,
+            object_reference: self.object_reference,
+            suffix_len,
+            suffix_sha256,
         })
     }
 }
@@ -533,8 +585,7 @@ pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "PmAppRenderingStyleRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -628,18 +679,19 @@ pub(crate) struct PmAppRenderingStyleRecordWire {
     pub(crate) suffix_sha256: String,
 }
 
-impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
-    type Error = String;
-
-    fn try_from(wire: PmAppRenderingStyleRecordWire) -> Result<Self, Self::Error> {
+impl PmAppRenderingStyleRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PmAppRenderingStyleRecord, CodecError> {
         let extension = match (
-            wire.style_state,
-            wire.style_label,
-            wire.asset_guid,
-            wire.material_id,
-            wire.asset_library_id,
-            wire.style_values,
-            wire.guid,
+            self.style_state,
+            self.style_label,
+            self.asset_guid,
+            self.material_id,
+            self.asset_library_id,
+            self.style_values,
+            self.guid,
         ) {
             (None, None, None, None, None, None, None) => None,
             (
@@ -660,36 +712,52 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
                 guid,
             }),
             _ => {
-                return Err("rendering style extension fields must be present together".into());
+                return Err(CodecError::Malformed(ctx.copy_retained_text(
+                    "rendering style extension fields must be present together",
+                    "retain Inventor rendering conversion issue",
+                )?));
             }
         };
         if let Some(detail) = rendering_style_issue(
-            wire.segment_version_major,
-            &wire.comment,
+            self.segment_version_major,
+            &self.comment,
             extension.is_some(),
         ) {
-            return Err(detail.into());
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                detail,
+                "retain Inventor rendering conversion issue",
+            )?));
         }
-        Ok(Self {
-            id: wire.id,
-            segment_token: wire.segment_token,
-            record_ordinal: wire.record_ordinal,
-            segment_version_major: wire.segment_version_major,
-            header_value: wire.header_value,
-            header_id: wire.header_id,
-            state: wire.state,
-            flags: wire.flags,
-            values: wire.values,
-            default_state: wire.default_state,
-            value: wire.value,
-            name_reference: wire.name_reference,
-            name: wire.name,
-            comment: wire.comment,
-            long_name: wire.long_name,
+        let suffix_sha256 = match
+            cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256)
+        {
+            Ok(suffix_sha256) => suffix_sha256,
+            Err(error) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("suffix_sha256: {error}"),
+                    "retain Inventor rendering conversion issue",
+                )?));
+            }
+        };
+        Ok(PmAppRenderingStyleRecord {
+            id: self.id,
+            segment_token: self.segment_token,
+            record_ordinal: self.record_ordinal,
+            segment_version_major: self.segment_version_major,
+            header_value: self.header_value,
+            header_id: self.header_id,
+            state: self.state,
+            flags: self.flags,
+            values: self.values,
+            default_state: self.default_state,
+            value: self.value,
+            name_reference: self.name_reference,
+            name: self.name,
+            comment: self.comment,
+            long_name: self.long_name,
             extension,
-            suffix_len: wire.suffix_len,
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.suffix_sha256)
-                .map_err(|error| format!("suffix_sha256: {error}"))?,
+            suffix_len: self.suffix_len,
+            suffix_sha256,
         })
     }
 }
@@ -708,8 +776,7 @@ pub(super) fn rendering_style_issue(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "PmGraphicsFaceRecordWire")]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -789,7 +856,7 @@ impl Serialize for PmGraphicsFaceRecord {
 }
 
 #[derive(Deserialize)]
-struct PmGraphicsFaceRecordWire {
+pub(crate) struct PmGraphicsFaceRecordWire {
     id: String,
     segment_token: String,
     record_ordinal: u32,
@@ -813,40 +880,40 @@ struct PmGraphicsFaceRecordWire {
     values: [u32; 2],
 }
 
-impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
-    type Error = String;
-
-    fn try_from(wire: PmGraphicsFaceRecordWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            segment_token: wire.segment_token,
-            record_ordinal: wire.record_ordinal,
-            segment_version_major: wire.segment_version_major,
-            header_value: wire.header_value,
-            header_id: wire.header_id,
-            flags: wire.flags,
-            styles: PmDcReference::new(wire.styles_reference, wire.styles_reference_qualified)
-                .ok_or("reference index exceeds 31 bits")?,
-            surface: PmDcReference::new(wire.surface_reference, wire.surface_reference_qualified)
-                .ok_or("reference index exceeds 31 bits")?,
-            parent: PmDcReference::new(wire.parent_reference, wire.parent_reference_qualified)
-                .ok_or("reference index exceeds 31 bits")?,
-            state: wire.state,
+impl PmGraphicsFaceRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PmGraphicsFaceRecord, CodecError> {
+        Ok(PmGraphicsFaceRecord {
+            id: self.id,
+            segment_token: self.segment_token,
+            record_ordinal: self.record_ordinal,
+            segment_version_major: self.segment_version_major,
+            header_value: self.header_value,
+            header_id: self.header_id,
+            flags: self.flags,
+            styles: PmDcReference::new(self.styles_reference, self.styles_reference_qualified)
+                .ok_or_else(|| CodecError::malformed("reference index exceeds 31 bits"))?,
+            surface: PmDcReference::new(self.surface_reference, self.surface_reference_qualified)
+                .ok_or_else(|| CodecError::malformed("reference index exceeds 31 bits"))?,
+            parent: PmDcReference::new(self.parent_reference, self.parent_reference_qualified)
+                .ok_or_else(|| CodecError::malformed("reference index exceeds 31 bits"))?,
+            state: self.state,
             edge_references: PmDcPairedReferenceList::new(
-                wire.edge_list_metadata,
-                PmDcReference::zip(wire.edge_references, wire.edge_reference_qualifiers)?,
+                self.edge_list_metadata,
+                PmDcReference::zip(ctx, self.edge_references, self.edge_reference_qualifiers)?,
             )
-            .ok_or("edge_list_metadata disagrees with edge_references")?,
-            visibility_state: wire.visibility_state,
-            bounds: wire.bounds,
-            key: wire.key,
-            values: wire.values,
+            .ok_or_else(|| CodecError::malformed("edge_list_metadata disagrees with edge_references"))?,
+            visibility_state: self.visibility_state,
+            bounds: self.bounds,
+            key: self.key,
+            values: self.values,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "PmGraphicsStyleCollectionRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PmGraphicsStyleCollectionRecord {
     id: String,
     segment_token: cadmpeg_ir::ids::IdentityKey,
@@ -857,22 +924,73 @@ pub(crate) struct PmGraphicsStyleCollectionRecord {
 
 impl PmGraphicsStyleCollectionRecord {
     pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
         id: String,
         segment_token: cadmpeg_ir::ids::IdentityKey,
         record_ordinal: u32,
         segment_version_major: u8,
         style_references: PmDcPairedReferenceList<[u32; 2]>,
-    ) -> Result<Self, String> {
-        let suffix = id
-            .strip_prefix("inventor:presentation:graphics-style-collection#")
-            .and_then(|value| value.rsplit_once('-'));
-        if !suffix.is_some_and(|(token, ordinal)| {
-            token == segment_token.as_str()
-                && (ordinal == "0" || !ordinal.starts_with('0'))
-                && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-                && ordinal.parse::<u32>() == Ok(record_ordinal)
-        }) {
-            return Err("graphics style collection id disagrees with its location".into());
+    ) -> Result<Self, CodecError> {
+        let suffix = ctx.strip_prefix(
+            &id,
+            "inventor:presentation:graphics-style-collection#",
+            "match Inventor graphics style collection identity",
+        )?;
+        let (valid_token, valid_ordinal) = match suffix {
+            Some(suffix) => match ctx.rsplit_once(
+                suffix,
+                "-",
+                "split Inventor graphics style collection identity",
+            )? {
+                Some((token, ordinal)) => {
+                    let valid_token = ctx.equal(
+                        token,
+                        segment_token.as_str(),
+                        "compare Inventor graphics style collection token",
+                    )?;
+                    let valid_ordinal = if !valid_token {
+                        false
+                    } else {
+                        let ordinal_is_zero = ctx.equal(
+                            ordinal,
+                            "0",
+                            "compare Inventor graphics style collection ordinal",
+                        )?;
+                        let canonical = ordinal_is_zero
+                            || !ctx.starts_with(
+                                ordinal,
+                                "0",
+                                "check Inventor graphics style collection ordinal",
+                            )?;
+                        if !canonical {
+                            false
+                        } else {
+                            let digits = ctx
+                                .admit_iter(
+                                    ordinal.as_bytes(),
+                                    "scan Inventor graphics style collection ordinal",
+                                )?
+                                .all(|byte| byte.is_ascii_digit());
+                            if !digits {
+                                false
+                            } else {
+                                ctx.parse_text::<u32>(
+                                    ordinal,
+                                    "parse Inventor graphics style collection ordinal",
+                                )? == Ok(record_ordinal)
+                            }
+                        }
+                    };
+                    (valid_token, valid_ordinal)
+                }
+                None => (false, false),
+            },
+            None => (false, false),
+        };
+        if !(valid_token && valid_ordinal) {
+            return Err(CodecError::Malformed(
+                "graphics style collection id disagrees with its location".into(),
+            ));
         }
         Ok(Self {
             id,
@@ -913,7 +1031,7 @@ impl Serialize for PmGraphicsStyleCollectionRecord {
 }
 
 #[derive(Deserialize)]
-struct PmGraphicsStyleCollectionRecordWire {
+pub(crate) struct PmGraphicsStyleCollectionRecordWire {
     id: String,
     segment_token: String,
     record_ordinal: u32,
@@ -923,21 +1041,30 @@ struct PmGraphicsStyleCollectionRecordWire {
     list_metadata: Option<[u32; 2]>,
 }
 
-impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionRecord {
-    type Error = String;
-
-    fn try_from(wire: PmGraphicsStyleCollectionRecordWire) -> Result<Self, Self::Error> {
-        Self::new(
-            wire.id,
-            cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token)
-                .map_err(|error| error.to_string())?,
-            wire.record_ordinal,
-            wire.segment_version_major,
+impl PmGraphicsStyleCollectionRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PmGraphicsStyleCollectionRecord, CodecError> {
+        let segment_token = crate::record_identity::try_identity_key(
+            ctx,
+            self.segment_token,
+            "validate Inventor graphics style collection token",
+            None,
+        )?;
+        PmGraphicsStyleCollectionRecord::new(
+            ctx,
+            self.id,
+            segment_token,
+            self.record_ordinal,
+            self.segment_version_major,
             PmDcPairedReferenceList::new(
-                wire.list_metadata,
-                PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
+                self.list_metadata,
+                PmDcReference::zip(ctx, self.style_references, self.style_reference_qualifiers)?,
             )
-            .ok_or("list_metadata disagrees with style_references")?,
+            .ok_or_else(|| {
+                CodecError::Malformed("list_metadata disagrees with style_references".into())
+            })?,
         )
     }
 }
@@ -1226,10 +1353,11 @@ impl RseRecordRecord {
             ordinal: frame.ordinal,
             selector: frame.selector,
             type_index: frame.type_index()?,
-            type_id: {
-                ctx.charge_retained(32, "retain Inventor RSe record type GUID")?;
-                crate::pmdc::type_id_string(frame.type_id)
-            },
+            type_id: crate::pmdc::type_id_string(
+                ctx,
+                frame.type_id,
+                "retain Inventor RSe record type GUID",
+            )?,
             payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()?),
             payload_sha256: retained_digest(
@@ -1613,10 +1741,13 @@ impl ActiveCarrierRecord {
         })
     }
 
-    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let [record] = <[_; 1]>::try_from(namespace.arena_as::<Self>("active_carrier")?).map_err(
+    pub(crate) fn read(
+        ctx: &DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let [record] = <[_; 1]>::try_from(namespace.arena_as_for_decode::<Self>(ctx, "active_carrier")?).map_err(
             |records: Vec<_>| {
-                serde_json::Error::custom(format!(
+                <serde_json::Error as serde::de::Error>::custom(format!(
                     "active_carrier must contain exactly one record; found {}",
                     records.len()
                 ))
@@ -1656,15 +1787,44 @@ pub(crate) fn test_ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActiveCarrierRecord, PmAppRenderingStyleRecord, SegmentBulkFrame, SegmentBulkRecord,
+        ActiveCarrierRecord, AssemblyPlacementRecord, AssemblyPlacementRecordWire,
+        PmAppRenderingStyleRecord, PmAppRenderingStyleRecordWire,
+        PmGraphicsStyleCollectionRecord, PmGraphicsStyleCollectionRecordWire, SegmentBulkFrame,
+        SegmentBulkRecord,
     };
     use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    fn graphics_style_collection(
+        value: serde_json::Value,
+    ) -> Result<PmGraphicsStyleCollectionRecord, String> {
+        let wire = serde_json::from_value::<PmGraphicsStyleCollectionRecordWire>(value)
+            .map_err(|error| error.to_string())?;
+        wire.into_record(&super::test_ctx())
+            .map_err(|error| error.to_string())
+    }
+
+    fn rendering_style(
+        value: serde_json::Value,
+    ) -> Result<PmAppRenderingStyleRecord, String> {
+        let wire = serde_json::from_value::<PmAppRenderingStyleRecordWire>(value)
+            .map_err(|error| error.to_string())?;
+        wire.into_record(&super::test_ctx())
+            .map_err(|error| error.to_string())
+    }
+
+    fn assembly_placement(
+        value: serde_json::Value,
+    ) -> Result<AssemblyPlacementRecord, String> {
+        let wire = serde_json::from_value::<AssemblyPlacementRecordWire>(value)
+            .map_err(|error| error.to_string())?;
+        wire.into_record(&super::test_ctx())
+            .map_err(|error| error.to_string())
+    }
 
     #[test]
     fn graphics_style_collection_checks_location_and_reference_indices() {
         let valid = serde_json::json!({"id": "inventor:presentation:graphics-style-collection#segment-0", "segment_token": "segment", "record_ordinal": 0, "segment_version_major": 26, "style_references": [], "style_reference_qualifiers": [], "list_metadata": null});
-        let record: super::PmGraphicsStyleCollectionRecord =
-            serde_json::from_value(valid.clone()).expect("valid location");
+        let record = graphics_style_collection(valid.clone()).expect("valid location");
         assert_eq!(serde_json::to_value(record).expect("wire"), valid);
         for (field, value) in [
             ("id", serde_json::json!("")),
@@ -1678,15 +1838,13 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
-            assert!(
-                serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err()
-            );
+            assert!(graphics_style_collection(wire).is_err());
         }
         let mut wire = valid;
         wire["style_references"] = serde_json::json!([2_147_483_648_u32]);
         wire["style_reference_qualifiers"] = serde_json::json!([false]);
         wire["list_metadata"] = serde_json::json!([0, 0]);
-        assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
+        assert!(graphics_style_collection(wire).is_err());
     }
 
     #[test]
@@ -1715,8 +1873,7 @@ mod tests {
             "graphics_index": 0, "object_reference": 0,
             "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
-        let record: super::AssemblyPlacementRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+        let record = assembly_placement(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1734,8 +1891,7 @@ mod tests {
             "guid": null, "suffix_len": 0,
             "suffix_sha256": "0".repeat(64)
         });
-        let record: PmAppRenderingStyleRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+        let record = rendering_style(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1753,8 +1909,11 @@ mod tests {
             "bounds": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "key": 0,
             "values": [0, 0]
         });
-        let record: super::PmGraphicsFaceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let record = serde_json::from_value::<super::PmGraphicsFaceRecordWire>(expected.clone())
+            .expect("valid fixture")
+            .into_record(&ctx)
+            .expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1766,8 +1925,7 @@ mod tests {
             "style_references": [], "style_reference_qualifiers": [],
             "list_metadata": null
         });
-        let record: super::PmGraphicsStyleCollectionRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+        let record = graphics_style_collection(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1836,7 +1994,7 @@ mod tests {
             id: "inventor:kernel:active-carrier#root".into(),
         };
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        assert!(ActiveCarrierRecord::read(&namespace).is_err());
+        assert!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace).is_err());
         namespace
             .set_arena(
                 &crate::native::test_ctx(),
@@ -1845,7 +2003,8 @@ mod tests {
             )
             .expect("valid carrier");
         assert_eq!(
-            ActiveCarrierRecord::read(&namespace).expect("single carrier"),
+            ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
+                .expect("single carrier"),
             record
         );
         let wire = namespace
@@ -1867,7 +2026,7 @@ mod tests {
             namespace
                 .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
                 .expect("valid wire records");
-            assert!(ActiveCarrierRecord::read(&namespace)
+            assert!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
                 .expect_err("invalid cardinality")
                 .to_string()
                 .contains("active_carrier"));
@@ -1981,11 +2140,11 @@ mod tests {
             "value": 0, "name_reference": 0, "name": "", "comment": "comment",
             "long_name": "", "suffix_len": 0, "suffix_sha256": "0".repeat(64)
         });
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(legacy.clone()).is_ok());
+        assert!(rendering_style(legacy.clone()).is_ok());
         let mut modern = legacy.clone();
         modern["segment_version_major"] = serde_json::json!(17);
         modern["comment"] = serde_json::json!("");
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_err());
+        assert!(rendering_style(modern.clone()).is_err());
         for (field, value) in [
             ("style_state", serde_json::json!(0)),
             ("style_label", serde_json::json!("")),
@@ -1997,12 +2156,12 @@ mod tests {
         ] {
             modern[field] = value;
         }
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_ok());
+        assert!(rendering_style(modern.clone()).is_ok());
         let mut invalid = modern.clone();
         invalid["comment"] = serde_json::json!("comment");
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(invalid).is_err());
+        assert!(rendering_style(invalid).is_err());
         modern["segment_version_major"] = serde_json::json!(16);
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern).is_err());
+        assert!(rendering_style(modern).is_err());
     }
     #[test]
     fn property_kind_wire_agrees_with_ole_type_code() {
@@ -2063,8 +2222,8 @@ mod tests {
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
             "graphics_index": 0, "object_reference": 0, "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
-        let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
-            .expect("assembly matrix fixture agrees with its masks");
+        let placement =
+            assembly_placement(wire.clone()).expect("assembly matrix fixture agrees with its masks");
         assert_eq!(
             serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
             wire
@@ -2072,7 +2231,7 @@ mod tests {
         let mut empty_suffix = wire.clone();
         empty_suffix["suffix_len"] = serde_json::json!(0);
         assert!(
-            serde_json::from_value::<super::AssemblyPlacementRecord>(empty_suffix)
+            assembly_placement(empty_suffix)
                 .expect_err("empty placement suffix")
                 .to_string()
                 .contains("suffix_len")
@@ -2081,7 +2240,7 @@ mod tests {
             let mut nonempty_suffix = wire.clone();
             nonempty_suffix["suffix_len"] = serde_json::json!(len);
             assert_eq!(
-                serde_json::from_value::<super::AssemblyPlacementRecord>(nonempty_suffix)
+                assembly_placement(nonempty_suffix)
                     .expect("nonempty placement suffix")
                     .suffix_len
                     .get(),
@@ -2092,7 +2251,7 @@ mod tests {
             let mut invalid = wire.clone();
             invalid["suffix_sha256"] = serde_json::json!(digest);
             assert!(
-                serde_json::from_value::<super::AssemblyPlacementRecord>(invalid)
+                assembly_placement(invalid)
                     .expect_err("invalid digest")
                     .to_string()
                     .contains("suffix_sha256")
@@ -2102,10 +2261,10 @@ mod tests {
         nonfinite["transform_encoding"] = serde_json::json!([0, 0]);
         nonfinite["transform"][0][0] = serde_json::json!("overflow");
         let json = nonfinite.to_string().replace("\"overflow\"", "1e999");
-        assert!(serde_json::from_str::<super::AssemblyPlacementRecord>(&json).is_err());
+        assert!(serde_json::from_str::<AssemblyPlacementRecordWire>(&json).is_err());
         wire["transform"][0][0] = serde_json::json!(2.0);
-        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire.clone()).is_err());
+        assert!(assembly_placement(wire.clone()).is_err());
         wire["transform_encoding"] = serde_json::json!([0, 0]);
-        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire).is_ok());
+        assert!(assembly_placement(wire).is_ok());
     }
 }

@@ -4,17 +4,49 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::pmdc::type_id_string;
+
+pub(crate) fn try_identity_key(
+    ctx: &DecodeContext<'_>,
+    value: String,
+    operation: &'static str,
+    field: Option<&str>,
+) -> Result<IdentityKey, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, operation)?;
+    match IdentityKey::try_new(value) {
+        Ok(key) => Ok(key),
+        Err(error) => {
+            let message = match field {
+                Some(field) => ctx.format_retained(
+                    format_args!("{field}: {error}"),
+                    "format invalid Inventor identity key",
+                )?,
+                None => ctx.format_retained(
+                    format_args!("{error}"),
+                    "format invalid Inventor identity key",
+                )?,
+            };
+            Err(CodecError::Malformed(message))
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub(crate) struct RecordTypeId(String);
 
 impl RecordTypeId {
-    pub(crate) fn from_bytes(value: [u8; 16]) -> Self {
-        Self(type_id_string(value))
+    pub(crate) fn from_bytes(
+        ctx: &DecodeContext<'_>,
+        value: [u8; 16],
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self(type_id_string(ctx, value, operation)?))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -46,10 +78,13 @@ pub(crate) struct RecordIdentity {
 }
 
 impl RecordIdentity {
-    fn id(&self, kind: &str) -> String {
-        format!(
-            "inventor:pmdc:{kind}#{}-{}",
-            self.segment_token, self.record_ordinal
+    fn id(&self, ctx: &DecodeContext<'_>, kind: &str) -> Result<String, CodecError> {
+        ctx.format_retained(
+            format_args!(
+                "inventor:pmdc:{kind}#{}-{}",
+                self.segment_token, self.record_ordinal
+            ),
+            "retain Inventor PmDc record identity",
         )
     }
 
@@ -59,7 +94,12 @@ impl RecordIdentity {
             format_args!("{}-{}", self.segment_token, self.record_ordinal),
             "Inventor record identity key",
         )?;
-        IdentityKey::try_new(key).map_err(CodecError::malformed)
+        try_identity_key(
+            ctx,
+            key,
+            "validate Inventor record identity key",
+            None,
+        )
     }
 }
 
@@ -100,16 +140,19 @@ pub(crate) fn push_record<T>(
     ordinal: u32,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
     ctx.charge_entities(1, operation)?;
-    ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
-
-    records.push(Located::new(
-        value,
-        crate::record_identity::RecordTypeId::from_bytes(type_id),
-        segment_token.try_clone_for_decode(ctx, "retain Inventor PmDc record segment token")?,
-        ordinal,
-    ));
+    let type_id = crate::record_identity::RecordTypeId::from_bytes(
+        ctx,
+        type_id,
+        "retain Inventor PmDc record type id",
+    )?;
+    let segment_token =
+        segment_token.try_clone_for_decode(ctx, "retain Inventor PmDc record segment token")?;
+    ctx.push_vec(
+        records,
+        Located::new(value, type_id, segment_token, ordinal),
+        operation,
+    )?;
     Ok(())
 }
 
@@ -126,8 +169,8 @@ impl<T: RecordPayload> Located<T> {
         )
     }
 
-    pub(crate) fn id(&self) -> String {
-        self.identity.id(T::KIND)
+    pub(crate) fn id(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        self.identity.id(ctx, T::KIND)
     }
 }
 
@@ -139,13 +182,13 @@ impl<T> std::ops::Deref for Located<T> {
 }
 
 #[derive(Deserialize)]
-struct LocatedWire<T> {
-    id: String,
-    type_id: RecordTypeId,
-    segment_token: String,
-    record_ordinal: u32,
+pub(crate) struct LocatedWire<T> {
+    pub(crate) id: String,
+    pub(crate) type_id: RecordTypeId,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
     #[serde(flatten)]
-    value: T,
+    pub(crate) value: T,
 }
 
 struct LocatedId<'a, T: RecordPayload> {
@@ -198,18 +241,34 @@ impl<T: RecordPayload + Serialize> Serialize for Located<T> {
     }
 }
 
-impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = LocatedWire::<T>::deserialize(deserializer)?;
-        let segment_token = IdentityKey::try_new(wire.segment_token)
-            .map_err(|error| serde::de::Error::custom(format!("segment_token: {error}")))?;
-        let value = Self::new(wire.value, wire.type_id, segment_token, wire.record_ordinal);
-        if wire.id != value.id() {
-            return Err(serde::de::Error::custom(
-                "id disagrees with segment_token or record_ordinal",
+impl<T: RecordPayload> LocatedWire<T> {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Located<T>, CodecError> {
+        let segment_token_text = self.segment_token;
+        let segment_token = try_identity_key(
+            ctx,
+            segment_token_text,
+            "validate Inventor PmDc segment token",
+            Some("segment_token"),
+        )?;
+        let record = Located::new(
+            self.value,
+            self.type_id,
+            segment_token,
+            self.record_ordinal,
+        );
+        let (expected_id, _expected_id_storage) =
+            ctx.with_scoped_storage("validate Inventor PmDc record identity", || {
+                record.id(ctx)
+            })?;
+        if !ctx.equal(&self.id, &expected_id, "validate Inventor PmDc record identity")? {
+            return Err(CodecError::Malformed(
+                "id disagrees with segment_token or record_ordinal".into(),
             ));
         }
-        Ok(value)
+        Ok(record)
     }
 }
 
@@ -234,8 +293,31 @@ mod tests {
         ] {
             assert!(super::RecordTypeId::try_from(type_id.to_owned()).is_err());
             let wire = serde_json::json!({"id": "inventor:pmdc:test#segment-0", "type_id": type_id, "segment_token": "segment", "record_ordinal": 0});
-            assert!(serde_json::from_value::<super::Located<Payload>>(wire).is_err());
+            assert!(serde_json::from_value::<super::LocatedWire<Payload>>(wire).is_err());
         }
+    }
+
+    #[test]
+    fn located_wire_converts_with_the_decode_context() {
+        #[derive(serde::Deserialize)]
+        struct Payload {}
+        impl super::RecordPayload for Payload {
+            const KIND: &'static str = "test";
+        }
+
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let wire = serde_json::from_value::<super::LocatedWire<Payload>>(serde_json::json!({
+            "id": "inventor:pmdc:test#segment-0",
+            "type_id": "00000000000000000000000000000000",
+            "segment_token": "segment",
+            "record_ordinal": 0
+        }))
+        .expect("valid located wire");
+        let record = wire.into_record(&ctx).expect("valid located identity");
+        assert_eq!(
+            record.id(&ctx).expect("retained located id"),
+            "inventor:pmdc:test#segment-0"
+        );
     }
 
     #[test]
@@ -250,14 +332,17 @@ mod tests {
         }
 
         let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+        let ctx = cadmpeg_test_support::service_decode_context();
         let record = super::Located::new(
             Payload { value: 7 },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &ctx,
+                [0; 16],
+                "retain Inventor PmDc record type id",
+            )
+            .expect("service fixture type id"),
             token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
+                .try_clone_for_decode(&ctx, "Inventor located fixture token")
                 .expect("service fixture token"),
             1,
         );

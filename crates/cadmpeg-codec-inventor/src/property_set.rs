@@ -125,15 +125,10 @@ impl PropertyValue<'_> {
                 ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
             }
             Self::String { value, .. } => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "retain OLE scalar text",
-                )?;
-                value.clone()
+                ctx.copy_retained_text(value, "retain OLE scalar text")?
             }
             Self::Guid { value, .. } => {
-                ctx.charge_retained(32, "retain OLE scalar text")?;
-                hex(value)
+                hex(ctx, value)?
             }
             Self::Empty { .. }
             | Self::Float { .. }
@@ -158,7 +153,7 @@ pub(crate) fn inventory<'a>(
     snapshot: &CompoundSnapshot<'a>,
 ) -> Result<Vec<PropertySetDescriptor<'a>>, CodecError> {
     let mut property_sets = Vec::new();
-    for entry in snapshot.entries() {
+    for entry in ctx.admit_iter(snapshot.entries(), "scan Inventor property-set streams")? {
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
@@ -176,25 +171,22 @@ pub(crate) fn inventory<'a>(
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
             Err(error) => {
-                if !matches!(error, CodecError::ResourceLimit(_)) {
-                    ctx.charge_formatted_retained(
-                        format_args!("{error}"),
-                        "retain Inventor malformed property-set detail",
-                    )?;
-                }
-                PropertySetState::Malformed(crate::issue_detail(error)?)
+                PropertySetState::Malformed(crate::issue_detail(
+                    ctx,
+                    error,
+                    "retain Inventor malformed property-set detail",
+                )?)
             }
         };
-        ctx.charge_collection_items(1, "admit Inventor property-set streams")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(stream.path().len()),
-            "retain Inventor property-set path",
+        ctx.push_vec(
+            &mut property_sets,
+            PropertySetDescriptor {
+                stream: stream.id(),
+                path: ctx.copy_retained_text(stream.path(), "retain Inventor property-set path")?,
+                state,
+            },
+            "admit Inventor property-set streams",
         )?;
-        property_sets.push(PropertySetDescriptor {
-            stream: stream.id(),
-            path: stream.path().into(),
-            state,
-        });
     }
     Ok(property_sets)
 }
@@ -229,45 +221,46 @@ pub(crate) fn parse_property_set_stream<'a>(
             "OLE property-set stream has no sections".into(),
         ));
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE section directories",
-    )?;
-    let mut directories = ctx.vector_storage(section_count, "admit OLE section directories")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE section FMTIDs",
-    )?;
+    let mut directories = Vec::new();
+    let mut directories_storage = ctx.reserve_scoped(0, "admit OLE section directories")?;
     let mut fmtids = BTreeSet::new();
+    let mut fmtids_storage = ctx.reserve_scoped(0, "admit OLE section FMTIDs")?;
     for _ in 0..section_count {
         let fmtid = cursor.array("section FMTID")?;
-        if !fmtids.insert(fmtid) {
+        if !fmtids_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut fmtids, fmtid, "admit OLE section FMTIDs")
+        })? {
             return Err(CodecError::Malformed(
                 "OLE property-set stream duplicates a section FMTID".into(),
             ));
         }
-        directories.push((fmtid, cursor.offset("section offset")?));
+        let offset = cursor.offset("section offset")?;
+        directories_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut directories,
+                (fmtid, offset),
+                "admit OLE section directories",
+            )
+        })?;
     }
     let header_end = cursor.position();
     ctx.stable_sort_by(
         &mut directories,
-            |value| &value.1,
-            Ord::cmp,
+        |value| &value.1,
+        Ord::cmp,
         "OLE section directories sort",
     )?;
     let mut previous_end = header_end;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE property-set sections",
-    )?;
     let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
-    for (fmtid, offset) in directories {
+    for &(fmtid, offset) in
+        ctx.admit_iter(&directories, "scan OLE section directories")?
+    {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
                 "OLE property-set section ranges overlap or are not aligned".into(),
             ));
         }
-        require_zero_range(bytes, previous_end, offset, "section gap")?;
+        require_zero_range(ctx, bytes, previous_end, offset, "section gap")?;
         let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
         let size =
             usize::try_from(crate::reader::u32(&mut section, "section size")?).map_err(|_| {
@@ -286,10 +279,18 @@ pub(crate) fn parse_property_set_stream<'a>(
             .ok_or_else(|| {
                 CodecError::Malformed("OLE property-set section view is invalid".into())
             })?;
-        sections.push(parse_section(ctx, section_source, fmtid)?);
+        ctx.push_vec(
+            &mut sections,
+            parse_section(ctx, section_source, fmtid)?,
+            "admit OLE property-set sections",
+        )?;
         previous_end = end;
     }
-    require_zero_range(bytes, previous_end, bytes.len(), "stream suffix")?;
+    drop(directories);
+    drop(directories_storage);
+    drop(fmtids);
+    drop(fmtids_storage);
+    require_zero_range(ctx, bytes, previous_end, bytes.len(), "stream suffix")?;
     Ok(PropertySetStream {
         version,
         system_identifier,
@@ -320,19 +321,13 @@ fn parse_section<'a>(
     // The directory is read entry by entry below, so the window states its own
     // bound: a directory the section cannot hold stops at the entry that runs
     // out of bytes.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property IDs",
-    )?;
     let mut ids = BTreeSet::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property directory",
-    )?;
-    let mut directory = ctx.vector_storage(property_count, "admit OLE property directory")?;
+    let mut ids_storage = ctx.reserve_scoped(0, "admit OLE property IDs")?;
+    let mut directory = Vec::new();
+    let mut directory_storage = ctx.reserve_scoped(0, "admit OLE property directory")?;
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
-        if !ids.insert(id) {
+        if !ids_storage.with_storage(|| ctx.insert_btree_set(&mut ids, id, "admit OLE property IDs"))? {
             return Err(CodecError::malformed(format_args!(
                 "OLE property set duplicates property id {id}"
             )));
@@ -343,67 +338,91 @@ fn parse_section<'a>(
                 "OLE property {id} has an invalid offset"
             )));
         }
-        directory.push((offset, id));
+        directory_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut directory,
+                (offset, id),
+                "admit OLE property directory",
+            )
+        })?;
     }
-    let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
+    let mut previous_offset = None;
+    let offsets_ordered = ctx
+        .admit_iter(&directory, "check OLE property directory order")?
+        .all(|(offset, _)| {
+            let ordered = previous_offset.is_none_or(|previous| previous < *offset);
+            previous_offset = Some(*offset);
+            ordered
+        });
     ctx.sort_unstable_by(
         &mut directory,
-            |value| value,
-            Ord::cmp,
+        |value| value,
+        Ord::cmp,
         "OLE property directory sort",
     )?;
-    for pair in directory.windows(2) {
-        if pair[0].0 == pair[1].0 {
+    let mut previous_offset = None;
+    for (offset, _) in ctx.admit_iter(&directory, "check OLE property offsets")? {
+        if previous_offset == Some(*offset) {
             return Err(CodecError::Malformed(
                 "OLE properties have duplicate offsets".into(),
             ));
         }
+        previous_offset = Some(*offset);
     }
+    drop(ids);
+    drop(ids_storage);
     if let Some((offset, _)) = directory.first() {
-        require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
+        require_zero_range(ctx, bytes, directory_end, *offset, "property-directory gap")?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
+    let (ranges, ranges_storage) = ctx.with_scoped_storage(
         "admit OLE property ranges",
-    )?;
-    let ranges = directory
-        .iter()
-        .enumerate()
-        .map(|(index, (start, id))| {
-            let end = directory
-                .get(index + 1)
-                .map_or(bytes.len(), |(offset, _)| *offset);
-            if end > bytes.len() || *start >= end {
-                return Err(CodecError::malformed(format_args!(
-                    "OLE property {id} range is invalid"
-                )));
-            }
-            Ok((*id, *start, end))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let code_page = ranges
-        .iter()
-        .find(|(id, _, _)| *id == 1)
-        .map(|(_, start, end)| parse_code_page(child(source, *start, *end, "code-page property")?))
-        .transpose()?;
-    let names = ranges
-        .iter()
-        .find(|(id, _, _)| *id == 0)
-        .map(|(_, start, end)| {
-            parse_dictionary(
-                ctx,
-                child(source, *start, *end, "property dictionary")?,
-                code_page,
+        || {
+            ctx.try_collect_vec(
+                directory.iter().enumerate()
+                    .map(|(index, (start, id))| {
+                        let end = directory
+                            .get(index + 1)
+                            .map_or(bytes.len(), |(offset, _)| *offset);
+                        if end > bytes.len() || *start >= end {
+                            return Err(CodecError::malformed(format_args!(
+                                "OLE property {id} range is invalid"
+                            )));
+                        }
+                        Ok((*id, *start, end))
+                    }),
+                "admit OLE property ranges",
             )
-        })
-        .transpose()?
-        .unwrap_or_default();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE properties",
+        },
     )?;
+    drop(directory);
+    drop(directory_storage);
+    let code_page = match ctx
+        .admit_iter(&ranges, "find OLE code-page property")?
+        .find(|range| range.0 == 1)
+    {
+        Some((_, start, end)) => Some(parse_code_page(
+            ctx,
+            child(source, *start, *end, "code-page property")?,
+        )?),
+        None => None,
+    };
+    let mut names_storage = ctx.reserve_scoped(0, "admit OLE property dictionary entries")?;
+    let mut folded_names_storage = ctx.reserve_scoped(0, "admit OLE folded dictionary names")?;
+    let names = match ctx
+        .admit_iter(&ranges, "find OLE property dictionary")?
+        .find(|range| range.0 == 0)
+    {
+        Some((_, start, end)) => parse_dictionary(
+            ctx,
+            child(source, *start, *end, "property dictionary")?,
+            code_page,
+            &mut names_storage,
+            &mut folded_names_storage,
+        )?,
+        None => BTreeMap::new(),
+    };
     let mut properties = ctx.vector_storage(property_count, "admit OLE properties")?;
-    for (id, start, end) in ranges {
+    for &(id, start, end) in ctx.admit_iter(&ranges, "parse OLE properties")? {
         let raw = source
             .child(source.start() + start, source.start() + end)
             .ok_or_else(|| CodecError::Malformed("OLE property view is invalid".into()))?;
@@ -413,37 +432,43 @@ fn parse_section<'a>(
             parse_typed_value(ctx, raw, code_page)?
         };
         let name = if let Some(name) = names.get(&id) {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(name.len()),
-                "retain OLE property name",
-            )?;
-            Some(name.clone())
+            Some(ctx.copy_retained_text(name, "retain OLE property name")?)
         } else {
             None
         };
-        properties.push(Property {
-            id,
-            name,
-            value,
-            raw,
-        });
+        ctx.push_vec(
+            &mut properties,
+            Property {
+                id,
+                name,
+                value,
+                raw,
+            },
+            "admit OLE properties",
+        )?;
     }
     ctx.stable_sort_by(
         &mut properties,
-            |value| &value.id,
-            Ord::cmp,
+        |value| &value.id,
+        Ord::cmp,
         "OLE properties sort",
     )?;
+    let dictionary_entries = names.len();
+    drop(names);
+    drop(names_storage);
+    drop(folded_names_storage);
+    drop(ranges);
+    drop(ranges_storage);
     Ok(PropertySection {
         fmtid,
         code_page,
         offsets_ordered,
-        dictionary_entries: names.len(),
+        dictionary_entries,
         properties,
     })
 }
 
-fn parse_code_page(source: View<'_>) -> Result<u16, CodecError> {
+fn parse_code_page(ctx: &DecodeContext<'_>, source: View<'_>) -> Result<u16, CodecError> {
     let mut cursor = Cursor::new(source, "OLE code-page property");
     if cursor.u16("type")? != 2 || cursor.u16("type padding")? != 0 {
         return Err(CodecError::Malformed(
@@ -456,7 +481,7 @@ fn parse_code_page(source: View<'_>) -> Result<u16, CodecError> {
             "OLE code-page property padding is nonzero".into(),
         ));
     }
-    cursor.zero_finish()?;
+    cursor.zero_finish(ctx)?;
     Ok(code_page)
 }
 
@@ -464,49 +489,59 @@ fn parse_dictionary(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     code_page: Option<u16>,
+    names_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    folded_names_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE property dictionary entries",
-    )?;
     let mut names = BTreeMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE folded dictionary names",
-    )?;
     let mut folded_names = BTreeSet::new();
     for _ in 0..count {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
-        let name = cursor.code_page_string(ctx, size, code_page, "entry name")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(name.len()),
+        let name = names_storage.with_storage(|| {
+            cursor.code_page_string(ctx, size, code_page, "entry name")
+        })?;
+        let name_copy = ctx.copy_scoped_text(
+            &name,
+            names_storage,
             "retain OLE dictionary name copy",
         )?;
-        if id == 0 || names.insert(id, name.clone()).is_some() {
+        if id == 0 {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates or names a reserved id".into(),
             ));
         }
-        let uppercase_len = name
-            .chars()
-            .flat_map(char::to_uppercase)
-            .map(char::len_utf8)
-            .sum::<usize>();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(uppercase_len),
-            "retain OLE dictionary uppercase name",
-        )?;
-        if !folded_names.insert(name.to_uppercase()) {
+        if names_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut names,
+                id,
+                name_copy,
+                "admit OLE property dictionary entries",
+            )
+        })?.is_some()
+        {
+            return Err(CodecError::Malformed(
+                "OLE property dictionary duplicates or names a reserved id".into(),
+            ));
+        }
+        let uppercase_name = folded_names_storage.with_storage(|| {
+            ctx.to_uppercase(&name, "retain OLE dictionary uppercase name")
+        })?;
+        if !folded_names_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut folded_names,
+                uppercase_name,
+                "admit OLE folded dictionary names",
+            )
+        })? {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates a name".into(),
             ));
         }
-        cursor.align4("entry padding")?;
+        cursor.align4(ctx, "entry padding")?;
     }
-    cursor.zero_finish()?;
+    cursor.zero_finish(ctx)?;
     Ok(names)
 }
 
@@ -527,7 +562,7 @@ fn parse_typed_value<'a>(
     } else {
         parse_scalar(ctx, raw, &mut cursor, type_code, code_page, true)?
     };
-    cursor.zero_finish()?;
+    cursor.zero_finish(ctx)?;
     Ok(value)
 }
 
@@ -571,7 +606,7 @@ fn parse_vector<'a>(
             )?);
         }
     }
-    cursor.align4("vector padding")?;
+    cursor.align4(ctx, "vector padding")?;
     Ok(PropertyValue::Vector {
         type_code: element_type | VT_VECTOR,
         values,
@@ -716,13 +751,13 @@ fn parse_scalar<'a>(
         ScalarType::CodePageString => {
             let size = cursor.count("code-page string size", MAX_STREAM_SIZE)?;
             let value = cursor.code_page_string(ctx, size, code_page, "string")?;
-            cursor.align4("string padding")?;
+        cursor.align4(ctx, "string padding")?;
             PropertyValue::String { type_code, value }
         }
         ScalarType::UnicodeString => {
             let count = cursor.count("Unicode string length", MAX_STREAM_SIZE / 2)?;
             let value = cursor.unicode_string(ctx, count, "Unicode string")?;
-            cursor.align4("Unicode string padding")?;
+        cursor.align4(ctx, "Unicode string padding")?;
             PropertyValue::String { type_code, value }
         }
         ScalarType::Filetime => PropertyValue::Filetime {
@@ -737,7 +772,7 @@ fn parse_scalar<'a>(
                 type_code,
                 value: child(raw, start, cursor.position(), "BLOB")?,
             };
-            cursor.align4("BLOB padding")?;
+            cursor.align4(ctx, "BLOB padding")?;
             value
         }
         ScalarType::Clipboard => {
@@ -755,7 +790,7 @@ fn parse_scalar<'a>(
                 format,
                 data: child(raw, start, cursor.position(), "clipboard data")?,
             };
-            cursor.align4("clipboard padding")?;
+            cursor.align4(ctx, "clipboard padding")?;
             value
         }
         ScalarType::Guid => PropertyValue::Guid {
@@ -768,7 +803,7 @@ fn parse_scalar<'a>(
         }
     };
     if padded && !matches!(type_code, 0x0000 | 0x0001) {
-        cursor.align4("scalar padding")?;
+        cursor.align4(ctx, "scalar padding")?;
     }
     Ok(value)
 }
@@ -779,6 +814,7 @@ fn child<'a>(raw: View<'a>, start: usize, end: usize, field: &str) -> Result<Vie
 }
 
 fn require_zero_range(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -787,7 +823,10 @@ fn require_zero_range(
     let gap = bytes.get(start..end).ok_or_else(|| {
         CodecError::malformed(format_args!("OLE property-set {field} is invalid"))
     })?;
-    if gap.iter().any(|byte| *byte != 0) {
+    if ctx
+        .admit_iter(gap, "validate OLE property-set zero range")?
+        .any(|byte| *byte != 0)
+    {
         return Err(CodecError::malformed(format_args!(
             "OLE property-set {field} is nonzero"
         )));
@@ -808,7 +847,7 @@ fn decode_code_page(
         }
         let value =
             ctx.utf16le_text(bytes, bytes.len() / 2, false, "retain OLE property string")?;
-        return require_and_remove_null(value, "OLE Unicode code-page string");
+        return require_and_remove_null(ctx, value, "OLE Unicode code-page string");
     }
     let (content, had_null) = bytes
         .strip_suffix(&[0])
@@ -824,26 +863,40 @@ fn decode_code_page(
         ctx.charge_formatted_retained(message, "retain OLE unsupported code-page detail")?;
         return Err(CodecError::NotImplemented(message.to_string()));
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(content.len()),
-        "decode OLE code-page string",
-    )?;
     let (selected_encoding, source) = encoding_rs::Encoding::for_bom(content)
         .map_or((encoding, content), |(selected, bom_len)| {
             (selected, &content[bom_len..])
         });
-    let mut decoder = selected_encoding.new_decoder_without_bom_handling();
-    let mut buffer = [0_u8; 4096];
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source.len()),
+        "decode OLE code-page string",
+    )?;
+    let mut measure_decoder = selected_encoding.new_decoder_without_bom_handling();
+    let mut scratch = [0_u8; 4096];
     let mut read = 0;
     let mut decoded_len = 0_usize;
     loop {
-        let (result, consumed, written) =
-            decoder.decode_to_utf8_without_replacement(&source[read..], &mut buffer, true);
-        read += consumed;
-        decoded_len += written;
+        ctx.charge_work(1, "scan OLE code-page decoder chunks")?;
+        let input = source
+            .get(read..)
+            .ok_or_else(|| CodecError::Malformed("OLE code-page decoder offset is invalid".into()))?;
+        let (result, consumed, written) = measure_decoder
+            .decode_to_utf8_without_replacement(input, &mut scratch, true);
+        read = read
+            .checked_add(consumed)
+            .ok_or_else(|| ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX))?;
+        decoded_len = decoded_len
+            .checked_add(written)
+            .ok_or_else(|| ctx.refuse_codec_limit("decode OLE code-page string", u64::MAX, u64::MAX))?;
         match result {
-            encoding_rs::DecoderResult::InputEmpty => break,
-            encoding_rs::DecoderResult::OutputFull => {}
+            encoding_rs::DecoderResult::InputEmpty if read == source.len() => break,
+            encoding_rs::DecoderResult::InputEmpty => {
+                return Err(CodecError::malformed("OLE code-page decoder ended before its input"));
+            }
+            encoding_rs::DecoderResult::OutputFull if consumed != 0 || written != 0 => {}
+            encoding_rs::DecoderResult::OutputFull => {
+                return Err(CodecError::malformed("OLE code-page decoder made no progress"));
+            }
             encoding_rs::DecoderResult::Malformed(..) => {
                 return Err(CodecError::malformed(format_args!(
                     "OLE code-page {page} string is malformed"
@@ -851,61 +904,93 @@ fn decode_code_page(
             }
         }
     }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(decoded_len),
-        "retain OLE property string",
+    let mut decoded_bytes =
+        ctx.alloc_filled(decoded_len, 0_u8, "retain OLE property string")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(source.len()),
+        "decode OLE code-page string",
     )?;
-    let (decoded, _, malformed) = encoding.decode(content);
-    if malformed {
+    let mut decoder = selected_encoding.new_decoder_without_bom_handling();
+    let (result, read, written) = decoder.decode_to_utf8_without_replacement(
+        source,
+        &mut decoded_bytes,
+        true,
+    );
+    if result != encoding_rs::DecoderResult::InputEmpty
+        || read != source.len()
+        || written != decoded_len
+    {
         return Err(CodecError::malformed(format_args!(
             "OLE code-page {} string is malformed",
-            code_page.unwrap_or(1252)
+            page
         )));
     }
-    Ok(decoded.into_owned())
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(decoded_len),
+        "validate OLE decoded UTF-8",
+    )?;
+    String::from_utf8(decoded_bytes).map_err(|_| {
+        CodecError::malformed(format_args!("OLE code-page {page} string is malformed"))
+    })
 }
 
 fn encoding_for_code_page(code_page: u16) -> Option<&'static encoding_rs::Encoding> {
-    let label = match code_page {
-        65001 => "utf-8",
-        874 => "windows-874",
-        932 => "shift_jis",
-        936 => "gbk",
-        949 => "euc-kr",
-        950 => "big5",
-        1250 => "windows-1250",
-        1251 => "windows-1251",
-        1252 => "windows-1252",
-        1253 => "windows-1253",
-        1254 => "windows-1254",
-        1255 => "windows-1255",
-        1256 => "windows-1256",
-        1257 => "windows-1257",
-        1258 => "windows-1258",
-        _ => return None,
-    };
-    encoding_rs::Encoding::for_label(label.as_bytes())
+    match code_page {
+        65001 => Some(encoding_rs::UTF_8),
+        874 => Some(encoding_rs::WINDOWS_874),
+        932 => Some(encoding_rs::SHIFT_JIS),
+        936 => Some(encoding_rs::GBK),
+        949 => Some(encoding_rs::EUC_KR),
+        950 => Some(encoding_rs::BIG5),
+        1250 => Some(encoding_rs::WINDOWS_1250),
+        1251 => Some(encoding_rs::WINDOWS_1251),
+        1252 => Some(encoding_rs::WINDOWS_1252),
+        1253 => Some(encoding_rs::WINDOWS_1253),
+        1254 => Some(encoding_rs::WINDOWS_1254),
+        1255 => Some(encoding_rs::WINDOWS_1255),
+        1256 => Some(encoding_rs::WINDOWS_1256),
+        1257 => Some(encoding_rs::WINDOWS_1257),
+        1258 => Some(encoding_rs::WINDOWS_1258),
+        _ => None,
+    }
 }
 
-fn require_and_remove_null(mut value: String, field: &str) -> Result<String, CodecError> {
+fn require_and_remove_null(
+    ctx: &DecodeContext<'_>,
+    mut value: String,
+    field: &str,
+) -> Result<String, CodecError> {
     if value.is_empty() {
         return Ok(value);
     }
-    if !value.ends_with('\0') {
+    if ctx
+        .strip_suffix(&value, "\0", "validate OLE string terminator")?
+        .is_none()
+    {
         return Err(CodecError::malformed(format_args!(
             "{field} has no null terminator"
         )));
     }
-    value.truncate(value.len() - 1);
+    if value.pop() != Some('\0') {
+        return Err(CodecError::malformed(format_args!(
+            "{field} has no null terminator"
+        )));
+    }
     Ok(value)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
+fn hex(ctx: &DecodeContext<'_>, bytes: &[u8; 16]) -> Result<String, CodecError> {
+    let output_len = bytes
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain OLE scalar text", u64::MAX, u64::MAX))?;
+    let mut output = String::new();
+    ctx.try_reserve_retained_text(&mut output, output_len, "retain OLE scalar text")?;
+    for byte in ctx.admit_iter(bytes, "format OLE GUID as hexadecimal")? {
+        ctx.charge_work(2, "format OLE GUID as hexadecimal")?;
         crate::decode::push_hex(&mut output, *byte);
     }
-    output
+    Ok(output)
 }
 
 struct Cursor<'a> {
@@ -978,9 +1063,17 @@ impl<'a> Cursor<'a> {
             .map_err(|_| CodecError::malformed(format_args!("{} {field} is too large", self.scope)))
     }
 
-    fn align4(&mut self, field: &'static str) -> Result<(), CodecError> {
+    fn align4(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &'static str,
+    ) -> Result<(), CodecError> {
         let padding = (4 - self.position() % 4) % 4;
-        if self.take(padding, field)?.iter().any(|byte| *byte != 0) {
+        let padding = self.take(padding, field)?;
+        if ctx
+            .admit_iter(padding, "validate OLE alignment padding")?
+            .any(|byte| *byte != 0)
+        {
             return Err(CodecError::malformed(format_args!(
                 "{} {field} is nonzero",
                 self.scope
@@ -1019,22 +1112,20 @@ impl<'a> Cursor<'a> {
             field,
             "retain OLE Unicode property string",
         )?;
-        require_and_remove_null(value, field)
+        require_and_remove_null(ctx, value, field)
     }
 
-    fn zero_finish(self) -> Result<(), CodecError> {
-        if self
-            .view
-            .window()
-            .get(self.position()..)
-            .is_some_and(|rest| rest.iter().all(|byte| *byte == 0))
-        {
+    fn zero_finish(self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        let zero_suffix = match self.view.window().get(self.position()..) {
+            Some(rest) => ctx
+                .admit_iter(rest, "validate OLE trailing bytes")?
+                .all(|byte| *byte == 0),
+            None => false,
+        };
+        if zero_suffix {
             Ok(())
         } else {
-            Err(CodecError::malformed(format_args!(
-                "{} has nonzero trailing bytes",
-                self.scope
-            )))
+            Err(CodecError::malformed(format_args!("{} has nonzero trailing bytes", self.scope)))
         }
     }
 }
@@ -1090,7 +1181,7 @@ mod tests {
     }
 
     #[test]
-    fn dictionary_name_copies_refuse_retained_limit_before_allocation() {
+    fn dictionary_temporary_name_copies_refuse_scoped_limit_before_allocation() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -1102,25 +1193,52 @@ mod tests {
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("service context");
+        let mut names_storage = service
+            .reserve_scoped(0, "admit OLE property dictionary entries")
+            .expect("dictionary name storage reservation");
+        let mut folded_names_storage = service
+            .reserve_scoped(0, "admit OLE folded dictionary names")
+            .expect("folded dictionary name storage reservation");
         assert_eq!(
-            parse_dictionary(&service, root, Some(1200))
+            parse_dictionary(
+                &service,
+                root,
+                Some(1200),
+                &mut names_storage,
+                &mut folded_names_storage,
+            )
                 .expect("dictionary admitted")
                 .get(&2)
                 .map(String::as_str),
             Some("abc")
         );
+        // Scoped admissions total 7 bytes after the name copy, 459 after its map node, 539 after uppercase, and 947 after its set node.
         for (cap, operation) in [
-            (4, "retain OLE dictionary name copy"),
-            (7, "retain OLE dictionary uppercase name"),
+            (6, "retain OLE dictionary name copy"),
+            (458, "admit OLE property dictionary entries"),
+            (538, "retain OLE dictionary uppercase name"),
+            (946, "admit OLE folded dictionary names"),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (limited, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+            let mut names_storage = limited
+                .reserve_scoped(0, "admit OLE property dictionary entries")
+                .expect("dictionary name storage reservation");
+            let mut folded_names_storage = limited
+                .reserve_scoped(0, "admit OLE folded dictionary names")
+                .expect("folded dictionary name storage reservation");
             assert!(matches!(
-                parse_dictionary(&limited, root, Some(1200)),
+                parse_dictionary(
+                    &limited,
+                    root,
+                    Some(1200),
+                    &mut names_storage,
+                    &mut folded_names_storage,
+                ),
                 Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
+                    if limit.dimension == ResourceDimension::MaterializedBytes
                         && limit.operation == operation
             ));
         }

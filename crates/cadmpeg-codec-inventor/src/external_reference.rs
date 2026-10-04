@@ -141,15 +141,13 @@ pub(crate) fn parse<'a>(
                 }
             }
             Err(error) => {
-                if !matches!(error, CodecError::ResourceLimit(_)) {
-                    ctx.charge_formatted_retained(
-                        format_args!("{error}"),
-                        "retain Inventor malformed UFRx detail",
-                    )?;
-                }
                 UfrxState::Malformed {
                     stream: stream.id(),
-                    detail: crate::issue_detail(error)?,
+                    detail: crate::issue_detail(
+                        ctx,
+                        error,
+                        "retain Inventor malformed UFRx detail",
+                    )?,
                 }
             }
         },
@@ -244,17 +242,14 @@ fn parse_stream_grammar<'a>(
             | DocumentKind::Presentation
             | DocumentKind::Mixed
             | DocumentKind::Unknown => {
-                ctx.charge_formatted_retained(
+                let detail = ctx.format_retained(
                     format_args!(
                         "UFRxDoc schema 15 {} header is not implemented",
                         document_kind.label()
                     ),
                     "retain UFRx schema header diagnostic",
                 )?;
-                return Err(CodecError::NotImplemented(format!(
-                    "UFRxDoc schema 15 {} header is not implemented",
-                    document_kind.label()
-                )));
+                return Err(CodecError::NotImplemented(detail));
             }
         }
     } else {
@@ -510,7 +505,11 @@ fn parse_occurrences<'a>(
         };
         let header_padding_words = if section_version >= 28 {
             let mut padding_words = 0_u8;
-            while cursor.peek_u16("occurrence extended-header padding")? == 0 {
+            loop {
+                ctx.charge_work(1, "scan UFRx occurrence extended-header padding")?;
+                if cursor.peek_u16("occurrence extended-header padding")? != 0 {
+                    break;
+                }
                 if padding_words == 8 {
                     return Err(CodecError::Malformed(
                         "UFRxDoc occurrence extended-header padding exceeds eight words".into(),
@@ -948,14 +947,11 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(count),
-            "retain UFRxDoc string",
-        )?;
         let value = self.take(count, field)?;
-        std::str::from_utf8(value)
-            .map(str::to_owned)
-            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-8")))
+        let text = ctx
+            .validate_utf8(value, "validate UFRxDoc UTF-8 string")?
+            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-8")))?;
+        ctx.copy_retained_text(text, "retain UFRxDoc string")
     }
 
     fn boolean(&mut self, field: &'static str) -> Result<bool, CodecError> {
