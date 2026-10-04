@@ -663,7 +663,7 @@ fn qualified_reference(
     ctx.try_reserve_retained_text(&mut result, size, "qualify SLDPRT reference")?;
     result.push_str(value);
     if tail != 0 {
-        result.push('@');
+        ctx.push_retained_char(&mut result, '@', "append SLDPRT reference qualifier")?;
         result.push_str(site);
     }
     Ok(result)
