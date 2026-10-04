@@ -4163,35 +4163,21 @@ fn valid_work_point_construction(
         return Ok(true);
     };
     let native = ctx.native;
+    let (plain, located) = scope.reference_members().storage_slices();
     if construction.point_record_byte_offset >= construction.position_offset
         || construction.position_offset >= construction.reference_type_offset
-        || !scope
-            .reference_members()
-            .values()
-            .any(|value| value == &construction.point_record_index)
-        || ctx
-            .records_by_index
-            .get(&(native_stream, construction.point_record_index))
+        || !(ctx.decode.contains(plain, &construction.point_record_index, "find F3D work-point scope reference")?
+            || ctx.decode.any_by(located, |value| Ok(value.value == construction.point_record_index), "find F3D located work-point scope reference")?)
+        || ctx.decode.get_hash_map(&ctx.records_by_index, &(native_stream, construction.point_record_index), "find F3D work-point record")?
             .is_none_or(|header| header.byte_offset != construction.point_record_byte_offset)
     {
         return Ok(false);
     }
 
-    construction
-        .rule
-        .inputs()
-        .iter()
-        .try_fold(true, |valid, input| {
-            if !valid {
-                return Ok(false);
-            }
-            let header = ctx
-                .records_by_index
-                .get(&(native_stream, input.record_index()));
-            Ok(scope
-                .reference_members()
-                .values()
-                .any(|value| value == &input.record_index())
+    ctx.decode.all_by(construction.rule.inputs(), |input| {
+            let header = ctx.decode.get_hash_map(&ctx.records_by_index, &(native_stream, input.record_index()), "find F3D work-point input record")?;
+            Ok((ctx.decode.contains(plain, &input.record_index(), "find F3D work-point input reference")?
+                || ctx.decode.any_by(located, |value| Ok(value.value == input.record_index()), "find F3D located work-point input reference")?)
                 && input.reference_offset > construction.reference_type_offset
                 && header.is_some() && match input.carrier() {
                 None => true,
@@ -4199,12 +4185,12 @@ fn valid_work_point_construction(
                     records::feature::work_geometry::DesignWorkPointInputCarrier::EdgeRecipe {
                         operand_id,
                     },
-                ) => native.design_edge_operands.iter().any(|operand| {
-                    operand.id == *operand_id
-                        && design_stream(&operand.id) == native_stream
+                ) => ctx.decode.any_by(&native.design_edge_operands, |operand| {
+                    Ok(ctx.decode.equal(&operand.id, operand_id, "compare F3D work-point edge recipe identity")?
+                        && ctx.decode.equal(design_stream(&operand.id), native_stream, "compare F3D work-point edge recipe stream")?
                         && operand.scope_record_index == scope.record_index
-                        && operand.record_index() == input.record_index()
-                }),
+                        && operand.record_index() == input.record_index())
+                }, "find F3D work-point edge recipe")?,
                 Some(
                     records::feature::work_geometry::DesignWorkPointInputCarrier::VertexRecipe {
                         recipe: vertex,
@@ -4213,39 +4199,40 @@ fn valid_work_point_construction(
                 Some(records::feature::work_geometry::DesignWorkPointInputCarrier::WorkPlane {
                     selection,
                 }) => {
-                    header.is_some_and(|header| {
-                        header.class_tag == selection.class_tag
-                            && selection.asset_id_offset() > header.byte_offset
+                    (match header {
+                        Some(header) => ctx.decode.equal(&header.class_tag, &selection.class_tag, "compare F3D work-point selection class tags")?
+                            && selection.asset_id_offset() > header.byte_offset,
+                        None => false,
                     }) && u32::try_from(selection.primary_identity)
                         .ok()
                         .and_then(|identity| identity.checked_add(1))
                         == Some(selection.work_plane_scope_record_index)
-                        && native.design_parameter_scopes.iter().any(|plane| {
-                            design_stream(&plane.id) == native_stream
-                                && plane.kind()
-                                    == crate::records::feature::scope::DesignFeatureKind::WorkPlane
-                                && plane.record_index == selection.work_plane_scope_record_index
-                        })
+                        && ctx.decode.any_by(&native.design_parameter_scopes, |plane| {
+                            Ok(ctx.decode.equal(design_stream(&plane.id), native_stream, "compare F3D work-point plane stream")?
+                                && ctx.decode.equal(&plane.kind(), &crate::records::feature::scope::DesignFeatureKind::WorkPlane, "compare F3D work-point plane kind")?
+                                && plane.record_index == selection.work_plane_scope_record_index)
+                        }, "find F3D work-point plane scope")?
                 }
                 Some(
                     records::feature::work_geometry::DesignWorkPointInputCarrier::SketchPoint {
                         selection,
                     },
                 ) => {
-                    header.is_some_and(|header| {
-                        header.class_tag == selection.class_tag
-                            && selection.asset_id_offset() > header.byte_offset
+                    (match header {
+                        Some(header) => ctx.decode.equal(&header.class_tag, &selection.class_tag, "compare F3D work-point selection class tags")?
+                            && selection.asset_id_offset() > header.byte_offset,
+                        None => false,
                     }) && u32::try_from(selection.point_persistent_id).is_ok()
-                        && !selection.point_native_id.trim().is_empty()
-                        && native.sketch_points.iter().any(|point| {
-                            point.id == selection.point_native_id
-                                && design_stream(&point.id) == native_stream
+                        && !ctx.decode.trim_text(&selection.point_native_id, "validate F3D work-point sketch identity")?.is_empty()
+                        && ctx.decode.any_by(&native.sketch_points, |point| {
+                            Ok(ctx.decode.equal(&point.id, &selection.point_native_id, "compare F3D work-point sketch identity")?
+                                && ctx.decode.equal(design_stream(&point.id), native_stream, "compare F3D work-point sketch stream")?
                                 && point.owner_reference == Some(selection.sketch_record_index)
-                                && point.persistent_id() == Some(selection.point_persistent_id)
-                        })
+                                && point.persistent_id() == Some(selection.point_persistent_id))
+                        }, "find F3D work-point sketch point")?
                 }
             })
-        })
+        }, "validate F3D work-point inputs")
 }
 
 fn valid_work_plane_construction(
@@ -4266,19 +4253,17 @@ fn valid_work_plane_construction(
     else {
         return Ok(false);
     };
-    let Some(placement_header) = ctx
-        .records_by_index
-        .get(&(native_stream, *placement_record_index))
+    let Some(placement_header) = ctx.decode.get_hash_map(&ctx.records_by_index, &(native_stream, *placement_record_index), "find F3D work-plane placement record")?
     else {
         return Ok(false);
     };
     let transform_offset = frame.work_plane_transform_offset;
-    let Some(owner) = ctx.native.design_parameter_owners.iter().find(|owner| {
-        design_stream(owner.id()) == native_stream
+    let Some(owner) = ctx.decode.find_by(&ctx.native.design_parameter_owners, |owner| {
+        Ok(ctx.decode.equal(design_stream(owner.id()), native_stream, "compare F3D work-plane owner stream")?
             && owner.record_index() == *extra_offset
             && owner.scope_record_index() == scope.record_index
-            && owner.evaluated_value().get() == 0.0
-    }) else {
+            && owner.evaluated_value().get() == 0.0)
+    }, "find F3D work-plane parameter owner")? else {
         return Ok(false);
     };
 
@@ -4294,19 +4279,14 @@ fn valid_work_plane_construction(
             .and_then(|frame| frame.reference.as_ref())
             .is_some()
         && transform_offset > placement_header.byte_offset
-        && inputs.iter().try_fold(true, |valid, input| {
-            if !valid {
-                return Ok(false);
-            }
-            valid_vertex_recipe(ctx, scope, native_stream, input.record_index(), input)
-        })?
-        && ctx.native.design_parameters.iter().any(|parameter| {
-            design_stream(&parameter.id) == native_stream
+        && ctx.decode.all_by(inputs, |input| valid_vertex_recipe(ctx, scope, native_stream, input.record_index(), input), "validate F3D work-plane vertex inputs")?
+        && ctx.decode.any_by(&ctx.native.design_parameters, |parameter| {
+            Ok(ctx.decode.equal(design_stream(&parameter.id), native_stream, "compare F3D work-plane parameter stream")?
                 && parameter.record_index == owner.parameter_record_index()
                 && parameter.owner_record_index() == Some(owner.record_index())
-                && parameter.source_kind() == "ExtraOffset"
-                && parameter.evaluated_value().get() == 0.0
-        }))
+                && ctx.decode.equal(parameter.source_kind(), "ExtraOffset", "compare F3D work-plane parameter kind")?
+                && parameter.evaluated_value().get() == 0.0)
+        }, "find F3D work-plane ExtraOffset parameter")?)
 }
 
 fn valid_vertex_recipe(
@@ -4319,24 +4299,28 @@ fn valid_vertex_recipe(
     let native = ctx.native;
     let header = ctx.decode.get_hash_map(&ctx.records_by_index, &(native_stream, record_index), "find F3D validation record index")?;
     let recipe = ctx.decode.get_hash_map(&ctx.recipes_by_id, vertex.recipe_id.as_str(), "find F3D validation record index")?;
-    let mut expected_references =
+    let mut expected_reference_storage = ctx.decode.reserve_scoped(0, "hold F3D vertex recipe expected references")?;
+    let mut expected_references = expected_reference_storage.with_storage(|| {
         design::decode::dimension_frames::decode_recipe_references_charged(
             ctx.decode,
             &vertex.recipe_prefix_bytes,
             vertex.recipe_prefix_offset(),
-        )?;
+        )
+    })?;
     let mut reference_positions_storage = ctx.decode.reserve_scoped(0, "scan F3D recipe references")?;
     let reference_positions = reference_positions_storage.with_storage(|| {
         ctx.decode.collect_vec(expected_references.iter().enumerate().map(|(index, _)| index), "scan F3D recipe references")
     })?;
     for position in ctx.decode.admit_iter(&reference_positions, "scan F3D recipe references")? {
         let reference = &mut expected_references[*position];
-        design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
-            ctx.decode,
-            reference,
-            &native.persistent_subentity_tags,
-            Some(&scope.id),
-        )?;
+        expected_reference_storage.with_storage(|| {
+            design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+                ctx.decode,
+                reference,
+                &native.persistent_subentity_tags,
+                Some(&scope.id),
+            )
+        })?;
     }
     let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
     let family_name_length = u64::try_from(design::construction_recipe_family_name_len(
@@ -4351,14 +4335,20 @@ fn valid_vertex_recipe(
         Some(resolution) => {
             let state_id = resolution.state_id;
             let vertex_slot = resolution.vertex_slot();
-            let mut states = native
-                .asm_histories
-                .iter()
-                .flat_map(|history| &history.states)
-                .filter(|state| state.state_id == state_id);
-            match states.next() {
-                Some(state) if states.next().is_none() => match state.topology() {
-                    Some(topology) => topology.vertices.contains(&vertex_slot),
+            let mut selected = None;
+            let mut ambiguous = false;
+            'histories: for source in ctx.decode.admit_iter(&native.asm_histories, "find F3D vertex recipe history")? {
+                for state in ctx.decode.admit_iter(&source.states, "find F3D vertex recipe state")? {
+                    if state.state_id != state_id { continue; }
+                    if selected.replace(state).is_some() {
+                        ambiguous = true;
+                        break 'histories;
+                    }
+                }
+            }
+            match selected {
+                Some(state) if !ambiguous => match state.topology() {
+                    Some(topology) => ctx.decode.contains(&topology.vertices, &vertex_slot, "find F3D vertex recipe historical vertex")?,
                     None => history::projection_was_finalized(ctx.decode, &native.asm_histories)?,
                 },
                 _ => false,
@@ -4366,8 +4356,10 @@ fn valid_vertex_recipe(
         }
     };
     Ok(vertex.record_index() == record_index
-        && header.is_some_and(|header| {
-            header.byte_offset == vertex.byte_offset() && header.class_tag == vertex.class_tag
+        && (match header {
+            Some(header) => header.byte_offset == vertex.byte_offset()
+                && ctx.decode.equal(&header.class_tag, &vertex.class_tag, "compare F3D vertex recipe class tags")?,
+            None => false,
         })
         && prefix_length.is_some_and(|prefix_length| {
             vertex
@@ -4376,10 +4368,12 @@ fn valid_vertex_recipe(
                 .zip(recipe.and_then(|recipe| recipe.byte_offset.checked_sub(4)))
                 .is_some_and(|(prefix_end, recipe_prefix_end)| prefix_end == recipe_prefix_end)
         })
-        && vertex.recipe_references == expected_references
+        && ctx.decode.equal(&vertex.recipe_references, &expected_references, "compare F3D vertex recipe references")?
         && resolution_is_valid
-        && recipe.is_some_and(|recipe| {
-            design_stream(&recipe.id) == native_stream
+        && match recipe {
+            None => false,
+            Some(recipe) => {
+            ctx.decode.equal(design_stream(&recipe.id), native_stream, "compare F3D vertex recipe stream")?
                 && recipe.kind == records::recipes::ConstructionRecipeKind::Vertex
                 && recipe.byte_offset > vertex.recipe_record_byte_offset()
                 && recipe.byte_offset < vertex.next_byte_offset()
@@ -4391,7 +4385,8 @@ fn valid_vertex_recipe(
                             vertex.recipe_program_offset == expected_offset
                         })
                 })
-        })
+            }
+        }
         && program_byte_length.is_some_and(|program_byte_length| {
             program_byte_length != 0
                 && vertex
@@ -4529,19 +4524,28 @@ fn validate_extrude_selection_groups(
         let native_stream = design_stream(&group.id);
         let scope = ctx.decode.get_hash_map(scopes_by_index, &(native_stream, group.scope_record_index), "find F3D validation record index")?;
         let header = ctx.decode.get_hash_map(records_by_index, &(native_stream, group.record_index), "find F3D validation record index")?;
-        let frame_valid = scope.is_some_and(|scope| {
+        let frame_valid = match scope {
+            None => false,
+            Some(scope) => {
             design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Extrude)
-                && usize::try_from(group.scope_reference_ordinal)
-                    .ok()
-                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                    == Some(&group.record_index)
-        }) && header.is_some_and(|header| {
-            header.byte_offset == group.byte_offset() && header.class_tag == group.class_tag
-        }) && group
-            .members()
-            .iter()
-            .all(|member| records_by_index.contains_key(&(native_stream, member.value)));
+                && match usize::try_from(group.scope_reference_ordinal) {
+                    Ok(ordinal) => {
+                        let (plain, located) = scope.reference_members().storage_slices();
+                        ctx.decode.admit_iter(plain, "scan F3D Extrude group scope references")?
+                            .chain(ctx.decode.admit_iter(located, "scan F3D Extrude group located scope references")?.map(|member| &member.value))
+                            .nth(ordinal) == Some(&group.record_index)
+                    }
+                    Err(_) => false,
+                }
+            }
+        } && match header {
+            Some(header) => header.byte_offset == group.byte_offset()
+                && ctx.decode.equal(&header.class_tag, &group.class_tag, "compare F3D Extrude group class tags")?,
+            None => false,
+        } && ctx.decode.all_by(group.members(), |member| {
+            ctx.decode.contains_key_hash_map(records_by_index, &(native_stream, member.value), "find F3D Extrude group member record")
+        }, "validate F3D Extrude group member records")?;
         let valid = if frame_valid {
             ctx.decode.insert_hash_set(
                 &mut group_slots,
@@ -4591,18 +4595,19 @@ fn validate_construction_operand_groups(
         let frame_valid = group
             .byte_offset
             .checked_add(
-                if scope.is_some_and(|scope| {
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::SplitFace
+                if match scope {
+                    None => false,
+                    Some(scope) => {
+                    ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::SurfaceStitch, "compare F3D construction scope kind")?
+                        || (ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::SplitFace, "compare F3D construction scope kind")?
                             && group.role() == DesignOperandRole::ROLE_0X21)
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::Split
+                        || (ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::Split, "compare F3D construction scope kind")?
                             && matches!(
                                 group.role(),
                                 DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
                             ))
-                }) {
+                    }
+                } {
                     88
                 } else {
                     21
@@ -4627,41 +4632,35 @@ fn validate_construction_operand_groups(
                 .opaque_scalar_offset()
                 .checked_add(8)
                 .is_some_and(|expected_offset| group.paired_byte_offset > expected_offset)
-            && frame
-                .auxiliary_records
-                .iter()
-                .map(|record| &record.value)
-                .chain(frame.trailing_records().iter().map(|record| &record.value))
-                .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
-            && frame.trailing_transforms().iter().all(|transform| {
-                frame
-                    .trailing_records()
-                    .iter()
-                    .any(|record| record.value == transform.record_index())
-                    && records_by_index
-                        .get(&(native_stream, transform.record_index()))
-                        .is_some_and(|header| {
-                            header.byte_offset == transform.byte_offset()
-                                && header.class_tag == transform.class_tag
-                        })
-                    && records_by_index
-                        .get(&(native_stream, transform.following_record_index()))
-                        .is_some_and(|header| {
-                            header.byte_offset == transform.following_byte_offset()
-                                && header.class_tag == transform.following_class_tag
-                        })
-            })
-            && frame.trailing_dual_transforms().iter().all(|transform| {
-                frame
-                    .trailing_records()
-                    .iter()
-                    .any(|record| record.value == transform.record_index)
-                    && records_by_index
-                        .get(&(native_stream, transform.record_index))
-                        .is_some_and(|header| {
-                            header.byte_offset == transform.byte_offset
-                                && header.class_tag == transform.class_tag
-                        })
+            && ctx.decode.admit_iter(&frame.auxiliary_records, "scan F3D construction auxiliary records")?
+                .chain(ctx.decode.admit_iter(frame.trailing_records(), "scan F3D construction trailing records")?)
+                .try_fold(true, |valid, record| {
+                    if !valid { return Ok(false); }
+                    ctx.decode.contains_key_hash_map(records_by_index, &(native_stream, record.value), "find F3D construction tail record")
+                })?
+            && ctx.decode.all_by(frame.trailing_transforms(), |transform| {
+                Ok(
+                ctx.decode.any_by(frame.trailing_records(), |record| Ok(record.value == transform.record_index()), "find F3D construction tail reference")?
+                    && match ctx.decode.get_hash_map(records_by_index, &(native_stream, transform.record_index()), "find F3D construction tail record")? {
+                        Some(header) => header.byte_offset == transform.byte_offset()
+                            && ctx.decode.equal(&header.class_tag, &transform.class_tag, "compare F3D construction tail class tags")?,
+                        None => false,
+                    }
+                    && match ctx.decode.get_hash_map(records_by_index, &(native_stream, transform.following_record_index()), "find F3D construction tail record")? {
+                        Some(header) => header.byte_offset == transform.following_byte_offset()
+                            && ctx.decode.equal(&header.class_tag, &transform.following_class_tag, "compare F3D construction tail class tags")?,
+                        None => false,
+                    }
+                )
+            }, "validate F3D construction trailing_transforms")?
+            && ctx.decode.all_by(frame.trailing_dual_transforms(), |transform| {
+                Ok(
+                ctx.decode.any_by(frame.trailing_records(), |record| Ok(record.value == transform.record_index), "find F3D construction tail reference")?
+                    && match ctx.decode.get_hash_map(records_by_index, &(native_stream, transform.record_index), "find F3D construction tail record")? {
+                        Some(header) => header.byte_offset == transform.byte_offset
+                            && ctx.decode.equal(&header.class_tag, &transform.class_tag, "compare F3D construction tail class tags")?,
+                        None => false,
+                    }
                     && transform
                         .byte_offset
                         .checked_add(21)
@@ -4674,44 +4673,42 @@ fn validate_construction_operand_groups(
                         .is_some_and(|expected_offset| {
                             transform.second_transform_offset == expected_offset
                         })
-            })
-            && frame.trailing_flags().iter().all(|flag| {
-                frame
-                    .trailing_records()
-                    .iter()
-                    .any(|record| record.value == flag.record_index)
-                    && records_by_index
-                        .get(&(native_stream, flag.record_index))
-                        .is_some_and(|header| {
-                            header.byte_offset == flag.byte_offset
-                                && header.class_tag == flag.class_tag
-                        })
+                )
+            }, "validate F3D construction trailing_dual_transforms")?
+            && ctx.decode.all_by(frame.trailing_flags(), |flag| {
+                Ok(
+                ctx.decode.any_by(frame.trailing_records(), |record| Ok(record.value == flag.record_index), "find F3D construction tail reference")?
+                    && match ctx.decode.get_hash_map(records_by_index, &(native_stream, flag.record_index), "find F3D construction tail record")? {
+                        Some(header) => header.byte_offset == flag.byte_offset
+                            && ctx.decode.equal(&header.class_tag, &flag.class_tag, "compare F3D construction tail class tags")?,
+                        None => false,
+                    }
                     && flag
                         .byte_offset
                         .checked_add(22)
                         .is_some_and(|expected_offset| flag.value_offset == expected_offset)
-            })
-            && frame.auxiliary_paths().iter().all(|path| {
-                frame
-                    .auxiliary_records
-                    .iter()
-                    .any(|record| record.value == path.record_index())
-                    && records_by_index
-                        .get(&(native_stream, path.record_index()))
-                        .is_some_and(|header| {
-                            header.byte_offset == path.byte_offset()
-                                && header.class_tag == path.class_tag
-                        })
+                )
+            }, "validate F3D construction trailing_flags")?
+            && ctx.decode.all_by(frame.auxiliary_paths(), |path| {
+                Ok(
+                ctx.decode.any_by(&frame.auxiliary_records, |record| Ok(record.value == path.record_index()), "find F3D construction tail reference")?
+                    && match ctx.decode.get_hash_map(records_by_index, &(native_stream, path.record_index()), "find F3D construction tail record")? {
+                        Some(header) => header.byte_offset == path.byte_offset()
+                            && ctx.decode.equal(&header.class_tag, &path.class_tag, "compare F3D construction tail class tags")?,
+                        None => false,
+                    }
                     && path.scope_record_index == group.scope_record_index
-                    && records_by_index.contains_key(&(native_stream, path.nested_record_index()))
-                    && records_by_index
-                        .get(&(native_stream, path.following_record_index()))
-                        .is_some_and(|header| {
-                            header.byte_offset == path.following_byte_offset()
-                                && header.class_tag == path.following_class_tag
-                        })
-            });
-        let valid = scope.is_some_and(|scope| {
+                    && ctx.decode.contains_key_hash_map(records_by_index, &(native_stream, path.nested_record_index()), "find F3D nested construction record")?
+                    && match ctx.decode.get_hash_map(records_by_index, &(native_stream, path.following_record_index()), "find F3D construction tail record")? {
+                        Some(header) => header.byte_offset == path.following_byte_offset()
+                            && ctx.decode.equal(&header.class_tag, &path.following_class_tag, "compare F3D construction tail class tags")?,
+                        None => false,
+                    }
+                )
+            }, "validate F3D construction auxiliary_paths")?;
+        let valid = match scope {
+            None => false,
+            Some(scope) => {
             let role_is_valid = match design::design_feature_family(&scope.kind()) {
                 Some(design::DesignFeatureFamily::Extrude) => {
                     match group.operand_role {
@@ -4752,8 +4749,7 @@ fn validate_construction_operand_groups(
                 ) => group.extrude_role().is_none(),
                 Some(design::DesignFeatureFamily::Coil) => {
                     group.role()
-                        == if scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::CoilPrimitive
+                        == if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::CoilPrimitive, "compare F3D construction scope kind")?
                             && scope.reference_members().len() == 10
                             && scope.coil_operation_offset() == scope.byte_offset().checked_add(22)
                         {
@@ -4860,11 +4856,10 @@ fn validate_construction_operand_groups(
                 Some(design::DesignFeatureFamily::SurfaceRuled) => {
                     group.role() == DesignOperandRole::BODIES_B
                         && group.extrude_role().is_none()
-                        && scope.ruled_surface_operation().is_some_and(|operation| {
-                            operation
-                                .edge_group_record_indices
-                                .contains(&group.record_index)
-                        })
+                        && match scope.ruled_surface_operation() {
+                            Some(operation) => ctx.decode.contains(&operation.edge_group_record_indices, &group.record_index, "find F3D construction operand role group")?,
+                            None => false,
+                        }
                 }
                 Some(design::DesignFeatureFamily::BoundaryFill) => {
                     matches!(
@@ -4898,11 +4893,10 @@ fn validate_construction_operand_groups(
                 Some(design::DesignFeatureFamily::Thread) => {
                     group.role() == DesignOperandRole::ROLE_0X10
                         && group.extrude_role().is_none()
-                        && scope.thread_construction().is_some_and(|construction| {
-                            construction
-                                .face_group_record_indices
-                                .contains(&group.record_index)
-                        })
+                        && match scope.thread_construction() {
+                            Some(construction) => ctx.decode.contains(&construction.face_group_record_indices, &group.record_index, "find F3D construction operand role group")?,
+                            None => false,
+                        }
                 }
                 Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     matches!(
@@ -4919,18 +4913,15 @@ fn validate_construction_operand_groups(
                     ) && group.extrude_role().is_none()
                 }
                 Some(_) => false,
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::RemoveBody =>
+                None if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::RemoveBody, "compare F3D construction scope kind")? =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch =>
+                None if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::SurfaceStitch, "compare F3D construction scope kind")? =>
                 {
                     group.role() == DesignOperandRole::ROLE_0X5 && group.extrude_role().is_none()
                 }
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::SplitFace =>
+                None if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::SplitFace, "compare F3D construction scope kind")? =>
                 {
                     matches!(
                         group.role(),
@@ -4945,25 +4936,23 @@ fn validate_construction_operand_groups(
                 {
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
                 }
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::Decal =>
+                None if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::Decal, "compare F3D construction scope kind")? =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::BaseFlange =>
+                None if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::BaseFlange, "compare F3D construction scope kind")? =>
                 {
                     group.role() == DesignOperandRole::PROFILE
                         && group.extrude_role().is_none()
-                        && scope.base_flange_profile().as_ref().is_some_and(|profile| {
-                            group
-                                .members()
-                                .iter()
-                                .map(|member| member.value)
-                                .eq([profile.record_index])
-                        })
+                        && match scope.base_flange_profile().as_ref() {
+                            Some(profile) => match group.members() {
+                                [member] => ctx.decode.equal(&member.value, &profile.record_index, "compare F3D BaseFlange profile member")?,
+                                _ => false,
+                            },
+                            None => false,
+                        }
                 }
-                None if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hem => {
+                None if ctx.decode.equal(&scope.kind(), &crate::records::feature::scope::DesignFeatureKind::Hem, "compare F3D construction scope kind")? => {
                     matches!(
                         group.role(),
                         DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X43
@@ -4985,23 +4974,26 @@ fn validate_construction_operand_groups(
                         | crate::records::feature::scope::DesignFeatureKind::Hem
                 ))
                 && role_is_valid
-                && usize::try_from(group.scope_reference_ordinal)
-                    .ok()
-                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                    == Some(&group.record_index)
-                && group
-                    .members()
-                    .iter()
-                    .map(|member| &member.value)
-                    .all(|member| {
-                        scope
-                            .reference_members()
-                            .values()
-                            .any(|value| value == member)
-                    })
-        }) && header.is_some_and(|header| {
-            header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
-        }) && frame_valid
+                && match usize::try_from(group.scope_reference_ordinal) {
+                    Ok(ordinal) => {
+                        let (plain, located) = scope.reference_members().storage_slices();
+                        ctx.decode.admit_iter(plain, "scan F3D construction scope references")?
+                            .chain(ctx.decode.admit_iter(located, "scan F3D construction located scope references")?.map(|member| &member.value))
+                            .nth(ordinal) == Some(&group.record_index)
+                    }
+                    Err(_) => false,
+                }
+                && ctx.decode.all_by(group.members(), |member| {
+                    let (plain, located) = scope.reference_members().storage_slices();
+                    Ok(ctx.decode.contains(plain, &member.value, "find F3D construction scope member")?
+                        || ctx.decode.any_by(located, |value| Ok(value.value == member.value), "find F3D located construction scope member")?)
+                }, "validate F3D construction scope members")?
+            }
+        } && match header {
+            Some(header) => header.byte_offset == group.byte_offset
+                && ctx.decode.equal(&header.class_tag, &group.class_tag, "compare F3D construction group class tags")?,
+            None => false,
+        } && frame_valid
             && !group.members().is_empty()
             && {
                 let mut seen = HashSet::new();
@@ -5010,11 +5002,9 @@ fn validate_construction_operand_groups(
                 }
                 seen.len() == group.members().len()
             }
-            && group
-                .members()
-                .iter()
-                .map(|member| &member.value)
-                .all(|member| records_by_index.contains_key(&(native_stream, *member)))
+            && ctx.decode.all_by(group.members(), |member| {
+                ctx.decode.contains_key_hash_map(records_by_index, &(native_stream, member.value), "find F3D construction group member record")
+            }, "validate F3D construction group member records")?
             && ctx.decode.insert_hash_set(&mut operand_group_slots, (native_stream, group.scope_record_index, group.scope_reference_ordinal), "index F3D construction operand group slots")?;
         if !valid {
             ctx.push_constant_finding(
@@ -5664,16 +5654,17 @@ fn validate_fillet_radius_groups<'a>(
         let scope = ctx.decode.get_hash_map(scopes_by_index, &(native_stream, assignment.scope_record_index), "find F3D validation record index")?;
         let group =
             ctx.decode.get_hash_map(construction_groups_by_index, &(native_stream, assignment.group_record_index), "find F3D validation linked record")?;
-        let assignment_parameter = |record_index: u32| {
-            let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
-            let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index()?))?;
-            (owner.scope_record_index() == assignment.scope_record_index
+        let assignment_parameter = |record_index: u32| -> Result<Option<&records::parameters::DesignParameter>, CodecError> {
+            let Some(&parameter) = ctx.decode.get_hash_map(parameters_by_index, &(native_stream, record_index), "find F3D Fillet assignment parameter")? else { return Ok(None); };
+            let Some(owner_record_index) = parameter.owner_record_index() else { return Ok(None); };
+            let Some(&owner) = ctx.decode.get_hash_map(owners_by_index, &(native_stream, owner_record_index), "find F3D Fillet assignment parameter owner")? else { return Ok(None); };
+            Ok((owner.scope_record_index() == assignment.scope_record_index
                 && owner.parameter_record_index() == record_index)
-                .then_some(parameter)
+                .then_some(parameter))
         };
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
-            .and_then(&assignment_parameter);
+            .map(&assignment_parameter).transpose()?.flatten();
         let is_fillet = |scope: &&records::feature::scope::DesignParameterScope| {
             design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Fillet)
@@ -5691,82 +5682,75 @@ fn validate_fillet_radius_groups<'a>(
                 records::topology::fillet::DesignFilletRadiusLaw::Constant {
                     radius_parameter_record_index,
                 } => {
-                    assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
+                    match assignment_parameter(*radius_parameter_record_index)? { None => false, Some(parameter) => {
                         parameter.source_kind() == "Radius"
                             && parameter
                                 .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value().get() > 0.0
-                    })
+                    }}
                 }
                 records::topology::fillet::DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index,
-                } => assignment_parameter(*chord_length_parameter_record_index).is_some_and(
-                    |parameter| {
-                        parameter.source_kind() == "ChordLen"
+                } => match assignment_parameter(*chord_length_parameter_record_index)? { None => false, Some(parameter) => {
+                        ctx.decode.equal(parameter.source_kind(), "ChordLen", "compare F3D Fillet parameter kind")?
                             && parameter
                                 .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value().get() > 0.0
-                    },
-                ),
+                    }},
                 records::topology::fillet::DesignFilletRadiusLaw::Asymmetric {
                     offset_one_parameter_record_index,
                     offset_two_parameter_record_index,
-                } => [
+                } => ctx.decode.all_by(&[
                     (*offset_one_parameter_record_index, "EdgeOffset1"),
                     (*offset_two_parameter_record_index, "EdgeOffset2"),
-                ]
-                .into_iter()
-                .all(|(record_index, kind)| {
-                    assignment_parameter(record_index).is_some_and(|parameter| {
-                        parameter.source_kind() == kind
+                ], |(record_index, kind)| {
+                    Ok(match assignment_parameter(*record_index)? { None => false, Some(parameter) => {
+                        ctx.decode.equal(parameter.source_kind(), *kind, "compare F3D Fillet parameter kind")?
                             && parameter
                                 .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value().get() > 0.0
-                    })
-                }),
+                    }})
+                }, "validate F3D asymmetric Fillet parameters")?,
                 records::topology::fillet::DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
                     middle: midpoint_records,
                 } => {
-                    let radius = |record_index: u32, kind: &str| {
-                        assignment_parameter(record_index)
-                            .filter(|parameter| {
-                                parameter.source_kind() == kind
+                    let radius = |record_index: u32, kind: &str| -> Result<Option<f64>, CodecError> {
+                        let Some(parameter) = assignment_parameter(record_index)? else { return Ok(None); };
+                        Ok((parameter.source_kind() == kind
                                     && parameter
                                         .unit()
                                         .map(|field| field.value.as_str())
                                         .is_some_and(design::feature_project::design_length_unit)
-                                    && parameter.evaluated_value().get() >= 0.0
-                            })
-                            .map(|parameter| parameter.evaluated_value().get())
+                                    && parameter.evaluated_value().get() >= 0.0)
+                            .then_some(parameter.evaluated_value().get()))
                     };
-                    let start = radius(*start_radius_parameter_record_index, "StartRadius");
-                    let end = radius(*end_radius_parameter_record_index, "EndRadius");
+                    let start = radius(*start_radius_parameter_record_index, "StartRadius")?;
+                    let end = radius(*end_radius_parameter_record_index, "EndRadius")?;
                     let mut middle_positive = false;
                     let mut previous_position = None;
                     let mut middle_valid = true;
                     for row in ctx.decode.admit_iter(midpoint_records, "scan F3D midpoint records")? {
                         let Some(middle_radius) =
-                            radius(row.radius_parameter_record_index, "MidRadius")
+                            radius(row.radius_parameter_record_index, "MidRadius")?
                         else {
                             middle_valid = false;
                             break;
                         };
-                        let Some(position) = assignment_parameter(row.parameter_record_index)
-                            .filter(|parameter| {
-                                parameter.source_kind() == "MidParams"
+                        let position = match assignment_parameter(row.parameter_record_index)? { None => None, Some(parameter) => {
+                                (parameter.source_kind() == "MidParams"
                                     && parameter.unit().is_none()
-                                    && (0.0..1.0).contains(&parameter.evaluated_value().get())
-                            })
-                            .map(|parameter| parameter.evaluated_value().get())
-                        else {
+                                    && (0.0..1.0).contains(&parameter.evaluated_value().get()))
+                            .then_some(parameter.evaluated_value().get())
+                        }};
+                        let Some(position) = position else {
                             middle_valid = false;
                             break;
                         };
@@ -5782,13 +5766,10 @@ fn validate_fillet_radius_groups<'a>(
                     })
                 }
             }
-            && assignment
-                .tangency_weight_parameter_record_index
-                .is_none_or(|_| {
-                    tangency_weight.is_some_and(|parameter| {
-                        parameter.source_kind() == "TangencyWeight" && parameter.unit().is_none()
-                    })
-                })
+            && (assignment.tangency_weight_parameter_record_index.is_none()
+                || match tangency_weight { None => false, Some(parameter) => {
+                    parameter.source_kind() == "TangencyWeight" && parameter.unit().is_none()
+                }})
             && ctx.decode.insert_hash_set(
                 &mut fillet_radius_group_records,
                 (native_stream, assignment.group_record_index),
@@ -5833,89 +5814,81 @@ fn validate_fillet_operand_groups<'a>(
             design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Fillet)
         });
-        let mut fixed_edge_group_count = 0;
+        let mut fixed_edge_group_count = 0usize;
         let mut is_fixed_edge_group = false;
         if let Some(scope) = scope {
             for candidate in ctx.decode.admit_iter(&native.design_construction_operand_groups, "scan F3D design construction operand groups")? {
-                if design_stream(&candidate.id) == native_stream
+                if ctx.decode.equal(design_stream(&candidate.id), native_stream, "compare F3D Fillet operand streams")?
                     && candidate.scope_record_index == scope.record_index
                     && !candidate.members().is_empty()
-                    && candidate
-                        .members()
-                        .iter()
-                        .map(|member| &member.value)
-                        .all(|member| {
-                            native.design_edge_operands.iter().any(|operand| {
-                                design_stream(&operand.id) == native_stream
+                    && ctx.decode.all_by(candidate.members(), |member| {
+                            let member = &member.value;
+
+                            ctx.decode.any_by(&native.design_edge_operands, |operand| {
+                                Ok(
+                                ctx.decode.equal(design_stream(&operand.id), native_stream, "compare F3D Fillet operand streams")?
                                     && operand.scope_record_index == scope.record_index
-                                    && operand.record_index() == *member
-                            })
-                        })
+                                    && operand.record_index() == *member)
+                            }, "find F3D fixed Fillet edge operand")
+                        }, "validate F3D fixed Fillet group members")?
                 {
-                    fixed_edge_group_count += 1;
+                    fixed_edge_group_count = fixed_edge_group_count.checked_add(1).ok_or_else(|| ctx.decode.refuse_codec_limit("count F3D fixed Fillet edge groups", u64::MAX - 1, u64::MAX))?;
                     is_fixed_edge_group |= candidate.record_index == group.record_index;
                 }
             }
         }
         let has_radius_assignment =
-            fillet_radius_group_records.contains(&(native_stream, group.record_index));
-        let has_parameter_owner = native.design_parameter_owners.iter().any(|owner| {
-            design_stream(owner.id()) == native_stream
-                && owner.scope_record_index() == group.scope_record_index
-        });
-        let sole_compact_group_shape = scope.is_some_and(|scope| {
-            native
-                .design_construction_operand_groups
-                .iter()
-                .filter(|candidate| {
-                    design_stream(&candidate.id) == native_stream
-                        && candidate.scope_record_index == scope.record_index
-                })
-                .count()
+            ctx.decode.contains_hash_set(fillet_radius_group_records, &(native_stream, group.record_index), "find F3D Fillet radius assignment")?;
+        let has_parameter_owner = ctx.decode.any_by(&native.design_parameter_owners, |owner| {
+            Ok(ctx.decode.equal(design_stream(owner.id()), native_stream, "compare F3D Fillet operand streams")?
+                && owner.scope_record_index() == group.scope_record_index)
+        }, "find F3D Fillet parameter owner")?;
+        let sole_compact_group_shape = match scope { None => false, Some(scope) => {
+            ctx.decode.fold(&native.design_construction_operand_groups, 0usize, |count, candidate| {
+                    if ctx.decode.equal(design_stream(&candidate.id), native_stream, "compare F3D Fillet operand streams")?
+                        && candidate.scope_record_index == scope.record_index {
+                        count.checked_add(1).ok_or_else(|| ctx.decode.refuse_codec_limit("count F3D Fillet scope operand groups", u64::MAX - 1, u64::MAX))
+                    } else { Ok(count) }
+                }, "count F3D Fillet scope operand groups")?
                 == 1
-                && group
-                    .members()
-                    .iter()
-                    .map(|member| &member.value)
-                    .all(|member| {
-                        native.design_edge_identity_operands.iter().any(|operand| {
-                            design_stream(&operand.id) == native_stream
+                && ctx.decode.all_by(group.members(), |member| {
+                        ctx.decode.any_by(&native.design_edge_identity_operands, |operand| {
+                            Ok(
+                            ctx.decode.equal(design_stream(&operand.id), native_stream, "compare F3D Fillet operand streams")?
                                 && operand.scope_record_index == scope.record_index
                                 && operand.group_record_index == group.record_index
-                                && operand.record_index() == *member
-                        })
-                    })
-        });
+                                && operand.record_index() == member.value)
+                        }, "find F3D compact Fillet edge identity operand")
+                    }, "validate F3D compact Fillet group members")?
+        }};
         let full_round_group_shape = is_fillet
             && group.role() == DesignOperandRole::BODIES_A
             && !has_radius_assignment
             && !has_parameter_owner
-            && scope.is_some_and(|scope| {
-                native
-                    .design_construction_operand_groups
-                    .iter()
-                    .filter(|candidate| {
-                        design_stream(&candidate.id) == native_stream
-                            && candidate.scope_record_index == scope.record_index
-                    })
-                    .count()
+            && match scope { None => false, Some(scope) => {
+                ctx.decode.fold(&native.design_construction_operand_groups, 0usize, |count, candidate| {
+                    if ctx.decode.equal(design_stream(&candidate.id), native_stream, "compare F3D Fillet operand streams")?
+                            && candidate.scope_record_index == scope.record_index {
+                        count.checked_add(1).ok_or_else(|| ctx.decode.refuse_codec_limit("count F3D Fillet scope operand groups", u64::MAX - 1, u64::MAX))
+                    } else { Ok(count) }
+                }, "count F3D Fillet scope operand groups")?
                     == 1
                     && group.members().len() == 1
-                    && native.design_edge_operands.iter().all(|operand| {
-                        design_stream(&operand.id) != native_stream
+                    && ctx.decode.all_by(&native.design_edge_operands, |operand| { Ok(
+                        !ctx.decode.equal(design_stream(&operand.id), native_stream, "compare F3D Fillet operand streams")?
                             || operand.scope_record_index != scope.record_index
-                            || operand.record_index() != group.members()[0].value
-                    })
-                    && native.design_face_operands.iter().any(|operand| {
-                        design_stream(&operand.id) == native_stream
+                            || operand.record_index() != group.members()[0].value)
+                    }, "exclude F3D full-round Fillet edge operand")?
+                    && ctx.decode.any_by(&native.design_face_operands, |operand| { Ok(
+                        ctx.decode.equal(design_stream(&operand.id), native_stream, "compare F3D Fillet operand streams")?
                             && operand.scope_record_index == scope.record_index
                             && operand.group_record_index() == Some(group.record_index)
                             && operand.group_member_ordinal() == Some(0)
                             && operand.record_index() == group.members()[0].value
                             && operand.recipe_kind
-                                == records::recipes::ConstructionRecipeKind::BoundedFace
-                    })
-            });
+                                == records::recipes::ConstructionRecipeKind::BoundedFace)
+                    }, "find F3D full-round Fillet bounded face operand")?
+            }};
         let valid_full_round_group = full_round_group_shape
             && !group.frame.variant
             && group.frame.trailing_records().len() == 1
@@ -5923,14 +5896,14 @@ fn validate_fillet_operand_groups<'a>(
             && group.frame.trailing_records()[0].value
                 == group.frame.trailing_flags()[0].record_index
             && group.frame.trailing_flags()[0].value
-            && native.design_face_operands.iter().any(|operand| {
-                design_stream(&operand.id) == native_stream
+            && ctx.decode.any_by(&native.design_face_operands, |operand| { Ok(
+                ctx.decode.equal(design_stream(&operand.id), native_stream, "compare F3D Fillet operand streams")?
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(0)
                     && operand.record_index() == group.members()[0].value
-                    && !operand.resolved_face_slots.is_empty()
-            });
+                    && !operand.resolved_face_slots.is_empty())
+            }, "find F3D full-round Fillet resolved face operand")?;
         if full_round_group_shape {
             if !valid_full_round_group {
                 ctx.push_constant_finding(
@@ -5945,40 +5918,36 @@ fn validate_fillet_operand_groups<'a>(
             }
             continue;
         }
-        let has_fixed_assignment = scope
-            .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
-            .is_some_and(|(scope, fixed)| {
-                native.design_parameter_owners.iter().all(|owner| {
-                    design_stream(owner.id()) != native_stream
-                        || owner.scope_record_index() != scope.record_index
-                }) && fixed
-                    .groups
-                    .iter()
-                    .flat_map(|group| {
-                        group
-                            .tangency_weight()
-                            .into_iter()
-                            .map(|tangency| tangency.record_index)
-                            .chain(group.law().radii().map(|scalar| scalar.record_index))
-                            .chain(
-                                group
-                                    .law()
-                                    .intermediate()
-                                    .iter()
-                                    .map(|row| row.parameter.record_index),
-                            )
-                    })
-                    .all(|record_index| {
-                        scope
-                            .reference_members()
-                            .values()
-                            .filter(|member| **member == record_index)
-                            .count()
-                            == 1
-                    })
-                    && ((fixed_edge_group_count == fixed.groups.len() && is_fixed_edge_group)
-                        || (fixed.groups.len() == 1 && sole_compact_group_shape))
-            });
+        let has_fixed_assignment = match scope.and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed))) {
+            None => false,
+            Some((scope, fixed)) => {
+                let unique_reference = |record_index: u32| -> Result<bool, CodecError> {
+                    let (plain, located) = scope.reference_members().storage_slices();
+                    Ok(ctx.decode.admit_iter(plain, "count F3D fixed Fillet scope references")?
+                        .chain(ctx.decode.admit_iter(located, "count F3D located fixed Fillet scope references")?.map(|member| &member.value))
+                        .filter(|member| **member == record_index).count() == 1)
+                };
+                ctx.decode.all_by(&native.design_parameter_owners, |owner| {
+                    Ok(!ctx.decode.equal(design_stream(owner.id()), native_stream, "compare F3D fixed Fillet owner stream")?
+                        || owner.scope_record_index() != scope.record_index)
+                }, "exclude F3D fixed Fillet parameter owners")?
+                && ctx.decode.all_by(&fixed.groups, |fixed_group| {
+                    if let Some(tangency) = fixed_group.tangency_weight() {
+                        if !unique_reference(tangency.record_index)? { return Ok(false); }
+                    }
+                    let radii_valid = match fixed_group.law() {
+                        records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => unique_reference(radius.record_index)?,
+                        records::feature::fixed_parameters::DesignFixedFilletLaw::Variable { start, end, intermediate } => {
+                            unique_reference(start.record_index)? && unique_reference(end.record_index)?
+                                && ctx.decode.all_by(intermediate, |row| unique_reference(row.radius.record_index), "validate F3D fixed Fillet intermediate radius references")?
+                        }
+                    };
+                    Ok(radii_valid && ctx.decode.all_by(fixed_group.law().intermediate(), |row| unique_reference(row.parameter.record_index), "validate F3D fixed Fillet intermediate parameter references")?)
+                }, "validate F3D fixed Fillet radius groups")?
+                && ((fixed_edge_group_count == fixed.groups.len() && is_fixed_edge_group)
+                    || (fixed.groups.len() == 1 && sole_compact_group_shape))
+            }
+        };
         if is_fillet
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
