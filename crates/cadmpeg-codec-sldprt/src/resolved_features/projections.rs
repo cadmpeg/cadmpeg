@@ -2721,8 +2721,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 OPERATION,
             )
         })?;
-        lookup_storage.with_storage(|| ctx.reserve_vec(&mut history_features, 1, OPERATION))?;
-        history_features.push(native_feature);
+        lookup_storage.with_storage(|| ctx.push_vec(&mut history_features, native_feature, OPERATION))?;
     }
     let mut scoped_ids = Vec::new();
     let mut feature_ids_by_native = HashMap::new();
@@ -2737,8 +2736,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let id = cadmpeg_ir::features::FeatureId::mint(id_text).map_err(|_| {
             cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id")
         })?;
-        lookup_storage.with_storage(|| ctx.reserve_vec(&mut scoped_ids, 1, ID_OPERATION))?;
-        scoped_ids.push(id_reservation);
+        lookup_storage.with_storage(|| ctx.push_vec(&mut scoped_ids, id_reservation, ID_OPERATION))?;
         if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
             *previous = id;
             continue;
@@ -2748,8 +2746,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let (mut native_key, key_reservation) =
             ctx.scoped_string(native_ref.len(), ID_OPERATION)?;
         ctx.append_retained(&mut native_key, native_ref, ID_OPERATION)?;
-        lookup_storage.with_storage(|| ctx.reserve_vec(&mut scoped_ids, 1, ID_OPERATION))?;
-        scoped_ids.push(key_reservation);
+        lookup_storage.with_storage(|| ctx.push_vec(&mut scoped_ids, key_reservation, ID_OPERATION))?;
         feature_ids_by_native.insert(native_key, id);
     }
     for feature in features {
@@ -2826,17 +2823,13 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         }
                         let (key, reservation) = format_reference_key(lane_key, selection.offset)?;
                         lookup_storage.with_storage(|| {
-                            ctx.reserve_vec(&mut key_reservations, 1, REFERENCE_OPERATION)
+                            ctx.push_vec(&mut key_reservations, reservation, REFERENCE_OPERATION)
                         })?;
-                        key_reservations.push(reservation);
-                        lookup_storage.with_storage(|| {
-                            ctx.reserve_vec(&mut references, 1, REFERENCE_OPERATION)
-                        })?;
-                        references.push((
+                        lookup_storage.with_storage(|| ctx.push_vec(&mut references, (
                             key,
                             Some(std::borrow::Cow::Borrowed(selection.components.as_slice())),
                             selection.producer_feature_refs.first().map(String::as_str),
-                        ));
+                        ), REFERENCE_OPERATION))?;
                     }
                 }
                 for lane in lanes {
@@ -2887,13 +2880,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         })?;
                         let (key, reservation) = format_reference_key(lane_key, offset)?;
                         lookup_storage.with_storage(|| {
-                            ctx.reserve_vec(&mut key_reservations, 1, REFERENCE_OPERATION)
+                            ctx.push_vec(&mut key_reservations, reservation, REFERENCE_OPERATION)
                         })?;
-                        key_reservations.push(reservation);
-                        lookup_storage.with_storage(|| {
-                            ctx.reserve_vec(&mut references, 1, REFERENCE_OPERATION)
-                        })?;
-                        references.push((key, components.map(std::borrow::Cow::Owned), None));
+                        lookup_storage.with_storage(|| ctx.push_vec(&mut references, (key, components.map(std::borrow::Cow::Owned), None), REFERENCE_OPERATION))?;
                     }
                 }
                 ctx.sort_unstable_by(

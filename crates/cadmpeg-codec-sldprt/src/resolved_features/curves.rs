@@ -2456,19 +2456,19 @@ fn ordered_compact_line_profile(
         return Ok(None);
     }
     let mut used = ctx.alloc_filled(lines.len(), false, "SLDPRT compact line profile usage")?;
-    let mut profile = ctx.collection_vec(lines.len(), "SLDPRT compact line profile")?;
+    let mut profile = ctx.vector_storage(lines.len(), "SLDPRT compact line profile")?;
     let Some(first) = lines.first() else {
         return Ok(None);
     };
     used[0] = true;
-    profile.push(SketchEntityUse {
+    ctx.push_vec(&mut profile, SketchEntityUse {
         entity: super::transforms::copy_sketch_entity_identity(
             ctx,
             &first.0,
             "SLDPRT compact line profile",
         )?,
         reversed: false,
-    });
+    }, "SLDPRT compact line profile")?;
     let origin = first.3;
     let mut current = first.4;
     while profile.len() < lines.len() {
@@ -2494,14 +2494,14 @@ fn ordered_compact_line_profile(
             return Ok(None);
         }
         used[candidate.0] = true;
-        profile.push(SketchEntityUse {
+        ctx.push_vec(&mut profile, SketchEntityUse {
             entity: super::transforms::copy_sketch_entity_identity(
                 ctx,
                 &lines[candidate.0].0,
                 "SLDPRT compact line profile",
             )?,
             reversed: candidate.1,
-        });
+        }, "SLDPRT compact line profile")?;
         current = candidate.2;
     }
     Ok((current == origin).then_some(profile))

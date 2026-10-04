@@ -1171,11 +1171,12 @@ fn order_surface_candidates(
     candidates: &mut Vec<(usize, Vec<FeatureInputComponentPathEntry>)>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
+    let mut indexed_storage = ctx.reserve_scoped(0, operation)?;
     let mut indexed = Vec::new();
-    ctx.reserve_vec(&mut indexed, candidates.len(), operation)?;
+    indexed_storage.with_storage(|| ctx.reserve_capacity(&mut indexed, candidates.len(), operation))?;
     ctx.charge_work(u64_from_index(candidates.len()), operation)?;
     for (index, (offset, components)) in candidates.drain(..).enumerate() {
-        indexed.push((offset, components, index));
+        indexed_storage.with_storage(|| ctx.push_vec(&mut indexed, (offset, components, index), operation))?;
     }
     ctx.sort_unstable_by_key(
         &mut indexed,
@@ -2562,16 +2563,17 @@ pub(super) fn compact_mixed_component_path(
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, OPERATION)?;
     let mut components = Vec::new();
-    ctx.reserve_vec(&mut components, count, reserve_operation)?;
-    Ok((|| {
+    ctx.reserve_capacity(&mut components, count, reserve_operation)?;
         for index in 0..count {
-            let (component, len) = compact_mixed_component_at(payload, cursor, count - index)?;
-            components.push(component);
+            let Some((component, len)) = compact_mixed_component_at(payload, cursor, count - index) else {
+                return Ok(None);
+            };
+            ctx.push_vec(&mut components, component, reserve_operation)?;
             cursor += len;
             if index + 1 == count {
                 continue;
             }
-            let gap = component_path_gaps(root_separators)
+            let Some(gap) = component_path_gaps(root_separators)
                 .iter()
                 .copied()
                 .find(|gap| {
@@ -2582,11 +2584,12 @@ pub(super) fn compact_mixed_component_path(
                     (compact_component_separator(payload, cursor, *gap) || root_separator)
                         && compact_mixed_component_at(payload, cursor + *gap, count - index - 1)
                             .is_some()
-                })?;
+                }) else {
+                    return Ok(None);
+                };
             cursor += gap;
         }
-        Some((components, cursor))
-    })())
+        Ok(Some((components, cursor)))
 }
 
 fn counted_surface_component_path_at(
@@ -3252,7 +3255,7 @@ fn compact_component_reference_list(
 
     let mut cursor = marker + 18;
     let mut references = Vec::new();
-    ctx.reserve_vec(&mut references, count, OPERATION)?;
+    ctx.reserve_capacity(&mut references, count, OPERATION)?;
     let mut has_reference_framing = false;
     for index in 0..count {
         let mut reference = Vec::new();
@@ -3285,7 +3288,7 @@ fn compact_component_reference_list(
             cursor += 4;
             has_reference_framing = true;
         }
-        references.push(reference);
+        ctx.push_vec(&mut references, reference, OPERATION)?;
         if index + 2 == count && terminal_null_at(cursor) {
             return Ok(Some(references));
         }
@@ -3755,37 +3758,44 @@ fn compact_homogeneous_edge_ids(
         return Ok(None);
     };
     let mut ids = Vec::new();
-    ctx.reserve_vec(&mut ids, count, OPERATION)?;
+    ctx.reserve_capacity(&mut ids, count, OPERATION)?;
     ctx.charge_work(
         u64_from_index(count)
             .checked_mul(40)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    Ok((|| {
         for index in 0..count {
-            if payload.get(cursor + 4..cursor + 16)? != signature {
-                return None;
+            let Some(entry_signature) = payload.get(cursor + 4..cursor + 16) else {
+                return Ok(None);
+            };
+            if entry_signature != signature {
+                return Ok(None);
             }
-            ids.push(View::u32_le_at(payload, cursor + 16)?);
+            let Some(id) = View::u32_le_at(payload, cursor + 16) else {
+                return Ok(None);
+            };
+            ctx.push_vec(&mut ids, id, OPERATION)?;
             cursor += 20;
-            if index + 1 < count && payload.get(cursor + 4..cursor + 16)? != signature {
-                if payload.get(cursor..cursor + 4)? == [0; 4]
-                    && payload.get(cursor + 8..cursor + 20)? == signature
+            if index + 1 < count && match payload.get(cursor + 4..cursor + 16) { Some(bytes) => bytes, None => return Ok(None) } != signature {
+                if match payload.get(cursor..cursor + 4) { Some(bytes) => bytes, None => return Ok(None) } == [0; 4]
+                    && match payload.get(cursor + 8..cursor + 20) { Some(bytes) => bytes, None => return Ok(None) } == signature
                 {
                     cursor += 4;
                 } else {
-                    match payload.get(cursor..cursor + 8)? {
+                    let Some(separator) = payload.get(cursor..cursor + 8) else {
+                        return Ok(None);
+                    };
+                    match separator {
                         [0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0] => {
                             cursor += 8;
                         }
-                        _ => return None,
+                        _ => return Ok(None),
                     }
                 }
             }
         }
-        Some(ids)
-    })())
+        Ok(Some(ids))
 }
 
 pub(super) fn compact_heterogeneous_component_path(
@@ -3857,27 +3867,32 @@ fn compact_component_path_with_layout(
         OPERATION,
     )?;
     let mut entries = Vec::new();
-    ctx.reserve_vec(&mut entries, count, reserve_operation)?;
-    Ok((|| {
+    ctx.reserve_capacity(&mut entries, count, reserve_operation)?;
         for index in 0..count {
-            compact_component_entry_at(payload, cursor, wide)?;
-            entries.push(FeatureInputComponentPathEntry {
+            if compact_component_entry_at(payload, cursor, wide).is_none() {
+                return Ok(None);
+            }
+            let Some(entry) = (|| Some(FeatureInputComponentPathEntry {
                 instance: Some(View::u16_le_at(payload, cursor)?),
                 type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
                 local_id: Some(View::u32_le_at(payload, cursor + local_id_offset)?),
-            });
+            }))() else {
+                return Ok(None);
+            };
+            ctx.push_vec(&mut entries, entry, reserve_operation)?;
             cursor += entry_length;
             if index + 1 == count {
                 continue;
             }
-            let gap = COMPACT_COMPONENT_PATH_GAPS.iter().copied().find(|gap| {
+            let Some(gap) = COMPACT_COMPONENT_PATH_GAPS.iter().copied().find(|gap| {
                 compact_component_separator(payload, cursor, *gap)
                     && compact_component_entry_at(payload, cursor + *gap, wide).is_some()
-            })?;
+            }) else {
+                return Ok(None);
+            };
             cursor += gap;
         }
-        Some((entries, cursor))
-    })())
+        Ok(Some((entries, cursor)))
 }
 
 fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> bool {
@@ -4167,11 +4182,11 @@ pub(super) fn read_compact_body_ids(
     operation: &'static str,
 ) -> Result<Vec<u32>, CodecError> {
     let mut result = Vec::new();
-    ctx.reserve_vec(&mut result, bytes.len() / 4, operation)?;
+    ctx.reserve_capacity(&mut result, bytes.len() / 4, operation)?;
     ctx.charge_work(u64_from_index(bytes.len() / 4), operation)?;
     let mut view = View::over_retained(bytes);
     while let Some(id) = view.u32_le() {
-        result.push(id);
+        ctx.push_vec(&mut result, id, operation)?;
     }
     Ok(result)
 }

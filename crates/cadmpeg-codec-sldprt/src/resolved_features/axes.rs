@@ -42,8 +42,12 @@ fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
     SumSquaresUnitVector3::new(Vector3::new(x, y, z)).map(SumSquaresUnitVector3::normalized)
 }
 
-pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<UnitVector3> {
-    let class_offset = usize::try_from(class_offset).ok()?;
+pub(super) fn line_reference_direction(
+    ctx: &DecodeContext<'_>, payload: &[u8], class_offset: u64,
+) -> Result<Option<UnitVector3>, CodecError> {
+    let Ok(class_offset) = usize::try_from(class_offset) else {
+        return Ok(None);
+    };
     let direction_at = |offset: usize| {
         square_sum_unit_direction([
             View::f64_le_at(payload, offset)?,
@@ -51,13 +55,14 @@ pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Opt
             View::f64_le_at(payload, offset + 16)?,
         ])
     };
+    let mut direction_storage = ctx.reserve_scoped(0, "hold SLDPRT line reference directions")?;
     let mut directions = Vec::new();
     if payload.get(class_offset + 136..class_offset + 144)
         == Some(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff])
         && payload.get(class_offset + 148..class_offset + 152) == Some(&[0xf8, 0x2a, 0, 0])
     {
         if let Some(direction) = direction_at(class_offset + 200) {
-            directions.push(direction);
+            direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT line reference directions"))?;
         }
     }
     if payload.get(class_offset + 144..class_offset + 156)
@@ -67,16 +72,16 @@ pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Opt
         && payload.get(class_offset + 160..class_offset + 164) == Some(&[0xf8, 0x2a, 0, 0])
     {
         if let Some(direction) = direction_at(class_offset + 220) {
-            directions.push(direction);
+            direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT line reference directions"))?;
         }
     }
     // Both declared layouts are evaluated before selecting the direction so
     // a future overlapping layout cannot win merely by branch order.
     directions.dedup();
     let [direction] = directions.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(*direction)
+    Ok(Some(*direction))
 }
 
 pub(super) fn declared_line_reference_directions(
@@ -95,7 +100,7 @@ pub(super) fn declared_line_reference_directions(
         return Ok(Vec::new());
     };
     let mut directions = Vec::new();
-    if let Some(direction) = line_reference_direction(&payload[..end], u64_from_index(class_offset))
+    if let Some(direction) = line_reference_direction(ctx, &payload[..end], u64_from_index(class_offset))?
     {
         ctx.reserve_vec(
             &mut directions,
@@ -309,6 +314,7 @@ pub(super) fn compact_line_reference_directions(
                 View::f64_le_at(record, offset + 16)?,
             ])
         };
+        let mut direction_storage = ctx.reserve_scoped(0, "hold SLDPRT compact line directions")?;
         let mut directions = Vec::new();
         let tagged_token = |offset: usize| {
             record
@@ -349,7 +355,7 @@ pub(super) fn compact_line_reference_directions(
             && record.get(134..136) == Some(&[0xff; 2]);
         if record.get(16..24) == Some(&[0; 8]) && shifted_nine_scalar_trailer {
             if let Some(direction) = direction_at(72) {
-                directions.push(direction);
+                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
             }
         }
         let shifted_seven_scalar_trailer = (record.get(80..116) == Some(&[0; 36])
@@ -365,7 +371,7 @@ pub(super) fn compact_line_reference_directions(
                     .is_some_and(|values| values.into_iter().all(|value| value != 0)));
         if record.get(16..24) == Some(&[0; 8]) && shifted_seven_scalar_trailer {
             if let Some(direction) = direction_at(56) {
-                directions.push(direction);
+                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
             }
         }
         let tagged_trailer = record.get(88..104) == Some(&[0; 16])
@@ -385,7 +391,7 @@ pub(super) fn compact_line_reference_directions(
                     && record.get(142..144) == Some(&[0xff; 2])));
         if directions.is_empty() && record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
             if let Some(direction) = direction_at(64) {
-                directions.push(direction);
+                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
             }
         }
         let seven_scalar_trailer = record.get(88..96).is_some_and(|bytes| bytes != [0; 8])
@@ -401,7 +407,7 @@ pub(super) fn compact_line_reference_directions(
                 && record.get(140..142) == Some(&[0xff; 2]));
         if directions.is_empty() && record.get(16..32) == Some(&[0; 16]) && seven_scalar_trailer {
             if let Some(direction) = direction_at(64) {
-                directions.push(direction);
+                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
             }
         }
         if directions.is_empty()
@@ -411,7 +417,7 @@ pub(super) fn compact_line_reference_directions(
             && record.get(112..136) == Some(&[0; 24])
         {
             if let Some(direction) = direction_at(64) {
-                directions.push(direction);
+                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
             }
         }
         if directions.is_empty()
@@ -423,7 +429,7 @@ pub(super) fn compact_line_reference_directions(
                 }))
         {
             if let Some(direction) = direction_at(80) {
-                directions.push(direction);
+                direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "collect SLDPRT compact line directions"))?;
             }
         }
         // The final branch is the legacy unshifted fallback.  It is only a
@@ -435,14 +441,15 @@ pub(super) fn compact_line_reference_directions(
                     .into_iter()
                     .flatten()
                     .collect::<Vec<_>>();
+                let mut distinct_storage = ctx.reserve_scoped(0, "hold SLDPRT distinct compact line directions")?;
                 let mut distinct = Vec::new();
                 for candidate in candidates {
                     if !distinct.contains(&candidate) {
-                        distinct.push(candidate);
+                        distinct_storage.with_storage(|| ctx.push_vec(&mut distinct, candidate, "collect SLDPRT distinct compact line directions"))?;
                     }
                 }
                 if let [direction] = distinct.as_slice() {
-                    directions.push(*direction);
+                    direction_storage.with_storage(|| ctx.push_vec(&mut directions, *direction, "collect SLDPRT compact line directions"))?;
                 }
             } else {
                 directions.extend(direction_at(56));
