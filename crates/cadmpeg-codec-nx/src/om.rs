@@ -5204,10 +5204,12 @@ pub(crate) fn evaluate_constant_expression(
                 (self.at > exponent).then_some(())?;
             }
             (self.at > start).then_some(())?;
-            let value: f64 = std::str::from_utf8(&self.bytes[start..self.at])
-                .ok()?
-                .parse()
-                .ok()?;
+            let text = std::str::from_utf8(&self.bytes[start..self.at]).ok()?;
+            let parsed = match self.ctx.parse_text::<f64>(text, "NX constant expression decimal parse") {
+                Ok(parsed) => parsed,
+                Err(error) => { self.failure = Some(error); return None; }
+            };
+            let value = parsed.ok()?;
             FiniteReal::new(value)
         }
 
