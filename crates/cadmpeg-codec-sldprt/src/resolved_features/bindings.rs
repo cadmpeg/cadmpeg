@@ -1490,7 +1490,7 @@ pub(crate) fn finalize_lane_bindings(
                 ctx.reserve_map(&mut marker_ids, 1, SCALAR_BINDING_INDEX)?;
                 marker_ids.insert(copy_binding_text(ctx, feature)?, HashMap::new());
             }
-            if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
+            if let Some(by_local) = ctx.get_mut_hash_map(&mut marker_ids, feature.as_str(), "lookup SLDPRT scalar marker group")? {
                 ctx.reserve_map(by_local, 1, SCALAR_BINDING_INDEX)?;
                 let candidates = by_local.entry(local_id).or_default();
                 ctx.reserve_vec(candidates, 1, "collect SLDPRT scalar marker candidates")?;
@@ -2059,7 +2059,7 @@ pub(super) fn normalize_indexed_curve_entities(
             ctx.reserve_map(&mut endpoints, 1, SCALAR_BINDING_INDEX)?;
             endpoints.insert(copy_binding_text(ctx, feature)?, HashSet::new());
         }
-        if let Some(by_index) = endpoints.get_mut(feature) {
+        if let Some(by_index) = ctx.get_mut_hash_map(&mut endpoints, feature, "lookup SLDPRT scalar endpoint group")? {
             for index in indices {
                 ctx.reserve_set(by_index, 1, SCALAR_BINDING_INDEX)?;
                 by_index.insert(index);

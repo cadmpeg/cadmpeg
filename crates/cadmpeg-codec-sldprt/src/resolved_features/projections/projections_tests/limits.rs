@@ -1284,3 +1284,33 @@ fn surface_lane_group_entry_propagates_slot_refusal() {
     assert!(std::ptr::eq(entries[0], &selection));
     assert!(std::ptr::eq(entries[1], &selection));
 }
+
+#[test]
+fn existing_parameter_ordinal_lookup_propagates_work_refusal() {
+    let (parameters, features, _, lanes) = parameter_scalar_binding_fixture();
+    crate::test_support::work_refusal_at("lookup SLDPRT existing parameter ordinal", |ctx| {
+        synthesize_display_relation_parameters(ctx, &mut parameters.clone(), &features, &lanes)
+    });
+    let mut actual = parameters.clone();
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(), &mut actual, &features, &lanes,
+    ).unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].id, parameters[0].id);
+    assert_eq!(actual[0].ordinal, 0);
+}
+
+#[test]
+fn display_parameter_ordinal_lookup_propagates_work_refusal() {
+    let (parameters, features, lanes) = display_relation_synthesis_fixture();
+    crate::test_support::work_refusal_at("lookup SLDPRT display parameter ordinal", |ctx| {
+        synthesize_display_relation_parameters(ctx, &mut parameters.clone(), &features, &lanes)
+    });
+    let mut actual = parameters;
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(), &mut actual, &features, &lanes,
+    ).unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].ordinal, 0);
+    assert_eq!(actual[0].owner.as_ref(), Some(&features[0].id));
+}

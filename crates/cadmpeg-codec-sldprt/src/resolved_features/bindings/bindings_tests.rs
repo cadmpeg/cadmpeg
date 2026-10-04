@@ -748,6 +748,15 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         ],
     };
 
+    let mut marker_group_lane = lane.clone();
+    marker_group_lane.sketch_entities[2] = marker_group_lane.sketch_entities[2]
+        .with_test_identity(Some(2), Some(2));
+    crate::test_support::work_refusal_at("lookup SLDPRT scalar marker group", |ctx| {
+        super::finalize_lane_bindings(ctx, &[], &mut marker_group_lane.clone())
+    });
+    crate::test_support::work_refusal_at("lookup SLDPRT scalar endpoint group", |ctx| {
+        super::normalize_indexed_curve_entities(ctx, &mut lane.clone())
+    });
     normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
         .unwrap();
     bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane)

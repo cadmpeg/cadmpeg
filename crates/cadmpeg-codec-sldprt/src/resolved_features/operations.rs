@@ -601,7 +601,7 @@ pub(crate) fn enrich_history_split_lines(
                     class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
                 })
                 .count();
-            if let Some(observation) = observations.get_mut(&feature.id) {
+            if let Some(observation) = ctx.get_mut_hash_map(&mut observations, &feature.id, "index SLDPRT split-line observations")? {
                 if project_classes == 1 {
                     observation.0 = true;
                 } else {
@@ -638,7 +638,7 @@ pub(crate) fn enrich_history_split_lines(
                 continue;
             };
             let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
-            if let Some(existing) = tools.get_mut(&feature.id) {
+            if let Some(existing) = ctx.get_mut_hash_map(&mut tools, &feature.id, "index SLDPRT split-line tools")? {
                 *existing = value;
             } else {
                 ctx.reserve_map(&mut tools, 1, "index SLDPRT split-line tools")?;

@@ -237,6 +237,14 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         sketch_entities: Vec::new(),
     };
 
+    crate::test_support::work_refusal_at("index SLDPRT split-line observations", |ctx| {
+        let mut candidates = vec![history.clone()];
+        enrich_history_split_lines(ctx, &mut candidates, std::slice::from_ref(&lane))
+    });
+    crate::test_support::work_refusal_at("index SLDPRT split-line tools", |ctx| {
+        let mut candidates = vec![history.clone()];
+        enrich_history_split_lines(ctx, &mut candidates, std::slice::from_ref(&lane))
+    });
     let mut projected = vec![history.clone()];
     enrich_history_split_lines(&ctx, &mut projected, std::slice::from_ref(&lane))
         .expect("enrich split line");

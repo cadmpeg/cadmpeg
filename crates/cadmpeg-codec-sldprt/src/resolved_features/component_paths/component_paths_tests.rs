@@ -223,3 +223,38 @@ fn dissected_profile_suffix_propagates_work_refusal() {
         &feature,
     ).unwrap());
 }
+
+#[test]
+fn adjacent_profile_vote_lookup_propagates_work_refusal() {
+    let feature = |id: &str, class: &str, ordinal| Feature {
+        id: id.into(), parent: "history".into(), xml_tag: "Feature".into(),
+        tree_parent: None, source_id: None, ordinal, name: id.into(), kind: String::new(),
+        input_class: Some(class.into()), suppressed: false,
+        parameters: BTreeMap::new(), dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(), text: None, content: Vec::new(),
+    };
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(), part_name: None, properties: BTreeMap::new(),
+        content: Vec::new(), configurations: Vec::new(),
+        features: vec![feature("profile", "moProfileFeature_c", 0), feature("extrude", "moExtrusion_c", 1)],
+    }];
+    let lane = crate::records::FeatureInputLane {
+        id: "lane".into(), configuration: None, native_payload: Vec::new(), classes: Vec::new(),
+        names: ["profile", "extrude"].into_iter().enumerate().map(|(index, value)| {
+            crate::records::FeatureInputName {
+                id: format!("name-{index}"), parent: "lane".into(),
+                ordinal: u32::try_from(index).unwrap(),
+                offset: cadmpeg_core::decode::u64_from_index(index), value: value.into(), object_id: None,
+            }
+        }).collect(),
+        scalars: Vec::new(), relation_bindings: Vec::new(), relation_instances: Vec::new(),
+        body_selections: Vec::new(), edge_selections: Vec::new(), surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(), references: Vec::new(), sketch_entities: Vec::new(),
+    };
+    crate::test_support::work_refusal_at("resolve SLDPRT adjacent profile votes", |ctx| {
+        super::project_adjacent_extrusion_profiles(ctx, &mut [], &histories, std::slice::from_ref(&lane))
+    });
+    super::project_adjacent_extrusion_profiles(
+        &cadmpeg_test_support::service_decode_context(), &mut [], &histories, std::slice::from_ref(&lane),
+    ).unwrap();
+}

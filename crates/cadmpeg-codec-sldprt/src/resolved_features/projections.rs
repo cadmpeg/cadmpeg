@@ -531,7 +531,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         } else {
             parameter.ordinal + 1
         };
-        if let Some(current) = next_ordinals.get_mut(owner) {
+        if let Some(current) = ctx.get_mut_hash_map(&mut next_ordinals, owner, "lookup SLDPRT existing parameter ordinal")? {
             *current = (*current).max(next);
         } else {
             let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
@@ -573,7 +573,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             let Some(next_ordinal) = current_ordinal.checked_add(1) else {
                 continue;
             };
-            if let Some(ordinal) = next_ordinals.get_mut(owner) {
+            if let Some(ordinal) = ctx.get_mut_hash_map(&mut next_ordinals, owner, "lookup SLDPRT display parameter ordinal")? {
                 *ordinal = next_ordinal;
             } else {
                 let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
@@ -924,7 +924,7 @@ pub(crate) fn project_compact_edge_selections(
         ctx.append_retained(&mut id_text, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
-        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT compact edge feature identity")? {
             *previous = id;
             continue;
         }
@@ -1503,7 +1503,7 @@ pub(crate) fn project_compact_surface_selections(
         ctx.append_retained(&mut id_text, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
-        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT compact surface feature identity")? {
             *previous = id;
             continue;
         }
@@ -2258,7 +2258,7 @@ pub(crate) fn project_draft_operands(
         ctx.append_retained(&mut id, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT draft feature id"))?;
-        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT draft feature identity")? {
             *previous = id;
             continue;
         }
@@ -2737,7 +2737,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id")
         })?;
         lookup_storage.with_storage(|| ctx.push_vec(&mut scoped_ids, id_reservation, ID_OPERATION))?;
-        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+        if let Some(previous) = ctx.get_mut_hash_map(&mut feature_ids_by_native, native_ref, "lookup SLDPRT cosmetic thread feature identity")? {
             *previous = id;
             continue;
         }

@@ -1554,3 +1554,23 @@ fn existing_revolution_vote_lookup_propagates_work_refusal() {
     ).unwrap();
     assert_eq!(votes["feature"], [1, 2]);
 }
+
+#[test]
+fn revolution_identity_lookups_propagate_work_refusal() {
+    let histories = single_revolution_history();
+    for operation in [
+        "lookup SLDPRT revolution feature name count",
+        "lookup SLDPRT revolution profile owner",
+    ] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            let mut candidates = histories.clone();
+            super::enrich_history_revolution_inputs(ctx, &mut candidates, &[])
+        });
+    }
+    let mut candidates = histories;
+    super::enrich_history_revolution_inputs(
+        &cadmpeg_test_support::service_decode_context(), &mut candidates, &[],
+    ).unwrap();
+    assert_eq!(candidates[0].features[0].id, "revolution");
+    assert_eq!(candidates[0].features[0].name, "Revolution");
+}
