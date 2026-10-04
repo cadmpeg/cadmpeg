@@ -41,12 +41,8 @@ pub(super) fn unique_feature_section_transform<'a>(
         return Ok(None);
     };
     if let Some(feature_id) = transform.feature_id {
-        ctx.charge_work(
-            u64_from_index(transforms.len()),
-            "creo unique transform owner scan",
-        )?;
-        let feature_matches = transforms
-            .iter()
+        let feature_matches = ctx
+            .admit_iter(transforms, "creo unique transform owner scan")?
             .filter(|candidate| candidate.feature_id == Some(feature_id))
             .count();
         if feature_matches != 1 {
