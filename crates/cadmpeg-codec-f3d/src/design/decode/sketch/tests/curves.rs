@@ -189,22 +189,28 @@ fn typed_line_accepts_the_referenced_compact_planar_form() {
     assert!(matches!(parsed.geometry, SketchCurveGeometry::Line { .. }));
 }
 
+fn class_of(type_guid: &str, version: u32, module: &str) -> Option<SketchCurveClass> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        SketchCurveClass::of(ctx, type_guid, version, module).unwrap()
+    })
+}
+
 #[test]
 fn curve_type_versions_select_only_their_settled_grammars() {
     for (type_guid, version, module) in SKETCH_LINE_TYPES {
         assert_eq!(
-            SketchCurveClass::of(type_guid, version, module),
+            class_of(type_guid, version, module),
             Some(SketchCurveClass::Line)
         );
     }
     for (type_guid, version, module) in SKETCH_CIRCULAR_TYPES {
         assert_eq!(
-            SketchCurveClass::of(type_guid, version, module),
+            class_of(type_guid, version, module),
             Some(SketchCurveClass::Circular)
         );
     }
     assert_eq!(
-        SketchCurveClass::of(
+        class_of(
             CURRENT_SKETCH_NURBS_TYPE.0,
             CURRENT_SKETCH_NURBS_TYPE.1,
             CURRENT_SKETCH_NURBS_TYPE.2,
@@ -212,33 +218,21 @@ fn curve_type_versions_select_only_their_settled_grammars() {
         Some(SketchCurveClass::Nurbs)
     );
     assert_eq!(
-        SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
+        class_of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
         Some(SketchCurveClass::TextFrameLine)
     );
+    assert_eq!(class_of(SKETCH_LINE_TYPES[0].0, 0, "Geometry"), None);
+    assert_eq!(class_of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"), None);
+    assert_eq!(class_of(SKETCH_CIRCULAR_TYPES[0].0, 1, "Geometry"), None);
     assert_eq!(
-        SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 0, "Geometry"),
+        class_of(CURRENT_SKETCH_NURBS_TYPE.0, 2, CURRENT_SKETCH_NURBS_TYPE.2,),
         None
     );
     assert_eq!(
-        SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"),
+        class_of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 1, "MSketch"),
         None
     );
-    assert_eq!(
-        SketchCurveClass::of(SKETCH_CIRCULAR_TYPES[0].0, 1, "Geometry"),
-        None
-    );
-    assert_eq!(
-        SketchCurveClass::of(CURRENT_SKETCH_NURBS_TYPE.0, 2, CURRENT_SKETCH_NURBS_TYPE.2,),
-        None
-    );
-    assert_eq!(
-        SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 1, "MSketch"),
-        None
-    );
-    assert_eq!(
-        SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 2, "MSketch"),
-        None
-    );
+    assert_eq!(class_of(SKETCH_LINE_TYPES[0].0, 2, "MSketch"), None);
 }
 
 #[test]
