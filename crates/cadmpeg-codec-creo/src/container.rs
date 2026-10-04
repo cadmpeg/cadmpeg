@@ -844,9 +844,9 @@ fn toc_sections<'a>(
                 )
             };
             let (Ok(relative_offset), Ok(length), Ok(expanded_length)) = (
-                usize::from_str_radix(offset_field, 16),
-                usize::from_str_radix(length_field, 16),
-                usize::from_str_radix(expanded_field, 16),
+                ctx.parse_radix::<usize>(offset_field, 16, "creo TOC offset hexadecimal parsing")?,
+                ctx.parse_radix::<usize>(length_field, 16, "creo TOC length hexadecimal parsing")?,
+                ctx.parse_radix::<usize>(expanded_field, 16, "creo TOC expanded length hexadecimal parsing")?,
             ) else {
                 continue;
             };
@@ -1481,15 +1481,24 @@ fn cmnm_model_name(
     {
         return Ok(None);
     }
-    let Some(name) = (|| {
-        let length_bytes = data.get(start..marker + cmnm::LEN)?;
-        let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
-        let name = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length)?;
-        (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
-            .then_some(())?;
-        let name = std::str::from_utf8(name).ok()?;
-        Some(name)
-    })() else {
+    let Some(name) = (|| -> Result<Option<_>, CodecError> {
+        let Some(length_bytes) = data.get(start..marker + cmnm::LEN) else {
+            return Ok(None);
+        };
+        let Ok(length_text) = std::str::from_utf8(length_bytes) else {
+            return Ok(None);
+        };
+        let Ok(length) = ctx.parse_radix::<usize>(length_text, 16, "creo CMNM hexadecimal parsing")? else {
+            return Ok(None);
+        };
+        let Some(name) = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length) else {
+            return Ok(None);
+        };
+        if name.is_empty() || name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')) {
+            return Ok(None);
+        }
+        Ok(std::str::from_utf8(name).ok())
+    })()? else {
         return Ok(None);
     };
     Ok(Some((
@@ -4002,6 +4011,60 @@ mod feature_row_definition_tests {
             .expect("structural feature ids admitted"),
             std::collections::BTreeSet::from([40, 41])
         );
+    }
+
+    #[test]
+    fn cmnm_length_radix_parse_refuses_before_name_selection() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "creo CMNM hexadecimal parsing",
+            |ctx| super::cmnm_model_name(ctx, b"#- CMNM 001x"),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo CMNM hexadecimal parsing"));
+    }
+
+    #[test]
+    fn toc_offset_radix_parse_refuses_work() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let row = "VisibGeom 0 0 0\n";
+        let data = format!("#UGC_TOC 2 1 {}#\n{row}", row.len());
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "creo TOC offset hexadecimal parsing",
+            |ctx| toc_sections(ctx, data.as_bytes(), 0),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo TOC offset hexadecimal parsing"));
+    }
+
+    #[test]
+    fn toc_length_radix_parse_refuses_work() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let row = "VisibGeom 0 0 0\n";
+        let data = format!("#UGC_TOC 2 1 {}#\n{row}", row.len());
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "creo TOC length hexadecimal parsing",
+            |ctx| toc_sections(ctx, data.as_bytes(), 0),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo TOC length hexadecimal parsing"));
+    }
+
+    #[test]
+    fn toc_expanded_length_radix_parse_refuses_work() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let row = "VisibGeom 0 0 0\n";
+        let data = format!("#UGC_TOC 2 1 {}#\n{row}", row.len());
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "creo TOC expanded length hexadecimal parsing",
+            |ctx| toc_sections(ctx, data.as_bytes(), 0),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo TOC expanded length hexadecimal parsing"));
     }
 
     #[test]
