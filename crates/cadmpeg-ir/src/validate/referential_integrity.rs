@@ -3,7 +3,7 @@
 
 use super::record_finding;
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
+use crate::index::ModelIndex;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -13,7 +13,7 @@ use crate::schema::EntitySchema;
 pub(super) fn check_typed_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    index: &BorrowedIdentities<'_, '_>,
+    index: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     macro_rules! check_arenas {
@@ -22,12 +22,15 @@ pub(super) fn check_typed_references(
                 ctx.charge_work(1, "typed reference entity scan")?;
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
-                    if index.contains(ctx, target)? { return Ok(()); }
+                    if index.contains(target, ctx)? { return Ok(()); }
                     for finding in findings.iter() {
                         ctx.charge_work(1, "typed reference finding scan")?;
                         if finding.check != Check::ReferentialIntegrity { continue; }
-                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(owner.len()), "compare typed reference finding owner")?;
-                        if finding.entity.as_deref() != Some(owner) { continue; }
+                        if !ctx.equal(
+                            &finding.entity.as_deref(),
+                            &Some(owner),
+                            "compare typed reference finding owner",
+                        )? { continue; }
                         ctx.charge_work(cadmpeg_core::decode::u64_from_index(finding.message.len()), "scan typed reference finding message")?;
                         ctx.charge_work(cadmpeg_core::decode::u64_from_index(target.len()), "scan typed reference finding target")?;
                         if finding.message.contains(target) { return Ok(()); }
@@ -87,14 +90,7 @@ mod tests {
         let mut findings = Vec::new();
         let ctx = cadmpeg_test_support::service_decode_context();
         let index = ModelIndex::build(&ir, crate::index::StandardIndex);
-        let identities = super::BorrowedIdentities::build(&ctx, |add| {
-            for id in index.identities(&ctx) {
-                add(id?, ())?;
-            }
-            Ok(())
-        })
-        .unwrap();
-        check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
+        check_typed_references(&ctx, &ir, &index, &mut findings).unwrap();
         assert!(findings.iter().any(|finding| {
             finding.check == Check::ReferentialIntegrity
                 && finding.severity == Severity::Error
@@ -113,8 +109,7 @@ mod tests {
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,
         });
-        let source = cadmpeg_test_support::service_decode_context();
-        let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
+        let index = ModelIndex::build(&ir, crate::index::StandardIndex);
         for dimension in [
             ResourceDimension::WorkUnits,
             ResourceDimension::RecursionDepth,
@@ -133,7 +128,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut findings = Vec::new();
             let Err(CodecError::ResourceLimit(limit)) =
-                check_typed_references(&ctx, &ir, &identities, &mut findings)
+                check_typed_references(&ctx, &ir, &index, &mut findings)
             else {
                 panic!("typed reference validation must refuse");
             };
@@ -164,14 +159,13 @@ mod tests {
                 bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
                 native_ref: None,
             });
-        let source = cadmpeg_test_support::service_decode_context();
-        let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
+        let index = ModelIndex::build(&ir, crate::index::StandardIndex);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut findings = Vec::new();
-        check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
+        check_typed_references(&ctx, &ir, &index, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].check, Check::ReferentialIntegrity);
         assert_eq!(findings[0].severity, Severity::Error);
@@ -180,8 +174,77 @@ mod tests {
             findings[0].message,
             format!("unresolved typed reference {target}")
         );
-        check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
+        check_typed_references(&ctx, &ir, &index, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
         ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn typed_reference_owner_comparison_admits_both_identity_lengths() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let mut ir = crate::CadIr::empty();
+        ir.model.vertices.push(crate::topology::Vertex {
+            id: "test:model:vertex#owner".try_into().unwrap(),
+            point: "test:model:point#missing".try_into().unwrap(),
+            tolerance: None,
+        });
+        let index = ModelIndex::build(&ir, crate::index::StandardIndex);
+        let mut findings = vec![crate::report::check::Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            entity: Some(format!("test:model:vertex#{}", "x".repeat(20_000))),
+            message: "unresolved typed reference test:model:point#other".into(),
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 10_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) =
+            check_typed_references(&ctx, &ir, &index, &mut findings)
+        else {
+            panic!("finding owner comparison must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare typed reference finding owner");
+        assert_eq!(findings.len(), 1);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
+
+    #[test]
+    fn typed_reference_missing_finding_owner_admits_entity_identity() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let mut ir = crate::CadIr::empty();
+        let owner = format!("test:model:vertex#{}", "x".repeat(20_000));
+        ir.model.vertices.push(crate::topology::Vertex {
+            id: owner.try_into().unwrap(),
+            point: "test:model:point#missing".try_into().unwrap(),
+            tolerance: None,
+        });
+        let index = ModelIndex::build(&ir, crate::index::StandardIndex);
+        let mut findings = vec![crate::report::check::Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            entity: None,
+            message: "unresolved typed reference test:model:point#other".into(),
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 30_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) =
+            check_typed_references(&ctx, &ir, &index, &mut findings)
+        else {
+            panic!("missing finding owner comparison must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare typed reference finding owner");
+        assert_eq!(findings.len(), 1);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
