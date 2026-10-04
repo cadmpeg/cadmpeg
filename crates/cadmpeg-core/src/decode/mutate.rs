@@ -143,7 +143,7 @@ impl DecodeContext<'_> {
 
     /// Replaces each value through a fallible factory that admits child construction.
     /// A refusal preserves later values; completed replacements remain installed.
-    pub fn fill_with<T: DecodeCost>(
+    pub fn fill_with<T>(
         &self,
         values: &mut [T],
         mut make: impl FnMut() -> Result<T, CodecError>,
@@ -152,7 +152,6 @@ impl DecodeContext<'_> {
         self.admit_moves(values, 1, operation)?;
         for value in values {
             self.charge_work(1, operation)?;
-            self.charge_key(value, 1, operation)?;
             *value = make()?;
         }
         Ok(())
@@ -199,7 +198,7 @@ impl DecodeContext<'_> {
 
     /// Resizes through a fallible factory; existing values move without cloning children.
     /// The factory admits child construction. A refusal can leave a shorter growth.
-    pub fn resize_with<T: DecodeCost>(
+    pub fn resize_with<T>(
         &self,
         values: &mut Vec<T>,
         length: usize,
@@ -219,7 +218,7 @@ impl DecodeContext<'_> {
     }
 
     /// Resizes Copy values through the one fallible growth implementation.
-    pub fn resize_vec<T: Copy + DecodeCost>(
+    pub fn resize_vec<T: Copy>(
         &self,
         values: &mut Vec<T>,
         length: usize,
@@ -360,23 +359,20 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    /// Drops a vector suffix after admitting its slots and complete child bytes.
-    pub fn truncate_vec<T: DecodeCost>(
+    /// Drops a vector suffix. Releasing values is paid by the charges that
+    /// admitted them, so truncation charges nothing.
+    pub fn truncate_vec<T>(
         &self,
         values: &mut Vec<T>,
         length: usize,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(removed) = values.get(length..) {
-            self.charge_work(u64_from_index(removed.len()), operation)?;
-            self.charge_key(removed, 1, operation)?;
-            values.truncate(length);
-        }
+        values.truncate(length);
         Ok(())
     }
 
     /// Drops all vector values through the admitted suffix removal.
-    pub fn clear_vec<T: DecodeCost>(
+    pub fn clear_vec<T>(
         &self,
         values: &mut Vec<T>,
         operation: &'static str,
@@ -386,7 +382,7 @@ impl DecodeContext<'_> {
 
     /// Keeps selected values in order. The predicate admits child work.
     /// On callback refusal, the vector keeps every value and may change their order.
-    pub fn retain_vec<T: DecodeCost>(
+    pub fn retain_vec<T>(
         &self,
         values: &mut Vec<T>,
         mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
@@ -397,7 +393,7 @@ impl DecodeContext<'_> {
 
     /// Keeps selected values while allowing the predicate to edit each value.
     /// The predicate admits child work. A refusal keeps all values and completed edits.
-    pub fn retain_mut<T: DecodeCost>(
+    pub fn retain_mut<T>(
         &self,
         values: &mut Vec<T>,
         mut keep: impl FnMut(&mut T) -> Result<bool, CodecError>,
@@ -430,7 +426,7 @@ impl DecodeContext<'_> {
 
     /// Compacts adjacent matches. The predicate admits child work.
     /// On callback refusal, the vector keeps every value and may change their order.
-    pub fn dedup_by<T: DecodeCost>(
+    pub fn dedup_by<T>(
         &self,
         values: &mut Vec<T>,
         mut same: impl FnMut(&T, &T) -> Result<bool, CodecError>,
@@ -453,7 +449,7 @@ impl DecodeContext<'_> {
 
     /// Compacts adjacent projected keys through complete-key comparison.
     /// The extractor admits construction of each projected key.
-    pub fn dedup_by_key<T: DecodeCost, K: DecodeCost + PartialEq>(
+    pub fn dedup_by_key<T, K: DecodeCost + PartialEq>(
         &self,
         values: &mut Vec<T>,
         mut key: impl FnMut(&T) -> Result<K, CodecError>,
