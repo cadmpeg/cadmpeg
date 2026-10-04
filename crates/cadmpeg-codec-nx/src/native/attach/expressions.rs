@@ -17,11 +17,7 @@ pub(in crate::native) fn attach_expression_parameters(
     let mut reservation = ctx.reserve_scoped(0, "NX expression parameter indexes")?;
     let mut declaration_index = BTreeMap::new();
     for declaration in declarations {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(declaration_index.len()),
-            "NX expression declaration lookup",
-        )?;
-        if !declaration_index.contains_key(declaration.id.as_str()) {
+        if !ctx.contains_key_btree_map(&declaration_index, declaration.id.as_str(), "NX admitted map membership")? {
             ctx.charge_collection_items(1, "NX expression declaration index")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<(&str, &crate::native::om::ExpressionDeclaration)>() * 4,
@@ -32,11 +28,7 @@ pub(in crate::native) fn attach_expression_parameters(
     let mut tables = BTreeMap::<&str, Vec<&crate::native::om::ParameterFormula>>::new();
     for expression in expressions {
         let table = expression.source_table.as_str();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(tables.len()),
-            "NX expression table lookup",
-        )?;
-        if !tables.contains_key(table) {
+        if !ctx.contains_key_btree_map(&tables, table, "NX admitted map membership")? {
             ctx.charge_collection_items(1, "NX expression table index")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<(&str, Vec<&crate::native::om::ParameterFormula>)>() * 4,
@@ -60,11 +52,7 @@ pub(in crate::native) fn attach_expression_parameters(
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
         let key = parameter_use.expression.as_str();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(uses_by_expression.len()),
-            "NX expression uses lookup",
-        )?;
-        if !uses_by_expression.contains_key(key) {
+        if !ctx.contains_key_btree_map(&uses_by_expression, key, "NX admitted map membership")? {
             ctx.charge_collection_items(1, "NX expression uses index")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(
                 std::mem::size_of::<(&str, Vec<&crate::native::features::FeatureParameterUse>)>()
@@ -241,11 +229,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 continue;
             };
             let key = (expression.name.as_str(), &expression.unit);
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(parameter_ids.len()),
-                "NX parameter identity lookup",
-            )?;
-            if !parameter_ids.contains_key(&key) {
+            if !ctx.contains_key_btree_map(&parameter_ids, &key, "NX admitted map membership")? {
                 ctx.charge_collection_items(1, "NX parameter identity index")?;
                 reservation.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(
@@ -574,7 +558,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                         format_args!("consumer.{candidate}"),
                         "NX body selection text",
                     )?;
-                    if !parameter.properties.contains_key(key.as_str()) {
+                    if !ctx.contains_key_btree_map(&parameter.properties, key.as_str(), "NX admitted map membership")? {
                         consumer_ordinal = Some(candidate);
                         break;
                     }

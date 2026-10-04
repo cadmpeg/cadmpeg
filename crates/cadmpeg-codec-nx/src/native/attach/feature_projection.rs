@@ -585,7 +585,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
             return Ok(None);
         }
         for (from, to) in [(first, second), (second, first)] {
-            if !adjacent.contains_key(from) {
+            if !ctx.contains_key_btree_map(&adjacent, from, "NX admitted map membership")? {
                 ctx.charge_collection_items(1, "NX blend support graph nodes")?;
                 reservation.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(&SurfaceId, BTreeSet<&SurfaceId>)>() * 4,
@@ -603,11 +603,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
     let mut sides = BTreeMap::<&SurfaceId, bool>::new();
     let mut pending = Vec::new();
     for seed in adjacent.keys() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sides.len()),
-            "NX blend support side lookup",
-        )?;
-        if sides.contains_key(seed) {
+        if ctx.contains_key_btree_map(&sides, seed, "NX admitted map membership")? {
             continue;
         }
         reservation.grow(cadmpeg_core::decode::u64_from_index(
@@ -2113,7 +2109,7 @@ pub(super) fn native_feature_parameters(
         else {
             return Ok(BTreeMap::new());
         };
-        if parameters.contains_key(expression.name.as_str()) {
+        if ctx.contains_key_btree_map(&parameters, expression.name.as_str(), "NX admitted map membership")? {
             return Ok(BTreeMap::new());
         }
         ctx.insert_btree_map(
@@ -2177,7 +2173,7 @@ pub(super) fn simple_hole_operations(
             .filter(|candidate| candidate.operation_label == template.operation_label)
             .count()
             != 1
-            || !operation_positions.contains_key(template.operation_label.as_str())
+            || !ctx.contains_key_btree_map(operation_positions, template.operation_label.as_str(), "NX admitted map membership")?
         {
             return Ok(None);
         }
@@ -2242,14 +2238,15 @@ pub(super) fn simple_hole_operations(
             cadmpeg_core::decode::u64_from_index(group.members.len()),
             "NX simple hole group order",
         )?;
-        if group
-            .members
-            .iter()
-            .any(|member| !operation_positions.contains_key(member.operation_label.as_str()))
-            || group.members.windows(2).any(|pair| {
-                operation_positions[pair[0].operation_label.as_str()]
-                    >= operation_positions[pair[1].operation_label.as_str()]
-            })
+        for member in group.members.iter() {
+            if !ctx.contains_key_btree_map(operation_positions, member.operation_label.as_str(), "NX admitted map membership")? {
+                return Ok(None);
+            }
+        }
+        if group.members.windows(2).any(|pair| {
+            operation_positions[pair[0].operation_label.as_str()]
+                >= operation_positions[pair[1].operation_label.as_str()]
+        })
         {
             return Ok(None);
         }
@@ -2309,11 +2306,10 @@ pub(super) fn selected_hole_operations(
         cadmpeg_core::decode::u64_from_index(operations.len()),
         "NX selected hole operation positions",
     )?;
-    if operations
-        .iter()
-        .any(|operation| !operation_positions.contains_key(operation.as_str()))
-    {
-        return Ok(None);
+    for operation in &operations {
+        if !ctx.contains_key_btree_map(operation_positions, operation.as_str(), "NX admitted map membership")? {
+            return Ok(None);
+        }
     }
     ctx.stable_sort_by(
         &mut operations,
@@ -3743,10 +3739,14 @@ pub(super) fn hole_operations_by_body(
         cadmpeg_core::decode::u64_from_index(operations.len()),
         "NX hole output relation scan",
     )?;
-    let related = operations
-        .iter()
-        .filter(|operation| outputs.contains_key(*operation))
-        .count();
+    let mut related = 0_usize;
+    for operation in operations {
+        if ctx.contains_key_btree_map(outputs, operation, "NX admitted map membership")? {
+            related = related.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("NX hole output relation count", cadmpeg_core::decode::u64_from_index(related), 1)
+            })?;
+        }
+    }
     if related != 0 && related != operations.len() {
         return Ok(None);
     }
@@ -3756,7 +3756,7 @@ pub(super) fn hole_operations_by_body(
             let Some([body]) = ctx.get_btree_map(outputs, operation, "NX admitted map lookup")?.map(Vec::as_slice) else {
                 return Ok(None);
             };
-            if !operations_by_body.contains_key(body) {
+            if !ctx.contains_key_btree_map(&operations_by_body, body, "NX admitted map membership")? {
                 let bytes = std::mem::size_of::<(BodyId, Vec<String>)>();
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(bytes),
