@@ -1080,7 +1080,7 @@ fn wrapper_target_resolution(
         pending.push((id, true));
         if let Some(targets) = target_identities.get(&id) {
             for target in targets {
-                if !identities.contains(target) {
+                if !ctx.contains_btree_set(&identities, target, "STEP identities membership")? {
                     let copy =
                         ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?;
                     ctx.insert_btree_set(&mut identities, copy, "step_drawing_wrapper_identities")?;

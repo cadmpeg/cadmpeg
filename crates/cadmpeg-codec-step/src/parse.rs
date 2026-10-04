@@ -1418,7 +1418,7 @@ impl Parser<'_, '_, '_> {
     }
     fn name(&mut self, expected: &str) -> Result<(), ParseError> {
         let actual = self.take_name()?;
-        if actual == expected {
+        if self.budget.equal(actual.as_str(), expected, "STEP expected parser name comparison")? {
             Ok(())
         } else {
             let message = self.budget.format_retained(
@@ -2216,14 +2216,14 @@ fn validate_header_data_references(
     for reference in budget.admit_iter(references, "STEP header DATA reference traversal").map_err(CodecError::from)? {
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
-                if budget.admit_iter(sections, "STEP FILE_POPULATION section traversal").map_err(CodecError::from)?
-                    .any(|section| !data_section_names.contains(section))
-                {
-                    return invalid("FILE_POPULATION names an unknown DATA section");
+                for section in budget.admit_iter(sections, "STEP FILE_POPULATION section traversal").map_err(CodecError::from)? {
+                    if !budget.contains_btree_set(data_section_names, section, "STEP DATA section name lookup")? {
+                        return invalid("FILE_POPULATION names an unknown DATA section");
+                    }
                 }
             }
             HeaderDataReferences::Section(section) => {
-                if !data_section_names.contains(section) {
+                if !budget.contains_btree_set(data_section_names, section, "STEP DATA section name lookup")? {
                     return invalid("header section reference names an unknown DATA section");
                 }
             }

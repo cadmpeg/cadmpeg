@@ -68,8 +68,10 @@ fn insert_topology_body_group(
     group_operation: &'static str,
     member_operation: &'static str,
 ) -> Result<(), CodecError> {
-    if groups.get(&key).is_some_and(|bodies| bodies.contains(body)) {
-        return Ok(());
+    if let Some(bodies) = groups.get(&key) {
+        if ctx.contains_btree_set(bodies, body, "STEP topology body group membership")? {
+            return Ok(());
+        }
     }
     ctx.admit_btree_entry(groups, &key, group_operation)?;
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
@@ -172,7 +174,7 @@ fn insert_body_id(
     ctx: &DecodeContext<'_>,
     bytes: &mut ScopedReservation<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if bodies.contains(body) {
+    if ctx.contains_btree_set(bodies, body, "STEP bodies membership")? {
         return Ok(());
     }
     bytes.grow(u64_from_index(std::mem::size_of::<BodyId>()))?;
@@ -2438,7 +2440,7 @@ fn staged_topology(
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
-        if !surface_ids.contains(surface.id.as_str()) {
+        if !ctx.contains_btree_set(&surface_ids, surface.id.as_str(), "STEP surface ids membership")? {
             let id =
                 ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
             let id = String::from_utf8(id).map_err(CodecError::malformed)?;
@@ -3003,7 +3005,7 @@ fn build_one(
                         .dash(face_step)
                         .with_tail(&face_suffix),
                 ));
-                if !implicit_surface_ids.contains(&surface_id) {
+                if !ctx.contains_btree_set(&implicit_surface_ids, &surface_id, "STEP implicit surface ids membership")? {
                     ctx.insert_btree_set(
                         &mut implicit_surface_ids,
                         surface_index_storage.with_storage(|| {

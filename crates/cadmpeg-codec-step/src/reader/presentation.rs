@@ -667,7 +667,7 @@ fn collect_invisible_body_ids(
     ctx.insert_btree_set(active, id, "step_presentation_invisible_body_active")?;
     if let Some(ids) = topology.body_by_root.get(&id) {
         for body in ids {
-            if !body_ids.contains(body) {
+            if !ctx.contains_btree_set(body_ids, body, "STEP body ids membership")? {
                 let body =
                     body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
                 ctx.insert_btree_set(body_ids, body, "step_presentation_invisible_body_ids")?;
@@ -822,7 +822,7 @@ fn appearance_targets(
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
         for edge in edges {
-            if entity_ids.edges.contains(edge.as_str()) {
+            if ctx.contains_btree_set(&entity_ids.edges, edge.as_str(), "STEP edges membership")? {
                 let edge =
                     edge.try_clone_for_decode(ctx, "step_presentation_appearance_edge_identity")?;
                 ctx.push_vec(
@@ -836,7 +836,7 @@ fn appearance_targets(
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
         for vertex in vertices {
-            if entity_ids.vertices.contains(vertex.as_str()) {
+            if ctx.contains_btree_set(&entity_ids.vertices, vertex.as_str(), "STEP vertices membership")? {
                 let vertex = vertex
                     .try_clone_for_decode(ctx, "step_presentation_appearance_vertex_identity")?;
                 ctx.push_vec(
@@ -859,15 +859,15 @@ fn appearance_targets(
         Some(AppearanceTarget::Face(FaceId::from(face_id)))
     } else if indices.bodies.contains_key(body_id.as_str()) {
         Some(AppearanceTarget::Body(BodyId::from(body_id)))
-    } else if entity_ids.edges.contains(edge_id.as_str()) {
+    } else if ctx.contains_btree_set(&entity_ids.edges, edge_id.as_str(), "STEP edges membership")? {
         Some(AppearanceTarget::Edge(EdgeId::from(edge_id)))
-    } else if entity_ids.surfaces.contains(surface_id.as_str()) {
+    } else if ctx.contains_btree_set(&entity_ids.surfaces, surface_id.as_str(), "STEP surfaces membership")? {
         Some(AppearanceTarget::Surface(SurfaceId::from(surface_id)))
-    } else if entity_ids.curves.contains(curve_id.as_str()) {
+    } else if ctx.contains_btree_set(&entity_ids.curves, curve_id.as_str(), "STEP curves membership")? {
         Some(AppearanceTarget::Curve(CurveId::from(curve_id)))
-    } else if entity_ids.points.contains(point_id.as_str()) {
+    } else if ctx.contains_btree_set(&entity_ids.points, point_id.as_str(), "STEP points membership")? {
         Some(AppearanceTarget::Point(PointId::from(point_id)))
-    } else if entity_ids.tessellations.contains(tessellation_id.as_str()) {
+    } else if ctx.contains_btree_set(&entity_ids.tessellations, tessellation_id.as_str(), "STEP tessellations membership")? {
         Some(AppearanceTarget::Tessellation(
             tessellation_id.into_string(),
         ))
@@ -923,7 +923,7 @@ fn append_presentation_items(
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
         for edge in edges {
-            if entity_ids.edges.contains(edge.as_str()) {
+            if ctx.contains_btree_set(&entity_ids.edges, edge.as_str(), "STEP edges membership")? {
                 let edge =
                     edge.try_clone_for_decode(ctx, "step_presentation_layer_edge_identity")?;
                 ctx.push_vec(
@@ -937,7 +937,7 @@ fn append_presentation_items(
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
         for vertex in vertices {
-            if entity_ids.vertices.contains(vertex.as_str()) {
+            if ctx.contains_btree_set(&entity_ids.vertices, vertex.as_str(), "STEP vertices membership")? {
                 let vertex =
                     vertex.try_clone_for_decode(ctx, "step_presentation_layer_vertex_identity")?;
                 ctx.push_vec(
@@ -989,31 +989,31 @@ fn presentation_item_one(
         });
     }
     let edge = candidate(kind!("edge"));
-    if entity_ids.edges.contains(edge.as_str()) {
+    if ctx.contains_btree_set(&entity_ids.edges, edge.as_str(), "STEP edges membership")? {
         return Ok(PresentationItem::Edge {
             edge: EdgeId::from(edge),
         });
     }
     let vertex = candidate(kind!("vertex"));
-    if entity_ids.vertices.contains(vertex.as_str()) {
+    if ctx.contains_btree_set(&entity_ids.vertices, vertex.as_str(), "STEP vertices membership")? {
         return Ok(PresentationItem::Vertex {
             vertex: VertexId::from(vertex),
         });
     }
     let point = candidate(kind!("point"));
-    if entity_ids.points.contains(point.as_str()) {
+    if ctx.contains_btree_set(&entity_ids.points, point.as_str(), "STEP points membership")? {
         return Ok(PresentationItem::Point {
             point: PointId::from(point),
         });
     }
     let curve = candidate(kind!("curve"));
-    if entity_ids.curves.contains(curve.as_str()) {
+    if ctx.contains_btree_set(&entity_ids.curves, curve.as_str(), "STEP curves membership")? {
         return Ok(PresentationItem::Curve {
             curve: CurveId::from(curve),
         });
     }
     let surface = candidate(kind!("surface"));
-    if entity_ids.surfaces.contains(surface.as_str()) {
+    if ctx.contains_btree_set(&entity_ids.surfaces, surface.as_str(), "STEP surfaces membership")? {
         return Ok(PresentationItem::Surface {
             surface: SurfaceId::from(surface),
         });
@@ -1026,23 +1026,27 @@ fn presentation_item_one(
     let has = |name: &str| -> Result<bool, CodecError> { Ok(record.partial(ctx, name)?.is_some()) };
     Ok(
         if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
-            && entity_ids
-                .occurrences
-                .contains(ids::product(kind!("occurrence"), id).as_str())
+            && ctx.contains_btree_set(&entity_ids.occurrences, ids::product(kind!("occurrence"), id).as_str(), "STEP occurrences membership")?
         {
             PresentationItem::Occurrence {
                 occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
             }
-        } else if ctx.admit_iter(&(record.partials)[..], "STEP presentation item one traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
-            (partial.name == "DATUM"
-                || partial.name == "DATUM_SYSTEM"
-                || partial.name.starts_with("DIMENSIONAL_")
-                || partial.name.ends_with("_TOLERANCE")
-                || super::pmi::is_presentation_annotation(&partial.name))
-                && entity_ids
-                    .pmi
-                    .contains(ids::presentation(kind!("pmi"), id).as_str())
-        }) {
+        } else if {
+            let mut found = false;
+            for partial in ctx.admit_iter(&(record.partials)[..], "STEP presentation item one traversal").map_err(cadmpeg_core::CodecError::from)? {
+                if (partial.name == "DATUM"
+                    || partial.name == "DATUM_SYSTEM"
+                    || partial.name.starts_with("DIMENSIONAL_")
+                    || partial.name.ends_with("_TOLERANCE")
+                    || super::pmi::is_presentation_annotation(&partial.name))
+                    && ctx.contains_btree_set(&entity_ids.pmi, ids::presentation(kind!("pmi"), id).as_str(), "STEP pmi membership")?
+                {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        } {
             PresentationItem::Pmi {
                 annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
             }
@@ -1050,9 +1054,7 @@ fn presentation_item_one(
             || has("COMPLEX_TRIANGULATED_FACE")?
             || has("TRIANGULATED_SURFACE_SET")?
             || has("COMPLEX_TRIANGULATED_SURFACE_SET")?)
-            && entity_ids
-                .tessellations
-                .contains(ids::tessellation(kind!("mesh"), id).as_str())
+            && ctx.contains_btree_set(&entity_ids.tessellations, ids::tessellation(kind!("mesh"), id).as_str(), "STEP tessellations membership")?
         {
             PresentationItem::Tessellation {
                 tessellation: ids::tessellation(kind!("mesh"), id).into_string(),

@@ -1766,3 +1766,5 @@ fn protected_root_copy_refuses_collection_limit() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_unowned_protected_root_copy"));
 }
+
+mod set_lookups;

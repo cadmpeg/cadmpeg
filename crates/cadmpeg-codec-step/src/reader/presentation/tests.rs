@@ -1951,3 +1951,5 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     counts.sort_unstable();
     assert_eq!(counts, vec![1, face_count - 1]);
 }
+
+mod set_lookups;
