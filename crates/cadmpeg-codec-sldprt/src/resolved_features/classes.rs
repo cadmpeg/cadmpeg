@@ -319,14 +319,13 @@ pub(crate) fn bind_history_classes(
                 let id = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
                 let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
                 temporary.with_storage(|| {
-                    let group = ctx
-                        .entry_hash_map(
-                            &mut cosmetic_thread_classes,
-                            id,
-                            "bind SLDPRT history classes",
-                        )?
-                        .or_default();
-                    ctx.push_vec(group, class, "bind SLDPRT history classes")
+                    ctx.push_hash_group(
+                        &mut cosmetic_thread_classes,
+                        id,
+                        class,
+                        "bind SLDPRT history classes",
+                        "bind SLDPRT history classes",
+                    )
                 })?;
             }
         }
@@ -459,10 +458,13 @@ pub(crate) fn bind_history_classes(
                 let kind = temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?;
                 let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
                 temporary.with_storage(|| {
-                    let group = ctx
-                        .entry_hash_map(&mut classes_by_type, kind, "bind SLDPRT history classes")?
-                        .or_default();
-                    ctx.push_vec(group, class, "bind SLDPRT history classes")
+                    ctx.push_hash_group(
+                        &mut classes_by_type,
+                        kind,
+                        class,
+                        "bind SLDPRT history classes",
+                        "bind SLDPRT history classes",
+                    )
                 })?;
             }
         }
@@ -584,14 +586,13 @@ pub(crate) fn bind_history_classes(
                     if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
                         let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
                         temporary.with_storage(|| {
-                            let group = ctx
-                                .entry_hash_map(
-                                    &mut classes_by_token,
-                                    (lane.id.as_str(), token),
-                                    "bind SLDPRT history classes",
-                                )?
-                                .or_default();
-                            ctx.push_vec(group, class, "bind SLDPRT history classes")
+                            ctx.push_hash_group(
+                                &mut classes_by_token,
+                                (lane.id.as_str(), token),
+                                class,
+                                "bind SLDPRT history classes",
+                                "bind SLDPRT history classes",
+                            )
                         })?;
                     }
                 }
