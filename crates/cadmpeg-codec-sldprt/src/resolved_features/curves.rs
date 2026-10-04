@@ -75,6 +75,20 @@ pub(super) struct SketchPlaneFrame {
     pub(super) u_axis_source: SketchPlaneUAxisSource,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchPlaneFrame {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.origin, &self.normal, &self.u_axis, &self.u_axis_source),
+            ctx,
+            operation,
+        )
+    }
+}
+
 impl SketchPlaneFrame {
     fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
         Self {
@@ -1635,7 +1649,7 @@ pub(super) fn lane_sketch_plane_frames(
             Ord::cmp,
             "sort SLDPRT sketch plane frames",
         )?;
-        candidates.dedup_by_key(|frame| reference_plane_frame_key(&frame.as_tuple()));
+        ctx.dedup_by_key(&mut candidates, |frame| Ok(reference_plane_frame_key(&frame.as_tuple())), "deduplicate SLDPRT sketch plane frames")?;
         if let [frame] = candidates.as_slice() {
             ctx.admit_hash_map_entry(
                 &mut frames,
