@@ -365,8 +365,11 @@ refusal,
                 topology_ir.model.pcurves.clear();
                 topology_ir.model.procedural_curves.clear();
                 topology_ir.model.curves = original_curves;
-                admitted!(ctx.reserve_vec(&mut topology_ir.model.surfaces, unused_surfaces.len(), "catia_e5_rollback_surfaces"));
-                topology_ir.model.surfaces.append(&mut unused_surfaces);
+                admitted!(ctx.append_vec(
+                    &mut topology_ir.model.surfaces,
+                    &mut unused_surfaces,
+                    "catia_e5_rollback_surfaces",
+                ));
                 admitted!(ctx.sort_unstable_by(&mut topology_ir.model.surfaces,
             |value| value.id.as_str(),
             |left, right| e5_source_ordinal(left).cmp(&e5_source_ordinal(right)), "catia_e5_rollback_surfaces_sort"));
@@ -3901,6 +3904,7 @@ mod route_tests {
     mod loop_admission;
     mod occurrence_ranges;
     mod ownership_limits;
+    mod append_admission;
     mod plane_frames;
 
     use crate::assemble::quintic_jet_pcurve;
