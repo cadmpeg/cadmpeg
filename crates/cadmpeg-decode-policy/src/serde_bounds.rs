@@ -90,17 +90,14 @@ fn target<'tcx>(
         ty::Adt(owner, arguments) if types::standard(tcx, owner.did()) => {
             standard_target(tcx, owner.did(), arguments, charged_for_value, proof)
         }
-        ty::Adt(owner, arguments) if !owner.is_union() => {
-            !owner.has_dtor(tcx)
-                && derived_target(
-                    tcx,
-                    owner.did(),
-                    *owner,
-                    arguments,
-                    charged_for_value,
-                    proof,
-                )
-        }
+        ty::Adt(owner, arguments) if !owner.is_union() => derived_target(
+            tcx,
+            owner.did(),
+            *owner,
+            arguments,
+            charged_for_value,
+            proof,
+        ),
         ty::Param(_) | ty::Alias(..) | ty::Dynamic(..) | ty::Infer(_) | ty::Error(_) => false,
         _ => false,
     };
@@ -324,34 +321,42 @@ fn repeated_child<'tcx>(
     let Some(size) = layout_size(tcx, child) else {
         return false;
     };
-    let Some(slot_limit) = repeated_slot_bytes(tcx) else {
+    let nodes = minimum_nodes(tcx, child, 0);
+    let Some(slot_limit) = repeated_slot_bytes(tcx).and_then(|bytes| bytes.checked_mul(nodes))
+    else {
         return false;
     };
-    let Some(envelope) = typed_value_bytes(tcx) else {
+    let Some(member_envelope) = typed_value_bytes(tcx).and_then(|bytes| bytes.checked_mul(nodes))
+    else {
         return false;
     };
     let Some(child_slots) = size.checked_mul(VEC_GROWTH_FACTOR) else {
         return false;
     };
-    let Some(root_minimum) = size
-        .checked_mul(vec_min_capacity(size))
-        .and_then(|bytes| bytes.checked_add(charged_for_value))
+    // An empty sequence allocates nothing; the initial buffer arrives with
+    // the first member.
+    let Some(first_member_envelope) =
+        typed_value_bytes(tcx).and_then(|bytes| bytes.checked_mul(nodes.checked_add(1)?))
     else {
         return false;
     };
-    // At a reallocation peak, Vec keeps the old and new buffers live together.
-    // Geometric growth bounds the old/new peak by three slots per parsed
-    // member. Rust's pinned RawVec minimum initial capacity is eight for
-    // one-byte items, four through 1024-byte items, and one for larger items.
-    // The initial buffer is charged to the array node. For n array members,
-    // typed storage
-    // supplies 12 Value slots for each of n+1 JSON value nodes. Since one
-    // Value is at least one String, a slot of at most 3 Strings gives
-    // initial_capacity*slot + 3n*slot <= 12*(n+1)*Value. The minimum initial
-    // buffer and transparent wrapper allocations are charged to the array
-    // node; three peak-growth slots per member are charged to that member's
-    // node.
-    if size > slot_limit || child_slots > envelope || root_minimum > envelope {
+    let Some(root_minimum) = size
+        .checked_mul(vec_min_capacity(size))
+        .and_then(|bytes| bytes.checked_add(charged_for_value))
+        .and_then(|bytes| bytes.checked_add(child_slots))
+    else {
+        return false;
+    };
+    // At a reallocation peak, Vec keeps the old and new buffers live together;
+    // geometric growth bounds that peak by three slots per parsed member.
+    // Rust's pinned RawVec minimum initial capacity is eight for one-byte
+    // items, four through 1024-byte items, and one for larger items. Typed
+    // storage supplies 12 Value slots (each at least one String) for every
+    // JSON value node. A member parsed from k nodes supplies k allowances for
+    // its three growth slots; the initial buffer, the wrapper allocation
+    // charged to this value and the first member's growth slots fit within
+    // the array node and the first member's nodes.
+    if size > slot_limit || child_slots > member_envelope || root_minimum > first_member_envelope {
         return false;
     }
     let Some(next) = proof.input_steps.checked_add(1) else {
@@ -362,6 +367,45 @@ fn repeated_child<'tcx>(
     let admitted = target(tcx, child, child_slots, proof);
     proof.input_steps = prior_steps;
     admitted
+}
+
+/// The fewest JSON value nodes one parsed value of this type occupies. A
+/// derived record has its own node and one per field that the input must
+/// supply; an `Option` field may be absent. Every other value is one node.
+fn minimum_nodes<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, depth: usize) -> u64 {
+    if depth >= 8 {
+        return 1;
+    }
+    let value = value.peel_refs();
+    let fields: Vec<Ty<'tcx>> =
+        match value.kind() {
+            ty::Tuple(fields) => fields.iter().collect(),
+            ty::Adt(owner, arguments)
+                if owner.is_struct()
+                    && !types::standard(tcx, owner.did())
+                    && !serde_transparent(tcx, owner.did())
+                    && !(owner.non_enum_variant().fields.len() == 1
+                        && owner.non_enum_variant().fields.iter().next().is_some_and(
+                            |field| tcx.item_name(field.did).as_str().parse::<usize>().is_ok(),
+                        )) =>
+            {
+                owner
+                    .non_enum_variant()
+                    .fields
+                    .iter()
+                    .map(|field| field.ty(tcx, arguments).skip_norm_wip())
+                    .filter(|field| !standard_path(tcx, *field, "core::option::Option"))
+                    .collect()
+            }
+            _ => return 1,
+        };
+    // An overflowing count falls back to the one node every value has.
+    fields
+        .into_iter()
+        .try_fold(1_u64, |nodes, field| {
+            nodes.checked_add(minimum_nodes(tcx, field, depth + 1))
+        })
+        .unwrap_or(1)
 }
 
 fn linked_list_child<'tcx>(
