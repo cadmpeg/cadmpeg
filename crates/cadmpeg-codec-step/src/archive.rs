@@ -99,7 +99,7 @@ fn resolve_uri<'a>(
     }
     let (uri, fragment) = ctx.split_once(uri, "#", "STEP ZIP URI fragment split")?
         .map_or((uri, None), |(uri, fragment)| (uri, Some(fragment)));
-    if fragment.is_some_and(|fragment| fragment.contains('#')) {
+    if fragment.map(|fragment| ctx.contains_text(fragment, "#", "STEP ZIP fragment separator containment")).transpose()?.unwrap_or(false) {
         return Err(CodecError::malformed(format_args!(
             "invalid STEP ZIP URI fragment {uri:?}"
         )));
