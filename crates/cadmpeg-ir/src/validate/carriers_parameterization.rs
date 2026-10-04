@@ -147,28 +147,23 @@ pub(super) fn check_carrier_reachability(
             _ => {}
         }
     }
-    ctx.charge_work(
-        u64_from_index(ir.model.presentation_layers.len()),
+    for layer in ctx.admit_iter(
+        &ir.model.presentation_layers,
         "carrier presentation layer scan",
-    )?;
-    for item in ir
-        .model
-        .presentation_layers
-        .iter()
-        .flat_map(|layer| &layer.items)
-    {
-        ctx.charge_work(1, "carrier reference scan")?;
-        match item {
-            crate::presentation::PresentationItem::Surface { surface } => {
-                surfaces.insert_unique(surface.as_str(), ())?;
+    )? {
+        for item in ctx.admit_iter(&layer.items, "carrier reference scan")? {
+            match item {
+                crate::presentation::PresentationItem::Surface { surface } => {
+                    surfaces.insert_unique(surface.as_str(), ())?;
+                }
+                crate::presentation::PresentationItem::Curve { curve } => {
+                    curves.insert_unique(curve.as_str(), ())?;
+                }
+                crate::presentation::PresentationItem::Point { point } => {
+                    points.insert_unique(point.as_str(), ())?;
+                }
+                _ => {}
             }
-            crate::presentation::PresentationItem::Curve { curve } => {
-                curves.insert_unique(curve.as_str(), ())?;
-            }
-            crate::presentation::PresentationItem::Point { point } => {
-                points.insert_unique(point.as_str(), ())?;
-            }
-            _ => {}
         }
     }
 
@@ -208,24 +203,24 @@ pub(super) fn check_carrier_reachability(
             ProceduralSurfaceDefinition::Loft(definition_payload) => {
                 let sections = definition_payload.sections();
 
-                ctx.charge_work(u64_from_index(sections.len()), "carrier loft section scan")?;
-                for entry in sections.iter().flat_map(|section| &section.entries) {
-                    ctx.charge_work(1, "carrier reference scan")?;
-                    if let Some(curve) = &entry.path.path {
-                        curves.insert_unique(curve.id.as_str(), ())?;
-                    }
-                    curves.extend_unique(
-                        entry
-                            .path
-                            .auxiliaries
-                            .iter()
-                            .map(super::super::ids::CurveId::as_str),
-                    )?;
-                    for member in &entry.profile {
-                        ctx.charge_work(1, "carrier reference scan")?;
-                        curves.insert_unique(member.profile.id.as_str(), ())?;
-                        if let Some(surface) = member.form.surface() {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                for section in ctx.admit_iter(sections, "carrier loft section scan")? {
+                    for entry in ctx.admit_iter(&section.entries, "carrier reference scan")? {
+                        if let Some(curve) = &entry.path.path {
+                            curves.insert_unique(curve.id.as_str(), ())?;
+                        }
+                        curves.extend_unique(
+                            entry
+                                .path
+                                .auxiliaries
+                                .iter()
+                                .map(super::super::ids::CurveId::as_str),
+                        )?;
+                        for member in &entry.profile {
+                            ctx.charge_work(1, "carrier reference scan")?;
+                            curves.insert_unique(member.profile.id.as_str(), ())?;
+                            if let Some(surface) = member.form.surface() {
+                                surfaces.insert_unique(surface.as_str(), ())?;
+                            }
                         }
                     }
                 }
@@ -367,36 +362,31 @@ pub(super) fn check_carrier_reachability(
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
                 let construction = definition_payload.construction();
-                ctx.charge_work(
-                    u64_from_index(construction.sections.len()),
+                for section in ctx.admit_iter(
+                    &construction.sections[..],
                     "carrier net section scan",
-                )?;
-                for entry in construction
-                    .sections
-                    .iter()
-                    .flat_map(|section| &section.entries)
-                {
-                    ctx.charge_work(1, "carrier reference scan")?;
-                    if let Some(curve) = &entry.path.path {
-                        curves.insert_unique(curve.id.as_str(), ())?;
-                    }
-                    curves.extend_unique(
-                        entry
-                            .path
-                            .auxiliaries
-                            .iter()
-                            .map(super::super::ids::CurveId::as_str),
-                    )?;
-                    for member in &entry.profile {
-                        ctx.charge_work(1, "carrier reference scan")?;
-                        curves.insert_unique(member.profile.id.as_str(), ())?;
-                        if let Some(surface) = member.form.surface() {
-                            surfaces.insert_unique(surface.as_str(), ())?;
+                )? {
+                    for entry in ctx.admit_iter(&section.entries, "carrier reference scan")? {
+                        if let Some(curve) = &entry.path.path {
+                            curves.insert_unique(curve.id.as_str(), ())?;
+                        }
+                        curves.extend_unique(
+                            entry
+                                .path
+                                .auxiliaries
+                                .iter()
+                                .map(super::super::ids::CurveId::as_str),
+                        )?;
+                        for member in &entry.profile {
+                            ctx.charge_work(1, "carrier reference scan")?;
+                            curves.insert_unique(member.profile.id.as_str(), ())?;
+                            if let Some(surface) = member.form.surface() {
+                                surfaces.insert_unique(surface.as_str(), ())?;
+                            }
                         }
                     }
                 }
-                for formula in construction.formulas.iter() {
-                    ctx.charge_work(1, "carrier reference scan")?;
+                for formula in ctx.admit_iter(&construction.formulas[..], "carrier reference scan")? {
                     for variable in formula.variables() {
                         ctx.charge_work(1, "carrier reference scan")?;
                         collect_law_curves(variable, &mut curves, ctx)?;
@@ -900,10 +890,23 @@ pub(super) fn check_carrier_reachability(
             if arena == "unknowns" {
                 for record in records.records() {
                     ctx.charge_work(1, "carrier reference scan")?;
-                    for link in record.links(ctx)? {
-                        let link = link?;
-                        surfaces.insert_unique(link, ())?;
-                        curves.insert_unique(link, ())?;
+                    match record {
+                        crate::native::view::NativeEntity::Product(product) => {
+                            for link in crate::native::view::NativeEntity::Product(product).links(ctx)? {
+                                let link = link?;
+                                surfaces.insert_unique(link, ())?;
+                                curves.insert_unique(link, ())?;
+                            }
+                        }
+                        crate::native::view::NativeEntity::Source(source) => {
+                            for link in ctx.admit_iter(
+                                source.links(),
+                                "native outgoing link scan",
+                            )? {
+                                surfaces.insert_unique(link.as_str(), ())?;
+                                curves.insert_unique(link.as_str(), ())?;
+                            }
+                        }
                     }
                 }
             }
@@ -934,8 +937,7 @@ pub(super) fn check_carrier_reachability(
         ctx.charge_work(1, "carrier traversal pop")?;
         next += 1;
         if let Some(segments) = composite_segments.get(ctx, curve)? {
-            for segment in *segments {
-                ctx.charge_work(1, "carrier reference scan")?;
+            for segment in ctx.admit_iter(&segments[..], "carrier reference scan")? {
                 let identity = segment.curve.as_str();
                 if curves.insert_unique(identity, ())? {
                     queue_storage.with_storage(|| {
@@ -977,7 +979,7 @@ pub(super) fn check_parameter_domains(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for curve in &ir.model.curves {
+        for curve in ctx.admit_iter(&ir.model.curves, "parameter-domain curve identity scan")? {
             add(curve.id.as_str(), &curve.geometry)?;
         }
         Ok(())
@@ -1059,7 +1061,7 @@ pub(super) fn check_parameter_domains(
         }
     }
     let pcurves = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
-        for pcurve in &ir.model.pcurves {
+        for pcurve in ctx.admit_iter(&ir.model.pcurves, "parameter-domain pcurve identity scan")? {
             add(pcurve.id.as_str(), &pcurve.geometry)?;
         }
         Ok(())

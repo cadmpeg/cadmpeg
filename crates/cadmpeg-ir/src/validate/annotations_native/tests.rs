@@ -22,7 +22,7 @@ fn model_entity_wins_when_native_id_collides() {
     );
     ir.native.0.insert("collision".into(), namespace);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str(), ())).unwrap();
+    let all_ids = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let mut builder = crate::AnnotationBuilder::new();
     builder
         .derived(
@@ -44,6 +44,7 @@ fn model_entity_wins_when_native_id_collides() {
         crate::native::view::NativeView::new(&ir, None),
         &builder.build(),
         &all_ids,
+        None,
         &mut findings,
     )
     .unwrap();
@@ -249,4 +250,43 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
         );
         assert_eq!(serde_json::to_value(&ir).unwrap()["native"], wire["native"]);
     }
+}
+
+#[test]
+fn annotation_paths_preserve_utf8_and_empty_components() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let value = serde_value::to_value(serde_json::json!({
+        "": {"": true, "β": true},
+        "é": {"": true, "β": true}
+    })).unwrap();
+    for (path, resolves) in [
+        ("", true),
+        (".", true),
+        (".β", true),
+        ("é.", true),
+        ("é.β", true),
+        ("é..β", false),
+        ("β", false),
+        ("é.γ", false),
+    ] {
+        assert_eq!(super::field_path_resolves(&ctx, &value, path).unwrap(), resolves, "{path}");
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn annotation_path_scan_preserves_original_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let value = serde_value::Value::Bool(true);
+    let Err(CodecError::ResourceLimit(limit)) = super::field_path_resolves(&ctx, &value, "é.β") else {
+        panic!("path scan must refuse");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "annotation field path scan");
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
 }

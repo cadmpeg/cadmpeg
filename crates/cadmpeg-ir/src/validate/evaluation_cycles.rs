@@ -71,11 +71,9 @@ fn surface_dependencies<'a>(
             )?,
         ProceduralSurfaceDefinition::Blend(payload) => {
             if let Some(native) = payload.native() {
-                ctx.charge_work(u64_from_index(native.sides.len()), "cycle dependency scan")?;
+                let sides = ctx.admit_iter(&native.sides, "cycle dependency scan")?;
                 ctx.collect_vec(
-                    native
-                        .sides
-                        .iter()
+                    sides
                         .filter_map(|side| {
                             side.surface
                                 .as_ref()
@@ -89,12 +87,12 @@ fn surface_dependencies<'a>(
             }
         }
         ProceduralSurfaceDefinition::VariableBlend(payload) => {
-            ctx.charge_work(
-                u64_from_index(payload.construction().sides.len()),
+            let sides = ctx.admit_iter(
+                &payload.construction().sides,
                 "cycle dependency scan",
             )?;
             ctx.collect_vec(
-                payload.construction().sides.iter().filter_map(|side| {
+                sides.filter_map(|side| {
                     side.surface
                         .as_ref()
                         .map(|support| support.surface.as_str())

@@ -54,21 +54,31 @@ fn worse_mismatch(first: f64, second: f64) -> f64 {
 
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
-fn allowance(document_tolerance: crate::scalar::PositiveLength, tolerances: &[Option<f64>]) -> f64 {
-    tolerances.iter().flatten().copied().fold(
-        COINCIDENCE_TOLERANCE.max(document_tolerance.get()),
-        f64::max,
-    )
+fn allowance(
+    ctx: &DecodeContext<'_>,
+    document_tolerance: crate::scalar::PositiveLength,
+    tolerances: &[Option<f64>],
+) -> Result<f64, CodecError> {
+    let mut value = COINCIDENCE_TOLERANCE.max(document_tolerance.get());
+    for tolerance in ctx.admit_iter(tolerances, "geometric tolerance allowance")? {
+        let Some(tolerance) = tolerance else {
+            continue;
+        };
+        value = f64::max(value, *tolerance);
+    }
+    Ok(value)
 }
 
 /// Two independently evaluated procedural carriers can each consume the
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
 /// widens that allowance when it is larger.
 fn procedural_support_allowance(
+    ctx: &DecodeContext<'_>,
     document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
-) -> f64 {
-    COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])
+) -> Result<f64, CodecError> {
+    Ok(COINCIDENCE_TOLERANCE
+        + allowance(ctx, document_tolerance, &[cache_fit_tolerance])?)
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
@@ -80,7 +90,7 @@ pub(super) fn check_procedural_support_consistency(
 ) -> Result<(), CodecError> {
     let index = crate::index::ModelIndex::build(ir, ctx)?;
     let curves = BorrowedIdentities::build(ctx, |add| {
-        for curve in &ir.model.curves {
+        for curve in ctx.admit_iter(&ir.model.curves, "geometric curve identity scan")? {
             add(curve.id.as_str(), &curve.geometry)?;
         }
         Ok(())
@@ -160,11 +170,12 @@ pub(super) fn check_procedural_support_consistency(
                 continue;
             };
             let bound = procedural_support_allowance(
+                ctx,
                 ir.tolerances.linear,
                 procedural
                     .cache_fit_tolerance()
                     .map(crate::geometry::FitTolerance::get),
-            );
+            )?;
             let Some(base) = curves.get(ctx, base.as_str())? else {
                 continue;
             };
@@ -265,11 +276,12 @@ pub(super) fn check_procedural_support_consistency(
             continue;
         };
         let bound = procedural_support_allowance(
+            ctx,
             ir.tolerances.linear,
             procedural
                 .cache_fit_tolerance()
                 .map(crate::geometry::FitTolerance::get),
-        );
+        )?;
         check_support_sides(
             ctx,
             (&context, third),
@@ -312,8 +324,11 @@ fn check_support_sides(
             distance,
         } => (endpoints, Some(distance)),
     };
-    for (side_index, side) in context.sides().iter().chain(third).enumerate() {
-        ctx.charge_work(1, "geometric support side scan")?;
+    let sides = ctx.admit_iter(context.sides(), "geometric support side scan")?;
+    let third = ctx
+        .admit_iter(third.as_slice(), "geometric support side scan")?
+        .copied();
+    for (side_index, side) in sides.chain(third).enumerate() {
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
@@ -395,7 +410,7 @@ fn vertex_positions<'ctx, 'ir>(
     ir: &'ir CadIr,
 ) -> Result<BorrowedIdentities<'ctx, 'ir, (Point3, Option<f64>)>, CodecError> {
     let points = BorrowedIdentities::build(ctx, |add| {
-        for point in &ir.model.points {
+        for point in ctx.admit_iter(&ir.model.points, "geometric point identity scan")? {
             add(point.id.as_str(), point.position().get())?;
         }
         Ok(())
@@ -426,7 +441,7 @@ pub(super) fn check_edge_endpoint_consistency(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let curves = BorrowedIdentities::build(ctx, |add| {
-        for curve in &ir.model.curves {
+        for curve in ctx.admit_iter(&ir.model.curves, "geometric curve identity scan")? {
             add(curve.id.as_str(), &curve.geometry)?;
         }
         Ok(())
@@ -466,6 +481,7 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let bound = allowance(
+            ctx,
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -477,7 +493,7 @@ pub(super) fn check_edge_endpoint_consistency(
                     .flatten()
                     .map(crate::geometry::FitTolerance::get),
             ],
-        );
+        )?;
         let mismatch = worse_mismatch(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
@@ -496,7 +512,7 @@ pub(super) fn check_edge_endpoint_consistency(
         }
     }
     let edges = BorrowedIdentities::build(ctx, |add| {
-        for edge in &ir.model.edges {
+        for edge in ctx.admit_iter(&ir.model.edges, "geometric edge identity scan")? {
             add(edge.id.as_str(), edge)?;
         }
         Ok(())
@@ -531,6 +547,7 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let bound = allowance(
+            ctx,
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -542,7 +559,7 @@ pub(super) fn check_edge_endpoint_consistency(
                     .flatten()
                     .map(crate::geometry::FitTolerance::get),
             ],
-        );
+        )?;
         let mismatch = worse_mismatch(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
@@ -575,13 +592,13 @@ pub(super) fn check_pcurve_surface_consistency(
 ) -> Result<(), CodecError> {
     let index = crate::index::ModelIndex::build(ir, ctx)?;
     let curves = BorrowedIdentities::build(ctx, |add| {
-        for curve in &ir.model.curves {
+        for curve in ctx.admit_iter(&ir.model.curves, "geometric curve identity scan")? {
             add(curve.id.as_str(), &curve.geometry)?;
         }
         Ok(())
     })?;
     let surfaces = BorrowedIdentities::build(ctx, |add| {
-        for surface in &ir.model.surfaces {
+        for surface in ctx.admit_iter(&ir.model.surfaces, "geometric surface identity scan")? {
             add(surface.id.as_str(), &surface.geometry)?;
         }
         Ok(())
@@ -610,25 +627,25 @@ pub(super) fn check_pcurve_surface_consistency(
         Ok(())
     })?;
     let pcurves = BorrowedIdentities::build(ctx, |add| {
-        for pcurve in &ir.model.pcurves {
+        for pcurve in ctx.admit_iter(&ir.model.pcurves, "geometric pcurve identity scan")? {
             add(pcurve.id.as_str(), pcurve)?;
         }
         Ok(())
     })?;
     let edges = BorrowedIdentities::build(ctx, |add| {
-        for edge in &ir.model.edges {
+        for edge in ctx.admit_iter(&ir.model.edges, "geometric edge identity scan")? {
             add(edge.id.as_str(), edge)?;
         }
         Ok(())
     })?;
     let faces = BorrowedIdentities::build(ctx, |add| {
-        for face in &ir.model.faces {
+        for face in ctx.admit_iter(&ir.model.faces, "geometric face identity scan")? {
             add(face.id.as_str(), face)?;
         }
         Ok(())
     })?;
     let loops = BorrowedIdentities::build(ctx, |add| {
-        for lp in &ir.model.loops {
+        for lp in ctx.admit_iter(&ir.model.loops, "geometric loop identity scan")? {
             add(lp.id.as_str(), lp)?;
         }
         Ok(())
@@ -681,6 +698,7 @@ pub(super) fn check_pcurve_surface_consistency(
             None => None,
         };
         let bound = allowance(
+            ctx,
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -692,12 +710,13 @@ pub(super) fn check_pcurve_surface_consistency(
                     .map(crate::geometry::FitTolerance::get),
                 last.fit_tolerance().map(crate::geometry::FitTolerance::get),
             ],
-        );
+        )?;
         // Recovering an occurrence interval is a topological operation. A
         // carrier fit tolerance may qualify the final image, but must not let
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
         let recovery_bound = allowance(
+            ctx,
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -705,7 +724,7 @@ pub(super) fn check_pcurve_surface_consistency(
                 *end_tol,
                 face.tolerance.map(crate::scalar::PositiveReal::get),
             ],
-        );
+        )?;
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another
         // interval. Keep the declared interval as a candidate, but also solve
@@ -761,13 +780,13 @@ pub(super) fn check_pcurve_surface_consistency(
             }
         };
         let mut minimum_mismatch: Option<f64> = None;
-        for [t0, t1] in declared
-            .iter()
-            .flat_map(|ranges| ranges.iter())
-            .chain(recovered.iter().flat_map(|ranges| ranges.iter()))
+        let declared_ranges = declared.as_ref().map_or(&[][..], |ranges| &ranges[..]);
+        let recovered_ranges = recovered.as_ref().map_or(&[][..], |ranges| &ranges[..]);
+        for [t0, t1] in ctx
+            .admit_iter(declared_ranges, "pcurve interval candidate")?
+            .chain(ctx.admit_iter(recovered_ranges, "pcurve interval candidate")?)
             .copied()
         {
-            ctx.charge_work(1, "pcurve interval candidate")?;
             // A non-finite pcurve or surface point is measured as a finite
             // one is: the distance it produces is the finding's measure.
             let pcurve_point = |geometry, parameter| match crate::eval::decode::pcurve_uv(
@@ -843,9 +862,11 @@ fn pcurve_parameter_ranges<'ctx>(
         ranges.push(range)?;
     }
     if let Some([start, end]) = edge_range {
-        ranges.extend([[start, end], [-start, -end]])?;
+        let edge_ranges = [[start, end], [-start, -end]];
+        ranges.extend(&edge_ranges, |range| *range)?;
     }
-    ranges.extend(pcurve_parameter_extremes(ctx, pcurve)?)?;
+    let extreme_ranges = pcurve_parameter_extremes(ctx, pcurve)?;
+    ranges.extend(extreme_ranges.as_slice(), |range| *range)?;
     if !ranges.is_empty() {
         if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
             ranges.push(domain.endpoints())?;
@@ -881,8 +902,11 @@ fn edge_pcurve_parameter_ranges<'ctx>(
 ) -> Result<Option<Scratch<'ctx, [f64; 2]>>, CodecError> {
     let [start, end] = endpoints;
     let mut start_parameters = Scratch::new(ctx)?;
-    for seed in pcurve_parameter_seeds_on_surface(ctx, context, first)? {
-        ctx.charge_work(1, "mapped pcurve start seed")?;
+    let start_seeds = pcurve_parameter_seeds_on_surface(ctx, context, first)?;
+    for seed in ctx
+        .admit_iter(&start_seeds[..], "mapped pcurve start seed")?
+        .copied()
+    {
         if let Some(parameter) = mapped_pcurve_parameter_near_point(
             ctx,
             context,
@@ -894,17 +918,26 @@ fn edge_pcurve_parameter_ranges<'ctx>(
             start_parameters.push(parameter)?;
         }
     }
-    let start_parameters = unique(ctx, start_parameters, Some)?;
+    drop(start_seeds);
+    let unique_start_parameters = unique(ctx, &start_parameters[..], |value| Some(*value))?;
+    drop(start_parameters);
+    let start_parameters = unique_start_parameters;
     let mut end_parameters = Scratch::new(ctx)?;
-    for seed in pcurve_parameter_seeds_on_surface(ctx, context, last)? {
-        ctx.charge_work(1, "mapped pcurve end seed")?;
+    let end_seeds = pcurve_parameter_seeds_on_surface(ctx, context, last)?;
+    for seed in ctx
+        .admit_iter(&end_seeds[..], "mapped pcurve end seed")?
+        .copied()
+    {
         if let Some(parameter) =
             mapped_pcurve_parameter_near_point(ctx, context, &last.geometry, end, seed, tolerance)?
         {
             end_parameters.push(parameter)?;
         }
     }
-    let end_parameters = unique(ctx, end_parameters, Some)?;
+    drop(end_seeds);
+    let unique_end_parameters = unique(ctx, &end_parameters[..], |value| Some(*value))?;
+    drop(end_parameters);
+    let end_parameters = unique_end_parameters;
     let ranges = parameter_pairs(ctx, &start_parameters, &end_parameters)?;
     if !ranges.is_empty() {
         return Ok(Some(ranges));
@@ -927,27 +960,32 @@ fn edge_pcurve_parameter_ranges<'ctx>(
         return Ok(None);
     }
     let mut seeds = pcurve_parameter_seeds_on_surface(ctx, context, first)?;
-    seeds.extend(pcurve_parameter_seeds_on_surface(ctx, context, last)?)?;
+    let last_seeds = pcurve_parameter_seeds_on_surface(ctx, context, last)?;
+    seeds.extend(&last_seeds[..], |seed| *seed)?;
+    drop(last_seeds);
     let mut start_parameters = Scratch::new(ctx)?;
-    for seed in seeds.iter() {
-        ctx.charge_work(1, "conic pcurve start seed")?;
+    for seed in ctx.admit_iter(&seeds[..], "conic pcurve start seed")? {
         if let Some(parameter) =
             curve_parameter_near_point(ctx, curve_geometry, start, seed.get(), tolerance)?
         {
             start_parameters.push(parameter)?;
         }
     }
-    let start_parameters = unique(ctx, start_parameters, Some)?;
+    let unique_start_parameters = unique(ctx, &start_parameters[..], |value| Some(*value))?;
+    drop(start_parameters);
+    let start_parameters = unique_start_parameters;
     let mut end_parameters = Scratch::new(ctx)?;
-    for seed in seeds.iter() {
-        ctx.charge_work(1, "conic pcurve end seed")?;
+    for seed in ctx.admit_iter(&seeds[..], "conic pcurve end seed")? {
         if let Some(parameter) =
             curve_parameter_near_point(ctx, curve_geometry, end, seed.get(), tolerance)?
         {
             end_parameters.push(parameter)?;
         }
     }
-    let end_parameters = unique(ctx, end_parameters, Some)?;
+    drop(seeds);
+    let unique_end_parameters = unique(ctx, &end_parameters[..], |value| Some(*value))?;
+    drop(end_parameters);
+    let end_parameters = unique_end_parameters;
     let ranges = parameter_pairs(ctx, &start_parameters, &end_parameters)?;
     Ok((!ranges.is_empty()).then_some(ranges))
 }
@@ -1104,12 +1142,11 @@ fn mapped_pcurve_parameter_near_point(
 
 fn unique<'ctx, T>(
     ctx: &'ctx DecodeContext<'_>,
-    values: impl IntoIterator<Item = T>,
-    mut project: impl FnMut(T) -> Option<FiniteReal>,
+    values: &[T],
+    mut project: impl FnMut(&T) -> Option<FiniteReal>,
 ) -> Result<Scratch<'ctx, FiniteReal>, CodecError> {
     let mut unique = Scratch::new(ctx)?;
-    for value in values {
-        ctx.charge_work(1, "parameter uniqueness source scan")?;
+    for value in ctx.admit_iter(values, "parameter uniqueness source scan")? {
         let Some(value) = project(value) else {
             continue;
         };
@@ -1135,11 +1172,13 @@ fn pcurve_parameter_seeds<'ctx>(
     let mut seeds = Scratch::new(ctx)?;
     seeds.push(0.0)?;
     if let Some(range) = pcurve.parameter_range() {
-        seeds.extend(range.get())?;
+        let range = range.get();
+        seeds.extend(&range, |seed| *seed)?;
     }
     if let Some(domain) = pcurve_parameter_domain(ctx, &pcurve.geometry)? {
         let [start, end] = domain.endpoints();
-        seeds.extend([start, start.midpoint(end), end])?;
+        let domain_seeds = [start, start.midpoint(end), end];
+        seeds.extend(&domain_seeds, |seed| *seed)?;
     }
     Ok(seeds)
 }
@@ -1151,14 +1190,14 @@ fn pcurve_parameter_seeds_on_surface<'ctx>(
 ) -> Result<Scratch<'ctx, FiniteReal>, CodecError> {
     let mut seeds = pcurve_parameter_seeds(ctx, pcurve)?;
     let Some((origin, direction)) = pcurve.geometry.line_parameters(ctx)? else {
-        return unique(ctx, seeds, FiniteReal::new);
+        return unique(ctx, &seeds[..], |value| FiniteReal::new(*value));
     };
     let domains = match context.geometry.solved() {
         Some(geometry) => solved_surface_parameter_domains(ctx, geometry)?,
         None => None,
     };
     let Some([[u_lower, u_upper], [v_lower, v_upper]]) = domains else {
-        return unique(ctx, seeds, FiniteReal::new);
+        return unique(ctx, &seeds[..], |value| FiniteReal::new(*value));
     };
     for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
         if direction.u != 0.0 {
@@ -1170,7 +1209,7 @@ fn pcurve_parameter_seeds_on_surface<'ctx>(
             seeds.push((boundary - origin.v) / direction.v)?;
         }
     }
-    unique(ctx, seeds, FiniteReal::new)
+    unique(ctx, &seeds[..], |value| FiniteReal::new(*value))
 }
 
 fn solved_surface_parameter_domains(

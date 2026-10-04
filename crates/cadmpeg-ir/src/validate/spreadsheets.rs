@@ -11,13 +11,13 @@ pub(super) fn check_spreadsheets(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let features = BorrowedIdentities::build(ctx, |add| {
-        for feature in &ir.model.features {
+        for feature in ctx.admit_iter(&ir.model.features, "spreadsheet feature identity scan")? {
             add(feature.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let parameters = BorrowedIdentities::build(ctx, |add| {
-        for parameter in &ir.model.parameters {
+        for parameter in ctx.admit_iter(&ir.model.parameters, "spreadsheet parameter identity scan")? {
             add(parameter.id.as_str(), parameter)?;
         }
         Ok(())

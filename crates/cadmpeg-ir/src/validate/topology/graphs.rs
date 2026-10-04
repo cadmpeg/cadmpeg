@@ -25,7 +25,7 @@ pub(in crate::validate) fn check_coedge_pairing(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let by_id = BorrowedIdentities::build(ctx, |add| {
-        for coedge in &ir.model.coedges {
+        for coedge in ctx.admit_iter(&ir.model.coedges, "coedge identity scan")? {
             add(coedge.id.as_str(), coedge)?;
         }
         Ok(())
@@ -159,13 +159,13 @@ pub(in crate::validate) fn check_wire_topology(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let coedge_edges = BorrowedIdentities::build(ctx, |add| {
-        for coedge in &ir.model.coedges {
+        for coedge in ctx.admit_iter(&ir.model.coedges, "coedge edge index scan")? {
             add(coedge.edge.as_str(), ())?;
         }
         Ok(())
     })?;
     let edge_vertices = BorrowedIdentities::build(ctx, |add| {
-        for edge in &ir.model.edges {
+        for edge in ctx.admit_iter(&ir.model.edges, "edge endpoint index scan")? {
             add(edge.start.as_str(), ())?;
             add(edge.end.as_str(), ())?;
         }
@@ -174,8 +174,11 @@ pub(in crate::validate) fn check_wire_topology(
     let loop_vertices = BorrowedIdentities::build(ctx, |add| {
         for loop_ in &ir.model.loops {
             ctx.charge_work(1, "wire loop vertex scan")?;
-            for vertex in loop_.vertices() {
+            if let Some((vertex, _)) = loop_.singular_vertex() {
                 add(vertex.as_str(), ())?;
+            }
+            for use_ in ctx.admit_iter(loop_.anchored_vertex_uses(), "wire loop vertex scan")? {
+                add(use_.vertex.as_str(), ())?;
             }
         }
         Ok(())
@@ -183,7 +186,7 @@ pub(in crate::validate) fn check_wire_topology(
     let wire_owners = BorrowedIdentities::build(ctx, |add| {
         for shell in &ir.model.shells {
             ctx.charge_work(1, "wire shell owner scan")?;
-            for edge in shell.wire_edges() {
+            for edge in ctx.admit_iter(shell.wire_edges(), "wire shell owner scan")? {
                 add(edge.as_str(), ())?;
             }
         }
@@ -192,7 +195,7 @@ pub(in crate::validate) fn check_wire_topology(
     let free_owners = BorrowedIdentities::build(ctx, |add| {
         for shell in &ir.model.shells {
             ctx.charge_work(1, "free vertex shell owner scan")?;
-            for vertex in shell.free_vertices() {
+            for vertex in ctx.admit_iter(shell.free_vertices(), "free vertex shell owner scan")? {
                 add(vertex.as_str(), ())?;
             }
         }
@@ -261,13 +264,13 @@ pub(in crate::validate) fn check_wire_topology(
         }
     }
     let regions = BorrowedIdentities::build(ctx, |add| {
-        for region in &ir.model.regions {
+        for region in ctx.admit_iter(&ir.model.regions, "region identity scan")? {
             add(region.id.as_str(), region)?;
         }
         Ok(())
     })?;
     let shells = BorrowedIdentities::build(ctx, |add| {
-        for shell in &ir.model.shells {
+        for shell in ctx.admit_iter(&ir.model.shells, "shell identity scan")? {
             add(shell.id.as_str(), shell)?;
         }
         Ok(())
@@ -332,19 +335,19 @@ pub(in crate::validate) fn check_shell_connectivity(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let faces = BorrowedIdentities::build(ctx, |add| {
-        for face in &ir.model.faces {
+        for face in ctx.admit_iter(&ir.model.faces, "face identity scan")? {
             add(face.id.as_str(), face)?;
         }
         Ok(())
     })?;
     let loop_faces = BorrowedIdentities::build(ctx, |add| {
-        for loop_ in &ir.model.loops {
+        for loop_ in ctx.admit_iter(&ir.model.loops, "loop face index scan")? {
             add(loop_.id.as_str(), loop_.face.as_str())?;
         }
         Ok(())
     })?;
     let edges = BorrowedIdentities::build(ctx, |add| {
-        for edge in &ir.model.edges {
+        for edge in ctx.admit_iter(&ir.model.edges, "edge identity scan")? {
             add(edge.id.as_str(), edge)?;
         }
         Ok(())

@@ -149,7 +149,7 @@ pub fn admit_with_native_unknowns(
             ctx,
             &index,
             annotations,
-            std::iter::empty(),
+            None,
             &mut report.findings,
         )?;
     }
@@ -176,11 +176,13 @@ fn native_unknown_order<'ctx>(
 ) -> Result<Result<NativeUnknownOrder<'ctx>, crate::native::NativeConvertError>, CodecError> {
     for record in records {
         ctx.charge_work(1, "source product record scan")?;
-        for (position, link) in record.links().iter().enumerate() {
+        for (position, link) in ctx
+            .admit_iter(record.links(), "source product link grammar")?
+            .enumerate()
+        {
             for _ in 0..4 {
                 ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?;
             }
-            ctx.charge_work(1, "source product link grammar")?;
             if !crate::ids::is_valid_identity(link) {
                 let message = ctx.format_retained(
                     format_args!(
@@ -209,22 +211,27 @@ fn native_unknown_order<'ctx>(
         )?;
         Ok::<_, CodecError>(order)
     })?;
-    for pair in order.0.windows(2) {
-        let first = records[pair[0]].id().as_str();
-        let second = records[pair[1]].id().as_str();
-        ctx.charge_work(1, "source product identity duplicate scan")?;
-        ctx.charge_work(
-            u64_from_index(first.len().min(second.len())),
-            "source product identity duplicate comparison",
-        )?;
-        if first == second {
-            let message = ctx.format_retained(
-                format_args!("duplicate native unknown record {first}"),
-                "native unknown identity collision",
+    let mut positions = ctx
+        .admit_iter(&order.0, "source product identity duplicate scan")?
+        .copied();
+    if let Some(mut first_position) = positions.next() {
+        for second_position in positions {
+            let first = records[first_position].id().as_str();
+            let second = records[second_position].id().as_str();
+            ctx.charge_work(
+                u64_from_index(first.len().min(second.len())),
+                "source product identity duplicate comparison",
             )?;
-            return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
-                message,
-            )));
+            if first == second {
+                let message = ctx.format_retained(
+                    format_args!("duplicate native unknown record {first}"),
+                    "native unknown identity collision",
+                )?;
+                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
+                    message,
+                )));
+            }
+            first_position = second_position;
         }
     }
     Ok(Ok(NativeUnknownOrder {
