@@ -1450,3 +1450,63 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }
+
+
+fn pmi_guid_set_insertion_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut payload = pmi_semantic_payload();
+    if dimension == ResourceDimension::MaterializedBytes {
+        // Grow the GUID index beyond the valid record's temporary parsing peak.
+        for index in 0..512 {
+            let guid = format!("{index:08x}-0123-4567-89ab-cdef01234567");
+            payload.extend_from_slice(guid.as_bytes());
+            payload.push(0x80);
+        }
+    }
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+    assert!(losses.is_empty());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].guid, "01234567-89ab-cdef-0123-456789abcdef");
+    assert_eq!(records[0].cad_text, "D1@Sketch1");
+    assert_eq!(records[0].value.get(), 0.025);
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension, "index SLDPRT PMI candidate GUID", |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("GUID insertion dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let result = super::parse_payload(&ctx, &payload, &mut losses);
+            assert!(losses.is_empty());
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == "index SLDPRT PMI candidate GUID"
+            && limit.additional > 0));
+}
+
+#[test]
+fn pmi_guid_set_insertion_refuses_collection_without_loss() {
+    pmi_guid_set_insertion_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn pmi_guid_set_insertion_refuses_work_without_loss() {
+    pmi_guid_set_insertion_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn pmi_guid_set_insertion_refuses_scoped_bytes_without_loss() {
+    pmi_guid_set_insertion_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+}
