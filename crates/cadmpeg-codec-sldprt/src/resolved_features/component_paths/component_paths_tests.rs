@@ -283,3 +283,5 @@ fn profile_block_identity_parsers_preserve_ownership_and_refusals() {
         crate::test_support::work_refusal_at(operation, solve);
     }
 }
+
+mod character_growth;

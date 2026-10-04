@@ -854,8 +854,7 @@ fn append_compact_edge_path_charged(
         for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
-                value.push(',');
+                ctx.push_retained_char(value, ',', "format SLDPRT compact edge local id separator")?;
             }
             let digits = edge_id.to_string();
             ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
@@ -865,16 +864,14 @@ fn append_compact_edge_path_charged(
         for (index, component) in selection.components.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
-                value.push(',');
+                ctx.push_retained_char(value, ',', "format SLDPRT compact edge component separator")?;
             }
             if let Some(id) = component.local_id {
                 let digits = id.to_string();
                 ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
                 ctx.append_retained(value, &digits, OPERATION)?;
             } else {
-                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
-                value.push('_');
+                ctx.push_retained_char(value, '_', "format SLDPRT compact edge absent component")?;
             }
         }
     }
@@ -912,8 +909,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
             for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
                 ctx.charge_work(1, OPERATION)?;
                 if index != 0 {
-                    ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
-                    value.push(',');
+                    ctx.push_retained_char(&mut value, ',', "format SLDPRT compact edge set local id separator")?;
                 }
                 let digits = edge_id.to_string();
                 ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
@@ -925,8 +921,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
     for (index, selection) in selections.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
-            value.push(';');
+            ctx.push_retained_char(&mut value, ';', "format SLDPRT compact edge selection separator")?;
         }
         append_compact_edge_path_charged(ctx, &mut value, selection)?;
     }
@@ -945,8 +940,7 @@ pub(crate) fn compact_body_selection_value_charged(
     for (index, body_id) in local_body_ids.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
-            value.push(',');
+            ctx.push_retained_char(&mut value, ',', "format SLDPRT compact body local id separator")?;
         }
         let digits = body_id.to_string();
         ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;

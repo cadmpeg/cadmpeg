@@ -470,6 +470,10 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         sketch_entities: Vec::new(),
     };
 
+    crate::test_support::work_refusal_at("format SLDPRT cylinder reference separator", |ctx| {
+        project_unbound_cosmetic_thread_faces(ctx, &mut features.clone(), std::slice::from_ref(&history),
+            &[lane("lane-a", 40), lane("lane-b", 60)], &[], &[])
+    });
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
             ctx,
@@ -965,6 +969,9 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         selection.parent = lane2.id.clone();
     }
 
+    crate::test_support::work_refusal_at("format SLDPRT surface cut body separator", |ctx| {
+        project_compact_surface_selections(ctx, &mut features.clone(), &[], &[lane.clone(), lane2.clone()])
+    });
     with_projection_context(|ctx| {
         project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])
     })
