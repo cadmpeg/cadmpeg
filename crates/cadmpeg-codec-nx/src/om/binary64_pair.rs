@@ -100,12 +100,13 @@ pub(crate) struct Binary64Pair<F, O = usize> {
 }
 
 impl<F: Binary64PairForm> Binary64Pair<F> {
-    fn read(bytes: &[u8], offset: usize, form: F) -> Option<Self> {
+    fn read(ctx: &DecodeContext<'_>, bytes: &[u8], offset: usize, form: F) -> Result<Option<Self>, CodecError> {
+        (|| {
         let discriminator = form.discriminator();
         let discriminator_byte_len = u16::try_from(discriminator.len()).ok()?;
         let separator_width = u16::try_from(form.separator_width()).ok()?;
         let first = offset.checked_add(discriminator.len())?;
-        (bytes.get(offset..first)? == discriminator.as_ref()).then_some(())?;
+        (propagate_resource!(ctx.equal_bytes(bytes.get(offset..first)?, discriminator.as_ref(), "NX binary64 pair discriminator equality"))).then_some(())?;
         let separator = first.checked_add(8)?;
         let second = separator.checked_add(form.separator_width())?;
         if form.separator_width() == 1 && bytes.get(separator) != Some(&0) {
@@ -116,13 +117,14 @@ impl<F: Binary64PairForm> Binary64Pair<F> {
             ShiftedBinary64::read(bytes.get(first..separator)?)?,
             ShiftedBinary64::read(bytes.get(second..end)?)?,
         ];
-        Some(Self {
+        Some(Ok(Self {
             form,
             offset,
             values,
             discriminator_byte_len,
             separator_width,
-        })
+        }))
+            })().transpose()
     }
 
     pub(crate) fn into_wire_frame(self) -> Option<Binary64Pair<F, u64>> {
@@ -198,7 +200,7 @@ pub(crate) fn datum_plane_pairs(
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum-plane pairs")?;
     let mut pairs = Vec::new();
     for offset in 0..bytes.len() {
-        if let Some(pair) = Binary64Pair::read(bytes, offset, DatumPlanePairForm) {
+        if let Some(pair) = Binary64Pair::read(ctx, bytes, offset, DatumPlanePairForm)? {
             ctx.push_vec(&mut pairs, pair, "NX binary64 pairs")?;
         }
     }
@@ -216,7 +218,7 @@ pub(crate) fn object_pairs(
     let mut pairs = Vec::new();
     for form in ObjectPairForm::ALL {
         for offset in 0..bytes.len() {
-            if let Some(pair) = Binary64Pair::read(bytes, offset, form) {
+            if let Some(pair) = Binary64Pair::read(ctx, bytes, offset, form)? {
                 ctx.push_vec(&mut pairs, pair, "NX binary64 pairs")?;
             }
         }
@@ -260,7 +262,7 @@ pub(crate) fn sketch_pairs(
             continue;
         }
         if let Some(pair) =
-            Binary64Pair::read(bytes, offset, SketchBinary64PairForm::Repeated(code))
+            Binary64Pair::read(ctx, bytes, offset, SketchBinary64PairForm::Repeated(code))?
         {
             ctx.push_vec(&mut pairs, pair, "NX binary64 pairs")?;
         }
@@ -288,6 +290,30 @@ mod tests {
     }
 
     use crate::test_support::test_bytes::shifted_f64_bytes;
+
+    #[test]
+    fn binary_pair_byte_equality_refusal_propagates() {
+        fn case<F: super::Binary64PairForm + std::fmt::Debug>(form: F) {
+            let mut bytes = form.discriminator().into_owned();
+            let width = cadmpeg_core::decode::u64_from_index(bytes.len());
+            bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+            bytes.extend(std::iter::repeat_n(0, form.separator_width()));
+            bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+            let pair = crate::test_support::with_decode_context(|ctx| super::Binary64Pair::read(ctx, &bytes, 0, form)).unwrap().unwrap();
+            assert_eq!(pair.atoms().map(|atom| atom.value().get()), [10.0, -20.0]);
+            for mismatch in [false, true] {
+                if mismatch { bytes[0] ^= 1; }
+                crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_work_units = width - 1, |ctx| {
+                    let error = super::Binary64Pair::read(ctx, &bytes, 0, form).unwrap_err();
+                    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX binary64 pair discriminator equality" && limit.additional == width && ctx.resource_refusal() == Some(limit)));
+                });
+            }
+        }
+        case(super::DatumPlanePairForm);
+        case(super::ObjectPairForm::Short);
+        case(super::ObjectPairForm::Extended);
+        case(super::SketchBinary64PairForm::Repeated(std::num::NonZeroU8::new(20).unwrap()));
+    }
 
     #[test]
     fn object_binary64_pairs_refuse_collection_limit() {

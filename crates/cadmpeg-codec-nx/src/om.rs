@@ -1515,7 +1515,7 @@ fn operation_records_with_labels_and_ordinals<'a>(
             let end = headers
                 .get(ordinal + 1)
                 .map_or(bytes.len(), |next| next.offset() - base_offset);
-            OperationRecord::new(bytes.get(start..end)?, *label).map(Ok)
+            propagate_resource!(OperationRecord::new(ctx, bytes.get(start..end)?, *label)).map(Ok)
         })().transpose()?;
         if let Some(record) = record {
             ctx.reserve_vec(&mut records, 1, "nx labeled operation records")?;
@@ -2729,7 +2729,7 @@ pub(crate) fn sketch_payload_fixed_pairs(
         let discriminator = form.discriminator();
         let separator_width = form.separator_width();
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
-            if window != discriminator {
+            if !ctx.equal_bytes(window, discriminator, "NX sketch fixed pair discriminator equality")? {
                 continue;
             }
             let first = offset + discriminator.len();
@@ -2775,7 +2775,7 @@ pub(crate) fn sketch_payload_mixed_pairs(
     let discriminator = SketchPairForm::Legacy.discriminator();
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
-        if window != discriminator {
+        if !ctx.equal_bytes(window, discriminator, "NX sketch mixed pair discriminator equality")? {
             continue;
         }
         let fixed_offset = offset + discriminator.len();
@@ -2834,7 +2834,7 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
     for form in DatumPairForm::ALL {
         let discriminator = form.discriminator();
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
-            if window != discriminator {
+            if !ctx.equal_bytes(window, discriminator, "NX datum CSYS pair discriminator equality")? {
                 continue;
             }
             let first = offset + discriminator.len();
