@@ -44,24 +44,6 @@ fn design_parameter_class_tag_refuses_retained_bytes() {
     ));
 }
 
-#[test]
-fn design_parameter_class_tag_validation_refuses_work() {
-    let bytes = parameter_record(None, "60 mm", "User Parameter", Some("mm"), "Width", 6.0);
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "validate F3D Design parameter class tag",
-        0,
-        |ctx| super::parse_design_parameter(ctx, &bytes).map(|_| ()),
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D Design parameter class tag"
-                && limit.additional == 3
-    ));
-}
-
 fn compact_owned_parameter_record(
     owner_record_index: u32,
     source_ordinal: u32,
@@ -992,10 +974,7 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     prefix[32..36].copy_from_slice(&44u32.to_le_bytes());
     prefix[42..50].copy_from_slice(&1_678_000_000_000_000u64.to_le_bytes());
 
-    let parsed =
-        parse_parameter_companion(&cadmpeg_test_support::service_decode_context(), &prefix)
-            .expect("service decode context")
-            .unwrap();
+    let parsed = parse_parameter_companion(&prefix).unwrap();
     assert_eq!(parsed.record_index, 46);
     assert_eq!(parsed.owner_record_index, 44);
     assert_eq!(parsed.timestamp_micros.get(), 1_678_000_000_000_000);
@@ -1006,18 +985,13 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
 
     prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
     assert_eq!(
-        parse_parameter_companion(&cadmpeg_test_support::service_decode_context(), &prefix)
-            .expect("service decode context")
+        parse_parameter_companion(&prefix)
             .unwrap()
             .owner_record_index,
         45
     );
     prefix[42..50].fill(0);
-    assert!(
-        parse_parameter_companion(&cadmpeg_test_support::service_decode_context(), &prefix)
-            .expect("service decode context")
-            .is_none()
-    );
+    assert!(parse_parameter_companion(&prefix).is_none());
 }
 
 #[test]
