@@ -73,7 +73,7 @@ pub(super) fn project_filled_surface(
     let continuity = feature
         .properties
         .get("Continuity")
-        .and_then(|value| crate::feature_schema::parse_surface_continuity(value));
+        .map(|value| crate::feature_schema::parse_surface_continuity(ctx, value)).transpose()?.flatten();
     Ok(FeatureDefinition::Operation(
         FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(
@@ -132,7 +132,7 @@ pub(super) fn project_trim_surface(
             keep: feature
                 .properties
                 .get("Keep")
-                .and_then(|value| crate::feature_schema::parse_trim_region(value))
+                .map(|value| crate::feature_schema::parse_trim_region(ctx, value)).transpose()?.flatten()
                 .unwrap_or(TrimRegion::Unresolved),
         },
     ))
@@ -158,7 +158,7 @@ pub(super) fn project_extend_surface(
             method: feature
                 .properties
                 .get("Method")
-                .and_then(|value| crate::feature_schema::parse_surface_extension(value))
+                .map(|value| crate::feature_schema::parse_surface_extension(ctx, value)).transpose()?.flatten()
                 .unwrap_or(SurfaceExtension::Unresolved),
         },
     ))

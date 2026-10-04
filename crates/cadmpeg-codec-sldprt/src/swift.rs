@@ -48,7 +48,7 @@ impl ObjectSection {
         entities: Vec<Entity>,
     ) -> Result<Option<Self>, CodecError> {
         let mut ids = std::collections::HashSet::new();
-        for reference in &references {
+        for reference in ctx.admit_iter(&references, "scan SLDPRT new values")? {
             let work = u64_from_index(reference.id.len())
                 .checked_mul(2)
                 .ok_or_else(|| {
@@ -74,7 +74,7 @@ impl ObjectSection {
         if entities.len() > references.len() {
             return Ok(None);
         }
-        for (reference, entity) in references.iter().zip(&entities) {
+        for (reference, entity) in ctx.admit_iter(&references, "scan SWIFT object references")?.zip(ctx.admit_iter(&entities, "scan SWIFT object entities")?) {
             let work = reference
                 .class
                 .len()
@@ -153,8 +153,7 @@ impl TopologyIdentityIndex {
             vertices,
         } = topology;
         let mut index = Self::default();
-        for body in bodies {
-            ctx.charge_work(1, "index SWIFT body identities")?;
+        for body in ctx.admit_iter(bodies, "index SWIFT body identities")? {
             index.insert_primary_id(
                 ctx,
                 body.id.as_str(),
@@ -163,8 +162,7 @@ impl TopologyIdentityIndex {
                 },
             )?;
         }
-        for edge in edges {
-            ctx.charge_work(1, "index SWIFT edge identities")?;
+        for edge in ctx.admit_iter(edges, "index SWIFT edge identities")? {
             index.insert_primary_id(
                 ctx,
                 edge.id.as_str(),
@@ -173,8 +171,7 @@ impl TopologyIdentityIndex {
                 },
             )?;
         }
-        for vertex in vertices {
-            ctx.charge_work(1, "index SWIFT vertex identities")?;
+        for vertex in ctx.admit_iter(vertices, "index SWIFT vertex identities")? {
             index.insert_primary_id(
                 ctx,
                 vertex.id.as_str(),
@@ -185,11 +182,8 @@ impl TopologyIdentityIndex {
         }
         for &(sequence, attr) in face_bridge_sequences {
             ctx.charge_work(1, "index SWIFT face sequence")?;
-            ctx.charge_work(
-                u64_from_index(faces.len()),
-                "scan SWIFT face attribute identities",
-            )?;
-            let target = face_id_for_attribute(faces, attr)
+
+            let target = face_id_for_attribute(ctx, faces, attr)?
                 .map(|face| {
                     copy_topology_id(ctx, face.as_str()).map(|face| PmiTarget::Face { face })
                 })
@@ -198,11 +192,8 @@ impl TopologyIdentityIndex {
         }
         for &(sequence, attr) in edge_use_sequences {
             ctx.charge_work(1, "index SWIFT edge sequence")?;
-            ctx.charge_work(
-                u64_from_index(edges.len()),
-                "scan SWIFT edge attribute identities",
-            )?;
-            let target = edge_id_for_attribute(edges, attr)
+
+            let target = edge_id_for_attribute(ctx, edges, attr)?
                 .map(|edge| {
                     copy_topology_id(ctx, edge.as_str()).map(|edge| PmiTarget::Edge { edge })
                 })
@@ -211,11 +202,8 @@ impl TopologyIdentityIndex {
         }
         for &(sequence, attr) in vertex_use_sequences {
             ctx.charge_work(1, "index SWIFT vertex sequence")?;
-            ctx.charge_work(
-                u64_from_index(vertices.len()),
-                "scan SWIFT vertex attribute identities",
-            )?;
-            let target = vertex_id_for_attribute(vertices, attr)
+
+            let target = vertex_id_for_attribute(ctx, vertices, attr)?
                 .map(|vertex| {
                     copy_topology_id(ctx, vertex.as_str())
                         .map(|vertex| PmiTarget::Vertex { vertex })
@@ -286,23 +274,23 @@ impl TopologyIdentityIndex {
     }
 }
 
-fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<&FaceId> {
+fn face_id_for_attribute<'a>(ctx: &DecodeContext<'_>, faces: &'a [Face], attr: u16) -> Result<Option<&'a FaceId>, CodecError> {
     let prefix = format!("sldprt:brep:face#{attr}");
-    unique_id_for_attribute(faces.iter().map(|face| &face.id), &prefix, FaceId::as_str)
+    Ok(unique_id_for_attribute(ctx.admit_iter(faces, "scan SWIFT face attribute identities")?.map(|face| &face.id), &prefix, FaceId::as_str))
 }
 
-fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<&EdgeId> {
+fn edge_id_for_attribute<'a>(ctx: &DecodeContext<'_>, edges: &'a [Edge], attr: u16) -> Result<Option<&'a EdgeId>, CodecError> {
     let prefix = format!("sldprt:brep:edge#{attr}");
-    unique_id_for_attribute(edges.iter().map(|edge| &edge.id), &prefix, EdgeId::as_str)
+    Ok(unique_id_for_attribute(ctx.admit_iter(edges, "scan SWIFT edge attribute identities")?.map(|edge| &edge.id), &prefix, EdgeId::as_str))
 }
 
-fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<&VertexId> {
+fn vertex_id_for_attribute<'a>(ctx: &DecodeContext<'_>, vertices: &'a [Vertex], attr: u16) -> Result<Option<&'a VertexId>, CodecError> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
-    unique_id_for_attribute(
-        vertices.iter().map(|vertex| &vertex.id),
+    Ok(unique_id_for_attribute(
+        ctx.admit_iter(vertices, "scan SWIFT vertex attribute identities")?.map(|vertex| &vertex.id),
         &prefix,
         VertexId::as_str,
-    )
+    ))
 }
 
 fn copy_topology_id<T>(ctx: &DecodeContext<'_>, id: &str) -> Result<T, CodecError>
@@ -394,16 +382,13 @@ pub(crate) fn annotations(
         pattern_hole_nominals,
     )?
     .annotations;
-    for (reference, entity) in root
-        .annotations
-        .references
-        .iter()
-        .zip(&root.annotations.entities)
+    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+        .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
         let Some(prefix) = pmi_id_charged(ctx, &reference.id)?.map(PmiId::into_string) else {
             continue;
         };
-        for annotation in projected.iter().filter(|annotation| {
+        for annotation in ctx.admit_iter(&projected, "scan SLDPRT annotations values")?.filter(|annotation| {
             annotation.id.as_str() == prefix
                 || annotation
                     .id
@@ -442,11 +427,12 @@ pub(crate) fn pattern_hole_nominal_context(
         let Some(name) = pattern.name.as_deref() else {
             continue;
         };
-        let Some(suffix) = name.strip_prefix("LPattern").filter(|suffix| {
-            !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
-        }) else {
+        let Some(suffix) = name.strip_prefix("LPattern") else {
             continue;
         };
+        if suffix.is_empty() || !ctx.admit_iter(suffix, "scan SLDPRT pattern name digits")?.all(|character| character.is_ascii_digit()) {
+            continue;
+        }
         if !pattern
             .native_ref
             .as_deref()
@@ -485,9 +471,7 @@ pub(crate) fn pattern_hole_nominal_context(
                 u64_from_index(candidate.dependencies.len()),
                 "swift pattern hole dependencies",
             )?;
-            if !candidate
-                .dependencies
-                .iter()
+            if !ctx.admit_iter(candidate.dependencies.as_slice(), "scan SLDPRT pattern_hole_nominal_context values")?
                 .any(|dependency| dependency == seed)
                 || !candidate
                     .native_ref
@@ -542,7 +526,7 @@ pub(crate) fn unsupported_annotation_classes(
 ) -> Result<BTreeMap<String, usize>, CodecError> {
     let Some((_, root, rendered)) = scan_root(ctx, scan)? else {
         let mut classes = BTreeMap::new();
-        if has_root_marker(scan) {
+        if has_root_marker(ctx, scan)? {
             let key = ctx.format_retained(
                 format_args!("GdtAnalysisGraphUnresolved"),
                 "retain SLDPRT unsupported SWIFT class",
@@ -576,16 +560,14 @@ pub(crate) fn unsupported_annotation_classes(
     Ok(project_with_topology(ctx, &root, None, &rendered, None)?.unsupported)
 }
 
-fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
-    scan.sections().any(|section| {
+fn has_root_marker(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
+    Ok(scan.sections(ctx)?.try_fold(false, |found, section| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
         section
             .name()
             .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
-            && section
-                .payload()
-                .windows(ROOT_CLASS.len())
+            && ctx.admit_iter(section.payload(), "scan SWIFT root class marker")?.windows(std::num::NonZeroUsize::new(ROOT_CLASS.len()).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
                 .any(|window| window == ROOT_CLASS.as_bytes())
-    })
+    } )) })?)
 }
 
 fn scan_root(
@@ -593,7 +575,7 @@ fn scan_root(
     scan: &ContainerScan<'_>,
 ) -> Result<Option<(cadmpeg_ir::StreamName, Entity, Vec<RenderedDimension>)>, CodecError> {
     let mut root = None;
-    for section in scan.sections().filter(|section| {
+    for section in scan.sections(ctx)?.filter(|section| {
         section
             .name()
             .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
@@ -1112,13 +1094,9 @@ fn project_with_topology(
     }
     let feature_index = feature_index(ctx, root)?;
     let mut datum_ids = BTreeMap::new();
-    for (reference, entity) in root
-        .annotations
-        .references
-        .iter()
-        .zip(&root.annotations.entities)
+    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+        .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
-        ctx.charge_work(1, "scan SWIFT datum annotations")?;
         if !(short_class(&entity.class) == "GdtDatum"
             && !suppressed(entity)
             && entity
@@ -1140,13 +1118,9 @@ fn project_with_topology(
     }
     let mut projected = Vec::new();
     let mut unsupported = BTreeMap::new();
-    for (reference, entity) in root
-        .annotations
-        .references
-        .iter()
-        .zip(&root.annotations.entities)
+    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+        .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
-        ctx.charge_work(1, "project SWIFT datum annotations")?;
         if short_class(&entity.class) != "GdtDatum" {
             continue;
         }
@@ -1165,13 +1139,9 @@ fn project_with_topology(
         };
         record_projection(ctx, &mut unsupported, reference, entity, disposition)?;
     }
-    for (reference, entity) in root
-        .annotations
-        .references
-        .iter()
-        .zip(&root.annotations.entities)
+    for (reference, entity) in ctx.admit_iter(&root.annotations.references, "scan SWIFT annotation references")?
+        .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
     {
-        ctx.charge_work(1, "project SWIFT semantic annotations")?;
         if short_class(&entity.class) == "GdtDatum" {
             continue;
         }
@@ -1210,7 +1180,7 @@ fn project_with_topology(
                 u64_from_index(projected.len()),
                 "match SWIFT datum-system references",
             )?;
-            let existing_system = projected.iter().find(|annotation| {
+            let existing_system = ctx.admit_iter(&projected[..], "scan SLDPRT project_with_topology values")?.find(|annotation| {
                 matches!(&annotation.definition, PmiDefinition::DatumSystem { references }
                     if *references == tolerance.references)
             });
@@ -1520,13 +1490,13 @@ fn implicit_dimension_nominal(
             directional_distance(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtCounterBore" => {
-            counterbore_from_direct_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+            counterbore_from_direct_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtCounterSinkDiameter" => {
-            countersink_diameter_from_direct_geometry(entity, feature_index)
+            countersink_diameter_from_direct_geometry(ctx, entity, feature_index)?
                 .map(ImplicitNominal::Exact)
         }
-        "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(entity, feature_index)
+        "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(ctx, entity, feature_index)?
             .map(ImplicitNominal::Exact),
         _ => None,
     };
@@ -1541,7 +1511,7 @@ fn implicit_dimension_nominal(
             .copied()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value <= 9)
-            .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered)),
+            .map(|decimal_places| rendered_nominal(ctx, geometry, decimal_places, kind, rendered)).transpose()?.flatten(),
         ImplicitNominal::RenderedOrExact {
             kind,
             geometry,
@@ -1552,7 +1522,7 @@ fn implicit_dimension_nominal(
             .copied()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value <= 9)
-            .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered))
+            .map(|decimal_places| rendered_nominal(ctx, geometry, decimal_places, kind, rendered)).transpose()?.flatten()
             .or(Some(FiniteReal::from(exact))),
     })
 }
@@ -1568,9 +1538,8 @@ fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    Ok(unique_diameter(
-        diameter_contributors(ctx, annotation, feature_index)?.into_iter(),
-    ))
+    let contributors = diameter_contributors(ctx, annotation, feature_index)?;
+    Ok(unique_diameter(ctx.admit_iter(&contributors, "scan SLDPRT applied hole diameters")?.copied()))
 }
 
 fn directional_distance(
@@ -1744,7 +1713,7 @@ fn feature_reaches(
                 u64::MAX,
             )
         })?;
-        for child in child_feature_ids(feature) {
+        for child in child_feature_ids(ctx, feature)? {
             if child == target
                 || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?
             {
@@ -1805,7 +1774,7 @@ fn location_projection(
                 0,
                 &mut projections,
             )?;
-            unique_measurement(projections.into_iter())
+            unique_measurement(ctx.admit_iter(&projections, "scan SLDPRT rotational projections")?.copied())
         }
         _ => None,
     })
@@ -1881,7 +1850,7 @@ fn collect_rotational_projections(
                 u64::MAX,
             )
         })?;
-        for child in child_feature_ids(feature) {
+        for child in child_feature_ids(ctx, feature)? {
             collect_rotational_projections(
                 ctx,
                 child,
@@ -2001,7 +1970,7 @@ fn hole_diameter_excluding_counterbore(
         {
             continue;
         }
-        let Some(value) = counterbore_from_direct_geometry(candidate, feature_index) else {
+        let Some(value) = counterbore_from_direct_geometry(ctx, candidate, feature_index)? else {
             continue;
         };
         if let Some(first) = counterbore_diameter {
@@ -2017,7 +1986,7 @@ fn hole_diameter_excluding_counterbore(
     };
     let contributors = diameter_contributors(ctx, annotation, feature_index)?;
     let mut removed_counterbore = false;
-    let remaining = contributors.into_iter().filter(|value| {
+    let remaining = ctx.admit_iter(&contributors, "scan SLDPRT hole diameter contributors")?.copied().filter(|value| {
         if diameters_equivalent(value.get(), counterbore_diameter.get()) {
             removed_counterbore = true;
             false
@@ -2035,7 +2004,7 @@ fn diameter_contributors(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Vec<PositiveReal>, CodecError> {
     let mut values = Vec::new();
-    for reference in &annotation.features.references {
+    for reference in ctx.admit_iter(&annotation.features.references, "scan SLDPRT diameter_contributors values")? {
         collect_diameter_contributors(
             ctx,
             &reference.id,
@@ -2085,7 +2054,7 @@ fn collect_diameter_contributors(
                 u64::MAX,
             )
         })?;
-        for child in child_feature_ids(feature) {
+        for child in child_feature_ids(ctx, feature)? {
             collect_diameter_contributors(ctx, child, feature_index, visited, next_depth, values)?;
         }
         Ok(())
@@ -2099,7 +2068,7 @@ fn depth_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
+    measurement_from_applied_geometry(ctx, annotation, |id| {
         depth_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
@@ -2115,10 +2084,10 @@ fn depth_nominal(
         .get("IsThreadDepth")
         .is_some_and(|value| *value != 0)
     {
-        return Ok(thread_depth_from_direct_geometry(annotation, feature_index)
+        return Ok(thread_depth_from_direct_geometry(ctx, annotation, feature_index)?
             .map(ImplicitNominal::Exact));
     }
-    if let Some(exact) = direct_cylinder_depth(annotation, feature_index) {
+    if let Some(exact) = direct_cylinder_depth(ctx, annotation, feature_index)? {
         return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Depth,
             geometry: exact,
@@ -2281,10 +2250,12 @@ fn plane_terminates_cylinder(plane_feature: &Entity, cylinder_feature: &Entity) 
 }
 
 fn direct_cylinder_depth(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_direct_features(
+        ctx,
         annotation,
         feature_index,
         "GdtCylinder",
@@ -2293,10 +2264,11 @@ fn direct_cylinder_depth(
 }
 
 fn thread_depth_from_direct_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
-    measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
+) -> Result<Option<PositiveReal>, CodecError> {
+    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCylinder", |feature| {
         feature
             .integers
             .get("IsThreaded")
@@ -2317,7 +2289,7 @@ fn width_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
+    measurement_from_applied_geometry(ctx, annotation, |id| {
         width_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
@@ -2327,7 +2299,7 @@ fn radius_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
+    measurement_from_applied_geometry(ctx, annotation, |id| {
         radius_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
@@ -2337,25 +2309,28 @@ fn length_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
+    measurement_from_applied_geometry(ctx, annotation, |id| {
         length_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
 fn counterbore_from_direct_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
-    measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
+) -> Result<Option<PositiveReal>, CodecError> {
+    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCylinder", |feature| {
         PositiveReal::new(nominal_radius(feature, "NomCylinder")?.get() * 2.0)
     })
 }
 
 fn countersink_diameter_from_direct_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     measurement_from_direct_features(
+        ctx,
         annotation,
         feature_index,
         "GdtCone",
@@ -2364,18 +2339,20 @@ fn countersink_diameter_from_direct_geometry(
 }
 
 fn countersink_angle_from_direct_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
-    measurement_from_direct_features(annotation, feature_index, "GdtCone", nominal_cone_angle)
+) -> Result<Option<PositiveReal>, CodecError> {
+    measurement_from_direct_features(ctx, annotation, feature_index, "GdtCone", nominal_cone_angle)
 }
 
 fn measurement_from_applied_geometry(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     mut measurement: impl FnMut(&str) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
-    for reference in &annotation.features.references {
+    for reference in ctx.admit_iter(&annotation.features.references, "scan SWIFT applied measurement features")? {
         let Some(value) = measurement(&reference.id)? else {
             continue;
         };
@@ -2391,27 +2368,26 @@ fn measurement_from_applied_geometry(
 }
 
 fn measurement_from_direct_features(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     class: &str,
     measurement: impl Fn(&Entity) -> Option<PositiveReal>,
-) -> Option<PositiveReal> {
-    let candidates = annotation
-        .features
-        .references
-        .iter()
+) -> Result<Option<PositiveReal>, CodecError> {
+    let candidates = ctx.admit_iter(&annotation.features.references, "scan SWIFT direct measurement features")?
         .filter_map(|reference| feature_index.get(reference.id.as_str()).copied())
         .filter(|feature| short_class(&feature.class) == class)
         .filter_map(measurement);
-    unique_measurement(candidates)
+    Ok(unique_measurement(candidates))
 }
 
 fn rendered_nominal(
+    ctx: &DecodeContext<'_>,
     raw_mm: PositiveReal,
     decimal_places: u32,
     kind: RenderedDimensionKind,
     rendered_dimensions: &[RenderedDimension],
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, CodecError> {
     const LENGTH_SCALES_MM: &[f64] = &[
         EPS_SWIFT_RENDERED_NOMINAL_E7,
         EPS_SWIFT_RENDERED_NOMINAL_E6,
@@ -2423,18 +2399,17 @@ fn rendered_nominal(
         304.8,
         1000.0,
     ];
-    let exponent = i32::try_from(decimal_places).ok()?;
+    let Ok(exponent) = i32::try_from(decimal_places) else { return Ok(None); };
     let precision = 10.0_f64.powi(exponent);
     let mut candidate: Option<FiniteReal> = None;
     let mut ambiguous = false;
-    for scale in LENGTH_SCALES_MM {
+    for scale in ctx.admit_iter(LENGTH_SCALES_MM, "scan SWIFT rendered unit scales")? {
         let rendered = (raw_mm.get() / scale * precision).round() / precision;
-        for value in rendered_dimensions
-            .iter()
+        for value in ctx.admit_iter(rendered_dimensions, "scan SWIFT rendered dimension values")?
             .filter(|value| value.kind == kind && value.decimal_places == decimal_places)
         {
             if approximately_equal(value.value.get(), rendered) {
-                let measured = FiniteReal::new(value.value.get() * scale)?;
+                let Some(measured) = FiniteReal::new(value.value.get() * scale) else { return Ok(None); };
                 if let Some(first) = candidate {
                     ambiguous |= !approximately_equal(measured.get(), first.get());
                 } else {
@@ -2443,11 +2418,7 @@ fn rendered_nominal(
             }
         }
     }
-    if ambiguous {
-        None
-    } else {
-        candidate
-    }
+    Ok(if ambiguous { None } else { candidate })
 }
 
 fn rendered_dimensions(
@@ -2549,15 +2520,15 @@ fn rendered_dimension_literals(
         let mut remainder = text;
         while let Some((_, tail)) = remainder.split_once(token) {
             let literal = tail.trim_start();
-            let end = literal
-                .bytes()
+            let end = ctx.admit_iter(literal.as_bytes(), "scan SWIFT rendered literal bytes")?
+                .copied()
                 .position(|byte| !byte.is_ascii_digit() && !matches!(byte, b'.' | b'+' | b'-'))
                 .unwrap_or(literal.len());
             let literal = literal.get(..end).unwrap_or_default();
             if let Some((_, fractional)) = literal.split_once('.') {
                 let parsed = literal.parse::<f64>().ok();
                 let places = u32::try_from(fractional.len()).ok();
-                if !fractional.is_empty() && fractional.bytes().all(|byte| byte.is_ascii_digit()) {
+                if !fractional.is_empty() && ctx.admit_iter(fractional.as_bytes(), "scan SWIFT rendered fraction bytes")?.all(|byte| byte.is_ascii_digit()) {
                     if let (Some(value), Some(decimal_places)) = (parsed, places) {
                         if let Some(value) = PositiveReal::new(value) {
                             ctx.reserve_vec(
@@ -2692,7 +2663,7 @@ fn measurement_for_feature(
             )
         })?;
         let mut first: Option<PositiveReal> = None;
-        for child in child_feature_ids(feature) {
+        for child in child_feature_ids(ctx, feature)? {
             let Some(value) = measurement_for_feature(
                 ctx,
                 child,
@@ -2718,13 +2689,10 @@ fn measurement_for_feature(
     result
 }
 
-fn child_feature_ids(feature: &Entity) -> impl Iterator<Item = &str> {
-    feature
-        .features
-        .references
-        .iter()
+fn child_feature_ids<'a>(ctx: &DecodeContext<'_>, feature: &'a Entity) -> Result<impl Iterator<Item = &'a str> + 'a, CodecError> {
+    Ok(ctx.admit_iter(&feature.features.references, "scan SWIFT child feature references")?
         .map(|reference| reference.id.as_str())
-        .chain(direct_subfeature_ids(feature).into_iter().flatten())
+        .chain(direct_subfeature_ids(ctx, feature)?.into_iter().flatten()))
 }
 
 fn nominal_radius(feature: &Entity, name: &str) -> Option<PositiveReal> {
@@ -2880,23 +2848,12 @@ fn datum_references(
         let Some(collection) = unique_related(entity, name) else {
             continue;
         };
-        ctx.charge_work(
-            u64_from_index(collection.entity.related.len()),
-            "count SWIFT applied datums",
-        )?;
-        let applied_count = collection
-            .entity
-            .related
-            .iter()
+        let applied_count = ctx.admit_iter(&collection.entity.related[..], "scan SLDPRT datum_references values")?
             .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
             .count();
-        for datum in collection
-            .entity
-            .related
-            .iter()
+        for datum in ctx.admit_iter(&collection.entity.related, "project SWIFT datum references")?
             .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
         {
-            ctx.charge_work(1, "project SWIFT datum references")?;
             let [reference] = datum.entity.annotations.references.as_slice() else {
                 continue;
             };
@@ -2949,7 +2906,7 @@ fn targets(
 ) -> Result<Option<Vec<PmiTarget>>, CodecError> {
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
-    for reference in &entity.features.references {
+    for reference in ctx.admit_iter(&entity.features.references, "scan SLDPRT targets values")? {
         let valid =
             visit_expanded_feature_ids(ctx, &reference.id, feature_index, 0, &mut |source_id| {
                 if !ctx.insert_btree_set(
@@ -2959,8 +2916,7 @@ fn targets(
                 )? {
                     return Ok(true);
                 }
-                if !source_id
-                    .chars()
+                if !ctx.admit_iter(source_id, "scan SWIFT target source characters")?
                     .any(|character| !character.is_whitespace())
                 {
                     return Ok(false);
@@ -3061,13 +3017,13 @@ fn visit_cad_identifiers(
             visit(identifier)?;
         }
     }
-    for child in &entity.features.entities {
+    for child in ctx.admit_iter(&entity.features.entities, "scan SLDPRT visit_cad_identifiers values")? {
         visit_cad_identifiers(ctx, child, visit)?;
     }
-    for child in &entity.annotations.entities {
+    for child in ctx.admit_iter(&entity.annotations.entities, "scan SLDPRT visit_cad_identifiers values")? {
         visit_cad_identifiers(ctx, child, visit)?;
     }
-    for related in &entity.related {
+    for related in ctx.admit_iter(&entity.related, "scan SLDPRT visit_cad_identifiers values")? {
         visit_cad_identifiers(ctx, &related.entity, visit)?;
     }
     Ok(())
@@ -3089,7 +3045,7 @@ fn visit_expanded_feature_ids<'a>(
         return visit(id);
     }
     admit_swift_depth(ctx, depth, "expand SWIFT target features")?;
-    let Some(subfeatures) = direct_subfeature_ids(feature) else {
+    let Some(subfeatures) = direct_subfeature_ids(ctx, feature)? else {
         return visit(id);
     };
     for subfeature in subfeatures {
@@ -3107,27 +3063,27 @@ fn visit_expanded_feature_ids<'a>(
     Ok(true)
 }
 
-fn direct_subfeature_ids(feature: &Entity) -> Option<impl Iterator<Item = &str>> {
-    let collection = unique_related(feature, "SubFeatures")?;
+fn direct_subfeature_ids<'a>(ctx: &DecodeContext<'_>, feature: &'a Entity) -> Result<Option<impl Iterator<Item = &'a str> + 'a>, CodecError> {
+    let Some(collection) = unique_related(feature, "SubFeatures") else { return Ok(None); };
     if collection.entity.related.is_empty() {
-        return None;
+        return Ok(None);
     }
-    for applied in &collection.entity.related {
+    for applied in ctx.admit_iter(&collection.entity.related, "validate SWIFT direct subfeatures")? {
         if !applied.class.ends_with(".GdtAppliedFeature") {
-            return None;
+            return Ok(None);
         }
         let [_] = applied.entity.features.references.as_slice() else {
-            return None;
+            return Ok(None);
         };
     }
-    Some(collection.entity.related.iter().filter_map(|applied| {
+    Ok(Some(ctx.admit_iter(&collection.entity.related, "scan SWIFT direct subfeatures")?.filter_map(|applied| {
         applied
             .entity
             .features
             .references
             .first()
             .map(|reference| reference.id.as_str())
-    }))
+    })))
 }
 
 fn tolerance_modifiers(entity: &Entity) -> Vec<String> {

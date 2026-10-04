@@ -236,54 +236,54 @@ fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
     Some(candidates)
 }
 
-fn parse_carrier_at_marker(
+fn parse_carrier_at_marker(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     body: &[u8],
     off: usize,
     tt: u8,
     attr: u16,
     n: usize,
     marker_at: usize,
-) -> Option<Carrier> {
-    let values_at = marker_at.checked_add(1)?;
-    let end = values_at.checked_add(n.checked_mul(8)?)?;
+) -> Result<Option<Carrier>, cadmpeg_core::CodecError> {
+    let values_at = match marker_at.checked_add(1) { Some(value) => value, None => return Ok(None) };
+    let end = match values_at.checked_add(match n.checked_mul(8) { Some(value) => value, None => return Ok(None) }) { Some(value) => value, None => return Ok(None) };
     let mut view = View::over_retained(body);
-    view.seek(values_at)?;
+    match view.seek(values_at) { Some(value) => value, None => return Ok(None) };
     let mut storage = [0_f64; 12];
-    let vals = storage.get_mut(..n)?;
+    let vals = match storage.get_mut(..n) { Some(value) => value, None => return Ok(None) };
     for value in vals.iter_mut() {
-        *value = view.f64_be()?;
+        *value = match view.f64_be() { Some(value) => value, None => return Ok(None) };
     }
-    if vals.iter().any(|value| !value.is_finite()) {
-        return None;
+    if ctx.admit_iter(&*vals, "scan SLDPRT analytic carrier scalar finiteness")?.any(|value| !value.is_finite()) {
+        return Ok(None);
     }
     if !valid_carrier_frame(tt, vals) || !valid_carrier_scalars(tt, vals) {
-        return None;
+        return Ok(None);
     }
 
-    decode_carrier_values(tt, vals, attr, off, end)
+    Ok(decode_carrier_values(tt, vals, attr, off, end))
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
 /// `off`. The partition and deltas framings are both considered, and a carrier
 /// is returned only when exactly one framing passes all structural and geometry
 /// invariants.
-pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
+pub(crate) fn parse_carrier(ctx: &cadmpeg_core::decode::DecodeContext<'_>, body: &[u8], off: usize) -> Result<Option<Carrier>, cadmpeg_core::CodecError> {
     if body.get(off) != Some(&0x00) {
-        return None;
+        return Ok(None);
     }
-    let tt = *body.get(off.checked_add(1)?)?;
-    let n = analytic_value_count(tt)?;
+    let tt = *match body.get(match off.checked_add(1) { Some(value) => value, None => return Ok(None) }) { Some(value) => value, None => return Ok(None) };
+    let n = match analytic_value_count(tt) { Some(value) => value, None => return Ok(None) };
 
     // The optional 0xff after the tag shifts the fixed header by one byte.
-    let tag_end = off.checked_add(2)?;
+    let tag_end = match off.checked_add(2) { Some(value) => value, None => return Ok(None) };
     let has_ff = body.get(tag_end) == Some(&0xff);
-    let hdr = tag_end.checked_add(usize::from(has_ff))?;
-    let attr = View::u16_be_at(body, hdr)?;
-    let mut candidates = analytic_marker_candidates(body, hdr)?
+    let hdr = match tag_end.checked_add(usize::from(has_ff)) { Some(value) => value, None => return Ok(None) };
+    let attr = match View::u16_be_at(body, hdr) { Some(value) => value, None => return Ok(None) };
+    let mut candidates = match analytic_marker_candidates(body, hdr) { Some(value) => value, None => return Ok(None) }
         .into_iter()
-        .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
-    let carrier = candidates.next()?;
-    candidates.next().is_none().then_some(carrier)
+        .filter_map(|marker_at| parse_carrier_at_marker(ctx, body, off, tt, attr, n, marker_at).transpose());
+    let Some(carrier) = candidates.next().transpose()? else { return Ok(None); };
+    Ok(candidates.next().transpose()?.is_none().then_some(carrier))
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
@@ -523,7 +523,7 @@ mod tests {
             ),
         ] {
             let bytes = compact_carrier(kind, 7, &values);
-            let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).unwrap() else {
+            let Carrier::Surface(carrier) = parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().unwrap() else {
                 panic!("expected surface carrier");
             };
             let frame = match carrier.geometry.solved() {
@@ -584,7 +584,7 @@ mod tests {
             );
 
             let Carrier::Curve(carrier) =
-                parse_carrier(&bytes, 0).expect("tripled compact carrier")
+                parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().expect("tripled compact carrier")
             else {
                 panic!("expected curve carrier");
             };
@@ -610,7 +610,7 @@ mod tests {
                 0.0, 0.0, 0.0067, 0.0, 0.0, -1.0, 0.0015, root_half, root_half, -1.0, 0.0, 0.0,
             ],
         );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
+        let Carrier::Surface(carrier) = parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().expect("required invariant")
         else {
             panic!("expected surface carrier");
         };
@@ -640,7 +640,7 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0002, -1.0, 0.0, 0.0,
             ],
         );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
+        let Carrier::Surface(carrier) = parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().expect("required invariant")
         else {
             panic!("expected surface carrier");
         };
@@ -668,7 +668,7 @@ mod tests {
             &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.002],
         );
 
-        assert!(parse_carrier(&bytes, 0).is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().is_none());
     }
 
     #[test]
@@ -684,8 +684,8 @@ mod tests {
             &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0],
         );
 
-        assert!(parse_carrier(&ellipse, 0).is_none());
-        assert!(parse_carrier(&torus, 0).is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &ellipse, 0).unwrap().is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &torus, 0).unwrap().is_none());
     }
 
     #[test]
@@ -697,7 +697,7 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0044, -1.0, 0.0, 0.0,
             ],
         );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("spindle torus") else {
+        let Carrier::Surface(carrier) = parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().expect("spindle torus") else {
             panic!("expected surface carrier");
         };
         let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
@@ -718,7 +718,7 @@ mod tests {
                 0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
             ],
         );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("signed-major torus")
+        let Carrier::Surface(carrier) = parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().expect("signed-major torus")
         else {
             panic!("expected surface carrier");
         };
@@ -782,7 +782,7 @@ mod tests {
         for (tag, values) in cases {
             let bytes = compact_carrier(tag, 9, &values);
             assert!(
-                parse_carrier(&bytes, 0).is_none(),
+                parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().is_none(),
                 "accepted tag {tag:#04x}"
             );
         }
@@ -799,7 +799,7 @@ mod tests {
             &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 2.0, 1.0, 1.0, 0.0, 0.0],
         );
 
-        assert!(parse_carrier(&bytes, 0).is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().is_none());
     }
 
     /// A stored cone sine inside the unit interval is its own arcsine.
@@ -810,7 +810,7 @@ mod tests {
             8,
             &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.6, 0.8, 1.0, 0.0, 0.0],
         );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("required invariant")
+        let Carrier::Surface(carrier) = parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().expect("required invariant")
         else {
             panic!("expected surface carrier");
         };
@@ -831,7 +831,7 @@ mod tests {
                 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, sine, 1.0e-8, 1.0, 0.0, 0.0,
             ],
         );
-        assert!(parse_carrier(&bytes, 0).is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().is_none());
     }
 
     #[test]
@@ -844,7 +844,7 @@ mod tests {
                 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0,
             ],
         );
-        assert!(parse_carrier(&bytes, 0).is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().is_none());
     }
 
     #[test]
@@ -855,7 +855,7 @@ mod tests {
             &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.5, 0.5, 1.0, 0.0, 0.0],
         );
 
-        assert!(parse_carrier(&bytes, 0).is_none());
+        assert!(parse_carrier(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap().is_none());
     }
 }
 

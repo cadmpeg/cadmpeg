@@ -293,23 +293,15 @@ pub(in crate::history) fn sync_neutral_features(
             is_custom_property(feature) || desired_record_ids.contains(&feature.id)
         });
     }
-    let principal_planes_by_record = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| {
-            let by_source = history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature.source_id?, feature)))
-                .collect::<HashMap<_, _>>();
-            history.features.iter().filter_map(move |feature| {
-                Some((
-                    feature.id.clone(),
-                    principal_plane_in_history(feature, &by_source, &history.features)?,
-                ))
-            })
-        })
-        .collect::<HashMap<_, _>>();
+    let mut principal_planes_by_record = HashMap::new();
+    for history in &native.feature_histories {
+        let by_source = history.features.iter().filter_map(|feature| Some((feature.source_id?, feature))).collect::<HashMap<_, _>>();
+        for feature in &history.features {
+            if let Some(plane) = principal_plane_in_history(&ctx, feature, &by_source, &history.features)? {
+                principal_planes_by_record.insert(feature.id.clone(), plane);
+            }
+        }
+    }
     let record_sources = native
         .feature_histories
         .iter()
@@ -320,18 +312,14 @@ pub(in crate::history) fn sync_neutral_features(
                 .map(|source| (feature.id.clone(), String::from(source)))
         })
         .collect::<HashMap<_, _>>();
-    let retained_tree_node_roles = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| {
-            history.features.iter().filter_map(|feature| {
-                Some((
-                    feature.id.clone(),
-                    feature_tree_node_role(feature, &history.features)?,
-                ))
-            })
-        })
-        .collect::<HashMap<_, _>>();
+    let mut retained_tree_node_roles = HashMap::new();
+    for history in &native.feature_histories {
+        for feature in &history.features {
+            if let Some(role) = feature_tree_node_role(&ctx, feature, &history.features)? {
+                retained_tree_node_roles.insert(feature.id.clone(), role);
+            }
+        }
+    }
     let feature_sources = features
         .iter()
         .filter_map(|feature| {
@@ -360,7 +348,7 @@ pub(in crate::history) fn sync_neutral_features(
         if feature
             .source_tag
             .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
+            .map(|tag| valid_xml_name(&ctx, tag).map(|valid| !valid)).transpose()?.unwrap_or(false)
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} has an invalid source tag",
@@ -386,6 +374,7 @@ pub(in crate::history) fn sync_neutral_features(
             mut parameters,
             mut properties,
         } = NeutralFeatureEncoder {
+            ctx: &ctx,
             feature,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,
@@ -398,12 +387,12 @@ pub(in crate::history) fn sync_neutral_features(
         }
         .encode()?;
         if let Some(record) = existing.as_deref() {
-            restore_equivalent_parameter_expressions(
+            restore_equivalent_parameter_expressions(&ctx, 
                 record,
                 &original_parameters,
                 &evaluated_parameters,
                 &mut parameters,
-            );
+            )?;
         }
         if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
@@ -465,7 +454,7 @@ pub(in crate::history) fn sync_neutral_features(
             history.features.push(Feature {
                 id: record_ids[&feature.id].clone(),
                 parent: history.id.clone(),
-                xml_tag: feature_xml_tag(feature),
+                xml_tag: feature_xml_tag(&ctx, feature)?,
                 tree_parent,
                 source_id: generated_sources.get(&feature.id).copied(),
                 ordinal,

@@ -143,7 +143,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         vec![(3, vec![body.clone()])],
     )
     .unwrap();
-    mark_active_configuration(&mut ir);
+    mark_active_configuration(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
@@ -203,7 +203,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         Vec::new(),
     )
     .unwrap();
-    mark_active_configuration(&mut ir);
+    mark_active_configuration(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));

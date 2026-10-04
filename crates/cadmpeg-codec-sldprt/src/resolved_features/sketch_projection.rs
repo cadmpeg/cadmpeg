@@ -85,7 +85,7 @@ pub(crate) fn sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
-    for source in scan.sections() {
+    for source in scan.sections(ctx)? {
         let Some(section) = source.name() else {
             continue;
         };

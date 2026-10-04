@@ -192,7 +192,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
             .collect::<Vec<_>>(),
         ["Width"]
     );
-    assert!(!tokens.iter().any(definite_parameter_reference));
+    assert!(!tokens.iter().any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 
     let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
         .unwrap()
@@ -204,7 +204,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
             .collect::<Vec<_>>(),
         ["D1@Sketch1"]
     );
-    assert!(named.iter().all(definite_parameter_reference));
+    assert!(named.iter().all(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 }
 
 #[test]

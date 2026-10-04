@@ -525,6 +525,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
 fn conflicting_rendered_units_do_not_resolve_a_nominal() {
     assert_eq!(
         rendered_nominal(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::scalar::PositiveReal::new(5.0).unwrap(),
             1,
             RenderedDimensionKind::Diameter,
@@ -540,7 +541,7 @@ fn conflicting_rendered_units_do_not_resolve_a_nominal() {
                     decimal_places: 1,
                 },
             ],
-        ),
+        ).unwrap(),
         None
     );
 }

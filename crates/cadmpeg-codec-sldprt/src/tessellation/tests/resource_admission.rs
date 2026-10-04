@@ -92,7 +92,8 @@ fn display_class_discovery_refuses_both_source_scans() {
         (vec![0; 64], 0, "scan SLDPRT display class declarations"),
         (
             [super::super::CLASS_MARKER, &[1, 0], b"x", &[0; 64]].concat(),
-            72,
+            // 71 payload bytes, one class-name validation byte and one copied byte.
+            73,
             "scan SLDPRT display class sources",
         ),
     ] {
@@ -236,7 +237,8 @@ fn planar_mesh_hole_triangles_refuse_work_before_overlap() {
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 31;
+    // Three projections, one constraint, three points, three holes, eighteen boundary visits, one triangle and one hole.
+    policy.limits.max_work_units = 30;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(trim.contains_mesh(&ctx, &mesh, cadmpeg_ir::transform::Transform::identity(), super::EPS_DISPLAY_QUANTIZATION), Err(CodecError::ResourceLimit(limit)) if limit.operation == "test SLDPRT planar trim triangles")

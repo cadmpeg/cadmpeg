@@ -314,14 +314,19 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             native_features
                 .values()
                 .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
-                .filter(|(_, feature)| {
-                    !history_features
-                        .get(feature.parent.as_str())
-                        .is_some_and(|features| {
-                            crate::history::classify::is_history_metadata_record(feature, features)
-                        })
+                .filter_map(|(name, feature)| {
+                    let metadata = match history_features.get(feature.parent.as_str()) {
+                        Some(features) => crate::history::classify::is_history_metadata_record(ctx, feature, features),
+                        None => Ok(false),
+                    };
+                    match metadata {
+                        Ok(true) => None,
+                        Ok(false) => Some(Ok((name, feature))),
+                        Err(error) => Some(Err(error)),
+                    }
                 })
-                .enumerate(),
+                .enumerate()
+                .map(|(index, object)| object.map(|object| (index, object))),
         )?;
         ctx.sort_unstable_by_key(
             &mut objects,
@@ -958,10 +963,11 @@ fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Co
 
 fn collect_component_vec<T>(
     ctx: &DecodeContext<'_>,
-    items: impl Iterator<Item = T>,
+    items: impl Iterator<Item = Result<T, CodecError>>,
 ) -> Result<Vec<T>, CodecError> {
     let mut values = Vec::new();
     for item in items {
+        let item = item?;
         ctx.charge_work(1, "collect SLDPRT adjacent profile objects")?;
         ctx.reserve_vec(&mut values, 1, "collect SLDPRT adjacent profile objects")?;
         values.push(item);

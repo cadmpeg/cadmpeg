@@ -49,7 +49,7 @@ pub(super) fn feature_intervals(
     for history in histories {
         for feature in &history.features {
             ctx.charge_work(1, "scan SLDPRT feature intervals")?;
-            if is_history_metadata_record(feature, &history.features) {
+            if is_history_metadata_record(ctx, feature, &history.features)? {
                 continue;
             }
             if let Some(name) = feature_object_name(feature, lane) {

@@ -682,21 +682,21 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         ],
     };
     assert_eq!(
-        face.feature_source_id().map(FeatureSourceId::value),
+        face.feature_source_id(&cadmpeg_test_support::service_decode_context()).unwrap().map(FeatureSourceId::value),
         Some(7)
     );
     let expected = persistent_identity(7, 3, &[]);
-    assert_eq!(face.persistent_surface_identity(), Some(&expected));
+    assert_eq!(face.persistent_surface_identity(&cadmpeg_test_support::service_decode_context()).unwrap(), Some(&expected));
 
     let mut conflicting = face;
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
         identity.local_id = 4;
     }
     assert_eq!(
-        conflicting.feature_source_id().map(FeatureSourceId::value),
+        conflicting.feature_source_id(&cadmpeg_test_support::service_decode_context()).unwrap().map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(conflicting.persistent_surface_identity(), None);
+    assert_eq!(conflicting.persistent_surface_identity(&cadmpeg_test_support::service_decode_context()).unwrap(), None);
 }
 
 #[test]
@@ -1666,6 +1666,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
 
 #[test]
 fn mixed_planar_holes_reject_overlap() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let polygon = vec![
         Point2::new(-2.0, -2.0),
         Point2::new(2.0, -2.0),
@@ -1673,21 +1674,23 @@ fn mixed_planar_holes_reject_overlap() {
         Point2::new(-2.0, 2.0),
     ];
     assert!(circle_overlaps_polygon(
+        &ctx,
         CircularHole {
             center: Point2::new(0.0, 0.0),
             radius: 1.0,
         },
         &polygon,
         EPS_DISPLAY_QUANTIZATION
-    ));
+    ).unwrap());
     assert!(!circle_overlaps_polygon(
+        &ctx,
         CircularHole {
             center: Point2::new(4.0, 0.0),
             radius: 1.0,
         },
         &polygon,
         EPS_DISPLAY_QUANTIZATION
-    ));
+    ).unwrap());
 }
 
 #[test]

@@ -268,14 +268,14 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
 fn parasolid_stream_header_is_parsed() {
     let f = synthetic_sldprt();
     let scan = crate::test_support::container::scan(&f);
-    let site = container::select_active_parasolid_site(&scan).expect("active parasolid");
+    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("active parasolid");
     assert_eq!(site.header.schema.value(), "SCH_SW_33103_11000");
     assert!(site.header.description.contains("partition"));
     let container::Section::Block(block) = site.section else {
         panic!("synthetic native block selected as compound stream");
     };
     assert_eq!(block.family, container::PayloadFamily::Parasolid);
-    assert!(crate::parasolid::is_body_stream(site.header));
+    assert!(crate::parasolid::is_body_stream(&cadmpeg_test_support::service_decode_context(), site.header).unwrap());
 }
 
 #[test]

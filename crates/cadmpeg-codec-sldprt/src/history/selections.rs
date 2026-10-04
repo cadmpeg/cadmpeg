@@ -84,7 +84,7 @@ fn surface_selection_face_bindings<'a>(
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> Result<SurfaceSelectionFaceBindings, CodecError> {
     let mut faces_by_identity = HashMap::new();
-    for (target, identity) in face_identities {
+    for (target, identity) in ctx.admit_iter(face_identities, "scan SLDPRT surface_selection_face_bindings values")? {
         reserve_selection_map(ctx, &mut faces_by_identity)?;
         let entry = faces_by_identity
             .entry((identity.feature_source_id, identity.local_id))
@@ -175,7 +175,7 @@ pub(crate) fn bind_topology_selections(
             .map(|curve| (curve.id.as_str(), None, &curve.id)),
     )?;
     let mut surfaces_by_id = HashMap::new();
-    for surface in surfaces {
+    for surface in ctx.admit_iter(surfaces, "scan SLDPRT surfaces values")? {
         reserve_selection_map(ctx, &mut surfaces_by_id)?;
         surfaces_by_id.insert(&surface.id, surface);
     }
@@ -188,21 +188,14 @@ pub(crate) fn bind_topology_selections(
     )?;
     for feature in features {
         ctx.charge_work(1, "bind SLDPRT topology selections")?;
-        for history in histories {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(history.features.len()),
-                "find SLDPRT topology selection scope",
-            )?;
-        }
-        if let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| {
-                histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .find(|record| record.id == native_ref)
-            })
+        if let Some(scope) = feature.native_ref.as_deref().map(|native_ref| {
+            let mut found = None;
+            for history in ctx.admit_iter(histories, "scan SLDPRT topology selection histories")? {
+                found = ctx.admit_iter(&history.features, "scan SLDPRT topology selection records")?.find(|record| record.id == native_ref);
+                if found.is_some() { break; }
+            }
+            Ok::<_, CodecError>(found)
+        }).transpose()?.flatten()
             .and_then(|record| record.properties.get("Scope"))
         {
             if let Some(outputs) =
@@ -769,9 +762,7 @@ fn resolve_face_selection(
                     "resolve SLDPRT surface selection owner",
                 )?;
                 if let Some(Some(face)) =
-                    context
-                        .surface_selection_faces
-                        .iter()
+                    ctx.admit_iter(context.surface_selection_faces, "scan SLDPRT resolve_face_selection values")?
                         .find_map(|((owner, key), value)| {
                             (owner == feature_ref && key == native).then_some(value)
                         })
@@ -803,42 +794,47 @@ fn history_feature_sources<'a>(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<HashMap<&'a str, Option<FeatureSourceId>>, CodecError> {
     let mut sources = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lanes.len()),
-            "resolve SLDPRT topology feature sources",
-        )?;
-        for lane in lanes {
+    for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
+        for feature in ctx.admit_iter(&history.features, "scan SLDPRT topology history features")? {
             ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(lane.names.len()),
+                cadmpeg_core::decode::u64_from_index(lanes.len()),
                 "resolve SLDPRT topology feature sources",
             )?;
-        }
-        let mut source = feature.source_id;
-        if source.is_none() {
-            let mut candidates = lanes.iter().filter_map(|lane| {
-                crate::resolved_features::scalars::feature_object_name(feature, lane)?
-                    .object_id?
-                    .value()
-            });
-            if let Some(first) = candidates.next() {
-                if candidates.all(|candidate| candidate == first) {
-                    source = FeatureSource::from_value(first);
+            for lane in lanes {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(lane.names.len()),
+                    "resolve SLDPRT topology feature sources",
+                )?;
+            }
+            let mut source = feature.source_id;
+            if source.is_none() {
+                let mut first = None;
+                for candidate in ctx.admit_iter(lanes, "resolve SLDPRT topology source candidates")?.filter_map(|lane| {
+                    crate::resolved_features::scalars::feature_object_name(feature, lane)?
+                        .object_id?
+                        .value()
+                }) {
+                    if first.is_some_and(|known| known != candidate) {
+                        first = None;
+                        break;
+                    }
+                    first = Some(candidate);
+                }
+                source = first.and_then(FeatureSource::from_value);
+            }
+            let source = source.and_then(FeatureSource::id);
+            reserve_selection_map(ctx, &mut sources)?;
+            match sources.entry(feature.id.as_str()) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(source);
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    if entry.get() != &source {
+                        entry.insert(None);
+                    }
                 }
             }
-        }
-        let source = source.and_then(FeatureSource::id);
-        reserve_selection_map(ctx, &mut sources)?;
-        match sources.entry(feature.id.as_str()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(source);
             }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get() != &source {
-                    entry.insert(None);
-                }
-            }
-        }
     }
     Ok(sources)
 }

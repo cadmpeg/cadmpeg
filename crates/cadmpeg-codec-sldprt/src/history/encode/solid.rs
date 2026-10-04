@@ -47,7 +47,7 @@ pub(super) struct HoleDefinition<'a> {
     pub(super) allow_multi_profile_faces: Option<bool>,
 }
 
-impl NeutralFeatureEncoder<'_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_, '_> {
     pub(super) fn encode_extrude(
         &self,
         definition: ExtrudeDefinition<'_>,
@@ -122,7 +122,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_extrude(record)) {
+            if match existing { Some(record) => !is_extrude(self.ctx, record)?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported extrusion semantics",
                     feature.id
@@ -428,7 +428,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| classify(record) != Some(FeatureClass::Hole)) {
+            if match existing { Some(record) => classify(self.ctx, record)? != Some(FeatureClass::Hole), None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported hole semantics",
                     feature.id

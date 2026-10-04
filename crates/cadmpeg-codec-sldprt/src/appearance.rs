@@ -61,7 +61,7 @@ pub(crate) fn definitions(
     scan: &ContainerScan,
 ) -> Result<Vec<AppearanceDefinition>, cadmpeg_core::CodecError> {
     let mut definitions = Vec::new();
-    for section in scan.sections() {
+    for section in scan.sections(ctx)? {
         let bytes = section.payload();
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
@@ -201,12 +201,8 @@ fn display_assignments(
 ) -> Result<Vec<DisplayAppearanceAssignment>, cadmpeg_core::CodecError> {
     let classes = crate::tessellation::class_intervals(ctx, section.payload())?;
     let mut assignments = Vec::new();
-    for (table_index, face) in faces.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(classes.len()),
-            "match SLDPRT face appearance classes",
-        )?;
-        let Some(class) = classes.iter().find(|class| {
+    for (table_index, face) in ctx.admit_iter(faces, "scan SLDPRT display_assignments values")?.enumerate() {
+        let Some(class) = ctx.admit_iter(&classes, "match SLDPRT face appearance classes")?.find(|class| {
             class.name == "uoTempFaceTessData_c"
                 && class.content.start() <= face.table.start()
                 && face.table.start() < class.content.end()
@@ -233,7 +229,7 @@ fn display_assignments(
             )?;
         }
     }
-    for (class_index, class) in classes.iter().enumerate() {
+    for (class_index, class) in ctx.admit_iter(&classes, "scan SLDPRT display_assignments values")?.enumerate() {
         if class.name != "uoBodyPropInfo_c" {
             continue;
         }
@@ -242,12 +238,7 @@ fn display_assignments(
         if definitions.len() != 1 {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(class_index),
-            "find SLDPRT appearance body boundary",
-        )?;
-        let previous_body_end = classes[..class_index]
-            .iter()
+        let previous_body_end = ctx.admit_iter(&classes[..class_index], "find SLDPRT appearance body boundary")?
             .rev()
             .find(|previous| previous.name == "uoBodyPropInfo_c")
             .map_or(0, |previous| previous.content.end());
@@ -286,17 +277,12 @@ pub(crate) fn feature_assignments(
 ) -> Result<Vec<FeatureAppearanceAssignment>, cadmpeg_core::CodecError> {
     let mut assignments = Vec::new();
     for section in scan
-        .sections()
+        .sections(ctx)?
         .filter(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
     {
         let bytes = section.payload();
         let classes = crate::tessellation::class_intervals(ctx, bytes)?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "scan SLDPRT feature appearance markers",
-        )?;
-        for marker_offset in bytes
-            .windows(feature_visual::MARKER_VALUE.len())
+        for marker_offset in ctx.admit_iter(bytes, "scan SLDPRT feature appearance markers")?.windows(std::num::NonZeroUsize::new(feature_visual::MARKER_VALUE.len()).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?)
             .enumerate()
             .filter_map(|(offset, marker)| {
                 (marker == feature_visual::MARKER_VALUE).then_some(offset)
@@ -308,11 +294,7 @@ pub(crate) fn feature_assignments(
             let Some(record) = bytes.get(record_offset..record_offset + feature_visual::LEN) else {
                 continue;
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(classes.len()),
-                "match SLDPRT feature appearance classes",
-            )?;
-            if !classes.iter().any(|class| {
+            if !ctx.admit_iter(&classes, "match SLDPRT feature appearance classes")?.any(|class| {
                 class.name == "moCompFeature_c"
                     && class.content.start() <= record_offset
                     && record_offset + feature_visual::LEN <= class.content.end()
@@ -374,9 +356,9 @@ pub(crate) fn resolve_display_appearances(
 ) -> Result<ResolvedDisplayAppearances, cadmpeg_core::CodecError> {
     let native_assignments = display_assignments(ctx, section, faces)?;
     let mut by_face = BTreeMap::new();
-    for assignment in &native_assignments {
+    for assignment in ctx.admit_iter(&native_assignments, "scan SLDPRT resolve_display_appearances values")? {
         if let DisplayAppearanceTarget::Body(face_indexes) = &assignment.target {
-            for face_index in face_indexes {
+            for face_index in ctx.admit_iter(face_indexes, "scan SLDPRT body appearance targets")? {
                 let definition = copy_definition(ctx, &assignment.definition)?;
                 ctx.insert_btree_map(
                     &mut by_face,
@@ -410,8 +392,8 @@ pub(crate) fn resolve_display_appearances(
     }
     let mut matched_feature_sources = BTreeSet::new();
     let mut faces_by_source = BTreeMap::<FeatureSourceId, Vec<usize>>::new();
-    for (table_index, face) in faces.iter().enumerate() {
-        if let Some(source_id) = face.feature_source_id() {
+    for (table_index, face) in ctx.admit_iter(faces, "scan SLDPRT resolve_display_appearances values")?.enumerate() {
+        if let Some(source_id) = face.feature_source_id(ctx)? {
             ctx.push_btree_group(
                 &mut faces_by_source,
                 source_id,
@@ -421,7 +403,7 @@ pub(crate) fn resolve_display_appearances(
             )?;
         }
     }
-    for (source_id, face_indexes) in faces_by_source {
+    for (&source_id, face_indexes) in ctx.admit_iter(&faces_by_source, "scan SLDPRT feature appearance face sources")? {
         const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
 
         let Some(Some(assignment)) = feature_by_source.get(&source_id) else {
@@ -442,7 +424,7 @@ pub(crate) fn resolve_display_appearances(
             source_name: clone_stream_name(ctx, &assignment.source_name)?,
             record_offset: assignment.record_offset,
         };
-        for face_index in face_indexes {
+        for face_index in ctx.admit_iter(face_indexes, "scan SLDPRT feature appearance face indexes")?.copied() {
             let copied = copy_definition(ctx, &definition)?;
             ctx.insert_btree_map(
                 &mut by_face,

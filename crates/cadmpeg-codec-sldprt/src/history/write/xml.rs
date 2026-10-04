@@ -8,13 +8,9 @@ use cadmpeg_ir::features::{
 
 use crate::history::classify::extrude_op;
 
-pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
-    if let Some(tag) = feature
-        .source_tag
-        .as_ref()
-        .filter(|tag| valid_xml_name(tag))
-    {
-        return tag.clone();
+pub(super) fn feature_xml_tag(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &cadmpeg_ir::features::Feature) -> Result<String, cadmpeg_core::CodecError> {
+    if let Some(tag) = feature.source_tag.as_ref() {
+        if valid_xml_name(ctx, tag)? { return Ok(tag.clone()); }
     }
     let tag = match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::TreeNode { .. }) => "Feature",
@@ -136,7 +132,7 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
             "Extrusion"
         }
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-            if valid_xml_name(kind.as_str()) =>
+            if valid_xml_name(ctx, kind.as_str())? =>
         {
             kind.as_str()
         }
@@ -158,14 +154,14 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         ) => "Feature",
         FeatureDefinition::Operation(_) => "Feature",
     };
-    tag.into()
+    Ok(tag.into())
 }
 
-pub(crate) fn valid_xml_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
+pub(crate) fn valid_xml_name(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut bytes = ctx.admit_iter(name.as_bytes(), "scan SLDPRT XML name bytes")?.copied();
+    Ok(bytes
         .next()
         .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
         && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.')))
 }

@@ -23,7 +23,7 @@ impl<T> DigestPartition<T> {
     pub(super) fn prepare<'source, 'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         source: &'source mut Vec<T>,
-        mut keep: impl FnMut(&T) -> bool,
+        mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<PreparedDigestPartition<'source, 'ctx, T>, CodecError> {
         let work = source
@@ -34,7 +34,7 @@ impl<T> DigestPartition<T> {
         let (mut decisions, reservation) = ctx.temporary_vec(source.len(), operation)?;
         let mut kept_count = 0usize;
         for item in source.iter() {
-            let decision = keep(item);
+            let decision = keep(item)?;
             decisions.push(decision);
             if decision {
                 kept_count = kept_count
@@ -130,7 +130,7 @@ mod tests {
             &mut source,
             |_| {
                 calls += 1;
-                calls == 1
+                Ok(calls == 1)
             },
             "prepare digest test",
         )
@@ -157,7 +157,7 @@ mod tests {
             let mut source = (0..100).collect::<Vec<_>>();
             let original = source.clone();
             let error =
-                DigestPartition::prepare(&ctx, &mut source, |_| true, "prepare digest refusal")
+                DigestPartition::prepare(&ctx, &mut source, |_| Ok(true), "prepare digest refusal")
                     .err()
                     .unwrap();
             assert!(matches!(error, CodecError::ResourceLimit(_)));

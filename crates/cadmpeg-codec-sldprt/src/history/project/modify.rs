@@ -69,17 +69,19 @@ pub(super) fn project_fillet(
             else {
                 continue;
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(feature.parameters.len()),
-                "scan SLDPRT variable fillet positions",
-            )?;
-            let parameter = feature.parameters.iter().find_map(|(name, value)| {
-                let suffix = name.as_str().strip_prefix("Position")?;
-                (suffix.bytes().all(|byte| byte.is_ascii_digit())
+            let mut parameter = None;
+            for (name, value) in ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")? {
+                let Some(suffix) = name.as_str().strip_prefix("Position") else {
+                    continue;
+                };
+                if ctx.admit_iter(suffix.as_bytes(), "scan SLDPRT fillet position digits")?.all(|byte| byte.is_ascii_digit())
                     && (suffix.len() == 1 || !suffix.starts_with('0'))
-                    && suffix.parse::<usize>().ok() == Some(index))
-                .then_some(value)
-            });
+                    && suffix.parse::<usize>().ok() == Some(index)
+                {
+                    parameter = Some(value);
+                    break;
+                }
+            }
             let point = (|| {
                 let parameter = parameter?.trim().parse::<f64>().ok()?;
                 let radius = parse_positive_length_mm(radius)?;
@@ -108,8 +110,7 @@ pub(super) fn project_fillet(
         )?;
         let points = if valid
             && points.len() >= 2
-            && points
-                .iter()
+            && ctx.admit_iter(&points[..], "scan SLDPRT project_fillet values")?
                 .enumerate()
                 .all(|(expected, (actual, _))| expected == *actual)
         {
@@ -128,19 +129,14 @@ pub(super) fn project_fillet(
         } else {
             None
         };
-        points.map_or_else(
-            || {
-                if feature
-                    .parameters
-                    .keys()
-                    .any(|name| indexed_name(name.as_str(), "Radius"))
+        match points {
+            None => {
+                if ctx.admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?.map(|(key, _)| key).try_fold(false, |found, name| { Ok::<_, cadmpeg_core::CodecError>(found || ( indexed_name(ctx, name.as_str(), "Radius")? )) })?
                 {
                     RadiusSpec::Unresolved {
                         form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
-                } else if feature
-                    .parameters
-                    .keys()
+                } else if ctx.admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?.map(|(key, _)| key)
                     .any(|name| matches!(name.as_str(), "Radius" | "D1"))
                 {
                     RadiusSpec::Unresolved {
@@ -150,8 +146,8 @@ pub(super) fn project_fillet(
                     RadiusSpec::Unresolved { form: None }
                 }
             },
-            |points| RadiusSpec::Variable { points },
-        )
+            Some(points) => RadiusSpec::Variable { points },
+        }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -165,12 +161,12 @@ pub(super) fn project_fillet(
     }))
 }
 
-pub(crate) fn fillet_radius_parameter_has_native_display(
+pub(crate) fn fillet_radius_parameter_has_native_display(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     name: &str,
     expression: &str,
-) -> bool {
-    is_fillet(feature)
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(is_fillet(ctx, feature)?
         && if variable_fillet(feature) {
             crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
                 feature, name,
@@ -179,7 +175,7 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
         } else {
             name == "D1"
         }
-        && dimension_display(expression).is_some()
+        && dimension_display(ctx, expression)?.is_some())
 }
 
 fn variable_fillet(feature: &Feature) -> bool {

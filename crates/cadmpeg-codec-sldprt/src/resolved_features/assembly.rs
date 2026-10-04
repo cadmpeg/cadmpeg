@@ -21,13 +21,13 @@ pub(crate) fn lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
-    let has_explicit_lanes = scan.sections().any(|source| {
+    let has_explicit_lanes = scan.sections(ctx)?.any(|source| {
         source
             .name()
             .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
     });
     let mut result = Vec::new();
-    for source in scan.sections() {
+    for source in scan.sections(ctx)? {
         let Some(section) = source.name() else {
             continue;
         };
@@ -50,7 +50,7 @@ pub(crate) fn supplemental_config_lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
-    let has_explicit_lanes = scan.sections().any(|source| {
+    let has_explicit_lanes = scan.sections(ctx)?.any(|source| {
         source
             .name()
             .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
@@ -59,7 +59,7 @@ pub(crate) fn supplemental_config_lanes(
         return Ok(Vec::new());
     }
     let mut lanes = Vec::new();
-    for source in scan.sections() {
+    for source in scan.sections(ctx)? {
         let Some(section) = source.name() else {
             continue;
         };

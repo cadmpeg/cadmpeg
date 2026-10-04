@@ -29,17 +29,17 @@ pub(super) fn project_extrude(
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(feature.content.len()),
-        "scan SLDPRT extrusion dimensions",
-    )?;
-    let mut source_dimensions = feature.content.iter().filter_map(|content| match content {
+    let mut source_depth = None;
+    for name in ctx.admit_iter(&feature.content, "scan SLDPRT extrusion dimensions")?.filter_map(|content| match content {
         FeatureContent::Dimension(name) => Some(name.as_str()),
         FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-    });
-    let source_depth = source_dimensions
-        .next()
-        .filter(|first| source_dimensions.all(|name| name == *first));
+    }) {
+        if source_depth.is_some_and(|first| first != name) {
+            source_depth = None;
+            break;
+        }
+        source_depth = Some(name);
+    }
     let legacy_history_extrusion = feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
         && source_depth.is_some();
@@ -59,28 +59,23 @@ pub(super) fn project_extrude(
     let history_profile_extrusion = legacy_history_extrusion || root_history_extrusion;
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
-    if history_profile_extrusion {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(features_by_source.len()),
-            "scan SLDPRT extrusion source profiles",
-        )?;
-    }
-    let history_profile = history_profile_extrusion
-        .then(|| {
-            let source = feature.source_id?.value().map_or(-1i64, i64::from);
-            features_by_source
-                .iter()
-                .filter_map(|(candidate_source, candidate)| {
-                    let candidate_source = candidate_source.value().map_or(-1i64, i64::from);
-                    (candidate_source < source
-                        && classify(candidate) == Some(FeatureClass::Sketch)
-                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
-                    .then_some((candidate_source, candidate.id.as_str()))
-                })
-                .max_by_key(|candidate| candidate.0)
-                .map(|(_, profile)| profile)
-        })
-        .flatten();
+    let history_profile = if history_profile_extrusion {
+        if let Some(source) = feature.source_id {
+            let source = source.value().map_or(-1i64, i64::from);
+            let mut selected = None;
+            for (candidate_source, candidate) in ctx.admit_iter(features_by_source, "scan SLDPRT extrusion source profiles")? {
+                let candidate_source = candidate_source.value().map_or(-1i64, i64::from);
+                if candidate_source < source
+                    && classify(ctx, candidate)? == Some(FeatureClass::Sketch)
+                    && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c")
+                    && selected.is_none_or(|(known, _)| candidate_source >= known)
+                {
+                    selected = Some((candidate_source, candidate.id.as_str()));
+                }
+            }
+            selected.map(|(_, profile)| profile)
+        } else { None }
+    } else { None };
     let op = feature
         .properties
         .get("Operation")
@@ -491,7 +486,7 @@ pub(crate) fn threaded_hole_major_diameter(
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
 ) -> Result<Option<f64>, CodecError> {
-    if classify(feature) != Some(FeatureClass::Hole) {
+    if classify(ctx, feature)? != Some(FeatureClass::Hole) {
         return Ok(None);
     }
     let Some((shape, _)) =
@@ -546,12 +541,12 @@ fn hole_profile_construction(
                     let profile = profiles.next()?;
                     profiles.next().is_none().then_some(profile)
                 })
-        })
-        .filter(|profile| classify(profile) == Some(FeatureClass::Sketch));
+        });
     let mut sole = None;
     let mut multiple = false;
     let mut complete = None;
     for profile in constructions {
+        if classify(ctx, profile)? != Some(FeatureClass::Sketch) { continue; }
         let Some(construction) = hole_sketch_construction(ctx, profile)? else {
             continue;
         };
@@ -595,21 +590,18 @@ pub(super) fn hole_sketch_construction(
     };
     let mut dimensions = [ParsedDimension::Length(initial_length); MAX_DIMENSIONS];
     let mut dimension_count = 0;
-    let has_source_dimensions = profile
-        .content
-        .iter()
+    let has_source_dimensions = ctx.admit_iter(&profile.content[..], "scan SLDPRT hole_sketch_construction values")?
         .any(|content| matches!(content, FeatureContent::Dimension(_)));
-    let expressions = profile
-        .parameters
-        .values()
+    let expressions = ctx.admit_iter(&profile.parameters, "scan SLDPRT hole sketch parameters")?
+        .map(|(_, value)| value)
         .filter(|_| !has_source_dimensions)
-        .chain(profile.content.iter().filter_map(|content| match content {
+        .chain(ctx.admit_iter(&profile.content, "scan SLDPRT hole sketch dimensions")?.filter_map(|content| match content {
             FeatureContent::Dimension(name) => profile.parameters.get(name.as_str()),
             FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
         }));
     for expression in expressions {
         let dimension = if strip_diameter_modifier(expression).is_some() {
-            parse_dimension_display_length(expression)
+            parse_dimension_display_length(ctx, expression)?
                 .and_then(|value| PositiveLength::try_from(value).ok())
                 .map(ParsedDimension::Diameter)
         } else if let Some(value) = parse_bounded_angle_rad(expression) {
@@ -630,7 +622,7 @@ pub(super) fn hole_sketch_construction(
     let mut lengths = [initial_length; MAX_LENGTHS];
     let mut angles = [initial_angle; MAX_ANGLES];
     let (mut diameter_count, mut length_count, mut angle_count) = (0, 0, 0);
-    for dimension in dimensions {
+    for dimension in ctx.admit_iter(dimensions, "scan SLDPRT hole profile dimensions")? {
         match dimension {
             ParsedDimension::Diameter(value) => {
                 let Some(slot) = diameters.get_mut(diameter_count) else {

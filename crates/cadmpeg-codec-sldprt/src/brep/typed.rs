@@ -206,7 +206,7 @@ impl Facts {
             self.bodies.len(),
             "copy typed Parasolid bodies",
         )?;
-        for body in &self.bodies {
+        for body in ctx.admit_iter(&self.bodies, "scan SLDPRT try_clone values")? {
             charge_record_copy::<u32>(
                 ctx,
                 body.ownership_refs.len(),
@@ -336,8 +336,7 @@ impl Facts {
                 return Ok(None);
             }
         }
-        if face_shells
-            .values()
+        if ctx.admit_iter(&face_shells, "scan SLDPRT hierarchies map values")?.map(|(_, value)| value)
             .any(|shell_attr| !shells.contains_key(shell_attr))
         {
             return Ok(None);
@@ -345,7 +344,7 @@ impl Facts {
         let mut relevant_shells = HashSet::new();
         let mut relevant_regions_by_body = HashMap::<u16, HashSet<u16>>::new();
         let mut relevant_bodies = HashSet::new();
-        for shell_attr in face_shells.values().copied() {
+        for shell_attr in ctx.admit_iter(&face_shells, "scan SLDPRT hierarchies map values")?.map(|(_, value)| value).copied() {
             if !ctx.insert_hash_set(
                 &mut relevant_shells,
                 shell_attr,
@@ -397,7 +396,7 @@ impl Facts {
             }
         }
         if bridge_attrs.is_empty() {
-            for body_attr in bodies.keys().copied() {
+            for body_attr in ctx.admit_iter(&bodies, "scan SLDPRT hierarchies map keys")?.map(|(key, _)| key).copied() {
                 ctx.insert_hash_set(
                     &mut relevant_bodies,
                     body_attr,
@@ -437,7 +436,7 @@ impl Facts {
                 return Ok(None);
             }
             let mut body_shells = Vec::new();
-            for shell in shells.values().filter(|shell| {
+            for shell in ctx.admit_iter(&shells, "scan SLDPRT hierarchies map values")?.map(|(_, value)| value).filter(|shell| {
                 (bridge_attrs.is_empty() || relevant_shells.contains(&shell.attr))
                     && body_region_attrs.contains(&u16_from_ref_or_none(shell.refs[6]).unwrap_or(0))
                     && (shell.refs[1] == u32::from(body_attr) || shell.refs[1] <= 1)
@@ -447,8 +446,8 @@ impl Facts {
             }
 
             let mut hierarchy_faces = Vec::new();
-            for (face_attr, shell_attr) in &face_shells {
-                let Some(shell) = body_shells.iter().find(|shell| shell.attr == *shell_attr) else {
+            for (face_attr, shell_attr) in ctx.admit_iter(&face_shells, "scan SLDPRT hierarchies values")? {
+                let Some(shell) = ctx.admit_iter(&body_shells[..], "scan SLDPRT hierarchies values")?.find(|shell| shell.attr == *shell_attr) else {
                     continue;
                 };
                 if !ctx.insert_hash_set(
@@ -541,7 +540,7 @@ impl Facts {
         }
 
         let mut shells = HashMap::new();
-        for shell in &shell_candidates {
+        for shell in ctx.admit_iter(&shell_candidates, "scan SLDPRT ownership_maps values")? {
             let Some(region) = u16_from_ref(shell.refs[6]) else {
                 return Ok(None);
             };
@@ -792,7 +791,7 @@ where
     F: Fn(&T) -> u16,
 {
     let mut present = HashSet::new();
-    for node in target.iter() {
+    for node in ctx.admit_iter(&target[..], "scan SLDPRT merge_nodes values")? {
         let attr = key(node);
         ctx.insert_hash_set(&mut present, attr, "index typed Parasolid merge identities")?;
     }

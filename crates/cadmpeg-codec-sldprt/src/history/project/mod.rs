@@ -178,23 +178,13 @@ impl FeatureProjection {
                 Err(CodecError::Malformed(error)) => error,
                 Err(error) => return Err(error),
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(model.features.len()),
-                "scan SLDPRT regeneration child ordinal",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(model.features.len()),
-                "scan SLDPRT regeneration parent ordinal",
-            )?;
             let ordinal = |id: &FeatureId| {
-                model
-                    .features
-                    .iter()
+                Ok::<_, CodecError>(ctx.admit_iter(&model.features, "find SLDPRT regeneration ordinal")?
                     .find(|feature| feature.id == *id)
-                    .map(|feature| feature.ordinal)
+                    .map(|feature| feature.ordinal))
             };
-            let child_ordinal = ordinal(&child);
-            let parent_ordinal = ordinal(&parent);
+            let child_ordinal = ordinal(&child)?;
+            let parent_ordinal = ordinal(&parent)?;
             charge_projected_text_work(
                 ctx,
                 child.as_str(),
@@ -253,13 +243,13 @@ pub(crate) fn project_feature_model(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
-    let (mut features, parents) = histories.iter().try_fold(
+    let (mut features, parents) = ctx.admit_iter(&histories[..], "scan SLDPRT project_feature_model values")?.try_fold(
         (Vec::new(), Vec::new()),
         |(mut features, mut parents), history| -> Result<_, CodecError> {
             let source_bindings = unique_source_bindings(ctx, history)?;
             let mut by_source = HashMap::new();
             let mut native_by_source = HashMap::new();
-            for (source, binding) in &source_bindings {
+            for (source, binding) in ctx.admit_iter(&source_bindings, "scan SLDPRT project_feature_model values")? {
                 let Some(SourceBinding { native, neutral }) = binding else {
                     continue;
                 };
@@ -276,7 +266,7 @@ pub(crate) fn project_feature_model(
                     "index SLDPRT native source features",
                 )?;
             }
-            for feature in &history.features {
+            for feature in ctx.admit_iter(&history.features, "scan SLDPRT project_feature_model values")? {
                 ctx.insert_hash_map(
                     &mut by_source,
                     copy_projected_feature_text(ctx, &feature.id)?,
@@ -286,8 +276,8 @@ pub(crate) fn project_feature_model(
             }
             let mut by_native = HashMap::new();
             let mut features_by_source = HashMap::new();
-            for feature in &history.features {
-                if !is_history_metadata_record(feature, &history.features) {
+            for feature in ctx.admit_iter(&history.features, "scan SLDPRT project_feature_model values")? {
+                if !is_history_metadata_record(ctx, feature, &history.features)? {
                     ctx.insert_hash_map(
                         &mut by_native,
                         feature.id.as_str(),
@@ -304,17 +294,14 @@ pub(crate) fn project_feature_model(
                     )?;
                 }
             }
-            let source_ordered = history.features.iter().any(|feature| {
+            let source_ordered = ctx.admit_iter(&history.features, "scan SLDPRT source ordered history features")?.any(|feature| {
                 feature.input_class.is_none()
                     && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
                     && feature.parameters.len() == 1
                     && feature.source_value().is_some_and(|source| source > 0)
             });
-            for feature in history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-            {
+            for feature in ctx.admit_iter(&history.features, "scan SLDPRT history metadata features")? {
+                if is_history_metadata_record(ctx, feature, &history.features)? { continue; }
                 let parent = if let Some(parent) = feature
                     .tree_parent_record_id()
                     .and_then(|parent| by_native.get(parent))
@@ -390,8 +377,7 @@ pub(crate) fn project_feature_model(
         )?;
         let child = FeatureId::mint(child_text).map_err(CodecError::malformed)?;
         let mut tree_parent_index = None;
-        for (index, feature) in features.iter().enumerate() {
-            ctx.charge_work(1, "scan SLDPRT tree parent")?;
+        for (index, feature) in ctx.admit_iter(&features, "scan SLDPRT tree parent")?.enumerate() {
             if feature.id == parent
                 && matches!(
                     feature.evaluation.definition(),
@@ -1030,26 +1016,27 @@ fn bind_native_construction_features(
     histories: &[FeatureHistory],
 ) -> Result<(), CodecError> {
     let mut construction_native_refs = HashSet::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, "index SLDPRT native construction sources")?;
-        if !matches!(
-            classify(feature),
-            Some(
-                FeatureClass::Sketch
-                    | FeatureClass::SketchBlockInstance
-                    | FeatureClass::EquationCurve
-                    | FeatureClass::ProjectedCurve
-                    | FeatureClass::CompositeCurve
-            )
-        ) || construction_native_refs.contains(feature.id.as_str())
-        {
-            continue;
-        }
-        ctx.insert_hash_set(
-            &mut construction_native_refs,
-            feature.id.as_str(),
-            "index SLDPRT native construction sources",
-        )?;
+    for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
+        for feature in ctx.admit_iter(&history.features, "index SLDPRT native construction sources")? {
+            if !matches!(
+                classify(ctx, feature)?,
+                Some(
+                    FeatureClass::Sketch
+                        | FeatureClass::SketchBlockInstance
+                        | FeatureClass::EquationCurve
+                        | FeatureClass::ProjectedCurve
+                        | FeatureClass::CompositeCurve
+                )
+            ) || construction_native_refs.contains(feature.id.as_str())
+            {
+                continue;
+            }
+            ctx.insert_hash_set(
+                &mut construction_native_refs,
+                feature.id.as_str(),
+                "index SLDPRT native construction sources",
+            )?;
+            }
     }
     let mut feature_ids_by_native = HashMap::new();
     for feature in features.iter() {
@@ -1271,7 +1258,7 @@ fn unique_source_bindings<'a>(
     let mut bindings = HashMap::new();
     for feature in &history.features {
         ctx.charge_work(1, "scan SLDPRT unique feature sources")?;
-        if is_history_metadata_record(feature, &history.features) {
+        if is_history_metadata_record(ctx, feature, &history.features)? {
             continue;
         }
         let Some(source) = feature.source_id else {
@@ -1300,7 +1287,7 @@ pub(crate) fn incomplete_history_reference_features(
     histories: &[FeatureHistory],
 ) -> Result<usize, CodecError> {
     let mut incomplete = 0usize;
-    for history in histories {
+    for history in ctx.admit_iter(histories, "scan SLDPRT incomplete_history_reference_features values")? {
         let sources = unique_source_bindings(ctx, history)?;
         let mut native_ids = HashSet::new();
         for feature in &history.features {
@@ -1327,13 +1314,12 @@ pub(crate) fn incomplete_history_reference_features(
                 || feature
                     .parent_source_id()
                     .is_some_and(|source| sources.get(&source).is_some_and(Option::is_some));
-            let incomplete_content = feature.content.iter().any(|item| match item {
+            let incomplete_content = ctx.admit_iter(&feature.content[..], "scan SLDPRT incomplete_history_reference_features values")?.any(|item| match item {
                 FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
                 FeatureContent::Dimension(name) => !feature.parameters.contains_key(name.as_str()),
                 FeatureContent::Text(_) => false,
             });
-            let unresolved_dependency = FEATURE_REFERENCE_PROPERTIES
-                .iter()
+            let unresolved_dependency = ctx.admit_iter(&FEATURE_REFERENCE_PROPERTIES[..], "scan SLDPRT incomplete_history_reference_features values")?
                 .filter_map(|name| feature.properties.get(*name))
                 .flat_map(|value| {
                     value.split(|character: char| {
@@ -1386,7 +1372,7 @@ fn project_feature_content(
             }
         }
     }
-    for name in feature.parameters.keys() {
+    for name in ctx.admit_iter(&feature.parameters, "scan SLDPRT project_feature_content map keys")?.map(|(key, _)| key) {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
         if !names.contains(&name.as_str()) {
             ctx.reserve_vec(&mut names, 1, OPERATION)?;
@@ -1402,7 +1388,7 @@ fn project_feature_content(
             }
             FeatureContent::Dimension(name) => {
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
-                let Some(ordinal) = names.iter().position(|known| *known == name) else {
+                let Some(ordinal) = ctx.admit_iter(&names[..], "scan SLDPRT project_feature_content values")?.position(|known| *known == name) else {
                     continue;
                 };
                 charge_projected_text_work(ctx, &feature.id, OPERATION)?;
@@ -1419,7 +1405,7 @@ fn project_feature_content(
                     cadmpeg_core::decode::u64_from_index(result.len()),
                     OPERATION,
                 )?;
-                if result.iter().any(|value| matches!(value, FeatureSourceContent::Parameter(known) if known == &parameter)) {
+                if ctx.admit_iter(&result[..], "scan SLDPRT project_feature_content values")?.any(|value| matches!(value, FeatureSourceContent::Parameter(known) if known == &parameter)) {
                     continue;
                 }
                 FeatureSourceContent::Parameter(parameter)
@@ -1571,13 +1557,13 @@ fn project_definition(
             family: UnresolvedFamily::DatumPlane,
         }));
     }
-    if let Some(role) = feature_tree_node_role(feature, history_features) {
+    if let Some(role) = feature_tree_node_role(ctx, feature, history_features)? {
         return Ok(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role,
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
     }
-    let class = classify(feature);
+    let class = classify(ctx, feature)?;
     let projected_pattern = if class == Some(FeatureClass::Pattern) {
         Some(project_pattern(ctx, feature, by_source, native_by_source)?)
     } else {
@@ -1617,11 +1603,11 @@ fn project_definition(
             },
         ));
     }
-    if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
+    if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(ctx, feature)? {
         return project_offset_plane(ctx, feature, by_source)?
             .map_or_else(|| native_definition(ctx, feature), Ok);
     }
-    if let Some(plane) = principal_plane_in_history(feature, features_by_source, history_features) {
+    if let Some(plane) = principal_plane_in_history(ctx, feature, features_by_source, history_features)? {
         return Ok(FeatureDefinition::Operation(
             FeatureOperation::DatumPrincipalPlane { plane },
         ));
@@ -1756,9 +1742,9 @@ fn parameter_names(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Vec<Str
             }
         }
     }
-    for name in feature.parameters.keys() {
+    for name in ctx.admit_iter(&feature.parameters, "scan SLDPRT parameter_names map keys")?.map(|(key, _)| key) {
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(names.len()), OPERATION)?;
-        if !names.iter().any(|known| known == name.as_str()) {
+        if !ctx.admit_iter(&names[..], "scan SLDPRT parameter_names values")?.any(|known| known == name.as_str()) {
             let name = copy_projected_feature_text(ctx, name.as_str())?;
             ctx.reserve_vec(&mut names, 1, OPERATION)?;
             names.push(name);

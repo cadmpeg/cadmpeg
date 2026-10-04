@@ -74,7 +74,7 @@ fn compact_face_tessellation_header_places_table_at_plus_8() {
     payload.extend(1_u32.to_le_bytes());
     payload.extend(1_u32.to_le_bytes());
     payload.extend(table());
-    assert_eq!(descriptor_table_offset(&payload, 0), 8);
+    assert_eq!(descriptor_table_offset(&cadmpeg_test_support::service_decode_context(), &payload, 0).unwrap(), 8);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
@@ -90,7 +90,7 @@ fn extended_face_tessellation_header_places_table_at_plus_40() {
         payload.extend(word.to_le_bytes());
     }
     payload.extend(table());
-    assert_eq!(descriptor_table_offset(&payload, 0), 40);
+    assert_eq!(descriptor_table_offset(&cadmpeg_test_support::service_decode_context(), &payload, 0).unwrap(), 40);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
@@ -148,7 +148,7 @@ fn incomplete_extended_header_does_not_shift_the_table() {
         payload.extend(word.to_le_bytes());
     }
     payload.extend(table());
-    assert_eq!(descriptor_table_offset(&payload, 0), 8);
+    assert_eq!(descriptor_table_offset(&cadmpeg_test_support::service_decode_context(), &payload, 0).unwrap(), 8);
 }
 
 #[test]

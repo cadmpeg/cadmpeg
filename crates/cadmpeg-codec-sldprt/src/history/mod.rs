@@ -39,7 +39,7 @@ fn keyed_attributes<'name, 'value>(
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut kept = BTreeMap::new();
     for (name, value) in entries {
-        if name.chars().all(char::is_whitespace) {
+        if ctx.admit_iter(name, "scan SLDPRT property name characters")?.all(char::is_whitespace) {
             report_unkeyed_property(ctx, losses, record, None)?;
             continue;
         }
@@ -117,7 +117,7 @@ pub(crate) fn histories(
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<FeatureHistory>, CodecError> {
-    scan.sections()
+    scan.sections(ctx)?
         .try_fold(Vec::new(), |mut histories, section| {
             let source = section.ordinal();
             let Some(text) = crate::container::xml_text_charged(
@@ -350,7 +350,7 @@ pub(crate) fn histories(
                         let Some(name) = dimension.attribute("Name") else {
                             continue;
                         };
-                        if name.chars().all(char::is_whitespace) {
+                        if ctx.admit_iter(name, "scan SLDPRT dimension name characters")?.all(char::is_whitespace) {
                             continue;
                         }
                         let value = dimension.text().unwrap_or_default().trim();

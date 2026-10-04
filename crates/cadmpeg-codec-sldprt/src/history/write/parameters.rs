@@ -181,13 +181,13 @@ fn sync_neutral_parameters(
                 parameter.id.as_str()
             )));
         };
-        if parameter.display != dimension_display(&parameter.expression) {
+        if parameter.display != dimension_display(&ctx, &parameter.expression)? {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has display semantics inconsistent with its expression",
                 parameter.id.as_str()
             )));
         }
-        if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
+        if parse_neutral_parameter_literal(&ctx, owner, &parameter.name, &parameter.expression)?
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {
             return Err(CodecError::malformed(format_args!(
@@ -248,7 +248,7 @@ fn sync_neutral_parameters(
             .iter()
             .map(|parameter| {
                 let mut properties = parameter.properties.clone();
-                if parse_parameter_literal(&parameter.expression).is_none() {
+                if parse_parameter_literal(&ctx, &parameter.expression)?.is_none() {
                     if let Some(value) = &parameter.value {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("Value"),
@@ -258,9 +258,9 @@ fn sync_neutral_parameters(
                         properties.remove("Value");
                     }
                 }
-                (parameter.name.clone(), properties)
+                Ok((parameter.name.clone(), properties))
             })
-            .collect();
+            .collect::<Result<_, CodecError>>()?;
         let mut names = parameters
             .iter()
             .map(|parameter| parameter.name.clone())
@@ -474,34 +474,34 @@ pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {
     })
 }
 
-pub(super) fn restore_equivalent_parameter_expressions(
+pub(super) fn restore_equivalent_parameter_expressions(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     original_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
     evaluated_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
     desired_parameters: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(original) = original_parameters.get(&feature.id) else {
-        return;
+        return Ok(());
     };
     let Some(evaluated) = evaluated_parameters.get(&feature.id) else {
-        return;
+        return Ok(());
     };
     for (name, desired) in desired_parameters {
         let Some(expression) = original.get(name) else {
             continue;
         };
-        if parse_native_parameter_literal(feature, name.as_str(), expression).is_some() {
+        if parse_native_parameter_literal(ctx, feature, name.as_str(), expression)?.is_some() {
             continue;
         }
         let Some(evaluated) = evaluated.get(name) else {
             continue;
         };
-        let Some(desired_value) = parse_native_parameter_literal(feature, name.as_str(), desired)
+        let Some(desired_value) = parse_native_parameter_literal(ctx, feature, name.as_str(), desired)?
         else {
             continue;
         };
         let Some(evaluated_value) =
-            parse_native_parameter_literal(feature, name.as_str(), evaluated)
+            parse_native_parameter_literal(ctx, feature, name.as_str(), evaluated)?
         else {
             continue;
         };
@@ -509,4 +509,5 @@ pub(super) fn restore_equivalent_parameter_expressions(
             desired.clone_from(expression);
         }
     }
+    Ok(())
 }

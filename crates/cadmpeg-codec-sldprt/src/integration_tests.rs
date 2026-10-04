@@ -65,7 +65,7 @@ fn assert_valid(result: &EditableDecodeResult) {
 fn display_geometry_and_summary_share_one_parse_per_section() {
     let source = sldprt_with_body_and_display_list(&triangle_body());
     let section_count = crate::test_support::container::scan(&source)
-        .sections()
+        .sections(&cadmpeg_test_support::service_decode_context()).unwrap()
         .count();
     crate::tessellation::reset_display_parse_calls();
     let options = DecodeOptions {

@@ -55,7 +55,7 @@ pub(super) fn history_metadata_ids<'a>(
     for history in histories {
         for feature in &history.features {
             ctx.charge_work(1, "scan SLDPRT history metadata identities")?;
-            if is_history_metadata_record(feature, &history.features)
+            if is_history_metadata_record(ctx, feature, &history.features)?
                 && !ids.contains(feature.id.as_str())
             {
                 ctx.reserve_set(&mut ids, 1, SCALAR_BINDING_INDEX)?;
