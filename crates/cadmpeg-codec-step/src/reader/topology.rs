@@ -617,7 +617,7 @@ pub(super) fn decode(
     }
     let mut decoded_pcurves = BTreeSet::new();
     for pcurve in ctx.admit_iter(&(commit_session.document().model.pcurves)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if let Some(id) = source_numeric_id(pcurve.id.as_str(), "pcurve") {
+        if let Some(id) = source_numeric_id(ctx, pcurve.id.as_str(), "pcurve")? {
             ctx.insert_btree_set(&mut decoded_pcurves, id, "step_decoded_topology_pcurves")?;
         }
     }
@@ -949,7 +949,7 @@ pub(super) fn decode(
         }
     }
     for face in ctx.admit_iter(&(commit_session.document().model.faces)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
+        if let Some(source) = source_numeric_id(ctx, face.id.as_str(), "face")? {
             ctx.push_btree_group(
                 &mut result.faces_by_source,
                 source,
@@ -961,7 +961,7 @@ pub(super) fn decode(
         }
     }
     for edge in ctx.admit_iter(&(commit_session.document().model.edges)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
+        if let Some(source) = source_numeric_id(ctx, edge.id.as_str(), "edge")? {
             ctx.push_btree_group(
                 &mut result.edges_by_source,
                 source,
@@ -973,7 +973,7 @@ pub(super) fn decode(
         }
     }
     for vertex in ctx.admit_iter(&(commit_session.document().model.vertices)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
+        if let Some(source) = source_numeric_id(ctx, vertex.id.as_str(), "vertex")? {
             ctx.push_btree_group(
                 &mut result.vertices_by_source,
                 source,
@@ -3818,7 +3818,7 @@ fn build_one(
         if loop_.coedges().is_empty() {
             continue;
         }
-        let loop_source = source_numeric_id(loop_.id.as_str(), "loop").unwrap_or(0);
+        let loop_source = source_numeric_id(ctx, loop_.id.as_str(), "loop")?.unwrap_or(0);
         for (index, current_id) in ctx.admit_iter(&(loop_.coedges())[..], "STEP body topology traversal").map_err(CodecError::from)?.enumerate() {
             let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
             let current = require_carrier(

@@ -789,7 +789,10 @@ fn field_bool(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino typed boolean text trim")?;
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if ctx.eq_ignore_ascii_case(kind, "string", "Rhino field bool case equality")? {
-        parse_bool_text(ctx, text)?.or_else(|| text.parse::<i32>().ok().map(|value| value != 0))
+        match parse_bool_text(ctx, text)? {
+            Some(value) => Some(value),
+            None => ctx.parse_text::<i32>(text, "Rhino field bool integer parse")?.ok().map(|value| value != 0),
+        }
     } else if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field bool case equality")? {
         parse_bool_text(ctx, text)?
     } else if {
@@ -800,7 +803,7 @@ fn field_bool(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
     )
     } {
-        text.parse::<f64>()
+        ctx.parse_text::<f64>(text, "Rhino field bool number parse")?
             .ok()
             .filter(|value| value.is_finite())
             .map(|value| value != 0.0)
@@ -837,7 +840,7 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         "float" | "double" | "real"
     )
     } {
-        text.parse::<f64>().ok().and_then(|value| {
+        ctx.parse_text::<f64>(text, "Rhino field i32 optional number parse")?.ok().and_then(|value| {
             if value.is_finite()
                 && value >= f64::from(i32::MIN)
                 && value < f64::from(i32::MAX) + 1.0
@@ -853,7 +856,7 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         } else if ctx.eq_ignore_ascii_case(text, "false", "Rhino field i32 optional case equality")? || ctx.eq_ignore_ascii_case(text, "f", "Rhino field i32 optional case equality")? {
             Some(0)
         } else {
-            text.parse::<i32>().ok()
+            ctx.parse_text::<i32>(text, "Rhino field i32 optional number parse")?.ok()
         }
     } else if {
         let mut lowercase_storage = ctx.reserve_scoped(0, "Rhino field i32 optional type lowercase")?;
@@ -863,7 +866,7 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         "int" | "short" | "char" | "long"
     )
     } {
-        text.parse::<i32>().ok()
+        ctx.parse_text::<i32>(text, "Rhino field i32 optional number parse")?.ok()
     } else {
         None
     };
@@ -893,7 +896,7 @@ fn field_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     )
     } || ctx.eq_ignore_ascii_case(kind, "string", "Rhino field f64 case equality")?
     {
-        text.parse::<f64>().ok()
+        ctx.parse_text::<f64>(text, "Rhino field f64 number parse")?.ok()
     } else {
         None
     };
@@ -923,7 +926,7 @@ fn field_bool_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: rox
     let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field bool untyped text trim")?;
     Ok(ctx.eq_ignore_ascii_case(text, "true", "Rhino field bool untyped case equality")?
         || ctx.eq_ignore_ascii_case(text, "t", "Rhino field bool untyped case equality")?
-        || text.parse::<i32>().is_ok_and(|value| value != 0))
+        || ctx.parse_text::<i32>(text, "Rhino field bool untyped number parse")?.is_ok_and(|value| value != 0))
 }
 
 fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
@@ -938,7 +941,7 @@ fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if ctx.eq_ignore_ascii_case(text, "true", "Rhino field i32 untyped case equality")? || ctx.eq_ignore_ascii_case(text, "t", "Rhino field i32 untyped case equality")? {
         Ok(1)
     } else {
-        match text.parse::<f64>() {
+        match ctx.parse_text::<f64>(text, "Rhino field i32 untyped number parse")? {
             Ok(value) => cadmpeg_core::convert::truncate_f64_to_i32(value)
                 .map_or_else(|| Err(FramingError::unpositioned(ctx.format_retained(format_args!("{name} is outside i32 range"), "Rhino field_i32_untyped text")?)), Ok),
             Err(_) => Ok(0),
@@ -955,7 +958,7 @@ fn field_f64_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         return Ok(default);
     };
     let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field f64 untyped text trim")?;
-    Ok(text.parse::<f64>()
+    Ok(ctx.parse_text::<f64>(text, "Rhino field f64 untyped number parse")?
         .ok()
         .and_then(FiniteReal::new)
         .unwrap_or(FiniteReal::ZERO))

@@ -477,3 +477,42 @@ fn lexer_error_message_copy_refusal_reaches_codec_result() {
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "STEP lexer error message"));
 }
+
+#[test]
+fn occurrence_number_parse_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP occurrence number parse", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"#7", &arena, &policy).unwrap();
+        let result = super::lex_with_context(b"#7", &ctx).map(|_| ()).map_err(super::LexError::into_codec_error);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn real_number_parse_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP real number parse", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"2.5", &arena, &policy).unwrap();
+        let result = super::lex_with_context(b"2.5", &ctx).map(|_| ()).map_err(super::LexError::into_codec_error);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn integer_number_parse_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP integer number parse", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"7", &arena, &policy).unwrap();
+        let result = super::lex_with_context(b"7", &ctx).map(|_| ()).map_err(super::LexError::into_codec_error);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

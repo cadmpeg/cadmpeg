@@ -408,3 +408,159 @@ fn xml_cap_type_trim_preserves_refusal() {
         result
     });
 }
+
+#[test]
+fn xml_boolean_integer_fallback_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="string">2</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field bool integer parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_bool(&ctx, root, "value", false).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_boolean_numeric_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int">2</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field bool number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_bool(&ctx, root, "value", false).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_integer_real_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double">2.5</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field i32 optional number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_i32_optional(&ctx, root, "value").map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_integer_string_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="string">2</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field i32 optional number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_i32_optional(&ctx, root, "value").map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_integer_numeric_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int">2</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field i32 optional number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_i32_optional(&ctx, root, "value").map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_real_numeric_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double">2.5</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field f64 number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_f64(&ctx, root, "value", 0.0).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_boolean_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int">2</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field bool untyped number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_bool_untyped(&ctx, root, "value", false).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_integer_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double">2.5</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field i32 untyped number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_i32_untyped(&ctx, root, "value", 0).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid numeric field returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn xml_untyped_real_number_parse_preserves_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double">2.5</value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino field f64 untyped number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_f64_untyped(&ctx, root, "value", cadmpeg_ir::scalar::FiniteReal::ONE).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

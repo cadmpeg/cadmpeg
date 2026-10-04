@@ -65,3 +65,8 @@ fn datum_target_form_trim_preserves_refusal() {
     assert_eq!(refusal.operation, "STEP datum target form trim");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
+
+#[test]
+fn targeted_aspect_number_parse_preserves_refusal() {
+    case_refuses("STEP PMI targeted aspect number parse", false);
+}

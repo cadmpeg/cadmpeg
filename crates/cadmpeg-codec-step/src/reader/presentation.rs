@@ -531,7 +531,8 @@ pub(super) fn decode(
                     .source_entity_id
                     .as_deref()
                     .and_then(|source_id| source_id.strip_prefix('#'))
-                    .and_then(|source_id| source_id.parse::<u64>().ok())
+                    .map(|source_id| ctx.parse_text::<u64>(source_id, "STEP binding style number parse"))
+                    .transpose()?.and_then(Result::ok)
                 else {
                     continue;
                 };

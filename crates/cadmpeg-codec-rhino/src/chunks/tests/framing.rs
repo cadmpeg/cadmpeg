@@ -222,7 +222,9 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
-    policy.limits.max_work_units = scan_work;
+    // Magic scan, three admitted version traversals (8 + 6 + 2), and the two-digit parse.
+    let total_work = scan_work + 2 * cadmpeg_core::decode::u64_from_index(file_header::LEN - file_header::ARCHIVE_VERSION) + 2;
+    policy.limits.max_work_units = total_work;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
     let parsed = parse_header(&ctx, &bytes).expect("one scan fits the allowance");
@@ -232,7 +234,7 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
         matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "Rhino header magic scan"
-            && limit.used == scan_work && limit.additional == scan_work
+            && limit.used == total_work && limit.additional == scan_work
             && Some(limit) == ctx.resource_refusal())
     );
 }
@@ -535,4 +537,21 @@ fn checksum_direct_bytes_refuse_before_hashing() {
     let result = verify_checksum(&ctx, &bytes, &chunk);
     assert!(matches!(result, Err(FramingError::Resource(limit))
         if limit.operation == "Rhino chunk checksum bytes" && limit.used == 1 && limit.additional == 4));
+}
+
+#[test]
+fn archive_version_number_parse_preserves_refusal() {
+    let bytes = header("80");
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino archive version number parse", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = parse_header(&ctx, &bytes).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid header returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
 }

@@ -860,19 +860,17 @@ pub(super) fn decode(
         ctx,
     )?;
 
-    let targeted_aspects = ctx.collect_btree_set(
-        ir.model
-            .pmi
-            .iter()
-            .flat_map(|annotation| &annotation.targets)
-            .filter_map(|target| match target {
-                PmiTarget::ShapeAspect { source_id } => {
-                    source_id.as_str().strip_prefix('#')?.parse().ok()
-                }
-                _ => None,
-            }),
-        "step_pmi_targeted_aspects",
-    )?;
+    let mut targeted_aspects = BTreeSet::new();
+    for target in ir.model.pmi.iter().flat_map(|annotation| &annotation.targets) {
+        let id = match target {
+            PmiTarget::ShapeAspect { source_id } => match source_id.as_str().strip_prefix('#') {
+                Some(number) => ctx.parse_text::<u64>(number, "STEP PMI targeted aspect number parse")?.ok(),
+                None => None,
+            },
+            _ => None,
+        };
+        if let Some(id) = id { ctx.insert_btree_set(&mut targeted_aspects, id, "step_pmi_targeted_aspects")?; }
+    }
     ctx.extend_hash_set(
         &mut typed,
         shape_aspects.intersection(&targeted_aspects).copied(),
@@ -1219,7 +1217,7 @@ fn point_sources(
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>, CodecError> {
     let mut points = BTreeMap::new();
     for point in ctx.admit_iter(&(ir.model.points)[..], "STEP point sources traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
+        let Some(source) = source_numeric_id(ctx, point.id.as_str(), "point")? else {
             continue;
         };
         let id = point
@@ -1242,7 +1240,7 @@ fn curve_sources(
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>, CodecError> {
     let mut curves = BTreeMap::new();
     for curve in ctx.admit_iter(&(ir.model.curves)[..], "STEP curve sources traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
+        let Some(source) = source_numeric_id(ctx, curve.id.as_str(), "curve")? else {
             continue;
         };
         let id = curve

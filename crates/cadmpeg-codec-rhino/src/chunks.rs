@@ -234,9 +234,8 @@ pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Head
     {
         return Err(FramingError::InvalidHeader);
     }
-    let value = std::str::from_utf8(&version[first_digit..])
-        .map_err(|_| FramingError::InvalidHeader)?
-        .parse::<u64>()
+    let text = std::str::from_utf8(&version[first_digit..]).map_err(|_| FramingError::InvalidHeader)?;
+    let value = ctx.parse_text::<u64>(text, "Rhino archive version number parse")?
         .map_err(|_| FramingError::InvalidHeader)?;
     if value == 0 {
         return Err(FramingError::InvalidHeader);

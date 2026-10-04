@@ -216,7 +216,7 @@ pub(super) fn decode(
     }
     ctx.retain_vec(&mut ir.model.points, |point| {
         // A point whose identity names no entity is not a validation point.
-        let Some(id) = step_id(point.id.as_str()) else {
+        let Some(id) = step_id(ctx, point.id.as_str())? else {
             return Ok(true);
         };
         Ok(!validation_points.contains(&id) || referenced_validation_points.contains(&id))
@@ -595,8 +595,9 @@ fn mesh_properties(
 
 /// The numeric entity identifier an IR identity ends with, or `None` when it
 /// names none.
-fn step_id(id: &str) -> Option<u64> {
-    id.rsplit('#').next().and_then(|id| id.parse().ok())
+fn step_id(ctx: &DecodeContext<'_>, id: &str) -> Result<Option<u64>, CodecError> {
+    id.rsplit('#').next().map(|number| ctx.parse_text::<u64>(number, "STEP validation point number parse"))
+        .transpose().map(|number| number.and_then(Result::ok))
 }
 
 fn collect_validation_references(
