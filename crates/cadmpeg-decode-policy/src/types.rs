@@ -135,8 +135,7 @@ pub(crate) fn standard_str_chars_call(
         .instantiate_identity()
         .skip_norm_wip();
     matches!(self_type.kind(), ty::Str)
-        && (matches!(receiver.peel_refs().kind(), ty::Str)
-            || standard_string(tcx, receiver))
+        && (matches!(receiver.peel_refs().kind(), ty::Str) || standard_string(tcx, receiver))
         && matches!(output.peel_refs().kind(), ty::Adt(owner, _)
             if physical_item_path(tcx, owner.did(), "core", &["str", "iter", "Chars"]))
 }
@@ -496,7 +495,9 @@ pub(crate) fn admitted_iterator<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> boo
         &["decode", "scan", "AdmittedIter"],
     ) || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
         && owner.did().is_local()
-        && tcx.opt_item_name(owner.did()).is_some_and(|name| name.as_str() == "AdmittedIter")
+        && tcx
+            .opt_item_name(owner.did())
+            .is_some_and(|name| name.as_str() == "AdmittedIter")
         && tcx
             .def_path(owner.did())
             .data

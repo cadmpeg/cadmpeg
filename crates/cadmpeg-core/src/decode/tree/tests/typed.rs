@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::JsonBound;
-use crate::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use crate::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use crate::CodecError;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -42,13 +40,11 @@ fn typed_pass_work(ctx: &DecodeContext<'_>, text: &str, bound: &JsonBound) -> u6
 fn typed_json_conversion_precharges_before_second_deserializer_call() {
     let text = r#""source""#;
     let probe_arena = DecodeArena::new();
-    let (probe, _) = DecodeContext::from_root_bytes(
-        b"",
-        &probe_arena,
-        &DecodePolicy::default(),
-    )
-    .expect("valid fixture");
-    let bound = probe.json_bound(text, "typed JSON tree").expect("JSON bound");
+    let (probe, _) = DecodeContext::from_root_bytes(b"", &probe_arena, &DecodePolicy::default())
+        .expect("valid fixture");
+    let bound = probe
+        .json_bound(text, "typed JSON tree")
+        .expect("JSON bound");
     let input_len = u64_from_index(text.len());
     let parser_work = input_len
         .checked_mul(checked_work(bound.entries.checked_add(1)))

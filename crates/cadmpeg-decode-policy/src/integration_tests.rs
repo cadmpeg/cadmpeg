@@ -133,24 +133,24 @@ fn check_fixture(name: &str) {
             | "borrowed_identities"
             | "iteration_sources"
             | "model_index"
-| "core_operations"
-| "admitted_text"
-| "const_grammar"
-| "xml_routes"
-| "adapter_receipts"
-| "structural_projection"
-| "structural_fixed"
-| "structural_wire"
-| "structural_record"
-| "structural_derived"
-| "structural_map"
-| "actual_structural_sources"
-| "matrix_iteration"
-| "hash_set_callbacks"
-| "decoder_progress"
-| "serde_storage"
-| "collection_sources"
-| "archive_probe"
+            | "core_operations"
+            | "admitted_text"
+            | "const_grammar"
+            | "xml_routes"
+            | "adapter_receipts"
+            | "structural_projection"
+            | "structural_fixed"
+            | "structural_wire"
+            | "structural_record"
+            | "structural_derived"
+            | "structural_map"
+            | "actual_structural_sources"
+            | "matrix_iteration"
+            | "hash_set_callbacks"
+            | "decoder_progress"
+            | "serde_storage"
+            | "collection_sources"
+            | "archive_probe"
     ) {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
@@ -313,7 +313,9 @@ fn check_fixture(name: &str) {
         for (index, line) in source.lines().enumerate() {
             if let Some(method) = line.trim().strip_prefix("// replacement: ") {
                 let line_number = (index + 2).to_string();
-                let replacement = if method.starts_with("DecodeContext::") || method.starts_with("cadmpeg_container::") {
+                let replacement = if method.starts_with("DecodeContext::")
+                    || method.starts_with("cadmpeg_container::")
+                {
                     method.to_owned()
                 } else {
                     format!("DecodeContext::{method}")
@@ -399,24 +401,24 @@ fn check_fixture(name: &str) {
                     | "borrowed_identities"
                     | "iteration_sources"
                     | "model_index"
-| "core_operations"
-| "admitted_text"
-| "const_grammar"
-| "xml_routes"
-| "adapter_receipts"
-| "structural_projection"
-| "structural_fixed"
-| "structural_wire"
-| "structural_record"
-| "structural_derived"
-| "structural_map"
-| "actual_structural_sources"
-| "matrix_iteration"
-| "hash_set_callbacks"
-| "decoder_progress"
-| "serde_storage"
-| "collection_sources"
-| "archive_probe"
+                    | "core_operations"
+                    | "admitted_text"
+                    | "const_grammar"
+                    | "xml_routes"
+                    | "adapter_receipts"
+                    | "structural_projection"
+                    | "structural_fixed"
+                    | "structural_wire"
+                    | "structural_record"
+                    | "structural_derived"
+                    | "structural_map"
+                    | "actual_structural_sources"
+                    | "matrix_iteration"
+                    | "hash_set_callbacks"
+                    | "decoder_progress"
+                    | "serde_storage"
+                    | "collection_sources"
+                    | "archive_probe"
             ) {
                 true
             } else if name.starts_with("work") {
@@ -1130,7 +1132,7 @@ fn model_index_constructors_enumerate_finite_generic_dependencies() {
 
 #[test]
 fn core_operations_accept_concrete_charged_shapes() {
-check_fixture("core_operations");
+    check_fixture("core_operations");
 }
 
 #[test]
@@ -1165,7 +1167,7 @@ fn structural_fixed_callbacks_require_concrete_finite_bodies() {
 
 #[test]
 fn structural_wire_callbacks_require_borrowed_value_and_result_lineage() {
-check_fixture("structural_wire");
+    check_fixture("structural_wire");
 }
 
 #[test]
@@ -1220,5 +1222,5 @@ fn archive_name_probe_keeps_concrete_callback_obligations() {
 
 #[test]
 fn actual_ir_serializers_keep_concrete_callback_obligations() {
-check_fixture("actual_structural_sources");
+    check_fixture("actual_structural_sources");
 }

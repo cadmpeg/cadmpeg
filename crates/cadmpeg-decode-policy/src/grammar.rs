@@ -12,10 +12,26 @@ struct GrammarConstructor {
 }
 
 const GRAMMAR_CONSTRUCTORS: [GrammarConstructor; 4] = [
-    GrammarConstructor { owner: "IdentityComponent", method: "try_new", source_count: 1 },
-    GrammarConstructor { owner: "IdentityKey", method: "try_new", source_count: 1 },
-    GrammarConstructor { owner: "IdentityKeyTail", method: "try_new", source_count: 1 },
-    GrammarConstructor { owner: "IdentityNamespace", method: "new", source_count: 3 },
+    GrammarConstructor {
+        owner: "IdentityComponent",
+        method: "try_new",
+        source_count: 1,
+    },
+    GrammarConstructor {
+        owner: "IdentityKey",
+        method: "try_new",
+        source_count: 1,
+    },
+    GrammarConstructor {
+        owner: "IdentityKeyTail",
+        method: "try_new",
+        source_count: 1,
+    },
+    GrammarConstructor {
+        owner: "IdentityNamespace",
+        method: "new",
+        source_count: 3,
+    },
 ];
 
 impl<'tcx> Analysis<'_, 'tcx> {
@@ -28,8 +44,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let ty::Adt(result, arguments) = value.kind() else {
             return false;
         };
-        if !types::physical_item_path(self.tcx, result.did(), "core", &["result", "Result"])
-        {
+        if !types::physical_item_path(self.tcx, result.did(), "core", &["result", "Result"]) {
             return false;
         }
         let mut types = arguments.types();
@@ -52,11 +67,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if self.tcx.def_kind(definition) != rustc_hir::def::DefKind::AssocFn {
             return None;
         }
-        let constructor = GRAMMAR_CONSTRUCTORS
-            .iter()
-            .find(|constructor| types::physical_inherent_method(
-                self.tcx, definition, "cadmpeg_ir", &["ids", constructor.owner], constructor.method,
-            ))?;
+        let constructor = GRAMMAR_CONSTRUCTORS.iter().find(|constructor| {
+            types::physical_inherent_method(
+                self.tcx,
+                definition,
+                "cadmpeg_ir",
+                &["ids", constructor.owner],
+                constructor.method,
+            )
+        })?;
 
         let Some((called, operands)) = self.call(expression) else {
             return Some(None);
@@ -73,22 +92,29 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(coefficient) = self.flow.iterations.checked_mul(2) else {
             return Some(None);
         };
-        let required: Option<Vec<_>> = operands.iter().map(|source| {
-            if !types::standard_string(self.tcx, self.expr_ty(source)) {
-                return None;
-            }
-            self.key(source, &mut Vec::new()).map(|key| ExtentTerm {
-                factors: vec![key],
-                coefficient,
+        let required: Option<Vec<_>> = operands
+            .iter()
+            .map(|source| {
+                if !types::standard_string(self.tcx, self.expr_ty(source)) {
+                    return None;
+                }
+                self.key(source, &mut Vec::new()).map(|key| ExtentTerm {
+                    factors: vec![key],
+                    coefficient,
+                })
             })
-        }).collect();
-        let Some(required) = required else { return Some(None) };
+            .collect();
+        let Some(required) = required else {
+            return Some(None);
+        };
 
         let mut remaining = self.flow.work.clone();
-        if required.iter().all(|extent| remaining.iter_mut().any(|credit| {
-            !credit.opaque
-                && storage::consume_terms(&mut credit.extents, std::slice::from_ref(extent))
-        })) {
+        if required.iter().all(|extent| {
+            remaining.iter_mut().any(|credit| {
+                !credit.opaque
+                    && storage::consume_terms(&mut credit.extents, std::slice::from_ref(extent))
+            })
+        }) {
             remaining.retain(|credit| credit.opaque || !credit.extents.is_empty());
             self.flow.work = remaining;
             self.findings.admitted_operations.insert(expression.hir_id);

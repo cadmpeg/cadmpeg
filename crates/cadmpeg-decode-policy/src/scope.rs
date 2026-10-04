@@ -544,15 +544,12 @@ impl<'tcx> Visitor<'tcx> for Calls<'_, '_, 'tcx> {
                     self.analysis.typing_env(),
                     (0, EdgeKind::DirectCall),
                 );
-                if crate::conversion::core_conversion_trait(
-                    self.analysis.tcx,
-                    id,
-                    "Into",
-                ) {
+                if crate::conversion::core_conversion_trait(self.analysis.tcx, id, "Into") {
                     if let Some((_, operands)) = self.analysis.call(expression) {
-                        if let Some(source) = operands.first().map(|operand| {
-                            self.analysis.expr_ty(operand)
-                        }) {
+                        if let Some(source) = operands
+                            .first()
+                            .map(|operand| self.analysis.expr_ty(operand))
+                        {
                             if let Some(from) = crate::conversion::forwarded_from(
                                 self.analysis.tcx,
                                 self.analysis.typing_env(),

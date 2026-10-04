@@ -11,16 +11,24 @@ impl<'tcx> Analysis<'_, 'tcx> {
         expression: &'tcx Expr<'tcx>,
         receiver: &'tcx Expr<'tcx>,
     ) -> bool {
-        let Some(initializer) = self.initializer(receiver) else { return false; };
+        let Some(initializer) = self.initializer(receiver) else {
+            return false;
+        };
         for (_, node) in self.tcx.hir_parent_iter(expression.hir_id) {
-            let Node::Expr(parent) = node else { continue; };
+            let Node::Expr(parent) = node else {
+                continue;
+            };
             if matches!(parent.kind, ExprKind::Closure(_)) {
                 return false;
             }
             if let ExprKind::Match(source, _, MatchSource::ForLoopDesugar) = parent.kind {
                 if !parent.span.contains(initializer.span)
-                    && self.call(source).and_then(|(_, arguments)| arguments.first().copied())
-                        .is_some_and(|input| self.iteration(input, &mut Vec::new()) == Shape::Dynamic)
+                    && self
+                        .call(source)
+                        .and_then(|(_, arguments)| arguments.first().copied())
+                        .is_some_and(|input| {
+                            self.iteration(input, &mut Vec::new()) == Shape::Dynamic
+                        })
                 {
                     return true;
                 }
@@ -167,7 +175,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         types::physical_item_path(self.tcx, owner.did(), "alloc", &["vec", "Vec"]))
                     && self.input_sized_growth_loop(expression, receiver);
                 if repeated_vector_growth {
-                    self.shape_report(expression, Shape::Dynamic, "collection growth outside core operation");
+                    self.shape_report(
+                        expression,
+                        Shape::Dynamic,
+                        "collection growth outside core operation",
+                    );
                     self.report(expression.span, "uncharged_decode_work",
                         "input-sized vector growth may relocate stored slots; replacement: DecodeContext::push_vec");
                     return;

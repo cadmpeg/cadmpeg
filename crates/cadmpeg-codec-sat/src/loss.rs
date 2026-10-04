@@ -81,7 +81,10 @@ impl SatLossCode {
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
-    pub(crate) fn kind(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<LossKind, cadmpeg_core::CodecError> {
+    pub(crate) fn kind(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<LossKind, cadmpeg_core::CodecError> {
         let namespace = ctx.copy_retained_text(NAMESPACE.as_str(), "SAT loss namespace")?;
         let code = ctx.copy_retained_text(self.code(), "SAT loss code")?;
         NamespacedLossKind::new_owned(namespace, code, self.shared_taxonomy())
@@ -93,7 +96,11 @@ impl SatLossCode {
     ///
     /// The structured code is `sat/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
-    pub(crate) fn note(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, message: String) -> Result<LossNote, cadmpeg_core::CodecError> {
+    pub(crate) fn note(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: String,
+    ) -> Result<LossNote, cadmpeg_core::CodecError> {
         Ok(LossNote::new(self.kind(ctx)?, message).with_severity(self.severity()))
     }
 }
@@ -139,7 +146,9 @@ mod tests {
     #[test]
     fn note_takes_severity_from_the_code() {
         for code in SatLossCode::ALL {
-            let note = code.note(&cadmpeg_test_support::service_decode_context(), "x".into()).expect("service loss");
+            let note = code
+                .note(&cadmpeg_test_support::service_decode_context(), "x".into())
+                .expect("service loss");
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());

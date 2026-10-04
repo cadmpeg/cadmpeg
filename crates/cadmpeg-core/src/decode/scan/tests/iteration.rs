@@ -74,7 +74,10 @@ fn serde_json_map_supports_owned_and_borrowed_sources() {
             .expect("owned map admission")
             .map(|(key, value)| (key, value.as_i64()))
             .collect::<Vec<_>>();
-        assert_eq!(owned, [("a".to_owned(), Some(1)), ("b".to_owned(), Some(2))]);
+        assert_eq!(
+            owned,
+            [("a".to_owned(), Some(1)), ("b".to_owned(), Some(2))]
+        );
 
         let borrowed = context
             .admit_iter(&map, "borrowed JSON map")

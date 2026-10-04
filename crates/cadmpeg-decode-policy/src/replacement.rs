@@ -17,9 +17,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             ty::Adt(owner, arguments) if types::standard(self.tcx, owner.did()) => {
                 match self.tcx.item_name(owner.did()).as_str() {
-                    "Option" if matches!(arguments.type_at(0).kind(), ty::Adt(inner, _)
+                    "Option"
+                        if matches!(arguments.type_at(0).kind(), ty::Adt(inner, _)
                         if types::standard(self.tcx, inner.did())
-                            && self.tcx.item_name(inner.did()).as_str() == "HashSet") => "hash_set",
+                            && self.tcx.item_name(inner.did()).as_str() == "HashSet") =>
+                    {
+                        "hash_set"
+                    }
                     "String" => "text",
                     "Vec" => "vector",
                     "HashMap" => "hash_map",

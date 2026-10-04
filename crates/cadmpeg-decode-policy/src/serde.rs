@@ -33,24 +33,32 @@ fn custom_deserializer(tcx: TyCtxt<'_>, definition: DefId) -> bool {
         })
 }
 
-fn is_serde_derived_deserialize_impl(
-    tcx: TyCtxt<'_>,
-    implementation: DefId,
-) -> bool {
+fn is_serde_derived_deserialize_impl(tcx: TyCtxt<'_>, implementation: DefId) -> bool {
     tcx.is_automatically_derived(implementation)
-        && tcx.associated_items(implementation).in_definition_order()
+        && tcx
+            .associated_items(implementation)
+            .in_definition_order()
             .find(|item| item.name().as_str() == "deserialize")
-            .is_some_and(|method| tcx.def_span(method.def_id).macro_backtrace().any(|expansion| {
-                matches!(expansion.kind,
-                    rustc_span::hygiene::ExpnKind::Macro(
-                        rustc_span::hygiene::MacroKind::Derive, _
-                    ))
-                    && expansion.macro_def_id.is_some_and(|macro_definition| {
-                        types::physical_item_path(
-                            tcx, macro_definition, "serde_derive", &["Deserialize"],
-                        )
+            .is_some_and(|method| {
+                tcx.def_span(method.def_id)
+                    .macro_backtrace()
+                    .any(|expansion| {
+                        matches!(
+                            expansion.kind,
+                            rustc_span::hygiene::ExpnKind::Macro(
+                                rustc_span::hygiene::MacroKind::Derive,
+                                _
+                            )
+                        ) && expansion.macro_def_id.is_some_and(|macro_definition| {
+                            types::physical_item_path(
+                                tcx,
+                                macro_definition,
+                                "serde_derive",
+                                &["Deserialize"],
+                            )
+                        })
                     })
-            }))
+            })
 }
 
 fn standard_map_key(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
@@ -79,10 +87,7 @@ fn standard_hash_map_tree<'tcx>(
         && standard_global_allocator_tail(tcx, &arguments[3..])
 }
 
-fn standard_hash_set_tree<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    arguments: ty::GenericArgsRef<'tcx>,
-) -> bool {
+fn standard_hash_set_tree<'tcx>(tcx: TyCtxt<'tcx>, arguments: ty::GenericArgsRef<'tcx>) -> bool {
     let arguments: Vec<_> = arguments.types().collect();
     arguments.len() >= 2
         && standard_map_key(tcx, arguments[0])
@@ -105,10 +110,7 @@ fn standard_btree_map_tree<'tcx>(
         && standard_global_allocator_tail(tcx, &arguments[2..])
 }
 
-fn standard_btree_set_tree<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    arguments: ty::GenericArgsRef<'tcx>,
-) -> bool {
+fn standard_btree_set_tree<'tcx>(tcx: TyCtxt<'tcx>, arguments: ty::GenericArgsRef<'tcx>) -> bool {
     let arguments: Vec<_> = arguments.types().collect();
     !arguments.is_empty()
         && standard_map_key(tcx, arguments[0])
@@ -136,23 +138,45 @@ fn derived_tree<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<'tcx
     let depth = seen.len();
     seen.push(value);
     let admitted = match value.kind() {
-        ty::Adt(owner, args) if types::standard(tcx, owner.did()) => {
-            match owner.did() {
-                _ if types::physical_item_path(tcx, owner.did(), "std", &["collections", "hash", "map", "HashMap"]) => {
-                    standard_hash_map_tree(tcx, args, seen)
-                }
-                _ if types::physical_item_path(tcx, owner.did(), "std", &["collections", "hash", "set", "HashSet"]) => {
-                    standard_hash_set_tree(tcx, args)
-                }
-                _ if types::physical_item_path(tcx, owner.did(), "alloc", &["collections", "btree", "map", "BTreeMap"]) => {
-                    standard_btree_map_tree(tcx, args, seen)
-                }
-                _ if types::physical_item_path(tcx, owner.did(), "alloc", &["collections", "btree", "set", "BTreeSet"]) => {
-                    standard_btree_set_tree(tcx, args)
-                }
-                _ => args.types().all(|inner| derived_tree(tcx, inner, seen)),
+        ty::Adt(owner, args) if types::standard(tcx, owner.did()) => match owner.did() {
+            _ if types::physical_item_path(
+                tcx,
+                owner.did(),
+                "std",
+                &["collections", "hash", "map", "HashMap"],
+            ) =>
+            {
+                standard_hash_map_tree(tcx, args, seen)
             }
-        }
+            _ if types::physical_item_path(
+                tcx,
+                owner.did(),
+                "std",
+                &["collections", "hash", "set", "HashSet"],
+            ) =>
+            {
+                standard_hash_set_tree(tcx, args)
+            }
+            _ if types::physical_item_path(
+                tcx,
+                owner.did(),
+                "alloc",
+                &["collections", "btree", "map", "BTreeMap"],
+            ) =>
+            {
+                standard_btree_map_tree(tcx, args, seen)
+            }
+            _ if types::physical_item_path(
+                tcx,
+                owner.did(),
+                "alloc",
+                &["collections", "btree", "set", "BTreeSet"],
+            ) =>
+            {
+                standard_btree_set_tree(tcx, args)
+            }
+            _ => args.types().all(|inner| derived_tree(tcx, inner, seen)),
+        },
         ty::Adt(owner, args) => {
             !custom_deserializer(tcx, owner.did())
                 && tcx

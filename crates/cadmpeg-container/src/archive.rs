@@ -289,7 +289,12 @@ impl<'a> ArchiveSnapshot<'a> {
             };
             if entry.encrypted()
                 || entry.get_metadata().aes_mode.is_some()
-                || !matches!(entry.compression(), CompressionMethod::Stored | CompressionMethod::Deflated | CompressionMethod::Zstd)
+                || !matches!(
+                    entry.compression(),
+                    CompressionMethod::Stored
+                        | CompressionMethod::Deflated
+                        | CompressionMethod::Zstd
+                )
             {
                 continue;
             }

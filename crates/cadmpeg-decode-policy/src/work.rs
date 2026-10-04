@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{external, types, Analysis};
 use rustc_hir::intravisit::{walk_expr, walk_pat, Visitor};
-use rustc_hir::{BinOpKind, Expr, ExprKind, HirId, LoopSource, MatchSource, Pat, PatKind, StmtKind};
+use rustc_hir::{
+    BinOpKind, Expr, ExprKind, HirId, LoopSource, MatchSource, Pat, PatKind, StmtKind,
+};
 use rustc_span::Span;
 use types::Shape;
 
@@ -36,16 +38,26 @@ impl<'tcx> Analysis<'_, 'tcx> {
             })
     }
 
-    fn borrowed_cow_conversion(&self, expression: &'tcx Expr<'tcx>, definition: rustc_span::def_id::DefId, operands: &[&'tcx Expr<'tcx>]) -> bool {
+    fn borrowed_cow_conversion(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        definition: rustc_span::def_id::DefId,
+        operands: &[&'tcx Expr<'tcx>],
+    ) -> bool {
         let result = self.expr_ty(expression);
         let rustc_middle::ty::Adt(owner, result_args) = result.kind() else {
             return false;
         };
         if !types::standard(self.tcx, owner.did())
             || self.tcx.item_name(owner.did()).as_str() != "Cow"
-            || !matches!(self.tcx.def_kind(definition), rustc_hir::def::DefKind::AssocFn)
+            || !matches!(
+                self.tcx.def_kind(definition),
+                rustc_hir::def::DefKind::AssocFn
+            )
             || !matches!(self.tcx.item_name(definition).as_str(), "from" | "into")
-            || !self.implementation(expression, definition).is_some_and(|id| types::standard(self.tcx, id))
+            || !self
+                .implementation(expression, definition)
+                .is_some_and(|id| types::standard(self.tcx, id))
         {
             return false;
         }
@@ -148,10 +160,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .any(|source| self.stepwise_iterator_lineage(source))
     }
 
-    fn direct_incremental_admitted_iterator(
-        &self,
-        value: rustc_middle::ty::Ty<'tcx>,
-    ) -> bool {
+    fn direct_incremental_admitted_iterator(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
         let value = types::reveal_opaque(self.tcx, value.peel_refs());
         let rustc_middle::ty::Adt(owner, arguments) = value.kind() else {
             return false;
@@ -161,11 +170,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             owner.did(),
             "cadmpeg_core",
             &["decode", "scan", "AdmittedIter"],
-        )
-            && arguments
-                .types()
-                .nth(1)
-                .is_some_and(|mode| self.incremental_mode(mode))
+        ) && arguments
+            .types()
+            .nth(1)
+            .is_some_and(|mode| self.incremental_mode(mode))
     }
 
     fn precharged_admission_refusal_propagates(
@@ -178,9 +186,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         seen.push(expression.hir_id);
         match expression.kind {
-            ExprKind::DropTemps(inner) => {
-                self.precharged_admission_refusal_propagates(inner, seen)
-            }
+            ExprKind::DropTemps(inner) => self.precharged_admission_refusal_propagates(inner, seen),
             ExprKind::Match(scrutinee, _, MatchSource::TryDesugar(_)) => {
                 let Some((branch, arguments)) = self.call(scrutinee) else {
                     return false;
@@ -201,11 +207,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         && self.propagated(operation)
                 })
             }
-            ExprKind::Path(_) => self
-                .initializer(expression)
-                .is_some_and(|initializer| {
-                    self.precharged_admission_refusal_propagates(initializer, seen)
-                }),
+            ExprKind::Path(_) => self.initializer(expression).is_some_and(|initializer| {
+                self.precharged_admission_refusal_propagates(initializer, seen)
+            }),
             _ => {
                 let Some((definition, operands)) = self.call(expression) else {
                     return false;
@@ -213,16 +217,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if !types::standard(self.tcx, definition) {
                     return false;
                 }
-                let mut receipts = operands.iter().filter(|operand| {
-                    self.precharged_iterator_lineage(self.expr_ty(operand))
-                });
+                let mut receipts = operands
+                    .iter()
+                    .filter(|operand| self.precharged_iterator_lineage(self.expr_ty(operand)));
                 let Some(first) = receipts.next() else {
                     return false;
                 };
                 self.precharged_admission_refusal_propagates(first, seen)
-                    && receipts.all(|operand| {
-                        self.precharged_admission_refusal_propagates(operand, seen)
-                    })
+                    && receipts
+                        .all(|operand| self.precharged_admission_refusal_propagates(operand, seen))
             }
         }
     }
@@ -251,16 +254,11 @@ impl<'tcx> Analysis<'_, 'tcx> {
             "cadmpeg_core",
             &["decode", "scan", "AdmittedIter"],
         ) {
-            return arguments
-                .types()
-                .nth(1)
-                .is_some_and(|mode| {
-                    self.incremental_mode(mode) && self.bounded_iterator_step(value)
-                });
+            return arguments.types().nth(1).is_some_and(|mode| {
+                self.incremental_mode(mode) && self.bounded_iterator_step(value)
+            });
         }
-        if !types::standard(self.tcx, owner.did())
-            || !self.stepwise_iterator_lineage(value)
-        {
+        if !types::standard(self.tcx, owner.did()) || !self.stepwise_iterator_lineage(value) {
             return false;
         }
         let name = self.tcx.item_name(owner.did());
@@ -328,17 +326,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
             ExprKind::DropTemps(inner) | ExprKind::Cast(inner, _) => {
                 self.stepwise_item_operand_is_binding(inner, bindings)
             }
-            ExprKind::AddrOf(_, _, inner) => {
-                self.stepwise_item_operand_is_binding(inner, bindings)
-            }
+            ExprKind::AddrOf(_, _, inner) => self.stepwise_item_operand_is_binding(inner, bindings),
             _ => self.call(expression).is_some_and(|(definition, operands)| {
                 types::physical_item_path(
                     self.tcx,
                     definition,
                     "core",
                     &["convert", "Into", "into"],
-                )
-                    && operands.len() == 1
+                ) && operands.len() == 1
                     && self.stepwise_item_operand_is_binding(operands[0], bindings)
             }),
         }
@@ -380,7 +375,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
             _ => None,
         };
-        let Some(initializer) = initializer else { return false; };
+        let Some(initializer) = initializer else {
+            return false;
+        };
         self.leading_stepwise_try(initializer, &bindings.0)
     }
 
@@ -389,9 +386,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
             initializer = inner;
         }
         if let ExprKind::Binary(operator, left, _) = initializer.kind {
-            return matches!(operator.node, BinOpKind::Eq | BinOpKind::Ne | BinOpKind::Lt
-                | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge)
-                && self.leading_stepwise_try(left, bindings);
+            return matches!(
+                operator.node,
+                BinOpKind::Eq
+                    | BinOpKind::Ne
+                    | BinOpKind::Lt
+                    | BinOpKind::Le
+                    | BinOpKind::Gt
+                    | BinOpKind::Ge
+            ) && self.leading_stepwise_try(left, bindings);
         }
         let ExprKind::Match(source, _, MatchSource::TryDesugar(_)) = initializer.kind else {
             return false;
@@ -407,8 +410,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             definition,
             "core",
             &["ops", "try_trait", "Try", "branch"],
-        )
-            && self.codec_error_result(self.expr_ty(item))
+        ) && self.codec_error_result(self.expr_ty(item))
             && (self.stepwise_item_operand_is_binding(item, bindings)
                 || self.leading_stepwise_try(item, bindings))
     }
@@ -473,7 +475,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     {
                         return;
                     }
-if self.checked_call(expression, definition) {
+                    if self.checked_call(expression, definition) {
                         return;
                     }
                     if let Some(custom) = self.custom_trait(expression, definition) {
@@ -543,10 +545,7 @@ if self.checked_call(expression, definition) {
         );
         if structural_project {
             if operands.get(1).is_some_and(|source| {
-                crate::structural_projection::is_bounded_source(
-                    self.tcx,
-                    self.expr_ty(source),
-                )
+                crate::structural_projection::is_bounded_source(self.tcx, self.expr_ty(source))
             }) {
                 return;
             }
@@ -569,7 +568,7 @@ if self.checked_call(expression, definition) {
         if self.forwarded_into_body_is_checked(expression, definition, &operands) {
             return;
         }
-if self.checked_call(expression, definition) {
+        if self.checked_call(expression, definition) {
             return;
         }
         let name = name.as_str();
@@ -586,14 +585,18 @@ if self.checked_call(expression, definition) {
         if key_work_paid {
             self.record_key_work_proof(expression);
         }
-        if operands.first().zip(operands.get(1)).is_some_and(|(receiver, query)| {
-            crate::hash_set_callbacks::bounded_raw_lookup(
-                self.tcx,
-                definition,
-                self.expr_ty(receiver),
-                self.expr_ty(query),
-            ) == Some(false)
-        }) {
+        if operands
+            .first()
+            .zip(operands.get(1))
+            .is_some_and(|(receiver, query)| {
+                crate::hash_set_callbacks::bounded_raw_lookup(
+                    self.tcx,
+                    definition,
+                    self.expr_ty(receiver),
+                    self.expr_ty(query),
+                ) == Some(false)
+            })
+        {
             self.work_report(
                 expression,
                 expression.span,
@@ -606,9 +609,7 @@ if self.checked_call(expression, definition) {
         if key_work_paid {
             return;
         }
-        if self.move_work_paid(definition, &operands, name)
-            || self.core_iterator_next(expression)
-        {
+        if self.move_work_paid(definition, &operands, name) || self.core_iterator_next(expression) {
             self.record_key_work_proof(expression);
             return;
         }
@@ -886,13 +887,7 @@ if self.checked_call(expression, definition) {
             })
         {
             let paid = self.take_credit(&operands);
-            self.work_report(
-                expression,
-                expression.span,
-                Shape::Dynamic,
-                paid,
-                name,
-            );
+            self.work_report(expression, expression.span, Shape::Dynamic, paid, name);
             return;
         }
         if matches!(
@@ -965,15 +960,8 @@ if self.checked_call(expression, definition) {
         if consumers && self.precharged_iterator_lineage(value) {
             if name == "any"
                 && (!operands.last().is_some_and(|callback| {
-                    self.bounded_precharged_chars_any(
-                        definition,
-                        value,
-                        self.expr_ty(callback),
-                    )
-                }) || !self.precharged_admission_refusal_propagates(
-                    receiver,
-                    &mut Vec::new(),
-                ))
+                    self.bounded_precharged_chars_any(definition, value, self.expr_ty(callback))
+                }) || !self.precharged_admission_refusal_propagates(receiver, &mut Vec::new()))
             {
                 self.work_report(
                     expression,
@@ -1239,11 +1227,7 @@ if self.checked_call(expression, definition) {
                 }
                 if matches!(name.as_str(), "charge_work" | "charge_work_limit") {
                     if !(types::decode_context_method(self.tcx, definition, "charge_work")
-                        || types::decode_context_method(
-                            self.tcx,
-                            definition,
-                            "charge_work_limit",
-                        )
+                        || types::decode_context_method(self.tcx, definition, "charge_work_limit")
                         || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
                             && self.trusted_context_callee(call))
                     {
@@ -1510,10 +1494,7 @@ if self.checked_call(expression, definition) {
                             }
                         } else if precharged
                             && self.precharged_result_item_propagates(input_type, user_body)
-                            && self.precharged_admission_refusal_propagates(
-                                input,
-                                &mut Vec::new(),
-                            )
+                            && self.precharged_admission_refusal_propagates(input, &mut Vec::new())
                         {
                             Some(true)
                         } else if paid == Some(true) {

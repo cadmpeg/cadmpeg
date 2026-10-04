@@ -20,9 +20,11 @@ fn bounded_tree<'tcx>(
     emitted_nodes: &mut usize,
 ) -> bool {
     let source = types::reveal_opaque(tcx, source).peel_refs();
-    if let Some((_, _, previous)) = seen.iter().rev().find(|(active, active_mode, _)| {
-        *active == source && *active_mode == mode
-    }) {
+    if let Some((_, _, previous)) = seen
+        .iter()
+        .rev()
+        .find(|(active, active_mode, _)| *active == source && *active_mode == mode)
+    {
         return *emitted_nodes > *previous;
     }
     if seen.len() >= tcx.recursion_limit().0 {
@@ -46,22 +48,42 @@ fn bounded_tree<'tcx>(
                 && (mode == SerializerMode::Tagged
                     || bounded_children(tcx, fields.iter(), true, seen, emitted_nodes))
         }
-        ty::Adt(owner, arguments) if types::standard(tcx, owner.did()) => {
-            standard_source(tcx, owner.did(), arguments.types().collect(), mode, seen, emitted_nodes)
-        }
+        ty::Adt(owner, arguments) if types::standard(tcx, owner.did()) => standard_source(
+            tcx,
+            owner.did(),
+            arguments.types().collect(),
+            mode,
+            seen,
+            emitted_nodes,
+        ),
         ty::Adt(owner, _) if !owner.is_union() => {
             if mode == SerializerMode::Flattened && !owner.is_struct() {
                 false
             } else if let Some(json) = crate::structural_json::source_children(tcx, source) {
                 mode != SerializerMode::Flattened && {
-                    let number = types::physical_item_path(tcx, owner.did(), "serde_json", &["number", "Number"]);
-                    let charged = json.charged_parent && !(number && mode == SerializerMode::Tagged);
-                    let child_mode = if json.charged_parent { SerializerMode::Plain } else { mode };
-                    bounded_serialized_children(tcx, json.children.into_iter().map(|ty| SerializedChild {
-                        ty,
-                        charged_parent: charged,
-                        mode: child_mode,
-                    }), seen, emitted_nodes)
+                    let number = types::physical_item_path(
+                        tcx,
+                        owner.did(),
+                        "serde_json",
+                        &["number", "Number"],
+                    );
+                    let charged =
+                        json.charged_parent && !(number && mode == SerializerMode::Tagged);
+                    let child_mode = if json.charged_parent {
+                        SerializerMode::Plain
+                    } else {
+                        mode
+                    };
+                    bounded_serialized_children(
+                        tcx,
+                        json.children.into_iter().map(|ty| SerializedChild {
+                            ty,
+                            charged_parent: charged,
+                            mode: child_mode,
+                        }),
+                        seen,
+                        emitted_nodes,
+                    )
                 }
             } else {
                 bounded_implementation(tcx, source, *owner, mode, seen, emitted_nodes)
@@ -101,15 +123,22 @@ fn bounded_children<'tcx>(
     seen: &mut Vec<(Ty<'tcx>, SerializerMode, usize)>,
     emitted_nodes: &mut usize,
 ) -> bool {
-    bounded_serialized_children(tcx, children.into_iter().map(|ty| SerializedChild {
-        ty,
-        charged_parent,
-        mode: SerializerMode::Plain,
-    }), seen, emitted_nodes)
+    bounded_serialized_children(
+        tcx,
+        children.into_iter().map(|ty| SerializedChild {
+            ty,
+            charged_parent,
+            mode: SerializerMode::Plain,
+        }),
+        seen,
+        emitted_nodes,
+    )
 }
 
 fn bump_emitted_node(emitted_nodes: &mut usize) -> bool {
-    let Some(next) = emitted_nodes.checked_add(1) else { return false; };
+    let Some(next) = emitted_nodes.checked_add(1) else {
+        return false;
+    };
     *emitted_nodes = next;
     true
 }
@@ -123,7 +152,9 @@ fn standard_source<'tcx>(
     emitted_nodes: &mut usize,
 ) -> bool {
     if types::physical_item_path(tcx, owner, "alloc", &["boxed", "Box"]) {
-        let [inner, allocator] = arguments.as_slice() else { return false; };
+        let [inner, allocator] = arguments.as_slice() else {
+            return false;
+        };
         return matches!(allocator.kind(), ty::Adt(definition, _)
             if types::physical_item_path(tcx, definition.did(), "alloc", &["alloc", "Global"]))
             && bounded_tree(tcx, *inner, mode, seen, emitted_nodes);
@@ -131,8 +162,13 @@ fn standard_source<'tcx>(
     if [
         ("alloc", &["rc", "Rc"][..]),
         ("alloc", &["sync", "Arc"][..]),
-    ].iter().any(|(crate_name, parts)| types::physical_item_path(tcx, owner, crate_name, parts)) {
-        return arguments.first().is_some_and(|inner| bounded_tree(tcx, *inner, mode, seen, emitted_nodes));
+    ]
+    .iter()
+    .any(|(crate_name, parts)| types::physical_item_path(tcx, owner, crate_name, parts))
+    {
+        return arguments
+            .first()
+            .is_some_and(|inner| bounded_tree(tcx, *inner, mode, seen, emitted_nodes));
     }
     if mode == SerializerMode::Flattened {
         return false;
@@ -148,15 +184,33 @@ fn standard_source<'tcx>(
     }
     if types::physical_item_path(tcx, owner, "core", &["option", "Option"])
         || types::physical_item_path(tcx, owner, "alloc", &["vec", "Vec"])
-        || types::physical_item_path(tcx, owner, "alloc", &["collections", "btree", "set", "BTreeSet"])
+        || types::physical_item_path(
+            tcx,
+            owner,
+            "alloc",
+            &["collections", "btree", "set", "BTreeSet"],
+        )
     {
         // TaggedSerializer refuses these protocols before it reads a child.
         return mode == SerializerMode::Tagged
-            || arguments.first().is_some_and(|inner| bounded_children(tcx, [*inner], true, seen, emitted_nodes));
+            || arguments
+                .first()
+                .is_some_and(|inner| bounded_children(tcx, [*inner], true, seen, emitted_nodes));
     }
-    if types::physical_item_path(tcx, owner, "alloc", &["collections", "btree", "map", "BTreeMap"]) {
+    if types::physical_item_path(
+        tcx,
+        owner,
+        "alloc",
+        &["collections", "btree", "map", "BTreeMap"],
+    ) {
         return arguments.len() >= 2
-            && bounded_children(tcx, arguments.into_iter().take(2), true, seen, emitted_nodes);
+            && bounded_children(
+                tcx,
+                arguments.into_iter().take(2),
+                true,
+                seen,
+                emitted_nodes,
+            );
     }
     false
 }
@@ -169,21 +223,33 @@ fn bounded_implementation<'tcx>(
     seen: &mut Vec<(Ty<'tcx>, SerializerMode, usize)>,
     emitted_nodes: &mut usize,
 ) -> bool {
-    let candidates: Vec<_> = tcx.all_traits_including_private()
+    let candidates: Vec<_> = tcx
+        .all_traits_including_private()
         .filter(|trait_id| serde_serialize_trait(tcx, *trait_id))
         .flat_map(|trait_id| tcx.non_blanket_impls_for_ty(trait_id, source))
-        .filter(|implementation| matches!(tcx.type_of(*implementation)
+        .filter(|implementation| {
+            matches!(tcx.type_of(*implementation)
             .instantiate_identity().skip_norm_wip().kind(),
-            ty::Adt(definition, _) if definition.did() == owner.did()))
+            ty::Adt(definition, _) if definition.did() == owner.did())
+        })
         .collect();
-    let [implementation] = candidates.as_slice() else { return false; };
-    let Some(method) = tcx.associated_items(*implementation).in_definition_order()
-        .find(|item| item.name().as_str() == "serialize").map(|item| item.def_id)
-    else { return false; };
+    let [implementation] = candidates.as_slice() else {
+        return false;
+    };
+    let Some(method) = tcx
+        .associated_items(*implementation)
+        .in_definition_order()
+        .find(|item| item.name().as_str() == "serialize")
+        .map(|item| item.def_id)
+    else {
+        return false;
+    };
     let derived = tcx.is_automatically_derived(*implementation)
         && (!implementation.is_local() || is_serde_derived_impl(tcx, *implementation, method));
     if derived {
-        if let Some(children) = crate::structural_derived::derived_children(tcx, source, method, mode) {
+        if let Some(children) =
+            crate::structural_derived::derived_children(tcx, source, method, mode)
+        {
             return bounded_serialized_children(tcx, children, seen, emitted_nodes);
         }
         if let Some(wire) = crate::structural_fixed::derived_into_source(tcx, source, method) {
@@ -196,7 +262,13 @@ fn bounded_implementation<'tcx>(
             && (mode == SerializerMode::Tagged || bump_emitted_node(emitted_nodes));
     }
     if let Some(fields) = crate::structural_record::record_field_types(tcx, source, method) {
-        return bounded_children(tcx, fields, mode != SerializerMode::Flattened, seen, emitted_nodes);
+        return bounded_children(
+            tcx,
+            fields,
+            mode != SerializerMode::Flattened,
+            seen,
+            emitted_nodes,
+        );
     }
     if mode != SerializerMode::Flattened {
         if let Some(fields) = crate::structural_map::declared_map_field_types(tcx, source, method) {
@@ -216,9 +288,10 @@ fn serde_serialize_trait(tcx: TyCtxt<'_>, definition: DefId) -> bool {
 fn is_serde_derived_impl(tcx: TyCtxt<'_>, implementation: DefId, method: DefId) -> bool {
     tcx.is_automatically_derived(implementation)
         && tcx.def_span(method).macro_backtrace().any(|expansion| {
-            matches!(expansion.kind, rustc_span::hygiene::ExpnKind::Macro(
-                rustc_span::hygiene::MacroKind::Derive, _
-            )) && expansion.macro_def_id.is_some_and(|definition| {
+            matches!(
+                expansion.kind,
+                rustc_span::hygiene::ExpnKind::Macro(rustc_span::hygiene::MacroKind::Derive, _)
+            ) && expansion.macro_def_id.is_some_and(|definition| {
                 types::physical_item_path(tcx, definition, "serde_derive", &["Serialize"])
             })
         })

@@ -67,7 +67,11 @@ fn context_lookup_route(tcx: TyCtxt<'_>, context: DefId) -> Option<(CollectionKi
         ("get_mut_hash_map", CollectionKind::Map, "get_mut"),
         ("contains_key_hash_map", CollectionKind::Map, "contains_key"),
         ("remove_hash_map", CollectionKind::Map, "remove"),
-        ("get_key_value_hash_map", CollectionKind::Map, "get_key_value"),
+        (
+            "get_key_value_hash_map",
+            CollectionKind::Map,
+            "get_key_value",
+        ),
         ("remove_entry_hash_map", CollectionKind::Map, "remove_entry"),
         ("contains_hash_set", CollectionKind::Set, "contains"),
         ("get_hash_set", CollectionKind::Set, "get"),
@@ -182,9 +186,7 @@ fn supported_borrow_pair<'tcx>(tcx: TyCtxt<'tcx>, stored: Ty<'tcx>, query: Ty<'t
         return true;
     }
     if let ty::Ref(_, borrowed, _) = stored.kind() {
-        if tcx.erase_and_anonymize_regions(*borrowed)
-            == tcx.erase_and_anonymize_regions(query)
-        {
+        if tcx.erase_and_anonymize_regions(*borrowed) == tcx.erase_and_anonymize_regions(query) {
             // The physical core `Borrow<T> for &T` and `Borrow<T> for &mut T`
             // implementations return the existing referent without dispatch.
             return true;
@@ -200,7 +202,10 @@ fn supported_borrow_pair<'tcx>(tcx: TyCtxt<'tcx>, stored: Ty<'tcx>, query: Ty<'t
     }
     if let ty::Adt(owner, arguments) = stored.kind() {
         if types::physical_item_path(tcx, owner.did(), "alloc", &["borrow", "Cow"])
-            && arguments.types().next().is_some_and(|inner| matches!(inner.kind(), ty::Str))
+            && arguments
+                .types()
+                .next()
+                .is_some_and(|inner| matches!(inner.kind(), ty::Str))
             && matches!(query.kind(), ty::Str)
         {
             // Cow<str> owns exactly String; the pinned standard Borrow and
@@ -241,15 +246,10 @@ fn bounded_equality_tree<'tcx>(
             standard_equality_tree(tcx, owner.did(), arguments.types().collect(), seen)
         }
         ty::Adt(owner, arguments) => {
-            has_bounded_callback_impl(
-                tcx,
-                value,
-                owner.did(),
-                "core::cmp::PartialEq",
-                "PartialEq",
-            ) && owner.all_fields().all(|field| {
-                bounded_equality_tree(tcx, field.ty(tcx, arguments).skip_norm_wip(), seen)
-            })
+            has_bounded_callback_impl(tcx, value, owner.did(), "core::cmp::PartialEq", "PartialEq")
+                && owner.all_fields().all(|field| {
+                    bounded_equality_tree(tcx, field.ty(tcx, arguments).skip_norm_wip(), seen)
+                })
         }
         ty::Param(_) | ty::Alias(..) | ty::Dynamic(..) | ty::Infer(_) | ty::Error(_) => false,
         _ => false,
@@ -291,7 +291,9 @@ fn bounded_key_tree<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>, seen: &mut Vec<Ty<
     let bounded = match value.kind() {
         ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Str => true,
         ty::Array(element, _) => bounded_key_tree(tcx, *element, seen),
-        ty::Tuple(fields) => fields.iter().all(|field| bounded_key_tree(tcx, field, seen)),
+        ty::Tuple(fields) => fields
+            .iter()
+            .all(|field| bounded_key_tree(tcx, field, seen)),
         ty::Adt(owner, arguments) if types::standard(tcx, owner.did()) => {
             standard_key_tree(tcx, owner.did(), arguments.types().collect(), seen)
         }
@@ -395,9 +397,7 @@ fn partial_eq_self_impl<'tcx>(tcx: TyCtxt<'tcx>, implementation: DefId, value: T
     let Some(trait_ref) = tcx.impl_opt_trait_ref(implementation) else {
         return false;
     };
-    let trait_ref = trait_ref
-        .instantiate(tcx, owner_arguments)
-        .skip_norm_wip();
+    let trait_ref = trait_ref.instantiate(tcx, owner_arguments).skip_norm_wip();
     trait_ref.self_ty() == value
         && trait_ref
             .args

@@ -224,7 +224,9 @@ fn structural_projection_precharges_declared_source_visits_before_next() {
     assert_eq!(limit.used, 1);
     assert_eq!(limit.additional, 2);
     assert_eq!(sequence_yielded.get(), 0);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 
     let entries = [("a", 1), ("b", 2)];
     let map_yielded = Cell::new(0);
@@ -248,18 +250,24 @@ fn structural_projection_precharges_declared_source_visits_before_next() {
     assert_eq!(limit.used, 1);
     assert_eq!(limit.additional, 2);
     assert_eq!(map_yielded.get(), 0);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }
 
 #[test]
 fn structural_projection_key_cost_admits_value_container_before_loop() {
-    let sequence = serde_value::Value::Seq(vec![
-        serde_value::Value::Unit,
-        serde_value::Value::Unit,
-    ]);
+    let sequence =
+        serde_value::Value::Seq(vec![serde_value::Value::Unit, serde_value::Value::Unit]);
     let map = serde_value::Value::Map(std::collections::BTreeMap::from([
-        (serde_value::Value::String("a".into()), serde_value::Value::Unit),
-        (serde_value::Value::String("b".into()), serde_value::Value::Unit),
+        (
+            serde_value::Value::String("a".into()),
+            serde_value::Value::Unit,
+        ),
+        (
+            serde_value::Value::String("b".into()),
+            serde_value::Value::Unit,
+        ),
     ]));
 
     for key in [sequence, map] {
@@ -275,7 +283,9 @@ fn structural_projection_key_cost_admits_value_container_before_loop() {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.used, 1);
         assert_eq!(limit.additional, 2);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+        );
     }
 }
 
@@ -305,7 +315,10 @@ fn structural_projection_preserves_unknown_length_serializers() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sequence = project(&ctx, &UnknownLengthSequence, "unknown length sequence").unwrap();
-    assert_eq!(*sequence, serde_value::to_value(&UnknownLengthSequence).unwrap());
+    assert_eq!(
+        *sequence,
+        serde_value::to_value(&UnknownLengthSequence).unwrap()
+    );
     let map = project(&ctx, &UnknownLengthMap, "unknown length map").unwrap();
     assert_eq!(*map, serde_value::to_value(&UnknownLengthMap).unwrap());
     drop(sequence);

@@ -637,7 +637,8 @@ impl DecodeContext<'_> {
     ) -> Result<(Vec<T>, ScopedReservation<'ctx>), E> {
         let mut reservation = self.reserve_scoped(0, operation)?;
         let output = self.try_collect_vec_with(values, operation, |out, value| {
-            self.push_scoped_vec(&mut reservation, out, value, operation).map_err(E::from)
+            self.push_scoped_vec(&mut reservation, out, value, operation)
+                .map_err(E::from)
         })?;
         Ok((output, reservation))
     }

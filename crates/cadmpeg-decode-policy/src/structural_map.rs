@@ -124,7 +124,9 @@ pub(crate) fn declared_map_field_types<'tcx>(
 
     let map_place = source_map_place(tcx, body, length, into_iter, &reachable, &calls)?;
     let (map_kind, key_ty, value_ty) = map_type(tcx, map_place.1)?;
-    if !map_calls_match(tcx, body, map_kind, key_ty, value_ty, length, into_iter, next) {
+    if !map_calls_match(
+        tcx, body, map_kind, key_ty, value_ty, length, into_iter, next,
+    ) {
         return None;
     }
     let cardinality = option_cardinality(tcx, body, &start.arguments[1], &reachable, &calls)?;
@@ -190,11 +192,11 @@ pub(crate) fn declared_map_field_types<'tcx>(
         || !dominates(&dominators, into_iter.block, end.block)
         || !dominates(&dominators, start.block, next.block)
         || !dominates(&dominators, start.block, end.block)
-        || prefix_entries
-            .iter()
-            .any(|field| !dominates(&dominators, start.block, field.block)
+        || prefix_entries.iter().any(|field| {
+            !dominates(&dominators, start.block, field.block)
                 || !dominates(&dominators, field.block, into_iter.block)
-                || !dominates(&dominators, field.block, next.block))
+                || !dominates(&dominators, field.block, next.block)
+        })
         || !dominates(&dominators, next.block, entry.block)
     {
         return None;
@@ -204,15 +206,7 @@ pub(crate) fn declared_map_field_types<'tcx>(
     result_calls.push(start);
     result_calls.extend(entries.iter().copied());
     let branches = result_branches(tcx, body, &reachable, &calls, &result_calls)?;
-    if !branch_refusals_propagate(
-        tcx,
-        body,
-        &reachable,
-        &branches,
-        next,
-        start,
-        &calls,
-    )
+    if !branch_refusals_propagate(tcx, body, &reachable, &branches, next, start, &calls)
         || !protocol_success_paths(
             tcx,
             body,
@@ -238,9 +232,7 @@ pub(crate) fn declared_map_field_types<'tcx>(
             &calls,
         )
         || !acyclic_without_block(body, &reachable, next.block)
-        || !terminal_results_are_unchanged(
-            tcx, body, &reachable, end, &calls, start, next,
-        )
+        || !terminal_results_are_unchanged(tcx, body, &reachable, end, &calls, start, next)
     {
         return None;
     }
@@ -260,15 +252,7 @@ pub(crate) fn declared_map_field_types<'tcx>(
 
     if !statements_are_bounded(tcx, body, &reachable, &calls)
         || !drops_are_bounded(tcx, body, &reachable, &drops, &calls, start, next)
-        || !cleanup_paths_are_bounded(
-            tcx,
-            body,
-            &reachable,
-            &drops,
-            start,
-            next,
-            &calls,
-        )
+        || !cleanup_paths_are_bounded(tcx, body, &reachable, &drops, start, next, &calls)
     {
         return None;
     }
@@ -320,9 +304,7 @@ fn collect_calls<'tcx>(
                     {
                         return None;
                     }
-                    CallKind::End | CallKind::FromResidual
-                        if destination != RETURN_PLACE =>
-                    {
+                    CallKind::End | CallKind::FromResidual if destination != RETURN_PLACE => {
                         return None;
                     }
                     CallKind::TryBranch if destination == RETURN_PLACE => return None,
@@ -339,11 +321,7 @@ fn collect_calls<'tcx>(
                     unwind: *unwind,
                 });
             }
-            TerminatorKind::Drop {
-                place,
-                unwind,
-                ..
-            } => drops.push(Drop {
+            TerminatorKind::Drop { place, unwind, .. } => drops.push(Drop {
                 block: *block,
                 place: place.clone(),
                 unwind: *unwind,
@@ -396,8 +374,7 @@ fn classify_call<'tcx>(
         "branch",
         "core",
         &["ops", "try_trait", "Try"],
-    )
-    {
+    ) {
         Some(CallKind::TryBranch)
     } else if is_trait_method(
         tcx,
@@ -405,8 +382,7 @@ fn classify_call<'tcx>(
         "from_residual",
         "core",
         &["ops", "try_trait", "FromResidual"],
-    )
-    {
+    ) {
         Some(CallKind::FromResidual)
     } else if is_map_length_method(tcx, definition, receiver) {
         Some(CallKind::Length)
@@ -491,13 +467,7 @@ fn is_map_length_method<'tcx>(tcx: TyCtxt<'tcx>, definition: DefId, receiver: Ty
         "alloc",
         &["collections", "btree", "map", "BTreeMap"],
         "len",
-    ) || types::physical_inherent_method(
-        tcx,
-        definition,
-        "serde_json",
-        &["map", "Map"],
-        "len",
-    )
+    ) || types::physical_inherent_method(tcx, definition, "serde_json", &["map", "Map"], "len")
 }
 
 fn map_type<'tcx>(tcx: TyCtxt<'tcx>, map_ty: Ty<'tcx>) -> Option<(MapKind, Ty<'tcx>, Ty<'tcx>)> {
@@ -543,7 +513,9 @@ fn supported_iterator_type(tcx: TyCtxt<'_>, kind: MapKind, value: Ty<'_>) -> boo
             "alloc",
             &["collections", "btree", "map", "Iter"],
         ),
-        MapKind::Json => types::physical_item_path(tcx, owner.did(), "serde_json", &["map", "Iter"]),
+        MapKind::Json => {
+            types::physical_item_path(tcx, owner.did(), "serde_json", &["map", "Iter"])
+        }
     }
 }
 
@@ -623,20 +595,13 @@ fn iterator_impl_matches<'tcx>(
     }
     let environment = ty::TypingEnv::fully_monomorphized();
     let Some(arguments) = tcx
-        .try_normalize_erasing_regions(
-            environment,
-            ty::Unnormalized::new_wip(call.generic_args),
-        )
+        .try_normalize_erasing_regions(environment, ty::Unnormalized::new_wip(call.generic_args))
         .ok()
     else {
         return false;
     };
-    let Ok(Some(instance)) = Instance::try_resolve(
-        tcx,
-        environment,
-        call.definition,
-        arguments,
-    ) else {
+    let Ok(Some(instance)) = Instance::try_resolve(tcx, environment, call.definition, arguments)
+    else {
         return false;
     };
     if tcx.trait_item_of(instance.def_id()) != Some(trait_item) {
@@ -670,8 +635,7 @@ fn iterator_impl_matches<'tcx>(
     } else {
         receiver_ty.peel_refs()
     };
-    if tcx.erase_and_anonymize_regions(self_ty)
-        != tcx.erase_and_anonymize_regions(expected_self_ty)
+    if tcx.erase_and_anonymize_regions(self_ty) != tcx.erase_and_anonymize_regions(expected_self_ty)
     {
         return false;
     }
@@ -734,14 +698,7 @@ fn option_cardinality<'tcx>(
     reachable: &HashSet<BasicBlock>,
     calls: &[Call<'tcx>],
 ) -> Option<(SourcePlace, usize)> {
-    let origin = operand_origin(
-        tcx,
-        body,
-        operand,
-        reachable,
-        calls,
-        &mut HashSet::new(),
-    )?;
+    let origin = operand_origin(tcx, body, operand, reachable, calls, &mut HashSet::new())?;
     match origin {
         Origin::Some(cardinality) => match *cardinality {
             Origin::Cardinality(source, extra) => Some((source, extra)),
@@ -821,14 +778,15 @@ fn cardinality_of_operand<'tcx>(
         if !active.insert(place.local) {
             return None;
         }
-        let result = unique_assignment(body, reachable, place.local).and_then(|assignment| {
-            match assignment {
-                Rvalue::Use(source, _) => {
-                    cardinality_of_operand(tcx, body, source, reachable, calls, active)
-                }
-                _ => None,
-            }
-        });
+        let result =
+            unique_assignment(body, reachable, place.local).and_then(
+                |assignment| match assignment {
+                    Rvalue::Use(source, _) => {
+                        cardinality_of_operand(tcx, body, source, reachable, calls, active)
+                    }
+                    _ => None,
+                },
+            );
         active.remove(&place.local);
         return result;
     }
@@ -854,7 +812,15 @@ fn cardinality_of_operand<'tcx>(
         active.remove(&place.local);
         return None;
     };
-    let result = sum_cardinality(tcx, body, &operands.0, &operands.1, reachable, calls, active);
+    let result = sum_cardinality(
+        tcx,
+        body,
+        &operands.0,
+        &operands.1,
+        reachable,
+        calls,
+        active,
+    );
     active.remove(&place.local);
     result
 }
@@ -971,9 +937,7 @@ fn count_assertions_are_bounded<'tcx>(
             || !dominates(&dominators, *block, start.block)
             || !matches!(
                 unwind,
-                UnwindAction::Cleanup(_)
-                    | UnwindAction::Unreachable
-                    | UnwindAction::Terminate(_)
+                UnwindAction::Cleanup(_) | UnwindAction::Unreachable | UnwindAction::Terminate(_)
             )
         {
             return false;
@@ -1106,14 +1070,33 @@ fn protocol_call_shapes<'tcx>(
         return false;
     };
     let state = Origin::BranchOutput(branch.destination);
-    if !operand_has_origin(tcx, body, &end.arguments[0], state.clone(), reachable, calls)
-        || !operand_has_origin(tcx, body, &loop_entry.arguments[0], state.clone(), reachable, calls)
-    {
+    if !operand_has_origin(
+        tcx,
+        body,
+        &end.arguments[0],
+        state.clone(),
+        reachable,
+        calls,
+    ) || !operand_has_origin(
+        tcx,
+        body,
+        &loop_entry.arguments[0],
+        state.clone(),
+        reachable,
+        calls,
+    ) {
         return false;
     }
     entries.iter().all(|entry| {
         entry.arguments.len() == 3
-            && operand_has_origin(tcx, body, &entry.arguments[0], state.clone(), reachable, calls)
+            && operand_has_origin(
+                tcx,
+                body,
+                &entry.arguments[0],
+                state.clone(),
+                reachable,
+                calls,
+            )
     })
 }
 
@@ -1148,14 +1131,7 @@ fn operand_has_origin<'tcx>(
     reachable: &HashSet<BasicBlock>,
     calls: &[Call<'tcx>],
 ) -> bool {
-    operand_origin(
-        tcx,
-        body,
-        operand,
-        reachable,
-        calls,
-        &mut HashSet::new(),
-    ) == Some(expected)
+    operand_origin(tcx, body, operand, reachable, calls, &mut HashSet::new()) == Some(expected)
 }
 
 fn fixed_prefix_entry<'tcx>(
@@ -1290,10 +1266,7 @@ fn place_origin<'tcx>(
     if place.local == Local::from_usize(2) && place.projection.is_empty() {
         return Some(Origin::Serializer);
     }
-    if let Some(call) = calls
-        .iter()
-        .find(|call| call.destination == place.local)
-    {
+    if let Some(call) = calls.iter().find(|call| call.destination == place.local) {
         let origin = call_origin(tcx, body, call, reachable, calls, active)?;
         return project_origin(tcx, body, place.local, &place.projection, origin);
     }
@@ -1320,7 +1293,7 @@ fn source_place<'tcx>(body: &mir::Body<'tcx>, place: &Place<'tcx>) -> Option<Ori
                 if !source_deref {
                     return None;
                 }
-            current = field_ty;
+                current = field_ty;
                 source_field = true;
                 path.push(Projection::Field(index.as_usize()));
             }
@@ -1351,51 +1324,46 @@ fn project_origin<'tcx>(
                 Origin::Source(_) | Origin::Iterator(_) => (),
                 _ => return None,
             },
-            mir::ProjectionElem::Downcast(_, variant) => {
-                match &origin {
-                    Origin::BranchResult(branch) if *branch == local => {
-                        let ty::Adt(owner, _) = body.local_decls[local].ty.kind() else {
-                            return None;
-                        };
-                        if !types::physical_item_path(
-                            tcx,
-                            owner.did(),
-                            "core",
-                            &["ops", "control_flow", "ControlFlow"],
-                        ) {
-                            return None;
-                        }
-                        branch_variant = Some(owner.variant(*variant).name.as_str().to_owned());
+            mir::ProjectionElem::Downcast(_, variant) => match &origin {
+                Origin::BranchResult(branch) if *branch == local => {
+                    let ty::Adt(owner, _) = body.local_decls[local].ty.kind() else {
+                        return None;
+                    };
+                    if !types::physical_item_path(
+                        tcx,
+                        owner.did(),
+                        "core",
+                        &["ops", "control_flow", "ControlFlow"],
+                    ) {
+                        return None;
                     }
-                    Origin::NextOption(next) if *next == local => {
-                        let ty::Adt(owner, _) = body.local_decls[local].ty.kind() else {
-                            return None;
-                        };
-                        if !types::physical_item_path(
-                            tcx,
-                            owner.did(),
-                            "core",
-                            &["option", "Option"],
-                        ) {
-                            return None;
-                        }
-                        let name = owner.variant(*variant).name.as_str().to_owned();
-                        if name != "Some" {
-                            return None;
-                        }
-                        next_option_variant = Some(name);
-                    }
-                    _ => return None,
+                    branch_variant = Some(owner.variant(*variant).name.as_str().to_owned());
                 }
-            }
+                Origin::NextOption(next) if *next == local => {
+                    let ty::Adt(owner, _) = body.local_decls[local].ty.kind() else {
+                        return None;
+                    };
+                    if !types::physical_item_path(tcx, owner.did(), "core", &["option", "Option"]) {
+                        return None;
+                    }
+                    let name = owner.variant(*variant).name.as_str().to_owned();
+                    if name != "Some" {
+                        return None;
+                    }
+                    next_option_variant = Some(name);
+                }
+                _ => return None,
+            },
             mir::ProjectionElem::Field(index, _) => {
                 let field = index.as_usize();
                 origin = match origin {
-                    Origin::BranchResult(branch) if branch == local => match branch_variant.as_deref() {
-                        Some("Continue") if field == 0 => Origin::BranchOutput(branch),
-                        Some("Break") if field == 0 => Origin::BranchResidual(branch),
-                        _ => return None,
-                    },
+                    Origin::BranchResult(branch) if branch == local => {
+                        match branch_variant.as_deref() {
+                            Some("Continue") if field == 0 => Origin::BranchOutput(branch),
+                            Some("Break") if field == 0 => Origin::BranchResidual(branch),
+                            _ => return None,
+                        }
+                    }
                     Origin::NextOption(next) if next == local => {
                         if next_option_variant.as_deref() != Some("Some") || field != 0 {
                             return None;
@@ -1483,9 +1451,7 @@ fn rvalue_origin<'tcx>(
                 mir::AggregateKind::Tuple => Some(Origin::Tuple(
                     operands
                         .iter()
-                        .map(|operand| {
-                            operand_origin(tcx, body, operand, reachable, calls, active)
-                        })
+                        .map(|operand| operand_origin(tcx, body, operand, reachable, calls, active))
                         .collect::<Option<Vec<_>>>()?,
                 )),
                 mir::AggregateKind::Adt(definition, variant, _, _, _)
@@ -1529,13 +1495,13 @@ fn rvalue_origin<'tcx>(
                 _ => None,
             }
         }
-        Rvalue::Discriminant(place) => match place_origin(
-            tcx, body, place, reachable, calls, active,
-        )? {
-            Origin::BranchResult(branch) => Some(Origin::BranchTag(branch)),
-            Origin::NextOption(next) => Some(Origin::NextTag(next)),
-            _ => None,
-        },
+        Rvalue::Discriminant(place) => {
+            match place_origin(tcx, body, place, reachable, calls, active)? {
+                Origin::BranchResult(branch) => Some(Origin::BranchTag(branch)),
+                Origin::NextOption(next) => Some(Origin::NextTag(next)),
+                _ => None,
+            }
+        }
         Rvalue::BinaryOp(mir::BinOp::Add, operands) => {
             let left = operand_origin(tcx, body, &operands.0, reachable, calls, active)?;
             let right = operand_origin(tcx, body, &operands.1, reachable, calls, active)?;
@@ -1569,11 +1535,16 @@ fn add_cardinality<'tcx>(
     right_operand: &Operand<'tcx>,
     right: Origin,
 ) -> Option<Origin> {
-    match (left, right, constant_usize(tcx, left_operand), constant_usize(tcx, right_operand)) {
+    match (
+        left,
+        right,
+        constant_usize(tcx, left_operand),
+        constant_usize(tcx, right_operand),
+    ) {
         (Origin::Cardinality(source, previous), Origin::Fixed, None, Some(extra))
-        | (Origin::Fixed, Origin::Cardinality(source, previous), Some(extra), None) => {
-            previous.checked_add(extra).map(|extra| Origin::Cardinality(source, extra))
-        }
+        | (Origin::Fixed, Origin::Cardinality(source, previous), Some(extra), None) => previous
+            .checked_add(extra)
+            .map(|extra| Origin::Cardinality(source, extra)),
         _ => None,
     }
 }
@@ -1669,14 +1640,8 @@ fn fixed_getter_body<'tcx>(
                     let (target, value) = &**assignment;
                     if !target.projection.is_empty()
                         || target.local.as_usize() <= body.arg_count
-                        || getter_rvalue_origin(
-                            tcx,
-                            body,
-                            value,
-                            &receiver,
-                            &mut HashSet::new(),
-                        )
-                        .is_none()
+                        || getter_rvalue_origin(tcx, body, value, &receiver, &mut HashSet::new())
+                            .is_none()
                     {
                         return None;
                     }
@@ -1857,7 +1822,11 @@ fn result_branches<'tcx>(
     calls: &[Call<'tcx>],
     operations: &[&Call<'tcx>],
 ) -> Option<Vec<Branch>> {
-    if calls.iter().filter(|call| call.kind == CallKind::TryBranch).count() != operations.len()
+    if calls
+        .iter()
+        .filter(|call| call.kind == CallKind::TryBranch)
+        .count()
+        != operations.len()
         || calls
             .iter()
             .filter(|call| call.kind == CallKind::FromResidual)
@@ -1882,14 +1851,8 @@ fn result_branches<'tcx>(
                 else {
                     return None;
                 };
-                (operand_origin(
-                    tcx,
-                    body,
-                    discr,
-                    reachable,
-                    calls,
-                    &mut HashSet::new(),
-                ) == Some(Origin::BranchTag(branch_call.destination)))
+                (operand_origin(tcx, body, discr, reachable, calls, &mut HashSet::new())
+                    == Some(Origin::BranchTag(branch_call.destination)))
                 .then_some((*block, targets))
             })
             .collect();
@@ -1972,12 +1935,11 @@ fn protocol_success_paths<'tcx>(
 ) -> bool {
     let dominators = dominators(body, reachable);
     let mut ordered_prefix = prefix_entries.to_vec();
-    ordered_prefix.sort_by_key(|call| {
-        dominators.get(&call.block).map_or(0, |set| set.len())
-    });
-    if ordered_prefix.windows(2).any(|pair| {
-        !dominates(&dominators, pair[0].block, pair[1].block)
-    }) {
+    ordered_prefix.sort_by_key(|call| dominators.get(&call.block).map_or(0, |set| set.len()));
+    if ordered_prefix
+        .windows(2)
+        .any(|pair| !dominates(&dominators, pair[0].block, pair[1].block))
+    {
         return false;
     }
 
@@ -2177,14 +2139,8 @@ fn loop_emits_every_item<'tcx>(
             else {
                 return None;
             };
-            (operand_origin(
-                tcx,
-                body,
-                discr,
-                reachable,
-                calls,
-                &mut HashSet::new(),
-            ) == Some(Origin::NextTag(next.destination)))
+            (operand_origin(tcx, body, discr, reachable, calls, &mut HashSet::new())
+                == Some(Origin::NextTag(next.destination)))
             .then_some((*block, targets))
         })
         .collect();
@@ -2244,8 +2200,7 @@ fn loop_emits_every_item<'tcx>(
     }
     let option_switch = Some(switch);
     if loop_blocks.iter().any(|block| {
-        let TerminatorKind::SwitchInt { discr, .. } =
-            &body.basic_blocks[*block].terminator().kind
+        let TerminatorKind::SwitchInt { discr, .. } = &body.basic_blocks[*block].terminator().kind
         else {
             return false;
         };
@@ -2253,14 +2208,7 @@ fn loop_emits_every_item<'tcx>(
             return false;
         }
         !matches!(
-            operand_origin(
-                tcx,
-                body,
-                discr,
-                reachable,
-                calls,
-                &mut HashSet::new(),
-            ),
+            operand_origin(tcx, body, discr, reachable, calls, &mut HashSet::new(),),
             Some(Origin::BranchTag(_))
         )
     }) {
@@ -2364,7 +2312,11 @@ fn terminal_results_are_unchanged<'tcx>(
         .iter()
         .filter(|call| call.kind == CallKind::End || call.kind == CallKind::FromResidual)
         .collect();
-    if terminals.is_empty() || terminals.iter().any(|call| call.destination != RETURN_PLACE) {
+    if terminals.is_empty()
+        || terminals
+            .iter()
+            .any(|call| call.destination != RETURN_PLACE)
+    {
         return false;
     }
     let mut returned = HashSet::new();
@@ -2396,7 +2348,12 @@ fn terminal_results_are_unchanged<'tcx>(
     let actual: HashSet<_> = reachable
         .iter()
         .copied()
-        .filter(|block| matches!(&body.basic_blocks[*block].terminator().kind, TerminatorKind::Return))
+        .filter(|block| {
+            matches!(
+                &body.basic_blocks[*block].terminator().kind,
+                TerminatorKind::Return
+            )
+        })
         .collect();
     returned == actual
 }
@@ -2506,8 +2463,7 @@ fn bool_drop_flag_is_literal_and_unaliased<'tcx>(
     body: &mir::Body<'tcx>,
     local: Local,
 ) -> bool {
-    if local.as_usize() <= body.arg_count
-        || !matches!(body.local_decls[local].ty.kind(), ty::Bool)
+    if local.as_usize() <= body.arg_count || !matches!(body.local_decls[local].ty.kind(), ty::Bool)
     {
         return false;
     }
@@ -2599,15 +2555,8 @@ fn statements_are_bounded<'tcx>(
                     let (target, value) = &**assignment;
                     target.projection.is_empty()
                         && target.local.as_usize() > body.arg_count
-                        && rvalue_origin(
-                            tcx,
-                            body,
-                            value,
-                            reachable,
-                            calls,
-                            &mut HashSet::new(),
-                        )
-                        .is_some()
+                        && rvalue_origin(tcx, body, value, reachable, calls, &mut HashSet::new())
+                            .is_some()
                 }
                 _ => false,
             })
@@ -2671,7 +2620,10 @@ fn place_drop_is_bounded<'tcx>(
     {
         return true;
     }
-    let Some(into_iter) = calls.iter().find(|call| call.kind == CallKind::IntoIterator) else {
+    let Some(into_iter) = calls
+        .iter()
+        .find(|call| call.kind == CallKind::IntoIterator)
+    else {
         return false;
     };
     if origin == Some(Origin::Iterator(into_iter.destination))
@@ -2711,7 +2663,10 @@ fn is_serializer_state_type<'tcx>(
             })
         })
         && alias.args.types().next()
-            == body.local_decls.get(Local::from_usize(2)).map(|local| local.ty)
+            == body
+                .local_decls
+                .get(Local::from_usize(2))
+                .map(|local| local.ty)
         && dropped == state
 }
 
@@ -2757,7 +2712,9 @@ fn fixed_drop_type<'tcx>(
         | ty::FnPtr(..)
         | ty::FnDef(..) => true,
         ty::Array(element, _) | ty::Slice(element) => fixed_drop_type(tcx, *element, active),
-        ty::Tuple(fields) => fields.iter().all(|field| fixed_drop_type(tcx, field, active)),
+        ty::Tuple(fields) => fields
+            .iter()
+            .all(|field| fixed_drop_type(tcx, field, active)),
         ty::Adt(owner, arguments) => {
             if owner.is_union() || owner.has_dtor(tcx) {
                 false
@@ -2967,7 +2924,9 @@ fn reachable_blocks(body: &mir::Body<'_>) -> HashSet<BasicBlock> {
     let mut pending = vec![mir::START_BLOCK];
     while let Some(block) = pending.pop() {
         if reachable.insert(block) {
-            pending.extend(normal_successors(&body.basic_blocks[block].terminator().kind));
+            pending.extend(normal_successors(
+                &body.basic_blocks[block].terminator().kind,
+            ));
         }
     }
     reachable
@@ -3081,7 +3040,11 @@ fn dominators(
         .collect();
     loop {
         let mut changed = false;
-        for block in reachable.iter().copied().filter(|block| *block != mir::START_BLOCK) {
+        for block in reachable
+            .iter()
+            .copied()
+            .filter(|block| *block != mir::START_BLOCK)
+        {
             let predecessors: Vec<_> = reachable
                 .iter()
                 .copied()
@@ -3145,7 +3108,9 @@ fn can_reach(
             return true;
         }
         if allowed.contains(&block) && seen.insert(block) {
-            pending.extend(normal_successors(&body.basic_blocks[block].terminator().kind));
+            pending.extend(normal_successors(
+                &body.basic_blocks[block].terminator().kind,
+            ));
         }
     }
     false
