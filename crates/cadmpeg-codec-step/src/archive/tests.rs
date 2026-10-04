@@ -1268,3 +1268,16 @@ fn zip_base_member_reverse_split_preserves_refusal() {
         result
     });
 }
+
+#[test]
+fn zip_fragment_separator_containment_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP ZIP fragment separator containment", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = resolve_uri_for_test(&ctx, ROOT_NAME, "part#target").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
