@@ -372,6 +372,33 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
+
+    let unmatched_binding =
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: format!("{stream}:design-body-binding#0"),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 0,
+            entity_suffix: 150,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.unmatched.smbh".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap();
+    let bindings = crate::test_support::with_decode_context(|decode_ctx| {
+        bind_scope_histories(
+            decode_ctx,
+            &scopes,
+            std::slice::from_ref(&unmatched_binding),
+            std::slice::from_ref(&operand),
+            &histories,
+        )
+    })
+    .unwrap();
+    assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
 #[test]

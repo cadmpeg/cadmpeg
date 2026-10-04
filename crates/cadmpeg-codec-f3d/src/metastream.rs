@@ -48,21 +48,18 @@ pub(crate) fn primary_record_frames(
     bulk_len: usize,
 ) -> Result<Vec<PrimaryRecordFrame>, CodecError> {
     let mut frames = Vec::new();
-    ctx.reserve_vec(&mut frames, meta.records.len(), "frame F3D primary records")?;
-
     let mut primary_by_entity = std::collections::HashMap::new();
-    ctx.reserve_map(
-        &mut primary_by_entity,
-        meta.records.len(),
-        "index F3D primary entities",
-    )?;
+    let mut primary_index_storage = ctx.reserve_scoped(0, "index F3D primary entities")?;
     for (ordinal, record) in ctx
         .admit_iter(&meta.records, "frame F3D primary records")?
         .enumerate()
     {
-        if primary_by_entity
-            .insert(record.entity_id, ordinal)
-            .is_some()
+        if primary_index_storage.with_storage(|| ctx.insert_hash_map(
+            &mut primary_by_entity,
+            record.entity_id,
+            ordinal,
+            "index F3D primary entities",
+        ))?.is_some()
         {
             return Err(CodecError::Malformed(
                 "F3D primary record index repeats an entity ID".into(),
@@ -84,22 +81,18 @@ pub(crate) fn primary_record_frames(
                     .into(),
             ));
         }
-        frames.push(PrimaryRecordFrame {
+        ctx.push_vec(&mut frames, PrimaryRecordFrame {
             entity_id: record.entity_id,
             start,
             member_end: end,
             end,
-        });
+        }, "frame F3D primary records")?;
     }
 
     let mut previous_secondary_offset = None;
 
     let mut secondary_entities = std::collections::HashSet::new();
-    ctx.reserve_set(
-        &mut secondary_entities,
-        meta.secondary_records.len(),
-        "index F3D secondary entities",
-    )?;
+    let mut secondary_index_storage = ctx.reserve_scoped(0, "index F3D secondary entities")?;
     for record in ctx.admit_iter(
         &meta.secondary_records,
         "index F3D secondary entities",
@@ -113,7 +106,11 @@ pub(crate) fn primary_record_frames(
             ));
         }
         previous_secondary_offset = Some(secondary);
-        if !secondary_entities.insert(record.entity_id) {
+        if !secondary_index_storage.with_storage(|| ctx.insert_hash_set(
+            &mut secondary_entities,
+            record.entity_id,
+            "index F3D secondary entities",
+        ))? {
             return Err(CodecError::Malformed(
                 "F3D secondary record index repeats an entity ID".into(),
             ));
@@ -660,7 +657,8 @@ mod tests {
 
     #[test]
     fn metastream_primary_frames_refuse_collection_limit() {
-        let error = limited_primary_frames(&one_primary_frame(false), 0);
+        // One primary-index slot precedes the retained frame slot.
+        let error = limited_primary_frames(&one_primary_frame(false), 1);
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "frame F3D primary records")
@@ -669,7 +667,8 @@ mod tests {
 
     #[test]
     fn metastream_primary_entity_index_refuses_collection_limit() {
-        let error = limited_primary_frames(&one_primary_frame(false), 1);
+        // The first collection slot is the primary-index entry.
+        let error = limited_primary_frames(&one_primary_frame(false), 0);
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "index F3D primary entities")
@@ -683,6 +682,29 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "index F3D secondary entities")
         );
+    }
+
+    #[test]
+    fn metastream_primary_index_preserves_work_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let meta = one_primary_frame(false);
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "index F3D primary entities",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::primary_record_frames(&ctx, &meta, 14);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D primary entities"));
     }
 
     fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, cadmpeg_core::CodecError> {

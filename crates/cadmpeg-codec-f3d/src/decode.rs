@@ -3661,27 +3661,29 @@ fn insert_mesh_texture_table(
     tessellation_id: &str,
     table: &[(String, cadmpeg_ir::assets::AssetId)],
 ) -> Result<(), CodecError> {
-    if tables.contains_key(tessellation_id) {
+    if ctx.contains_key_hash_map(tables, tessellation_id, "find F3D mesh texture table")? {
         return Err(CodecError::Malformed(
             "F3D mesh tessellation belongs to more than one texture table".into(),
         ));
     }
 
-    ctx.reserve_map(tables, 1, "index F3D mesh texture tables")?;
     let key = ctx.copy_retained_text(tessellation_id, "retain F3D mesh texture table key")?;
-    tables.insert(key, clone_mesh_texture_table(ctx, table)?);
+    let table = clone_mesh_texture_table(ctx, table)?;
+    ctx.insert_hash_map(tables, key, table, "index F3D mesh texture tables")?;
     Ok(())
 }
 
-fn insert_mesh_scope_tessellations<'a>(
+fn insert_mesh_scope_tessellations<'a, I: Iterator>(
     ctx: &DecodeContext<'_>,
     index: &mut std::collections::HashMap<(String, u32), Vec<String>>,
     stream: &str,
     record_index: u32,
-    ids: impl IntoIterator<Item = &'a str>,
+    source: cadmpeg_core::decode::scan::AdmittedIter<I>,
+    mut tessellation_id: impl FnMut(I::Item) -> Option<&'a str>,
 ) -> Result<(), CodecError> {
     let mut tessellations = Vec::new();
-    for id in ids {
+    for body in source {
+        let Some(id) = tessellation_id(body) else { continue; };
         let copy = ctx.copy_retained_text(id, "retain F3D mesh scope tessellation ID")?;
         ctx.push_vec(
             &mut tessellations,
@@ -3694,14 +3696,13 @@ fn insert_mesh_scope_tessellations<'a>(
     }
     let stream = ctx.copy_retained_text(stream, "retain F3D mesh scope stream")?;
     let key = (stream, record_index);
-    if index.contains_key(&key) {
+    if ctx.contains_key_hash_map(index, &key, "find F3D mesh feature scope")? {
         return Err(CodecError::Malformed(
             "F3D Design mesh feature scope is not unique".into(),
         ));
     }
 
-    ctx.reserve_map(index, 1, "index F3D mesh feature scopes")?;
-    index.insert(key, tessellations);
+    ctx.insert_hash_map(index, key, tessellations, "index F3D mesh feature scopes")?;
     Ok(())
 }
 
@@ -3721,33 +3722,31 @@ fn project_mesh_bodies(
     let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
-    for texture in native
-        .design_mesh_features
-        .iter()
-        .flat_map(|feature| feature.texture_table.resources())
-    {
-        if ir
-            .model
-            .assets
-            .iter()
-            .chain(&texture_assets)
-            .any(|asset: &cadmpeg_ir::assets::Asset| asset.id == texture.asset)
+    for feature in ctx.admit_iter(
+        &native.design_mesh_features, "scan F3D mesh texture features",
+    )? {
+      for texture in ctx.admit_iter(
+        feature.texture_table.resources(), "scan F3D mesh texture resources",
+      )? {
+        let mut has_asset = |asset: &cadmpeg_ir::assets::Asset| {
+            ctx.equal(&asset.id, &texture.asset, "compare F3D mesh texture asset IDs")
+        };
+        if ctx.any_by(&ir.model.assets, &mut has_asset, "find F3D existing mesh texture asset")?
+            || ctx.any_by(&texture_assets, &mut has_asset, "find F3D staged mesh texture asset")?
         {
             continue;
         }
-        let media_type = std::path::Path::new(texture.file.filename())
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .and_then(|extension| {
-                if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                    Some("image/jpeg")
-                } else if extension.eq_ignore_ascii_case("png") {
-                    Some("image/png")
-                } else {
-                    None
+        let media_type = match std::path::Path::new(texture.file.filename()).extension() {
+            Some(extension) => {
+                match ctx.validate_utf8(extension.as_encoded_bytes(), "validate F3D mesh texture extension")?.ok() {
+                    Some(extension) if ctx.eq_ignore_ascii_case(extension, "jpg", "match F3D JPEG texture extension")?
+                        || ctx.eq_ignore_ascii_case(extension, "jpeg", "match F3D JPEG texture extension")? => Some("image/jpeg"),
+                    Some(extension) if ctx.eq_ignore_ascii_case(extension, "png", "match F3D PNG texture extension")? => Some("image/png"),
+                    _ => None,
                 }
-            })
-            .map(str::to_owned);
+            }
+            None => None,
+        }.map(str::to_owned);
         let asset =
             cadmpeg_ir::assets::Asset::try_new(
                 ctx,
@@ -3778,11 +3777,17 @@ fn project_mesh_bodies(
             "collect F3D mesh texture assets",
         )?;
     }
+    }
     extend_unique_assets(ctx, &mut ir.model.assets, texture_assets)?;
+    let mut texture_tables_storage = ctx.reserve_scoped(0, "index F3D mesh texture tables")?;
     let mut texture_tables = std::collections::HashMap::new();
+    texture_tables_storage.with_storage(|| {
     for feature in ctx.admit_iter(&native.design_mesh_features, "scan F3D native design mesh features")? {
+        let mut texture_table_storage = ctx.reserve_scoped(0, "collect F3D mesh texture resource table")?;
         let mut texture_table = Vec::new();
-        for texture in feature.texture_table.resources_in_flags_order(ctx)? {
+        texture_table_storage.with_storage(|| {
+        let ordered_resources = feature.texture_table.resources_in_flags_order(ctx)?;
+        for texture in ctx.admit_iter(&ordered_resources, "scan F3D ordered mesh texture resources")? {
             let source_id = ctx.copy_retained_text(
                 texture.resource_guid.as_str(),
                 "retain F3D mesh texture resource GUID",
@@ -3796,7 +3801,9 @@ fn project_mesh_bodies(
                 "collect F3D mesh texture resource table",
             )?;
         }
-        for body in feature.bodies() {
+        Ok::<(), CodecError>(())
+        })?;
+        for body in ctx.admit_iter(feature.bodies(), "scan F3D mesh texture body bindings")? {
             if let Some(tessellation_id) = &body.tessellation_id {
                 insert_mesh_texture_table(
                     ctx,
@@ -3807,6 +3814,8 @@ fn project_mesh_bodies(
             }
         }
     }
+    Ok::<(), CodecError>(())
+    })?;
     let mut bodies = Vec::new();
     for outcome in decoded.outcomes {
         collect_mesh_outcome(ctx, &mut bodies, report, outcome)?;
@@ -3817,7 +3826,7 @@ fn project_mesh_bodies(
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
-        let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
+        let texture_table = ctx.remove_hash_map(&mut texture_tables, &body.id, "remove F3D mesh body texture table")?.ok_or_else(|| {
             CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
         })?;
         let texture_assignments = mesh_texture_assignments(
@@ -3868,17 +3877,27 @@ fn project_mesh_bodies(
         .map_err(|error| {
             CodecError::malformed(format_args!("paramesh body record {}: {error}", body.id))
         })?;
-        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
-            cadmpeg_ir::tessellation::TessellationId::mint(body.id)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-            mesh,
-            channels,
-        )
-        .map_err(|err| CodecError::Malformed(err.to_string()))?
-        .with_feature_edges(body.feature_edges)
-        .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
-        .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-        .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(body.id.len()), "admit F3D tessellation identity")?;
+        let id = match cadmpeg_ir::tessellation::TessellationId::mint(body.id) {
+            Ok(id) => id,
+            Err(error) => return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"), "retain F3D tessellation identity error",
+            )?)),
+        };
+        let tessellation = match cadmpeg_ir::tessellation::Tessellation::from_parts(id, mesh, channels) {
+            Ok(tessellation) => tessellation,
+            Err(error) => return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"), "retain F3D tessellation construction error",
+            )?)),
+        };
+        let tessellation = match tessellation.with_feature_edges(body.feature_edges)
+            .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
+            .and_then(|mesh| mesh.with_texture_assignments(texture_assignments)) {
+            Ok(tessellation) => tessellation,
+            Err(error) => return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"), "retain F3D tessellation channel error",
+            )?)),
+        };
         ctx.push_vec(
             &mut ir.model.tessellations,
             tessellation,
@@ -3897,10 +3916,8 @@ fn project_mesh_bodies(
             &mut projection.tessellations_by_scope,
             stream,
             feature.scope().record().record_index(),
-            feature
-                .bodies()
-                .iter()
-                .filter_map(|body| body.tessellation_id.as_deref()),
+            ctx.admit_iter(feature.bodies(), "scan F3D mesh scope body bindings")?,
+            |body| body.tessellation_id.as_deref(),
         )?;
     }
     report_unresolved_mesh_attributes(ctx, report, &unresolved)?;
@@ -5899,9 +5916,9 @@ fn append_metadata_unknown(
     unknowns: &mut Vec<UnknownRecord>,
     brep: &BrepFacts,
 ) -> Result<(), CodecError> {
-    let id = UnknownId::mint(crate::ids::native_scoped_id_charged(
-        ctx, &brep.name, "unknown", 0_u64,
-    )?)
+    let id_text = crate::ids::native_scoped_id_charged(ctx, &brep.name, "unknown", 0_u64)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(id_text.len()), "admit F3D metadata unknown identity")?;
+    let id = UnknownId::mint(id_text)
     .map_err(|error| {
         CodecError::malformed(format_args!(
             "F3D BREP name cannot form an unknown-record identity: {error}"

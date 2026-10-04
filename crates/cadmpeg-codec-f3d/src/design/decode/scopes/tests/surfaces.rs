@@ -1172,6 +1172,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
 
 #[test]
 fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
+    use crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceSource;
     use crate::layout::base_feature_class_377_prefix as class_377;
 
     let mut bytes = vec![0u8; class_377::LEN];
@@ -1314,10 +1315,25 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
             offset: u64_from_index(class_377::BODY_ENTITY_SUFFIX)
         }
     );
-    assert_eq!(
-        construction.body_reference_records().collect::<Vec<_>>(),
-        [201]
-    );
+    let body_reference_records = match construction.body_reference_records() {
+        DesignBaseFeatureBodyReferenceSource::ResultRows(rows) => {
+            rows.iter().map(|row| row.reference.value).collect::<Vec<_>>()
+        }
+        DesignBaseFeatureBodyReferenceSource::RepeatedResultRows {
+            first,
+            rest,
+        } => std::iter::once(first.reference.value)
+            .chain(rest.iter().map(|(row, _)| row.reference.value))
+            .collect(),
+        DesignBaseFeatureBodyReferenceSource::LegacyRows(rows) => {
+            rows.iter().map(|row| row.entity.value).collect::<Vec<_>>()
+        }
+        DesignBaseFeatureBodyReferenceSource::SingleBody(body) => {
+            vec![*body]
+        }
+        DesignBaseFeatureBodyReferenceSource::Empty => Vec::new(),
+    };
+    assert_eq!(body_reference_records, [201]);
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,

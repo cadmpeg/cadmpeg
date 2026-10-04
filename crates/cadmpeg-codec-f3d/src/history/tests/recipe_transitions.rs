@@ -813,11 +813,21 @@ fn solid_sweep_section_conversion_refuses_collection_limit() {
 
 #[test]
 fn historical_brep_source_qualifies_state_local_candidates() {
-    assert_eq!(
-        historical_brep_source("f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42"),
-        Some("example.smbh")
-    );
-    assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
+    crate::design::test_support::with_test_decode_context(|decode| {
+        assert_eq!(
+            historical_brep_source(
+                decode,
+                "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42",
+            )
+            .expect("historical BREP source"),
+            Some("example.smbh")
+        );
+        assert_eq!(
+            historical_brep_source(decode, "f3d:unqualified:state#42")
+                .expect("unqualified BREP source"),
+            None
+        );
+    });
 }
 
 #[test]
@@ -830,53 +840,163 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
         FaceId::mint(format!("f3d:brep/{source}/brep:entity#{slot}")).expect("identity grammar")
     };
     let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            active_candidates.clone(),
-            &AsmHistoricalTopology::default(),
-            &HashSet::new(),
-            Some("old"),
-        ),
-        Some(LegacyFaceResolution::Active(source_face("old", 10)))
-    );
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            active_candidates,
-            &AsmHistoricalTopology::default(),
-            &HashSet::new(),
-            Some("missing"),
-        ),
-        None
-    );
+    crate::test_support::with_decode_context(|decode| {
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                active_candidates.clone(),
+                &AsmHistoricalTopology::default(),
+                &HashSet::new(),
+                Some("old"),
+            )
+            .unwrap(),
+            Some(LegacyFaceResolution::Active(source_face("old", 10)))
+        );
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                active_candidates,
+                &AsmHistoricalTopology::default(),
+                &HashSet::new(),
+                Some("missing"),
+            )
+            .unwrap(),
+            None
+        );
 
-    let historical_candidates = vec![
-        FaceId::mint("f3d:brep:entity#20").expect("identity grammar"),
-        source_face("new", 21),
-    ];
+        let historical_candidates = vec![
+            FaceId::mint("f3d:brep:entity#20").expect("identity grammar"),
+            source_face("new", 21),
+        ];
+        let topology = AsmHistoricalTopology {
+            faces: vec![20, 21],
+            ..AsmHistoricalTopology::default()
+        };
+        let mut changed = HashSet::new();
+        changed.insert(21);
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                historical_candidates,
+                &topology,
+                &changed,
+                Some("new"),
+            )
+            .unwrap(),
+            Some(LegacyFaceResolution::Historical(21))
+        );
+        assert_eq!(
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
+                &topology,
+                &changed,
+                None,
+            )
+            .unwrap(),
+            Some(LegacyFaceResolution::Historical(20))
+        );
+    });
+}
+
+#[test]
+fn legacy_extrude_source_face_search_propagates_text_refusal() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let face = FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar");
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "strip F3D BREP face prefix",
+        0,
+        |decode| {
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![face.clone()],
+                &AsmHistoricalTopology::default(),
+                &HashSet::new(),
+                Some("history"),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "strip F3D BREP face prefix"
+    ));
+}
+
+#[test]
+fn legacy_extrude_topology_membership_propagates_work_refusal() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let face = FaceId::mint("f3d:brep:entity#20").expect("identity grammar");
     let topology = AsmHistoricalTopology {
-        faces: vec![20, 21],
+        faces: vec![20],
         ..AsmHistoricalTopology::default()
     };
-    let mut changed = HashSet::new();
-    changed.insert(21);
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            historical_candidates,
-            &topology,
-            &changed,
-            Some("new"),
-        ),
-        Some(LegacyFaceResolution::Historical(21))
+    let changed_faces = HashSet::from([20_i64]);
+    let operation = "find F3D legacy Extrude topology face";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![face.clone()],
+                &topology,
+                &changed_faces,
+                Some("history"),
+            )
+            .map(|_| ())
+        },
     );
-    assert_eq!(
-        select_legacy_extrude_face_candidate(
-            vec![FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
-            &topology,
-            &changed,
-            None,
-        ),
-        Some(LegacyFaceResolution::Historical(20))
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn legacy_extrude_changed_face_membership_propagates_work_refusal() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let face = FaceId::mint("f3d:brep:entity#20").expect("identity grammar");
+    let topology = AsmHistoricalTopology {
+        faces: vec![20],
+        ..AsmHistoricalTopology::default()
+    };
+    let changed_faces = HashSet::from([20_i64]);
+    let operation = "find F3D legacy Extrude changed face";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| {
+            select_legacy_extrude_face_candidate(
+                decode,
+                vec![face.clone()],
+                &topology,
+                &changed_faces,
+                Some("history"),
+            )
+            .map(|_| ())
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 fn hole_face_case(

@@ -919,18 +919,26 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
 fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
     use cadmpeg_ir::ids::FaceId;
 
-    assert!(active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep:entity#17").expect("identity grammar"),
-        "history"
-    ));
-    assert!(active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar"),
-        "history"
-    ));
-    assert!(!active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep/other/brep:entity#17").expect("identity grammar"),
-        "history"
-    ));
+    crate::test_support::with_decode_context(|decode| {
+        assert!(active_brep_face_matches_source(
+            decode,
+            &FaceId::mint("f3d:brep:entity#17").expect("identity grammar"),
+            "history"
+        )
+        .unwrap());
+        assert!(active_brep_face_matches_source(
+            decode,
+            &FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar"),
+            "history"
+        )
+        .unwrap());
+        assert!(!active_brep_face_matches_source(
+            decode,
+            &FaceId::mint("f3d:brep/other/brep:entity#17").expect("identity grammar"),
+            "history"
+        )
+        .unwrap());
+    });
 }
 
 #[test]
