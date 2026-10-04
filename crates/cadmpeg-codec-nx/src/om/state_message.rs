@@ -114,7 +114,12 @@ impl<'a> OperationStateMessage<'a> {
         let declared_length = *bytes.get(at.checked_add(1)?)?;
         let text_end = at.checked_add(usize::from(declared_length))?;
         let text = bytes.get(at.checked_add(2)?..text_end)?;
-        let text = propagate_resource!(StateMessageText::from_wire(ctx, std::str::from_utf8(text).ok()?)).ok()?;
+        let text = propagate_resource!(StateMessageText::from_wire(
+            ctx,
+            propagate_resource!(ctx.validate_utf8(text, "NX state message UTF-8 validation"))
+                .ok()?,
+        ))
+        .ok()?;
         let zeros_end = text_end.checked_add(5)?;
         if bytes.get(text_end..zeros_end) != Some(&[0, 0, 0, 0, 0]) {
             return None;

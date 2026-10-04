@@ -756,7 +756,7 @@ fn attribute_identifiers<'bytes, 'ctx>(
             Some(Ok(AttributeIdentifier {
                 offset,
                 xmt,
-                name: propagate_resource!(PrintableString::from_wire(ctx, std::str::from_utf8(name_bytes).ok()?)).ok()?,
+                name: propagate_resource!(PrintableString::from_wire(ctx, propagate_resource!(ctx.validate_utf8(name_bytes, "NX attribute name UTF-8 validation")).ok()?)).ok()?,
             }))
         })();
         if let Some(identifier) = candidate.transpose()? {

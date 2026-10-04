@@ -111,12 +111,14 @@ impl CsysDescriptor {
             return Ok(None);
         };
         let prefix = ctx.copy_retained(&bytes[..start], "NX datum CSYS descriptor prefix")?;
-        let identity_bytes =
-            ctx.copy_retained(&bytes[start..end], "NX datum CSYS descriptor identity")?;
-        let suffix = ctx.copy_retained(&bytes[end..], "NX datum CSYS descriptor suffix")?;
-        let Ok(identity) = String::from_utf8(identity_bytes) else {
+        let Ok(identity) = ctx.validate_utf8(
+            &bytes[start..end],
+            "NX datum CSYS identity UTF-8 validation",
+        )? else {
             return Ok(None);
         };
+        let identity = ctx.copy_retained_text(identity, "NX datum CSYS descriptor identity")?;
+        let suffix = ctx.copy_retained(&bytes[end..], "NX datum CSYS descriptor suffix")?;
         Ok(Some(Self {
             prefix,
             identity: CsysIdentity(identity),
@@ -219,6 +221,29 @@ mod tests {
         CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor,
         CSYS_IDENTITY_INTO_WIRE_COUNT,
     };
+
+    #[test]
+    fn csys_descriptor_utf8_refusal_propagates() {
+        let bytes = b"\x02\x01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?";
+        let descriptor = crate::test_support::with_decode_context(|ctx| {
+            CsysDescriptor::read_charged(ctx, bytes)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(descriptor.prefix(), &[2, 1]);
+        assert_eq!(descriptor.identity().as_str(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(descriptor.suffix(), b"?");
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX datum CSYS identity UTF-8 validation",
+            |ctx| CsysDescriptor::read_charged(ctx, bytes),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 30
+        ));
+    }
 
     #[test]
     fn identity_lengths_and_maximal_runs_are_checked_at_construction() {

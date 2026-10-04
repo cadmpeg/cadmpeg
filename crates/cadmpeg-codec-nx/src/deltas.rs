@@ -490,12 +490,16 @@ fn transmit_header(
     })() else {
         return Ok(None);
     };
-    let description =
-        String::from_utf8(ctx.copy_retained(description_bytes, "NX deltas description")?).ok();
-    let schema = String::from_utf8(ctx.copy_retained(schema_bytes, "NX deltas schema")?).ok();
-    let Some((description, schema)) = description.zip(schema) else {
+    let description = ctx.validate_utf8(
+        description_bytes,
+        "NX deltas description UTF-8 validation",
+    )?;
+    let schema = ctx.validate_utf8(schema_bytes, "NX deltas schema UTF-8 validation")?;
+    let (Ok(description), Ok(schema)) = (description, schema) else {
         return Ok(None);
     };
+    let description = ctx.copy_retained_text(description, "NX deltas description")?;
+    let schema = ctx.copy_retained_text(schema, "NX deltas schema")?;
     Ok(TransmitState::from_wire(ctx, description, schema, references)?.ok().map(|state| TransmitHeader { state, end }))
 }
 
@@ -5021,6 +5025,40 @@ mod terminal_null_reference_tests {
 #[cfg(test)]
 mod transmit_header_tests {
     use super::census::walk;
+
+    #[test]
+    fn transmit_header_utf8_refusals_propagate() {
+        let bytes = header(&[0x04, 0x27, 0x04, 0x28]);
+        for (operation, text) in [
+            (
+                "NX deltas description UTF-8 validation",
+                ": TRANSMIT FILE (deltas) created by modeller version 3501171",
+            ),
+            (
+                "NX deltas schema UTF-8 validation",
+                "SCH_3501171_35102_13006",
+            ),
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                |ctx| super::transmit_header(ctx, &bytes),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.additional == cadmpeg_core::decode::u64_from_index(text.len())
+            ));
+        }
+        let mut malformed = bytes;
+        malformed[6] = 0xff;
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::transmit_header(ctx, &malformed)
+        })
+        .unwrap()
+        .is_none());
+    }
 
     #[test]
     fn deltas_census_route_refuses_retained_limit() {

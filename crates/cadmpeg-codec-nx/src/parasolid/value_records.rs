@@ -200,7 +200,7 @@ fn value_record_frame_at<'a>(
                 Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Doubles))
             }))?,
             0x54 => propagate_resource!(frame_at(bytes, offset, tag, 1, |raw| {
-                let Ok(text) = std::str::from_utf8(raw) else { return Ok(None); };
+                let Ok(text) = ctx.validate_utf8(raw, "NX value string UTF-8 validation")? else { return Ok(None); };
                 Ok(PrintableString::from_wire(ctx, text)?.ok().map(ValuePayload::String))
             }))?,
             0x55 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
