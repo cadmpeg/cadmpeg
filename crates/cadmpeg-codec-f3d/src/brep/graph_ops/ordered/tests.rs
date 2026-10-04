@@ -7,13 +7,14 @@ use super::super::AdjacencyRow;
 
 #[test]
 fn brep_ordered_graph_callbacks_admit_actual_bytes_and_keep_refusals() {
+    // Each total counts one search visit, one comparison gate, and compared bytes.
     for (stored, query, work, found) in [
-        ("alpha", "z-long-unread-tail", 2, false),
-        ("alpha", "al", 3, false),
-        ("alpha", "alpha", 6, true),
-        ("é", "ê", 3, false),
-        ("", "", 1, true),
-        ("", "unread", 1, false),
+        ("alpha", "z-long-unread-tail", 3, false),
+        ("alpha", "al", 4, false),
+        ("alpha", "alpha", 7, true),
+        ("é", "ê", 4, false),
+        ("", "", 2, true),
+        ("", "unread", 2, false),
     ] {
         for allowance in 0..=work {
             let arena = DecodeArena::new();
