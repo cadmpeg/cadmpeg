@@ -1174,9 +1174,16 @@ fn order_surface_candidates(
     let mut indexed_storage = ctx.reserve_scoped(0, operation)?;
     let mut indexed = Vec::new();
     indexed_storage.with_storage(|| ctx.reserve_capacity(&mut indexed, candidates.len(), operation))?;
-    ctx.charge_work(u64_from_index(candidates.len()), operation)?;
-    for (index, (offset, components)) in candidates.drain(..).enumerate() {
-        indexed_storage.with_storage(|| ctx.push_vec(&mut indexed, (offset, components, index), operation))?;
+    {
+        const DRAIN_OPERATION: &str = "drain SLDPRT surface selection candidates";
+        let mut drain_reservation = ctx.reserve_scoped(0, DRAIN_OPERATION)?;
+        let count = candidates.len();
+        let drained = drain_reservation.with_storage(|| {
+            ctx.drain_vec(candidates, 0..count, DRAIN_OPERATION)
+        })?;
+        for (index, (offset, components)) in drained.into_iter().enumerate() {
+            indexed_storage.with_storage(|| ctx.push_vec(&mut indexed, (offset, components, index), operation))?;
+        }
     }
     ctx.sort_unstable_by_key(
         &mut indexed,
