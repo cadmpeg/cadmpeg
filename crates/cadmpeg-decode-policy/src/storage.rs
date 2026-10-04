@@ -726,17 +726,47 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(target) = self.key(receiver, &mut Vec::new()) else {
             return false;
         };
-        let terms = match name {
-            "push" | "push_back" | "push_front" | "insert" => Some(vec![ExtentTerm {
+        let string = types::standard_string(self.tcx, self.expr_ty(receiver));
+        let terms = match (name, string) {
+            ("push" | "write_char", true) => operands
+                .get(1)
+                .and_then(|character| self.utf8_char_term(character))
+                .map(|term| vec![term]),
+            ("insert", true) => operands
+                .get(2)
+                .and_then(|character| self.utf8_char_term(character))
+                .map(|term| vec![term]),
+            ("push_str" | "write_str", true) => operands
+                .get(1)
+                .and_then(|source| self.key(source, &mut Vec::new()))
+                .map(|key| {
+                    vec![ExtentTerm {
+                        factors: vec![key],
+                        coefficient: 1,
+                    }]
+                }),
+            ("push" | "push_back" | "push_front" | "insert", false) => Some(vec![ExtentTerm {
                 factors: Vec::new(),
                 coefficient: 1,
             }]),
-            "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact" | "resize"
-            | "resize_with" => operands
+            (
+                "reserve" | "reserve_exact" | "try_reserve" | "try_reserve_exact" | "resize"
+                | "resize_with",
+                _,
+            ) => operands
                 .get(1)
                 .and_then(|count| self.extent_terms(count, &mut Vec::new())),
-            "append" | "extend_from_slice" | "push_str" => operands
+            ("append" | "extend_from_slice" | "push_str", false) => operands
                 .get(1)
+                .and_then(|source| self.key(source, &mut Vec::new()))
+                .map(|key| {
+                    vec![ExtentTerm {
+                        factors: vec![key],
+                        coefficient: 1,
+                    }]
+                }),
+            ("extend", false) => self
+                .copied_slice_source(expression)
                 .and_then(|source| self.key(source, &mut Vec::new()))
                 .map(|key| {
                     vec![ExtentTerm {

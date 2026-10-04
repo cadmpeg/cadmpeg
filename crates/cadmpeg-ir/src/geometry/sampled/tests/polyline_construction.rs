@@ -44,7 +44,8 @@ fn checked(parameters: Option<[f64; 3]>) -> PolylineSamples<FiniteReal, FinitePo
 
 #[test]
 fn polyline_construction_admits_every_raw_visit_and_final_storage_once() {
-    for (parameters, work) in [(None, 6), (Some([0., 1., 2.]), 8), (Some([2., 1., 0.]), 9)] {
+    // Three point checks + three sample yields + iterator exhaustion + 0/2/3 comparisons = 7/9/10.
+    for (parameters, work) in [(None, 7), (Some([0., 1., 2.]), 9), (Some([2., 1., 0.]), 10)] {
         for cap in 0..work {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -61,9 +62,9 @@ fn polyline_construction_admits_every_raw_visit_and_final_storage_once() {
                 limit.operation,
                 if cap < 3 {
                     "IR polyline point finiteness"
-                } else if cap < 6 {
+                } else if cap < 7 {
                     "IR polyline admitted samples"
-                } else if parameters == Some([2., 1., 0.]) && cap > 6 {
+                } else if parameters == Some([2., 1., 0.]) && cap > 7 {
                     "IR polyline decreasing parameter comparison"
                 } else {
                     "IR polyline increasing parameter comparison"
