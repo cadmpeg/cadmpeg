@@ -425,7 +425,15 @@ pub(crate) fn bind_pattern_inputs(
                             count,
                             second: None,
                         })
-                        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+                        .map_err(|message| {
+                            match ctx.copy_retained_text(
+                                message,
+                                "retain SLDPRT pattern admission error",
+                            ) {
+                                Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                                Err(error) => error,
+                            }
+                        })?;
                         model_features[model_index]
                             .evaluation
                             .edit(|definition, _| {
@@ -790,7 +798,15 @@ pub(crate) fn bind_pattern_inputs(
                         count: *count,
                         second,
                     })
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+                    .map_err(|message| {
+                        match ctx.copy_retained_text(
+                            message,
+                            "retain SLDPRT pattern admission error",
+                        ) {
+                            Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                            Err(error) => error,
+                        }
+                    })?;
                 }
                 Ok::<_, cadmpeg_core::CodecError>(())
             })();
@@ -819,7 +835,15 @@ pub(crate) fn bind_pattern_inputs(
                 plane_origin: admitted_point(*origin)?,
                 plane_normal: admitted_direction(*normal)?,
             })
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+            .map_err(|message| {
+                match ctx.copy_retained_text(
+                    message,
+                    "retain SLDPRT pattern admission error",
+                ) {
+                    Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                    Err(error) => error,
+                }
+            })?;
             model_features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
                     definition
@@ -929,7 +953,15 @@ pub(crate) fn bind_pattern_inputs(
             angle,
             count,
         })
-        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+        .map_err(|message| {
+            match ctx.copy_retained_text(
+                message,
+                "retain SLDPRT pattern admission error",
+            ) {
+                Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                Err(error) => error,
+            }
+        })?;
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
                 definition
