@@ -378,7 +378,7 @@ fn measure_unit(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u6
 
 fn derived_unit_elements<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a Value>, CodecError> {
     for name in ["DERIVED_UNIT", "AREA_UNIT", "VOLUME_UNIT"] {
-        if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP derived unit partial traversal")?.find(|partial| partial.name == name) { return Ok(partial.parameters.first()); }
+        if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP derived unit partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP derived unit elements equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? { return Ok(partial.parameters.first()); }
     }
     Ok(None)
 }
@@ -434,18 +434,24 @@ fn mesh_properties(
         return Ok(None);
     };
     let origin = ctx.admit_iter(ir.model.tessellations.as_slice(), "STEP validation mesh origin traversal")?
-        .filter(|mesh| mesh.body.as_ref() == Some(body))
-        .find_map(|mesh| {
-            mesh.triangles().first().and_then(|triangle| {
+        .map(|mesh| -> Result<Option<_>, CodecError> {
+            Ok(ctx.equal(&mesh.body.as_ref(), &Some(body), "STEP validation mesh body equality")?.then_some(mesh))
+        }).filter_map(Result::transpose)
+        .map(|mesh| -> Result<Option<_>, CodecError> {
+            let mesh = mesh?;
+            Ok(mesh.triangles().first().and_then(|triangle| {
                 mesh.vertices().get(cadmpeg_core::decode::index_from_u32(triangle[0])).copied()
-            })
-        });
+            }))
+        }).find_map(Result::transpose).transpose()?;
     let Some(origin) = origin else {
         return Ok(None);
     };
     let mut extent = 0.0_f64;
     for mesh in ctx.admit_iter(ir.model.tessellations.as_slice(), "STEP validation mesh extent traversal")?
-        .filter(|mesh| mesh.body.as_ref() == Some(body)) {
+        .map(|mesh| -> Result<Option<_>, CodecError> {
+            Ok(ctx.equal(&mesh.body.as_ref(), &Some(body), "STEP validation mesh body equality")?.then_some(mesh))
+        }).filter_map(Result::transpose) {
+        let mesh = mesh?;
         extent = ctx.admit_iter(&mesh.vertices(), "STEP validation vertex extent traversal")?
             .fold(extent, |scale, point| {
                 scale.max((point.x - origin.x).abs())
@@ -464,7 +470,10 @@ fn mesh_properties(
     let mut watertight = true;
     let mut coordinate_scale = 0.0_f64;
     for mesh in ctx.admit_iter(ir.model.tessellations.as_slice(), "STEP validation mesh property traversal")?
-        .filter(|mesh| mesh.body.as_ref() == Some(body)) {
+        .map(|mesh| -> Result<Option<_>, CodecError> {
+            Ok(ctx.equal(&mesh.body.as_ref(), &Some(body), "STEP validation mesh body equality")?.then_some(mesh))
+        }).filter_map(Result::transpose) {
+        let mesh = mesh?;
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
         for triangle in mesh.triangles() {
             ctx.charge_work(1, "step_validation_mesh_triangles")?;

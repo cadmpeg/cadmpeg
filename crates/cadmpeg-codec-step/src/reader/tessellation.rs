@@ -632,7 +632,7 @@ pub(super) fn decode(
                 .model
                 .surfaces
                 .iter_mut()
-                .find(|surface| surface.id.as_str() == surface_id.as_str())
+                .map(|surface| -> Result<Option<_>, CodecError> { Ok((ctx.equal(surface.id.as_str(), surface_id.as_str(), "STEP tessellation support surface equality")?).then_some(surface)) }).find_map(Result::transpose).transpose()?
             {
                 if surface.source_object.is_none() {
                     surface.source_object = Some(admitted_source_association(id, ctx)?);
@@ -1058,7 +1058,7 @@ fn repositioned_placement(ctx: &DecodeContext<'_>, record: &RawRecord, geometry:
 fn tessellated_annotation_item(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
     for name in ["TESSELLATED_ANNOTATION_OCCURRENCE", "STYLED_ITEM"] {
         let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP tessellated annotation partial traversal")?
-            .find(|partial| partial.name == name) else {
+            .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP tessellated annotation item equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else {
             continue;
         };
         if let Some(item) = ctx.admit_iter(partial.parameters.as_slice(), "STEP tessellated annotation reference traversal")?
@@ -1438,7 +1438,7 @@ fn is_tessellated_shape_representation(ctx: &DecodeContext<'_>, record: &RawReco
 
 fn entity_kind<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, names: &[&str]) -> Result<Option<&'a str>, CodecError> {
     for partial in ctx.admit_iter(&record.partials[..], "STEP tessellation entity partial traversal")? {
-        if ctx.admit_iter(names, "STEP tessellation entity name traversal")?.any(|name| *name == partial.name) {
+        if ctx.admit_iter(names, "STEP tessellation entity name traversal")?.map(|name| -> Result<Option<_>, CodecError> { Ok((ctx.equal::<str>(name, partial.name.as_str(), "STEP entity kind equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
             return Ok(Some(partial.name.as_str()));
         }
     }
@@ -1447,7 +1447,7 @@ fn entity_kind<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, names: &[&str
 
 fn entity_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, entity: &str, index: usize, simple_offset: usize) -> Result<Option<&'a Value>, CodecError> {
     let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP tessellation entity parameter traversal")?
-        .find(|partial| partial.name == entity) else {
+        .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), entity, "STEP entity parameter equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else {
         return Ok(None);
     };
     let offset = if record.partials.len() == 1 { simple_offset } else { 0 };

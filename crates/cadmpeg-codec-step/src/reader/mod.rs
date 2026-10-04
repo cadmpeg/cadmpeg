@@ -1425,7 +1425,7 @@ impl RecordExt for RawRecord {
         self.partials.first().parameters.get(index)
     }
     fn partial(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Option<&crate::parse::PartialRecord>, CodecError> {
-        Ok(ctx.admit_iter(&self.partials[..], "STEP partial record search")?.find(|partial| partial.name == name))
+        Ok(ctx.admit_iter(&self.partials[..], "STEP partial record search")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP partial equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?)
     }
 }
 
@@ -1492,7 +1492,7 @@ impl ValueExt for Value {
 }
 
 fn named_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str, index: usize) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP named attribute partial traversal")?.find(|partial| partial.name == name).and_then(|partial| partial.parameters.get(index)))
+    Ok(ctx.admit_iter(&record.partials[..], "STEP named attribute partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP named parameter equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?.and_then(|partial| partial.parameters.get(index)))
 }
 
 fn find_record_value<T>(

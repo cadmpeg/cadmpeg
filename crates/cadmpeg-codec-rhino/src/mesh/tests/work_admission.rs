@@ -173,3 +173,25 @@ fn current_mesh_ngon_records_and_indices_refuse_work() {
         );
     });
 }
+
+#[test]
+fn compressed_mesh_source_equality_preserves_work_refusal() {
+    let bytes = buffer(&[1, 2, 3, 4], 1);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "Rhino compressed mesh source equality", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            with_expand_policy(&bytes, policy, |expand| {
+                let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+                let result = read_buffer(expand, &mut reader,
+                    MeshBufferSpec { expected: 4, name: "test" },
+                    &mut Diagnostics::new(), &mut MeshBudget::new(), ArchiveVersion::V5,
+                ).map(|_| ()).map_err(codec_error);
+                if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                    assert_eq!(expand.ctx().resource_refusal().as_ref(), Some(refusal));
+                }
+                result
+            })
+        },
+    );
+}

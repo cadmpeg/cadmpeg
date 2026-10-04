@@ -735,7 +735,7 @@ impl Parser<'_, '_, '_> {
         self.name("HEADER")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut header = Vec::new();
-        while !self.peek_name("ENDSEC") {
+        while !self.peek_name("ENDSEC")? {
             let offset = self.current_offset();
             let name = self.take_name()?;
             let parameters = self.parameter_nesting(Self::parameters_inner)?;
@@ -792,16 +792,16 @@ impl Parser<'_, '_, '_> {
         };
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
-            if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
+            if self.peek_name("ANCHOR")? || self.peek_name("REFERENCE")? {
                 let (message, _message_storage) = self.budget.format_scoped(format_args!("{level} forbids ANCHOR and REFERENCE sections"), "STEP forbidden section message")?;
                 return self.err(&message);
             }
         }
-        if self.peek_name("ANCHOR") {
+        if self.peek_name("ANCHOR")? {
             self.lexer.set_allow_print_controls(false);
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
-            while !self.peek_name("ENDSEC") {
+            while !self.peek_name("ENDSEC")? {
                 let TokenKind::Resource(name) = self.next_kind()? else {
                     return self.err("expected anchor name");
                 };
@@ -850,11 +850,11 @@ impl Parser<'_, '_, '_> {
             .reserve_scoped(0, "step external identity lookup")?;
         let mut external_reference_ids = BTreeSet::new();
         let mut external_value_reference_ids = BTreeSet::new();
-        if self.peek_name("REFERENCE") {
+        if self.peek_name("REFERENCE")? {
             self.lexer.set_allow_print_controls(false);
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
-            while !self.peek_name("ENDSEC") {
+            while !self.peek_name("ENDSEC")? {
                 let (name, same_kind, other_kind, id) = match self.next_kind()? {
                     TokenKind::Instance(id) => (
                         ReferenceName::Entity(id),
@@ -899,7 +899,7 @@ impl Parser<'_, '_, '_> {
         let mut records = BTreeMap::new();
         let mut data_name_storage = self.budget.reserve_scoped(0, "step data name lookup")?;
         let mut data_section_names = BTreeSet::new();
-        while self.peek_name("DATA") {
+        while self.peek_name("DATA")? {
             self.next_kind()?;
             if implementation_level == ImplementationLevel::LegacyEdition1 && !data.is_empty() {
                 return self.err("2;1 requires one DATA section");
@@ -940,7 +940,7 @@ impl Parser<'_, '_, '_> {
             };
             self.punct(&TokenKind::Semicolon)?;
             let mut ids = Vec::new();
-            while !self.peek_name("ENDSEC") {
+            while !self.peek_name("ENDSEC")? {
                 let (id, record) = self.record()?;
 
                 if records.contains_key(&id) {
@@ -987,18 +987,18 @@ impl Parser<'_, '_, '_> {
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
-            if self.peek_name("SIGNATURE") {
+            if self.peek_name("SIGNATURE")? {
                 let (message, _message_storage) = self.budget.format_scoped(format_args!("{level} forbids SIGNATURE sections"), "STEP forbidden section message")?;
                 return self.err(&message);
             }
         }
-        while self.peek_name("SIGNATURE") {
+        while self.peek_name("SIGNATURE")? {
             let start = self.current_offset();
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             let payload_start = self.last_end;
             let payload_end = self.current_offset();
-            while !self.peek_name("ENDSEC") {
+            while !self.peek_name("ENDSEC")? {
                 if self.current.is_none() {
                     return self.err("unterminated SIGNATURE section");
                 }
@@ -1267,11 +1267,12 @@ impl Parser<'_, '_, '_> {
                 Ord::cmp,
                 "step_parse_canonical_partial_name_sort",
             )?;
-            if canonical_names
-                .windows(2)
-                .any(|window| window[0] == window[1])
-            {
-                return Self::err_at(self.budget, start, "duplicate complex partial name");
+            let pair_width = std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| self.budget.refuse_codec_limit("STEP complex partial pair width", 0, 1))?;
+            for window in self.budget.admit_iter(canonical_names.as_slice(), "STEP complex partial pair traversal").map_err(CodecError::from)?.windows(pair_width) {
+                if self.budget.equal(window[0], window[1], "STEP complex partial name equality")? {
+                    return Self::err_at(self.budget, start, "duplicate complex partial name");
+                }
             }
             if !parts
                 .windows(2)
@@ -1444,8 +1445,13 @@ impl Parser<'_, '_, '_> {
             std::mem::discriminant(&token.kind) == std::mem::discriminant(expected)
         })
     }
-    fn peek_name(&self, expected: &str) -> bool {
-        matches!(self.current.as_ref().map(|token| &token.kind), Some(TokenKind::Name(name)) if name == expected)
+    fn peek_name(&self, expected: &str) -> Result<bool, ParseError> {
+        match self.current.as_ref().map(|token| &token.kind) {
+            Some(TokenKind::Name(name)) => self.budget
+                .equal(name.as_str(), expected, "STEP parser lookahead name equality")
+                .map_err(ParseError::from),
+            _ => Ok(false),
+        }
     }
     fn next_kind(&mut self) -> Result<TokenKind, ParseError> {
         let Some(token) = self.current.take() else {
@@ -1520,16 +1526,20 @@ fn validate_header(
     let [description_record, file_name_record, schema_record, ..] = header else {
         return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     };
-    if [description_record, file_name_record, schema_record]
-        .iter()
-        .zip(REQUIRED)
-        .any(|(record, expected)| record.name != expected)
-    {
-        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+    for (record, expected) in [description_record, file_name_record, schema_record].into_iter().zip(REQUIRED) {
+        if !budget.equal(record.name.as_str(), expected, "STEP required header order equality")? {
+            return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+        }
     }
     for name in REQUIRED {
-        if budget.admit_iter(header, "STEP required header occurrence traversal").map_err(CodecError::from)?
-            .filter(|record| record.name == name).count() != 1 {
+        let mut count = 0usize;
+        for record in budget.admit_iter(header, "STEP required header occurrence traversal").map_err(CodecError::from)? {
+            if budget.equal(record.name.as_str(), name, "STEP required header occurrence equality")? {
+                count = count.checked_add(1)
+                    .ok_or_else(|| budget.refuse_codec_limit("STEP required header occurrence count", 0, 1))?;
+            }
+        }
+        if count != 1 {
             return invalid("HEADER contains a duplicate required entity");
         }
     }
@@ -1698,7 +1708,14 @@ fn validate_header_sections(
     schema_identifiers: &[String],
     budget: &DecodeContext<'_>,
 ) -> Result<Vec<HeaderDataReferences>, ValidationError> {
-    let has = |name: &str| -> Result<bool, CodecError> { Ok(budget.admit_iter(header, "STEP validate header sections traversal")?.any(|record| record.name == name)) };
+    let has = |name: &str| -> Result<bool, CodecError> {
+        for record in budget.admit_iter(header, "STEP validate header sections traversal").map_err(CodecError::from)? {
+            if budget.equal(record.name.as_str(), name, "STEP header section name equality")? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION")? {
         return invalid("2;1 forbids FILE_POPULATION in HEADER");
     }
@@ -2201,11 +2218,18 @@ fn schema_identifier_matches(
             budget.copy_retained_text(trimmed, "step_schema_name_matching")
         })?;
     schema_name.make_ascii_uppercase();
-    Ok(budget.admit_iter(&(schema_identifiers)[..], "STEP schema identifier matches traversal").map_err(cadmpeg_core::CodecError::from)?.any(|identifier| {
+    for identifier in budget.admit_iter(schema_identifiers, "STEP schema identifier matches traversal")? {
         let identifier = identifier.trim();
-        identifier == schema_name
-            || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
-    }))
+        if budget.equal(identifier, schema_name.as_str(), "STEP full schema identifier equality")? {
+            return Ok(true);
+        }
+        if let Some((name, _)) = split_schema_identifier(identifier) {
+            if budget.equal(name, schema_name.as_str(), "STEP schema identifier prefix equality")? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn validate_header_data_references(

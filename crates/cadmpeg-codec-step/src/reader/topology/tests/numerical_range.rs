@@ -547,6 +547,9 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
             mapped_pcurve_closest(&ctx, &index, &id, &pcurve, target, 0.0)
         }
         .expect_err("first seed or inverse step charges work");
+        let CodecError::ResourceLimit(limit) = limit else {
+            panic!("selection must preserve the original resource error");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
         assert_eq!(
@@ -595,10 +598,16 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
                 Point3::new(1.0, 0.0, 0.0),
             )
         };
-        assert_eq!(result, Err(limit));
+        assert_eq!(result.map_err(|error| match error {
+            CodecError::ResourceLimit(limit) => limit,
+            _ => panic!("selection must preserve the original resource error"),
+        }), Err(limit));
     }
     assert_eq!(
-        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[]),
+        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[]).map_err(|error| match error {
+            CodecError::ResourceLimit(limit) => limit,
+            _ => panic!("selection must preserve the original resource error"),
+        }),
         Err(limit)
     );
     assert_eq!(
@@ -609,7 +618,10 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
             &pcurve,
             Point3::new(0.5, 0.0, 0.0),
             f64::NAN
-        ),
+        ).map_err(|error| match error {
+            CodecError::ResourceLimit(limit) => limit,
+            _ => panic!("selection must preserve the original resource error"),
+        }),
         Err(limit)
     );
 }

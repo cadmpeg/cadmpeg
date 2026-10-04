@@ -1947,3 +1947,5 @@ fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
 mod reconstruction;
 
 const EPS_PERIODIC_PERTURBATION: f64 = 1.0e-8;
+
+mod equality;

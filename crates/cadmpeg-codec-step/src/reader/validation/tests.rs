@@ -501,3 +501,5 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         }
     }
 }
+
+mod equality;

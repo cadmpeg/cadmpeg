@@ -3128,11 +3128,11 @@ fn representation_item_name<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) 
 }
 
 fn entity_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str) -> Result<Option<&'a [Value]>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP geometry entity parameter partial traversal")?.find(|partial| partial.name == name).map(|partial| partial.parameters.as_slice()))
+    Ok(ctx.admit_iter(&record.partials[..], "STEP geometry entity parameter partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP entity parameters equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?.map(|partial| partial.parameters.as_slice()))
 }
 
 fn transformation_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str, index: usize) -> Result<Option<&'a Value>, CodecError> {
-    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP transformation attribute partial traversal")?.find(|partial| partial.name == name) else { return Ok(None); };
+    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP transformation attribute partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP transformation parameter equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else { return Ok(None); };
     let parameters = &partial.parameters;
     let (attribute_count, offset) = match (name, parameters.len()) {
         ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", 6) => (5, 1),
@@ -3286,7 +3286,7 @@ fn is_apll_leader_line(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bo
 fn first_named_list<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, names: &[&str]) -> Result<Option<impl Iterator<Item = u64> + 'a>, CodecError> {
     let mut selected = None;
     for partial in ctx.admit_iter(&record.partials[..], "STEP named list partial traversal")? {
-        if ctx.admit_iter(names, "STEP named list name traversal")?.any(|name| partial.name == *name) {
+        if ctx.admit_iter(names, "STEP named list name traversal")?.map(|name| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP first named list equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
             selected = Some(partial);
             break;
         }
@@ -4863,7 +4863,7 @@ fn composite_curve(
 
 fn composite_curve_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<(&'a [Value], usize)>, CodecError> {
     for name in ["COMPOSITE_CURVE", "BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"] {
-        if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP composite curve partial traversal")?.find(|partial| partial.name == name) { return Ok(Some((partial.parameters.as_slice(), usize::from(record.partials.len() == 1)))); }
+        if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP composite curve partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP composite curve parameters equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? { return Ok(Some((partial.parameters.as_slice(), usize::from(record.partials.len() == 1)))); }
     }
     Ok(None)
 }
@@ -5743,7 +5743,7 @@ fn procedural_surface_parameter_scales(
                 let Some(carrier) = ctx.admit_iter(&(ir
                     .model
                     .surfaces)[..], "STEP procedural surface parameter scales traversal").map_err(cadmpeg_core::CodecError::from)?
-                    .find(|surface| surface.id == *support)
+                    .map(|surface| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&surface.id, support, "STEP procedural surface parameter scales equality")?).then_some(surface)) }).find_map(Result::transpose).transpose()?
                 else {
                     return Ok(None);
                 };
@@ -5784,13 +5784,20 @@ fn surface_geometry_parameter_scales<'a>(
         SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SolvedSurfaceGeometry::Transformed(_) => None,
         SolvedSurfaceGeometry::Unknown { .. } => {
-            let mut candidates = ir.model.procedural_surfaces.iter().filter(|procedural| {
-                ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
-            });
-            let Some(procedural) = candidates.next() else {
+            let mut candidates = ctx.admit_iter(ir.model.procedural_surfaces.as_slice(), "STEP scale procedural surface traversal")?
+                .map(|procedural| -> Result<Option<_>, CodecError> {
+                    let mut owners = ctx.admit_iter(ir.model.surfaces.as_slice(), "STEP procedural surface owner traversal")?
+                        .map(|surface| -> Result<Option<_>, CodecError> {
+                            Ok(ctx.equal(&surface.geometry.procedural_construction(), &Some(&procedural.id), "STEP procedural construction equality")?.then_some(&surface.id))
+                        }).filter_map(Result::transpose);
+                    let owner = owners.next().transpose()?;
+                    let owner = if owner.is_some() && owners.next().transpose()?.is_some() { None } else { owner };
+                    Ok(ctx.equal(&owner, &Some(surface_id), "STEP procedural surface owner equality")?.then_some(procedural))
+                }).filter_map(Result::transpose);
+            let Some(procedural) = candidates.next().transpose()? else {
                 return Ok(SurfaceScaleStep::Value(None));
             };
-            if candidates.next().is_some() {
+            if candidates.next().transpose()?.is_some() {
                 return Ok(SurfaceScaleStep::Value(None));
             }
             if let Some(support) = procedural_surface_support(procedural.definition()) {
@@ -5929,7 +5936,7 @@ fn directrix_parameter_scale_inner(
     )?;
     let key = geometry_or_none!(CurveId::mint(key).ok());
     ctx.insert_btree_set(active, key, "step_directrix_scale_active")?;
-    let scale = if let Some(curve) = ctx.admit_iter(&(ir.model.curves)[..], "STEP directrix parameter scale inner traversal").map_err(cadmpeg_core::CodecError::from)?.find(|curve| curve.id == *curve_id) {
+    let scale = if let Some(curve) = ctx.admit_iter(&(ir.model.curves)[..], "STEP directrix parameter scale inner traversal").map_err(cadmpeg_core::CodecError::from)?.map(|curve| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&curve.id, curve_id, "STEP directrix parameter scale inner equality")?).then_some(curve)) }).find_map(Result::transpose).transpose()? {
         if let Some(solved) = curve.geometry.solved() {
             directrix_geometry_parameter_scale(solved, length_scale, angle_scale, ctx)
         } else {

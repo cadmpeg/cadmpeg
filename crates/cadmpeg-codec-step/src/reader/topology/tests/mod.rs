@@ -23,3 +23,5 @@ fn topology_failure_count_refuses_overflow() {
 }
 
 mod set_lookups;
+
+mod equality;
