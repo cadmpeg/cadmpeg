@@ -1819,3 +1819,5 @@ mod collection_storage;
 mod rectangles;
 
 mod resource_operations;
+
+mod frame_deduplication;
