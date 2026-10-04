@@ -39,62 +39,131 @@ pub(in crate::design::decode) struct LegacyAsBuilt421Alignment {
 }
 
 pub(super) fn exact_legacy_as_built_421_alignment(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     lanes: &[&DesignParameterOwner],
-) -> Option<LegacyAsBuilt421Alignment> {
-    let generation = crate::design::assembly::legacy_as_built_421_generation(
+) -> Result<Option<LegacyAsBuilt421Alignment>, cadmpeg_core::CodecError> {
+    let Some(generation) = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
-    let references = scope.reference_members().located_rows()?;
+    ) else {
+        return Ok(None);
+    };
+    let Some(references) = scope.reference_members().located_rows() else {
+        return Ok(None);
+    };
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
         || references.len() != 11
     {
-        return None;
+        return Ok(None);
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    if usize::try_from(scope.paired_byte_offset()).ok()? != start.checked_add(as_built_421::LEN)?
-        || scope.reference_count_offset()
-            != u64::try_from(start.checked_add(as_built_421::REFERENCE_COUNT)?).ok()?
-        || View::u32_le_at(bytes, start.checked_add(as_built_421::REFERENCE_COUNT)?)?
-            != as_built_421::REFERENCE_COUNT_VALUE
-        || View::u32_le_at(bytes, start.checked_add(as_built_421::KIND_LENGTH)?)?
-            != as_built_421::KIND_LENGTH_VALUE
-        || scope.feature_ordinal_offset()
-            != u64::try_from(start.checked_add(as_built_421::FEATURE_ORDINAL)?).ok()?
+    let Ok(start) = usize::try_from(scope.byte_offset()) else {
+        return Ok(None);
+    };
+    let Some(expected_paired_start) = start.checked_add(as_built_421::LEN) else {
+        return Ok(None);
+    };
+    let Ok(paired_start) = usize::try_from(scope.paired_byte_offset()) else {
+        return Ok(None);
+    };
+    if paired_start != expected_paired_start {
+        return Ok(None);
+    }
+    let Some(reference_count_at) = start.checked_add(as_built_421::REFERENCE_COUNT) else {
+        return Ok(None);
+    };
+    let Ok(reference_count_offset) = u64::try_from(reference_count_at) else {
+        return Ok(None);
+    };
+    let Some(reference_count) = View::u32_le_at(bytes, reference_count_at) else {
+        return Ok(None);
+    };
+    let Some(kind_length_at) = start.checked_add(as_built_421::KIND_LENGTH) else {
+        return Ok(None);
+    };
+    let Some(kind_length) = View::u32_le_at(bytes, kind_length_at) else {
+        return Ok(None);
+    };
+    let Some(feature_ordinal_at) = start.checked_add(as_built_421::FEATURE_ORDINAL) else {
+        return Ok(None);
+    };
+    let Ok(feature_ordinal_offset) = u64::try_from(feature_ordinal_at) else {
+        return Ok(None);
+    };
+    if scope.reference_count_offset() != reference_count_offset
+        || reference_count != as_built_421::REFERENCE_COUNT_VALUE
+        || kind_length != as_built_421::KIND_LENGTH_VALUE
+        || scope.feature_ordinal_offset() != feature_ordinal_offset
     {
-        return None;
+        return Ok(None);
     }
-    for (ordinal, reference) in references.iter().enumerate() {
-        let reference_at = start
-            .checked_add(as_built_421::REFERENCE_ENTRIES.checked_add(ordinal.checked_mul(11)?)?)?;
-        if marked_record_reference(bytes, reference_at)? != reference.value
-            || bytes.get(reference_at.checked_add(5)?..reference_at.checked_add(11)?)? != [0; 6]
-            || reference.offset != u64::try_from(reference_at.checked_add(1)?).ok()?
+    for (ordinal, reference) in ctx
+        .admit_iter(references, "scan F3D legacy AsBuilt alignment references")?
+        .enumerate()
+    {
+        let Some(entry_offset) = ordinal.checked_mul(11) else {
+            return Ok(None);
+        };
+        let Some(reference_entry) = as_built_421::REFERENCE_ENTRIES.checked_add(entry_offset) else {
+            return Ok(None);
+        };
+        let Some(reference_at) = start.checked_add(reference_entry) else {
+            return Ok(None);
+        };
+        let Some(marked_reference) = marked_record_reference(bytes, reference_at) else {
+            return Ok(None);
+        };
+        let Some(zeroes_start) = reference_at.checked_add(5) else {
+            return Ok(None);
+        };
+        let Some(zeroes_end) = reference_at.checked_add(11) else {
+            return Ok(None);
+        };
+        let Some(zeroes) = bytes.get(zeroes_start..zeroes_end) else {
+            return Ok(None);
+        };
+        let Some(offset_at) = reference_at.checked_add(1) else {
+            return Ok(None);
+        };
+        let Ok(reference_offset) = u64::try_from(offset_at) else {
+            return Ok(None);
+        };
+        if marked_reference != reference.value
+            || zeroes != [0; 6]
+            || reference.offset != reference_offset
         {
-            return None;
+            return Ok(None);
         }
     }
-    if bytes.get(
-        start.checked_add(as_built_421::KIND_LENGTH)?..start.checked_add(as_built_421::KIND)?,
-    )? != as_built_421::KIND_LENGTH_VALUE.to_le_bytes()
-        || bytes.get(
-            start.checked_add(as_built_421::REFERENCE_TRAILER)?
-                ..start.checked_add(as_built_421::KIND_LENGTH)?,
-        )? != as_built_421::REFERENCE_TRAILER_VALUE
+    let Some(kind_at) = start.checked_add(as_built_421::KIND) else {
+        return Ok(None);
+    };
+    let Some(kind_length_bytes) = bytes.get(kind_length_at..kind_at) else {
+        return Ok(None);
+    };
+    let Some(reference_trailer_at) = start.checked_add(as_built_421::REFERENCE_TRAILER) else {
+        return Ok(None);
+    };
+    let Some(reference_trailer) = bytes.get(reference_trailer_at..kind_length_at) else {
+        return Ok(None);
+    };
+    if kind_length_bytes != as_built_421::KIND_LENGTH_VALUE.to_le_bytes()
+        || reference_trailer != as_built_421::REFERENCE_TRAILER_VALUE
     {
-        return None;
+        return Ok(None);
     }
-    if lanes.iter().any(|owner| {
+    if ctx.admit_iter(lanes, "scan F3D legacy AsBuilt alignment owner lanes")?
+        .any(|owner| {
         owner.class_tag().as_str() != generation.owner_class_tag() || owner.frame_length() != 103
-    }) {
-        return None;
+        })
+    {
+        return Ok(None);
     }
     let [offset_x, offset_y, offset_z, angle, limit_first, limit_second] = lanes else {
-        return None;
+        return Ok(None);
     };
     let alignment_owner_record_indices = [
         offset_x.record_index(),
@@ -117,7 +186,7 @@ pub(super) fn exact_legacy_as_built_421_alignment(
             .take(2)
             .eq(source_limit_owner_record_indices.iter())
     {
-        return None;
+        return Ok(None);
     }
     let (minimum_owner, maximum_owner) = if generation.reverse_limit_order() {
         (limit_second, limit_first)
@@ -132,7 +201,7 @@ pub(super) fn exact_legacy_as_built_421_alignment(
         minimum_owner.evaluated_value_offset(),
         maximum_owner.evaluated_value_offset(),
     ];
-    Some(LegacyAsBuilt421Alignment {
+    Ok(Some(LegacyAsBuilt421Alignment {
         angle: angle.evaluated_value().get(),
         offset: [
             offset_x.evaluated_value().get(),
@@ -146,16 +215,17 @@ pub(super) fn exact_legacy_as_built_421_alignment(
                 offset: owner.evaluated_value_offset(),
             })
             .collect(),
-        limits: DesignAssemblyLimitsWire {
+        limits: match (DesignAssemblyLimitsWire {
             kind,
             minimum,
             maximum,
             owner_record_indices: limit_owner_record_indices,
             value_offsets: limit_value_offsets,
-        }
-        .try_into()
-        .ok()?,
-    })
+        }).try_into() {
+            Ok(limits) => limits,
+            Err(_) => return Ok(None),
+        },
+    }))
 }
 
 pub(super) fn exact_legacy_as_built_421_solved_frame(
@@ -270,7 +340,14 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let first_selection_record_index = first_selection_reference.value;
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
-    let point = match exact_point_data_construction(ctx, bytes, records, &[point_record_index], stream_types) {
+    let point_record_indices = [point_record_index];
+    let point_record_indices = match ctx.admit_iter(
+        &point_record_indices, "scan F3D As-built point references",
+    ) {
+        Ok(indices) => indices.copied(),
+        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+    };
+    let point = match exact_point_data_construction(ctx, bytes, records, point_record_indices, stream_types) {
         Ok(Some(point)) => point,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
@@ -386,24 +463,41 @@ fn exact_legacy_as_built_face_selection(
     let Some(scope_start) = usize::try_from(scope.byte_offset()).ok() else {
         return Ok(None);
     };
-    let next_byte_offset = (|| {
-        scope
-            .reference_members()
-            .values()
-            .nth(
-                usize::try_from(scope_reference_ordinal)
-                    .ok()?
-                    .checked_add(1)?,
+    let next_reference_index = (|| -> Result<Option<u32>, cadmpeg_core::CodecError> {
+        let Some(reference_ordinal) = usize::try_from(scope_reference_ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(1))
+        else {
+            return Ok(None);
+        };
+        let reference_members = scope.reference_members();
+        let value = ctx
+            .admit_iter(
+                reference_members.unlocated_values().unwrap_or(&[]),
+                "find F3D legacy AsBuilt next owner reference",
+            )?
+            .copied()
+            .chain(
+                ctx.admit_iter(
+                    reference_members.located_rows().unwrap_or(&[]),
+                    "find F3D legacy AsBuilt next located owner reference",
+                )?
+                .map(|reference| reference.value),
             )
-            .and_then(|record_index| {
-                records
-                    .offsets(*record_index)
-                    .iter()
-                    .copied()
-                    .find(|offset| *offset > scope_start)
-            })
-            .and_then(|offset| u64::try_from(offset).ok())
-    })();
+            .nth(reference_ordinal);
+        Ok(value)
+    })()?;
+    let next_byte_offset = match next_reference_index {
+        Some(record_index) => ctx
+            .admit_iter(
+                records.offsets(record_index),
+                "find F3D legacy AsBuilt selection boundary",
+            )?
+            .copied()
+            .find(|offset| *offset > scope_start)
+            .and_then(|offset| u64::try_from(offset).ok()),
+        None => None,
+    };
     let mut candidates = records
         .offsets(record_index)
         .iter()

@@ -3049,8 +3049,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let compact_scope = scope.class_tag.as_str() == "387"
                     && scope.paired_class_tag.as_str() == "258"
                     && design::decode::scopes::parameter_scope::parameter_scope_payload_length(
+                        ctx.decode,
                         scope,
-                    ) == Some(314);
+                    )? == Some(314);
                 let extended_reference_scope = scope.class_tag.as_str() == "329"
                     && scope.paired_class_tag.as_str() == "261"
                     && scope.frame_length() == 363;

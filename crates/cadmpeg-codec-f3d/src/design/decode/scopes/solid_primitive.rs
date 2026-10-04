@@ -25,11 +25,13 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::PositiveReal;
 
 pub(super) fn exact_solid_primitive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignSolidPrimitive> {
+) -> Result<Option<DesignSolidPrimitive>, cadmpeg_core::CodecError> {
+    (|| {
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let (operation, operation_offset, cylinder_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
@@ -56,7 +58,7 @@ pub(super) fn exact_solid_primitive(
                     None,
                 )
             } else {
-                let prologue = exact_shifted_cylinder_primitive_prologue(bytes, scope, start)?;
+                let prologue = (match exact_shifted_cylinder_primitive_prologue(ctx, bytes, scope, start) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
                 (
                     prologue.operation,
                     prologue.operation_offset,
@@ -78,7 +80,7 @@ pub(super) fn exact_solid_primitive(
             u64_from_index(matrix_at),
         ))
     };
-    match scope.kind_name() {
+    (match scope.kind_name() {
         "SpherePrimitive"
             if scope.frame_length() == 462
                 && bytes.get(start + 29) == Some(&1)
@@ -88,7 +90,7 @@ pub(super) fn exact_solid_primitive(
         {
             let diameter_record_index = View::u32_le_at(bytes, start + 42)?;
             let (diameter, diameter_offset) =
-                exact_primitive_diameter(bytes, records, diameter_record_index)?;
+                (match exact_primitive_diameter(ctx, bytes, records, diameter_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
             let (transform, transform_offset) = matrix(64)?;
             Some(DesignSolidPrimitive::Sphere(
                 crate::records::feature::primitives::DesignSpherePrimitive {
@@ -116,9 +118,9 @@ pub(super) fn exact_solid_primitive(
                 return None;
             }
             let (major_diameter, major_diameter_offset) =
-                exact_primitive_diameter(bytes, records, major_diameter_record_index)?;
+                (match exact_primitive_diameter(ctx, bytes, records, major_diameter_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
             let (minor_diameter, minor_diameter_offset) =
-                exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
+                (match exact_primitive_diameter(ctx, bytes, records, minor_diameter_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
             let (transform, transform_offset) = matrix(75)?;
             Some(DesignSolidPrimitive::Torus(
                 crate::records::feature::primitives::DesignTorusPrimitive {
@@ -140,7 +142,7 @@ pub(super) fn exact_solid_primitive(
                 return None;
             }
             let [Some(length), Some(width), Some(height), Some(offset_x), Some(offset_y)] =
-                exact_owned_primitive_parameters::<5>(scope, parameter_owners)?
+                (match exact_owned_primitive_parameters::<5>(ctx, scope, parameter_owners) { Ok(value) => value, Err(error) => return Some(Err(error)) })?
             else {
                 return None;
             };
@@ -174,7 +176,7 @@ pub(super) fn exact_solid_primitive(
                 return None;
             }
             let [Some(height), Some(diameter)] =
-                exact_owned_primitive_parameters::<2>(scope, parameter_owners)?
+                (match exact_owned_primitive_parameters::<2>(ctx, scope, parameter_owners) { Ok(value) => value, Err(error) => return Some(Err(error)) })?
             else {
                 return None;
             };
@@ -195,7 +197,8 @@ pub(super) fn exact_solid_primitive(
             ))
         }
         _ => None,
-    }
+    }).map(Ok)
+    })().transpose()
 }
 
 #[derive(Clone, Copy)]
@@ -218,10 +221,12 @@ fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<u
 }
 
 fn exact_shifted_cylinder_primitive_prologue(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<ExactShiftedCylinderPrimitivePrologue> {
+) -> Result<Option<ExactShiftedCylinderPrimitivePrologue>, cadmpeg_core::CodecError> {
+    (|| {
     let compact = match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
@@ -281,10 +286,7 @@ fn exact_shifted_cylinder_primitive_prologue(
     if bytes.get(start + first_reference) != Some(&1)
         || bytes.get(start + first_reference + 1) != Some(&1)
         || View::u32_le_at(bytes, start + first_reference + 2)?
-            != *scope
-                .reference_members()
-                .values()
-                .nth(reference_count - 1)?
+            != (match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D shifted cylinder reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) }).nth(reference_count - 1)?
         || bytes.get(start + first_reference + 6..start + first_reference + 11)? != [0; 5]
     {
         return None;
@@ -292,24 +294,15 @@ fn exact_shifted_cylinder_primitive_prologue(
     for (relative_offset, expected_record_index) in [
         (
             second_reference,
-            *scope
-                .reference_members()
-                .values()
-                .nth(reference_count - 2)?,
+            (match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D shifted cylinder reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) }).nth(reference_count - 2)?,
         ),
         (
             third_reference,
-            *scope
-                .reference_members()
-                .values()
-                .nth(reference_count - 3)?,
+            (match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D shifted cylinder reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) }).nth(reference_count - 3)?,
         ),
         (
             fourth_reference,
-            *scope
-                .reference_members()
-                .values()
-                .nth(reference_count - 4)?,
+            (match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D shifted cylinder reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) }).nth(reference_count - 4)?,
         ),
     ] {
         if marked_record_reference(bytes, start.checked_add(relative_offset)?)
@@ -365,7 +358,7 @@ fn exact_shifted_cylinder_primitive_prologue(
                 return None;
             }
             let guid_end =
-                fixed_guid_end(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)?;
+                (match fixed_guid_end(ctx, bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
             if guid_end != start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
                 || bytes.get(
                     start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
@@ -409,7 +402,7 @@ fn exact_shifted_cylinder_primitive_prologue(
                 transform[ordinal / 4][ordinal % 4] = value;
             }
             let guid_end =
-                fixed_guid_end(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)?;
+                (match fixed_guid_end(ctx, bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
             if guid_end != start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
                 || !valid_sketch_transform(&transform)
                 || !cylinder_transform_preserves_projected_geometry(&transform)
@@ -424,11 +417,12 @@ fn exact_shifted_cylinder_primitive_prologue(
         }
         _ => return None,
     };
-    Some(ExactShiftedCylinderPrimitivePrologue {
+    Some(Ok(ExactShiftedCylinderPrimitivePrologue {
         operation,
         operation_offset,
         transform,
-    })
+    }))
+    })().transpose()
 }
 
 fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) -> bool {
@@ -442,19 +436,17 @@ fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) ->
 }
 
 fn exact_owned_primitive_parameters<'a, const N: usize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
-) -> Option<[Option<&'a DesignParameterOwner>; N]> {
+) -> Result<Option<[Option<&'a DesignParameterOwner>; N]>, cadmpeg_core::CodecError> {
+    (|| {
     let stream = native_stream(&scope.id)?;
     let mut owners = [None; N];
-    for owner in parameter_owners.iter().filter(|owner| {
-        owner.scope_record_index() == scope.record_index
-            && native_stream(owner.id()) == Some(stream)
-            && scope
-                .reference_members()
-                .values()
-                .any(|value| value == &owner.record_index())
-    }) {
+    for owner in match ctx.admit_iter(parameter_owners, "scan F3D primitive parameter owners") { Ok(owners) => owners, Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))) } {
+        if owner.scope_record_index() != scope.record_index || native_stream(owner.id()) != Some(stream) { continue; }
+        let mut members = match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D primitive owner reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) };
+        if !members.any(|value| value == owner.record_index()) { continue; }
         let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
         let slot = owners.get_mut(ordinal)?;
         if slot.replace(owner).is_some() {
@@ -464,16 +456,20 @@ fn exact_owned_primitive_parameters<'a, const N: usize>(
     if owners.iter().any(Option::is_none) {
         return None;
     }
-    Some(owners)
+    Some(Ok(owners))
+    })().transpose()
 }
 
 fn exact_primitive_diameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(PositiveReal, u64)> {
-    let scalar = exact_fixed_scalar(bytes, records, record_index)?;
-    Some((PositiveReal::new(scalar.value.get())?, scalar.value_offset))
+) -> Result<Option<(PositiveReal, u64)>, cadmpeg_core::CodecError> {
+    (|| {
+    let scalar = (match exact_fixed_scalar(ctx, bytes, records, record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
+    Some(Ok((PositiveReal::new(scalar.value.get())?, scalar.value_offset)))
+    })().transpose()
 }
 
 #[cfg(test)]

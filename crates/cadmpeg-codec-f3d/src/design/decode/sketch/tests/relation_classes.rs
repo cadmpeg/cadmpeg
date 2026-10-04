@@ -504,7 +504,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
     );
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &mut parsed),
+        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
         Some(SketchPatternDefinition::Circular {
             angle_parameter: 336,
             count_parameter: 333,
@@ -539,7 +539,7 @@ fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
     assert_eq!(parsed.owner_reference, 201);
     assert!(parsed.auxiliary_references.is_empty());
     assert_eq!(parsed.parsed_end, record.len());
-    assert_eq!(decode_pattern_definition(&record, &mut parsed), None);
+    assert_eq!(decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(), None);
 }
 
 #[test]
@@ -585,7 +585,7 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
     ));
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &mut parsed),
+        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
         Some(SketchPatternDefinition::Rectangular {
             directions: [
                 SketchPatternDirection {
@@ -644,7 +644,7 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     ));
     assert_eq!(parsed.parsed_end, record.len());
     let Some(SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&record, &mut parsed)
+        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap()
     else {
         panic!("expected a rectangular pattern definition");
     };
@@ -688,7 +688,7 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
         } if clauses.as_slice() == &parsed.auxiliary_references[0..4]
     ));
     assert!(matches!(
-        decode_pattern_definition(&record, &mut parsed),
+        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
         Some(SketchPatternDefinition::Rectangular { .. })
     ));
 }
@@ -742,7 +742,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular { clauses: None, .. }
     ));
-    assert_eq!(decode_pattern_definition(&record, &mut parsed), None);
+    assert_eq!(decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(), None);
 }
 
 #[test]
@@ -769,7 +769,7 @@ fn text_frame_relation_reads_its_two_references() {
     );
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &mut parsed),
+        decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap(),
         Some(SketchPatternDefinition::TextFrame {
             text_reference: 2394
         })
@@ -830,7 +830,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
         let Some(SketchPatternDefinition::TextPath {
             text_reference,
             glyph_transforms,
-        }) = decode_pattern_definition(&record, &mut parsed)
+        }) = decode_pattern_definition(&cadmpeg_test_support::service_decode_context(), &record, &mut parsed).unwrap()
         else {
             panic!("expected a text-path pattern definition");
         };
@@ -867,5 +867,39 @@ fn text_path_glyph_constructor_rejects_non_finite_source_coefficients() {
             }
         )
         .is_none());
+    }
+}
+
+#[test]
+fn text_pattern_definition_preserves_member_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut frame_members = Vec::new();
+    push_absent_reference(&mut frame_members);
+    push_reference_u64(&mut frame_members, 2394);
+    let frame = relation_record(&[(2394, 0), (2403, 0)], &frame_members, 201,
+        0x100_0000_0000, &[2403]);
+    let mut path_members = Vec::new();
+    push_glyph_run(&mut path_members, 2, 5.0);
+    let path = relation_record(&[(1, 1), (2, 0)], &path_members, 201,
+        0x200_0000_0000, &[1]);
+    for (record, class) in [
+        (&frame, SketchRelationClass::TextFrame),
+        (&path, SketchRelationClass::TextPath { leading_flag: false }),
+    ] {
+        let mut parsed = tested_parse_classed_sketch_relation(record, class).unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits, "scan F3D sketch pattern text references", 0,
+            |ctx| {
+                let mut parsed = tested_parse_classed_sketch_relation(record, class).unwrap();
+                decode_pattern_definition(ctx, record, &mut parsed)
+            },
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D sketch pattern text references"
+                    && limit.additional == 2));
+        assert!(decode_pattern_definition(&cadmpeg_test_support::service_decode_context(),
+            record, &mut parsed).unwrap().is_some());
     }
 }

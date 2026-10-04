@@ -56,18 +56,18 @@ pub(crate) fn project_decal_images(
     features: &mut [Feature],
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
-    for image in images {
+    for image in ctx.admit_iter(images, "scan F3D Decal images")? {
         if image.mapping_mode != crate::records::decal::DesignDecalMappingMode::FitToFaces {
             continue;
         }
         let native_stream = ids::native_stream(&image.id);
-        let Some(scope) = scopes.iter().find(|scope| {
+        let Some(scope) = ctx.admit_iter(scopes, "find F3D Decal image scopes")?.find(|scope| {
             scope.record_index == image.scope_record_index()
                 && ids::native_stream(&scope.id) == native_stream
         }) else {
             continue;
         };
-        let Some(group) = groups.iter().find(|group| {
+        let Some(group) = ctx.admit_iter(groups, "find F3D Decal operand groups")?.find(|group| {
             group.scope_record_index == scope.record_index
                 && group.record_index == image.target_group_record_index
                 && group.role() == DECAL_TARGET_ROLE
@@ -76,7 +76,7 @@ pub(crate) fn project_decal_images(
         }) else {
             continue;
         };
-        let Some(operand) = operands.iter().find(|operand| {
+        let Some(operand) = ctx.admit_iter(operands, "find F3D Decal recipe operands")?.find(|operand| {
             operand.scope_record_index == scope.record_index
                 && operand.owner.group() == Some((group.record_index, 0))
                 && operand.record_index() == group.members()[0].value
@@ -85,14 +85,18 @@ pub(crate) fn project_decal_images(
             continue;
         };
         let mut faces = Vec::new();
-        for face in operand
-            .references()
-            .iter()
-            .flat_map(|reference| reference.candidate_faces.iter())
-        {
-            let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
-            ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
-            faces.push(copied);
+        for reference in ctx.admit_iter(
+            operand.references(),
+            "scan F3D Decal operand references",
+        )? {
+            for face in ctx.admit_iter(
+                &reference.candidate_faces,
+                "scan F3D Decal face candidates",
+            )? {
+                let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
+                ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
+                faces.push(copied);
+            }
         }
         ctx.stable_sort_by(
             &mut faces[..],
@@ -108,7 +112,13 @@ pub(crate) fn project_decal_images(
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
+        let Some(feature_index) = ctx
+            .admit_iter(&*features, "find F3D Decal neutral feature")?
+            .position(|feature| feature.id == feature_id)
+        else {
+            continue;
+        };
+        let Some(feature) = features.get_mut(feature_index) else {
             continue;
         };
         let asset_id = asset
@@ -190,7 +200,10 @@ fn parse_decal_image_frame(
 
         let mut position = 0;
         let mut asset_record = None;
-        while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
+        while let Some(asset_at) = match next_indexed_record_offset(ctx, bytes, position) {
+            Ok(offset) => offset,
+            Err(error) => return Some(Err(error)),
+        } {
             position = asset_at.checked_add(1)?;
             if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
                 continue;
@@ -243,7 +256,11 @@ fn parse_decal_asset_record(
         if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
             return None;
         }
-        let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
+        let name_at = match next_indexed_record_offset(ctx, bytes, asset_at + decal_asset::ZERO_RUN_8) {
+            Ok(Some(name_at)) => name_at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if name_at != asset_at + decal_asset::LEN {
             return None;
         }
@@ -267,7 +284,11 @@ fn parse_decal_asset_record(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
+        let next_at = match next_indexed_record_offset(ctx, bytes, name_at + decal_name::ZERO_RUN_10) {
+            Ok(Some(next_at)) => next_at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if after_asset_name != next_at {
             return None;
         }
@@ -419,6 +440,32 @@ mod tests {
     }
 
     #[test]
+    fn decal_indexed_scanner_refuses_work_limit_through_optional_parse() {
+        let (bytes, scope_at) = fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D indexed record headers",
+            0,
+            |ctx| {
+                parse_decal_image_frame(
+                    ctx,
+                    &bytes,
+                    "Design/BulkStream.dat",
+                    23,
+                    scope_at,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "scan F3D indexed record headers"
+        ));
+    }
+
+    #[test]
     fn decal_projection_refuses_face_asset_native_and_output_limits() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::features::{
@@ -558,6 +605,12 @@ mod tests {
                 + asset_id_len
                 + crate::ids::neutral_feature_id(&scope).as_str().len();
             for (retained, items, dimension, operation) in [
+                (
+                    u64::MAX,
+                    u64::MAX,
+                    ResourceDimension::WorkUnits,
+                    "find F3D Decal neutral feature",
+                ),
                 (
                     u64::MAX,
                     0,

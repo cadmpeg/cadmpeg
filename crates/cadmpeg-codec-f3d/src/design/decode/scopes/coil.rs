@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use super::parameter_scope::reference_members;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
@@ -90,8 +91,19 @@ pub(super) fn exact_coil_placement(
             _ => return None,
         }
         let selection_record_index = *scope.reference_members().values().next()?;
-        let transform_record_index = *scope.reference_members().values().nth(1)?;
-        let mut selection_frames = records.frames(selection_record_index);
+        let mut transform_references = match reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D Coil transform reference",
+        ) {
+            Ok(references) => references.skip(1),
+            Err(error) => return Some(Err(error)),
+        };
+        let transform_record_index = transform_references.next()?;
+        let mut selection_frames = match records.frames(ctx, selection_record_index) {
+            Ok(frames) => frames,
+            Err(error) => return Some(Err(error)),
+        };
         let (selection_start, _) = selection_frames.next()?;
         if selection_frames.next().is_some() {
             return None;
@@ -103,7 +115,10 @@ pub(super) fn exact_coil_placement(
         {
             return None;
         }
-        let mut transform_frames = records.frames(transform_record_index);
+        let mut transform_frames = match records.frames(ctx, transform_record_index) {
+            Ok(frames) => frames,
+            Err(error) => return Some(Err(error)),
+        };
         let (transform_start, transform_paired) = transform_frames.next()?;
         if transform_frames.next().is_some() {
             return None;
@@ -266,25 +281,33 @@ pub(super) fn exact_coil_placement(
                 transform_start,
                 recipes,
             ) {
-                Ok(Some(selection)) => selection,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
+            Ok(Some(selection)) => selection,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
             },
         };
         Some(Ok(DesignCoilPlacement {
             selection_record_index,
             selection_record_byte_offset: u64::try_from(selection_start).ok()?,
-            selection_class_tag: crate::design::decode::text::class_tag_from_view(
+            selection_class_tag: match crate::design::decode::text::class_tag_from_view(
+                ctx,
                 selection_class_tag,
-            )
-            .ok()?,
+            ) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
+                Err(error) => return Some(Err(error)),
+            },
             selection,
             transform_record_index,
             transform_record_byte_offset: u64::try_from(transform_start).ok()?,
-            transform_class_tag: crate::design::decode::text::class_tag_from_view(
+            transform_class_tag: match crate::design::decode::text::class_tag_from_view(
+                ctx,
                 transform_class_tag,
-            )
-            .ok()?,
+            ) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
+                Err(error) => return Some(Err(error)),
+            },
             explicit_transform,
         }))
     })()
@@ -490,7 +513,14 @@ fn exact_coil_face_selection(
         if face.next_byte_offset() != u64::try_from(transform_start).ok()? {
             return None;
         }
-        let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
+        let recipe = match ctx
+            .admit_iter(recipes, "find F3D Coil face construction recipe")
+            .map(|mut recipes| recipes.find(|recipe| recipe.id == face.recipe_id))
+        {
+            Ok(Some(recipe)) => recipe,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error.into())),
+        };
         let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d Coil face recipe ID") {
             Ok(id) => id,
             Err(error) => return Some(Err(error)),
@@ -743,28 +773,27 @@ pub(super) fn bind_coil_extent_from_parameters(
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(());
     };
-    let owned_kinds = parameter_owners
-        .iter()
-        .filter(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-        })
-        .filter_map(|owner| {
-            parameters
-                .iter()
-                .find(|parameter| {
-                    native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index()
-                })
-                .map(|parameter| (owner.local_ordinal(), parameter.source_kind()))
-        });
     let mut sorted = [(0, ""); 5];
     let mut count = 0usize;
-    for kind in owned_kinds {
+    for owner in ctx.admit_iter(parameter_owners, "scan F3D Coil parameter owners")? {
+        if native_stream(owner.id()) != Some(stream)
+            || owner.scope_record_index() != scope.record_index
+        {
+            continue;
+        }
+        let parameter = ctx
+            .admit_iter(parameters, "find F3D Coil owner parameter")?
+            .find(|parameter| {
+                native_stream(&parameter.id) == Some(stream)
+                    && parameter.record_index == owner.parameter_record_index()
+            });
+        let Some(parameter) = parameter else {
+            continue;
+        };
         if count == sorted.len() {
             return Ok(());
         }
-        sorted[count] = kind;
+        sorted[count] = (owner.local_ordinal(), parameter.source_kind());
         count += 1;
     }
     ctx.sort_unstable_by(
@@ -774,7 +803,10 @@ pub(super) fn bind_coil_extent_from_parameters(
         "f3d coil parameter owner ordinals sort",
     )?;
     let mut kinds = [""; 5];
-    for (index, (_, source_kind)) in sorted[..count].iter().enumerate() {
+    for (index, (_, source_kind)) in ctx
+        .admit_iter(&sorted[..count], "scan F3D Coil parameter owner kinds")?
+        .enumerate()
+    {
         kinds[index] = source_kind;
     }
     let extent = match &kinds[..count] {

@@ -23,8 +23,11 @@ fn typed_dimension_companions_refuse_collection_limit() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&1394u32.to_le_bytes());
-    let mut pair =
-        parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109])).unwrap();
+    let mut pair = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1109]))
+    })
+    .expect("null-locus dimension frame")
+    .expect("valid null-locus dimension frame");
     pair.id = "f3d:Design/BulkStream.dat:design-dimension-null-locus-pair#0".into();
 
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -114,6 +117,91 @@ fn dimension_presentation_sketch_scopes_refuse_collection_limit() {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d dimension presentation sketch scopes"
+        ));
+    });
+}
+
+#[test]
+fn dimension_annotation_interval_owner_scan_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let native_scope = crate::ids::native_scope(STREAM);
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: format!("{native_scope}:design-parameter-owner#10"),
+            byte_offset: 120,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from(
+                "292".to_owned(),
+            )
+            .unwrap(),
+            record_index: 10,
+            scope_record_index: 13,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 160,
+            parameter_record_index: 11,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 12,
+        },
+    )
+    .unwrap();
+    let companion = crate::records::parameters::DesignParameterCompanion::unbound(
+        format!("{native_scope}:design-parameter-companion#12"),
+        220,
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        12,
+        10,
+        std::num::NonZeroU64::MIN,
+        262,
+    );
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
+        &format!("{native_scope}:design-parameter-scope#13"),
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        13,
+    );
+    let owners = [owner];
+    let companions = [companion];
+    let scopes = [scope];
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&[0; 400]).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
+            scan,
+            placements: &[],
+            parameters: &[],
+            owners: &owners,
+            companions: &companions,
+            scopes: &scopes,
+            headers: &[],
+            points: &[],
+            curves: &[],
+        };
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D dimension annotation interval owners",
+            0,
+            |ctx| {
+                crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+                    ctx, &inputs, &[],
+                )
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == "scan F3D dimension annotation interval owners"
+                    && failure.additional == 1
         ));
     });
 }

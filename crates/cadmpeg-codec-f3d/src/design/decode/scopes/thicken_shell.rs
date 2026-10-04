@@ -17,10 +17,12 @@ use cadmpeg_core::decode::View;
 /// Decode class-347/258 Thicken, whose group precedes its scalar. The class
 /// pair and 291-byte frame are part of admission for this distinct grammar.
 pub(super) fn exact_legacy_thicken_class_347(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignDirectFaceOperation> {
+) -> Result<Option<DesignDirectFaceOperation>, cadmpeg_core::CodecError> {
+    (|| {
     if scope.class_tag.as_str() != "347"
         || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length() != u64::try_from(thicken_347::LEN).ok()?
@@ -49,12 +51,12 @@ pub(super) fn exact_legacy_thicken_class_347(
     {
         return None;
     }
-    let guid_end = fixed_guid_end(bytes, start + thicken_347::GUID_CODE_UNIT_COUNT)?;
+    let guid_end = (match fixed_guid_end(ctx, bytes, start + thicken_347::GUID_CODE_UNIT_COUNT) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     if guid_end != start + thicken_347::ZERO_RUN_3 {
         return None;
     }
     let kind_end =
-        fixed_utf16_ascii_eq(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, "Thicken")?;
+        (match fixed_utf16_ascii_eq(ctx, bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, "Thicken") { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     if kind_end != start + thicken_347::FEATURE_ORDINAL {
         return None;
     }
@@ -65,7 +67,7 @@ pub(super) fn exact_legacy_thicken_class_347(
     ];
     for (offset, expected) in reference_entries
         .into_iter()
-        .zip(scope.reference_members().values().copied())
+        .zip(match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D legacy thicken reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) })
     {
         if marked_record_reference(bytes, start + offset) != Some(expected) {
             return None;
@@ -76,21 +78,24 @@ pub(super) fn exact_legacy_thicken_class_347(
     if scope.reference_members().values().next_back().copied()? != thickness_record_index {
         return None;
     }
-    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
+    let scalar = (match exact_fixed_scalar(ctx, bytes, records, thickness_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     (scalar.value.get() != 0.0).then_some(DesignDirectFaceOperation::Thicken(
         direct_face::DesignThickenOperation {
             signed_thickness: scalar.value,
             thickness_record_index,
             thickness_offset: scalar.value_offset,
         },
-    ))
+    )).map(Ok)
+    })().transpose()
 }
 
 pub(super) fn exact_shell_class_369_261(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignDirectFaceOperation> {
+) -> Result<Option<DesignDirectFaceOperation>, cadmpeg_core::CodecError> {
+    (|| {
     if scope.class_tag.as_str() != "369"
         || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length() != u64_from_index(shell_369_261::LEN)
@@ -130,16 +135,16 @@ pub(super) fn exact_shell_class_369_261(
         Some(1) => true,
         _ => return None,
     };
-    let guid_end = fixed_utf16_ascii_eq(
+    let guid_end = (match fixed_utf16_ascii_eq(ctx,
         bytes,
         start + shell_369_261::GUID_CODE_UNIT_COUNT,
         "00000000-0000-0000-0000-000000000000",
-    )?;
+    ) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     if guid_end != start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES {
         return None;
     }
     let kind_end =
-        fixed_utf16_ascii_eq(bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT, "Shell")?;
+        (match fixed_utf16_ascii_eq(ctx, bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT, "Shell") { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
     if kind_end != start + shell_369_261::FEATURE_ORDINAL {
         return None;
     }
@@ -150,7 +155,7 @@ pub(super) fn exact_shell_class_369_261(
     ];
     for (offset, expected) in reference_entries
         .into_iter()
-        .zip(scope.reference_members().values().copied())
+        .zip(match super::parameter_scope::reference_members(ctx, scope.reference_members(), "scan F3D shell reference members") { Ok(members) => members, Err(error) => return Some(Err(error)) })
     {
         if marked_record_reference(bytes, start + offset) != Some(expected) {
             return None;
@@ -162,8 +167,8 @@ pub(super) fn exact_shell_class_369_261(
     {
         return None;
     }
-    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    Some(DesignDirectFaceOperation::Shell(
+    let scalar = (match exact_fixed_scalar(ctx, bytes, records, thickness_record_index) { Ok(value) => value, Err(error) => return Some(Err(error)) })?;
+    Some(Ok(DesignDirectFaceOperation::Shell(
         direct_face::DesignShellOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             thickness_record_index,
@@ -171,5 +176,6 @@ pub(super) fn exact_shell_class_369_261(
             outward,
             outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
         },
-    ))
+    )))
+    })().transpose()
 }

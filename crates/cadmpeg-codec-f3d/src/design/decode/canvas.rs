@@ -50,15 +50,21 @@ pub(crate) fn project_canvas_images(
     features: &mut [Feature],
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
-    for image in images {
-        let Some(scope) = scopes.iter().find(|scope| {
+    for image in ctx.admit_iter(images, "scan F3D Canvas images")? {
+        let Some(scope) = ctx.admit_iter(scopes, "find F3D Canvas image scopes")?.find(|scope| {
             scope.record_index == image.scope_record_index
                 && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
         }) else {
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
+        let Some(feature_index) = ctx
+            .admit_iter(&*features, "find F3D Canvas neutral feature")?
+            .position(|feature| feature.id == feature_id)
+        else {
+            continue;
+        };
+        let Some(feature) = features.get_mut(feature_index) else {
             continue;
         };
         let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
@@ -138,7 +144,16 @@ fn parse_canvas_image(
             return None;
         };
         let geometry_record_index = marked_reference(bytes, geometry_reference_at)?;
-        let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
+        let geometry_at = match next_indexed_record_offset_with_index(
+            ctx,
+            bytes,
+            0,
+            geometry_record_index,
+        ) {
+            Ok(Some(geometry_at)) => geometry_at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (geometry_class_tag, after_geometry_tag) =
             lp_ascii_filtered_view(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
         let geometry_prologue: [u8; 15] = bytes
@@ -150,11 +165,16 @@ fn parse_canvas_image(
             return None;
         }
 
-        let paired_at = next_indexed_record_offset_with_index(
+        let paired_at = match next_indexed_record_offset_with_index(
+            ctx,
             bytes,
             geometry_at.checked_add(11)?,
             geometry_record_index,
-        )?;
+        ) {
+            Ok(Some(paired_at)) => paired_at,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let (paired_geometry_class_tag, after_paired_tag) =
             lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
         let paired_component_at = paired_at + 19;
@@ -434,6 +454,25 @@ mod tests {
     }
 
     #[test]
+    fn canvas_indexed_scanner_refuses_work_limit_through_optional_parse() {
+        let (bytes, scope) = fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D indexed record headers",
+            0,
+            |ctx| {
+                parse_canvas_image(ctx, &bytes, "Design/BulkStream.dat", &scope).map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "scan F3D indexed record headers"
+        ));
+    }
+
+    #[test]
     fn canvas_projection_refuses_asset_copy_and_output_limits() {
         use cadmpeg_ir::features::{
             Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
@@ -476,6 +515,21 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "find F3D Canvas neutral feature",
+                0,
+                |ctx| super::project_canvas_images(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&image),
+                    &mut [feature()],
+                ),
+            );
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "find F3D Canvas neutral feature"));
             let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
             let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
             for (retained, items, dimension, operation) in [

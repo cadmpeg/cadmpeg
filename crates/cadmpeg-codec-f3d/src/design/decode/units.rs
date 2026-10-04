@@ -40,21 +40,18 @@ const LENGTH_UNIT_NAMES: [&str; 5] = ["millimeter", "centimeter", "meter", "inch
 ///
 /// A stored key, name, or namespace is graphic ASCII; a label is display text,
 /// so the space is admissible alongside it.
-fn ascii_at(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
-    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-    if length > 256 {
-        return None;
-    }
-    let start = at.checked_add(4)?;
-    let end = start.checked_add(length)?;
-    let raw = bytes.get(start..end)?;
-    if !raw
-        .iter()
-        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    {
-        return None;
-    }
-    Some((std::str::from_utf8(raw).ok()?, end))
+fn ascii_at<'bytes>(ctx: &DecodeContext<'_>, bytes: &'bytes [u8], at: usize)
+    -> Result<Option<(&'bytes str, usize)>, CodecError> {
+    let Some((raw, end)) = (|| {
+        let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        if length > 256 { return None; }
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(length)?;
+        Some((bytes.get(start..end)?, end))
+    })() else { return Ok(None); };
+    if !ctx.admit_iter(raw, "scan F3D unit ASCII field")?
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ') { return Ok(None); }
+    Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
 }
 
 /// Read the `u32` field at `at` and check it equals `expected`, returning the
@@ -93,27 +90,30 @@ fn references<const N: usize>(bytes: &[u8], at: usize) -> Option<[u32; N]> {
 /// references. The record stores the key, a label, byte `01`, the name
 /// `<key>UnitSystemName`, the `NaFusion` namespace, four zero bytes, and the
 /// counted entry references.
-fn unit_system(bytes: &[u8], at: usize) -> Option<(&str, [u32; index_from_u32(UNIT_ENTRY_COUNT)])> {
-    let (key, position) = ascii_at(bytes, at)?;
-    let (_label, position) = ascii_at(bytes, position)?;
+fn unit_system<'bytes>(ctx: &DecodeContext<'_>, bytes: &'bytes [u8], at: usize) -> Result<Option<(&'bytes str, [u32; index_from_u32(UNIT_ENTRY_COUNT)])>, CodecError> {
+    (|| {
+    let (key, position) = match ascii_at(ctx, bytes, at) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
+    let (_label, position) = match ascii_at(ctx, bytes, position) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
     (bytes.get(position) == Some(&1)).then_some(())?;
-    let (name, position) = ascii_at(bytes, position + 1)?;
+    let (name, position) = match ascii_at(ctx, bytes, position + 1) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
     (name.strip_prefix(key) == Some("UnitSystemName")).then_some(())?;
-    let (namespace, position) = ascii_at(bytes, position)?;
+    let (namespace, position) = match ascii_at(ctx, bytes, position) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
     (namespace == SYSTEM_NAMESPACE).then_some(())?;
     let position = expect_zero_quad(bytes, position)?;
-    Some((key, references(bytes, position)?))
+    Some(Ok((key, references(bytes, position)?)))
+    })().transpose()
 }
 
 /// The property name and unit name of one unit-entry record. The record stores
 /// a key, a label, byte `01`, the property name, the `NsCommonData` namespace,
 /// four zero bytes, and the UTF-16 unit name.
-fn unit_entry(bytes: &[u8], at: usize) -> Option<(&str, &'static str)> {
-    let (_key, position) = ascii_at(bytes, at)?;
-    let (_label, position) = ascii_at(bytes, position)?;
+fn unit_entry<'bytes>(ctx: &DecodeContext<'_>, bytes: &'bytes [u8], at: usize) -> Result<Option<(&'bytes str, &'static str)>, CodecError> {
+    (|| {
+    let (_key, position) = match ascii_at(ctx, bytes, at) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
+    let (_label, position) = match ascii_at(ctx, bytes, position) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
     (bytes.get(position) == Some(&1)).then_some(())?;
-    let (property, position) = ascii_at(bytes, position + 1)?;
-    let (namespace, position) = ascii_at(bytes, position)?;
+    let (property, position) = match ascii_at(ctx, bytes, position + 1) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
+    let (namespace, position) = match ascii_at(ctx, bytes, position) { Ok(value) => value?, Err(error) => return Some(Err(error)) };
     (namespace == ENTRY_NAMESPACE).then_some(())?;
     let position = expect_zero_quad(bytes, position)?;
     let count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
@@ -125,21 +125,33 @@ fn unit_entry(bytes: &[u8], at: usize) -> Option<(&str, &'static str)> {
         .checked_mul(2)
         .and_then(|size| start.checked_add(size))?;
     let raw = bytes.get(start..end)?;
-    let value = LENGTH_UNIT_NAMES.iter().copied().find(|name| {
-        name.len() == count
-            && raw
-                .chunks_exact(2)
-                .zip(name.as_bytes())
-                .all(|(unit, byte)| unit == [*byte, 0])
-    })?;
-    Some((property, value))
+    let width = std::num::NonZeroUsize::new(2)?;
+    let mut value = None;
+    for name in LENGTH_UNIT_NAMES {
+        if name.len() != count { continue; }
+        let admitted = match ctx.admit_iter(raw, "match F3D unit UTF-16 name") {
+            Ok(value) => value, Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        let expected = match ctx.admit_iter(name.as_bytes(), "scan F3D unit name literal bytes") {
+            Ok(value) => value, Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        if admitted.chunks(width).zip(expected).all(|(unit, byte)| unit == [*byte, 0]) {
+            value = Some(name); break;
+        }
+    }
+    Some(Ok((property, value?)))
+    })().transpose()
 }
 
 /// Offsets of the unit-system reference count following each `UnitSystems`
 /// collection name. The name is the LP-ASCII string followed by two zero bytes.
-fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
+fn collection_counts<'bytes>(ctx: &DecodeContext<'_>, bytes: &'bytes [u8])
+    -> Result<impl Iterator<Item = usize> + 'bytes, CodecError> {
     const PREFIX: &[u8] = b"\x0b\x00\x00\x00UnitSystems\x00\x00";
-    memchr::memmem::find_iter(bytes, PREFIX).map(|start| start + PREFIX.len())
+    let width = std::num::NonZeroUsize::new(PREFIX.len())
+        .ok_or_else(|| CodecError::malformed("F3D unit collection marker is empty"))?;
+    Ok(ctx.admit_iter(bytes, "scan F3D unit collection markers")?.windows(width)
+        .enumerate().filter_map(|(start, marker)| (marker == PREFIX).then_some(start + PREFIX.len())))
 }
 
 /// The `Custom` system's `modelingLengthName` value, when one design
@@ -156,27 +168,25 @@ fn decode_modeling_length_unit(
 ) -> Result<Option<String>, CodecError> {
     let offsets = IndexedRecordOffsets::build(ctx, bytes)?;
     let payloads = |record_index: u32| {
-        offsets
-            .offsets(record_index)
-            .iter()
-            .filter_map(|at| at.checked_add(HEADER_LEN))
+        Ok::<_, CodecError>(ctx.admit_iter(offsets.offsets(record_index), "scan F3D unit record payloads")?
+            .filter_map(|at| at.checked_add(HEADER_LEN)))
     };
-    for count_at in collection_counts(bytes) {
+    for count_at in collection_counts(ctx, bytes)? {
         let Some(systems) = references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(bytes, count_at)
         else {
             continue;
         };
-        for system in systems {
-            for system_at in payloads(system) {
-                let Some((key, entries)) = unit_system(bytes, system_at) else {
+        for system in ctx.admit_iter(&systems, "scan F3D unit systems")? {
+            for system_at in payloads(*system)? {
+                let Some((key, entries)) = unit_system(ctx, bytes, system_at)? else {
                     continue;
                 };
                 if key != CUSTOM_SYSTEM {
                     continue;
                 }
-                for entry in &entries {
-                    for entry_at in payloads(*entry) {
-                        let Some((property, value)) = unit_entry(bytes, entry_at) else {
+                for entry in ctx.admit_iter(&entries, "scan F3D unit entries")? {
+                    for entry_at in payloads(*entry)? {
+                        let Some((property, value)) = unit_entry(ctx, bytes, entry_at)? else {
                             continue;
                         };
                         if property == MODELING_LENGTH_PROPERTY {
@@ -205,9 +215,7 @@ pub(crate) fn decode_document_length_unit(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Option<String>, CodecError> {
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D unit design streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         if let Ok(bytes) = scan.entry_bytes(&entry.name) {
@@ -460,4 +468,90 @@ pub(crate) mod tests {
     fn foot_unit_refuses_retained_limit() {
         unit_text_refusal("foot");
     }
+    #[test]
+    fn unit_ascii_field_refuses_work_before_validation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "Custom");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::ascii_at(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D unit ASCII field"
+                    && limit.additional == 6));
+    }
+
+    #[test]
+    fn unit_system_parser_preserves_ascii_work_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "Custom");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::unit_system(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D unit ASCII field"
+                    && limit.additional == 6));
+    }
+
+    #[test]
+    fn unit_entry_parser_preserves_ascii_work_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "ModelingLength");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::unit_entry(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D unit ASCII field"
+                    && limit.additional == 14));
+    }
+
+    #[test]
+    fn unit_collection_search_refuses_work_before_marker_scan() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = b"\x0b\x00\x00\x00UnitSystems\x00\x00";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::collection_counts(&ctx, bytes),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan F3D unit collection markers"
+                    && limit.additional == u64::try_from(bytes.len()).unwrap()));
+    }
+
+    #[test]
+    fn unit_name_literal_iterator_refusal_propagates() {
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "Length");
+        lp_ascii(&mut bytes, "Length Label");
+        bytes.push(1);
+        lp_ascii(&mut bytes, "modelingLengthName");
+        lp_ascii(&mut bytes, ENTRY_NAMESPACE);
+        bytes.extend_from_slice(&[0; 4]);
+        lp_utf16(&mut bytes, "inch");
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(super::unit_entry(&ctx, &bytes, 0).unwrap(), Some(("modelingLengthName", "inch")));
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D unit name literal bytes", 0,
+            |ctx| super::unit_entry(ctx, &bytes, 0),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D unit name literal bytes"
+                && limit.additional == 4));
+    }
+
 }

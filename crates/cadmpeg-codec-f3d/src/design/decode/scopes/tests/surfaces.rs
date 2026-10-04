@@ -118,12 +118,16 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     indexed_header(&mut bytes, *b"258", 301);
 
     assert_eq!(
-        exact_surface_stitch_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            12,
-            &[100, 200, 300, 301]
-        ),
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            exact_surface_stitch_operation(
+                ctx,
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                12,
+                &[100, 200, 300, 301],
+            )
+            .unwrap()
+        }),
         Some(DesignSurfaceStitchOperation {
             gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
             gap_tolerance_offset: 40,

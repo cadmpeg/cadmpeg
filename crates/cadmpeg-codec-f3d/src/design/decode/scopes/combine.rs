@@ -2,6 +2,7 @@
 //! Exact combine operations and external body identities.
 
 use super::draft::contains_consecutive_guid_pair;
+use super::parameter_scope::reference_members;
 use super::parameter_scope::parameter_scope_payload_length;
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::bytes::take_reference;
@@ -37,9 +38,16 @@ pub(super) fn exact_combine_operation(
             return None;
         }
         let start = usize::try_from(scope.byte_offset()).ok()?;
-        let compact = scope.class_tag.as_str() == "387"
+        let compact = if scope.class_tag.as_str() == "387"
             && scope.paired_class_tag.as_str() == "258"
-            && parameter_scope_payload_length(scope) == Some(314);
+        {
+            match parameter_scope_payload_length(ctx, scope) {
+                Ok(length) => length == Some(314),
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            false
+        };
         let extended_reference = scope.class_tag.as_str() == "329"
             && scope.paired_class_tag.as_str() == "261"
             && scope.frame_length() == 363;
@@ -114,28 +122,49 @@ pub(super) fn exact_combine_operation(
         let mut target = None;
         let mut first_tool = None;
         let mut additional_tools = Vec::new();
-        for (operation_record_index, selection_record_index) in scope
-            .reference_members()
-            .values()
+        let operation_references = match reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D combine scope references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        };
+        let selection_references = match reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D combine scope references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        };
+        for (operation_record_index, selection_record_index) in operation_references
             .step_by(2)
-            .zip(scope.reference_members().values().skip(1).step_by(2))
+            .zip(selection_references.skip(1).step_by(2))
         {
-            let [operation_at, operation_end] = records.offsets(*operation_record_index) else {
+            let [operation_at, operation_end] = records.offsets(operation_record_index) else {
                 return None;
             };
             let role = combine_operation_identity_role(
                 bytes.get(*operation_at..*operation_end)?,
-                *selection_record_index,
+                selection_record_index,
             )?;
-            let [selection_at, selection_end] = records.offsets(*selection_record_index) else {
+            let [selection_at, selection_end] = records.offsets(selection_record_index) else {
                 return None;
             };
-            if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
+            let has_guid_pair = match contains_consecutive_guid_pair(
+                ctx,
+                bytes.get(*selection_at..*selection_end)?,
+            ) {
+                Ok(has_guid_pair) => has_guid_pair,
+                Err(error) => return Some(Err(error)),
+            };
+            if !has_guid_pair {
                 return None;
             }
             match role {
                 CombineOperandRole::Target => {
-                    if target.replace(*selection_record_index).is_some() {
+                    if target.replace(selection_record_index).is_some() {
                         return None;
                     }
                 }
@@ -150,19 +179,19 @@ pub(super) fn exact_combine_operation(
                             return Some(Err(error));
                         }
                     }
-                    let external_identity = match exact_combine_external_body_identity(
+                        let external_identity = match exact_combine_external_body_identity(
                         ctx,
                         bytes,
                         *selection_at,
                         *selection_end,
                         scope.record_index,
-                        *selection_record_index,
+                        selection_record_index,
                     ) {
                         Ok(identity) => identity,
                         Err(error) => return Some(Err(error)),
                     };
                     let selection = DesignCombineBodySelection {
-                        record_index: *selection_record_index,
+                        record_index: selection_record_index,
                         external_identity,
                     };
                     if additional {

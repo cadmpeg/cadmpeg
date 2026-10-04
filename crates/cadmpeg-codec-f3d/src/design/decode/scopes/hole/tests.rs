@@ -57,6 +57,53 @@ fn hole_input_records_refuse_collection_limit() {
 }
 
 #[test]
+fn hole_scopes_propagate_reference_and_ascii_scan_refusals() {
+    let (bytes, scope, _, _) = hole_point_stream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let stream_types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
+    assert_eq!(
+        super::graphic_ascii_end(
+            &cadmpeg_test_support::service_decode_context(),
+            &[1, 0, 0, 0, b'a'], 0, 0..=256,
+        ).unwrap(),
+        Some(5),
+    );
+    for operation in [
+        "scan F3D Hole face-selection scope references",
+        "scan F3D Hole scope references",
+        "scan F3D indexed record frames",
+        "validate F3D hole ASCII field",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                if operation == "validate F3D hole ASCII field" {
+                    return super::graphic_ascii_end(ctx, &[1, 0, 0, 0, b'a'], 0, 0..=256)
+                        .map(|_| ());
+                }
+                exact_hole_construction_with_ctx(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &crate::records::feature::scope::DesignFeatureKind::Hole,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && failure.operation == operation
+        ));
+    }
+}
+
+#[test]
 fn hole_carrier_reads_borrowed_as_built_scope() {
     let (bytes, mut scope, _, _) = hole_point_stream();
     scope

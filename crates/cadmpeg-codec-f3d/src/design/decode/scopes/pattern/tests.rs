@@ -76,23 +76,46 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
     bytes.extend_from_slice(&503u64.to_le_bytes());
     indexed_header(&mut bytes, *b"308", record_index + 3);
 
-    assert_eq!(
-        exact_pattern_identity_wrapper(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            record_index,
-        ),
-        Some((503, u64_from_index(identity_offset)))
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        assert_eq!(
+            exact_pattern_identity_wrapper(ctx, &bytes, &records, record_index).unwrap(),
+            Some((503, u64_from_index(identity_offset)))
+        );
+    });
+    let guid_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "validate F3D counted relaxed GUID",
+        0,
+        |ctx| exact_pattern_identity_wrapper(ctx, &bytes, &records, record_index),
     );
+    assert!(matches!(
+        guid_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D counted relaxed GUID"
+                && limit.additional == 72
+    ));
+    let header_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D indexed record headers",
+        0,
+        |ctx| exact_pattern_identity_wrapper(ctx, &bytes, &records, record_index),
+    );
+    assert!(matches!(
+        header_error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D indexed record headers"
+    ));
     bytes[identity_offset - 1] = 1;
-    assert_eq!(
-        exact_pattern_identity_wrapper(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            record_index,
-        ),
-        None
-    );
+    let malformed_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        assert_eq!(
+            exact_pattern_identity_wrapper(ctx, &bytes, &malformed_records, record_index).unwrap(),
+            None
+        );
+    });
 }
 
 #[test]
@@ -249,6 +272,82 @@ fn circular_pattern_candidates_refuse_collection_limit() {
                     && failure.operation == operation)
             );
         }
+    };
+    run_pattern_constructions_fixture(Some(probe));
+}
+
+#[test]
+fn circular_pattern_reference_candidates_propagate_work_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let probe = |bytes: &[u8], scope: &DesignParameterScope| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        for operation in [
+            "scan F3D circular pattern axis references",
+            "scan F3D circular pattern selection references",
+            "scan F3D indexed record frames",
+            "scan F3D circular pattern legacy axis references",
+            "scan F3D circular pattern count references",
+            "scan F3D circular pattern angle references",
+            "validate F3D circular pattern axis class tag",
+            "validate F3D circular pattern class tag",
+            "validate F3D circular pattern paired class tag",
+            "validate F3D circular pattern count class tag",
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                0,
+                |ctx| {
+                    super::exact_circular_pattern_construction_with_owners(
+                        ctx,
+                        bytes,
+                        &records,
+                        scope,
+                        &[],
+                    )
+                    .map(|_| ())
+                },
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(refusal)
+                    if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == operation
+            ));
+        }
+    };
+    run_pattern_constructions_fixture(Some(probe));
+}
+
+#[test]
+fn circular_pattern_axis_candidate_selection_refuses_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let probe = |bytes: &[u8], scope: &DesignParameterScope| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "select F3D circular pattern axis candidate",
+            0,
+            |ctx| {
+                super::exact_circular_pattern_construction_with_owners(
+                    ctx,
+                    bytes,
+                    &records,
+                    scope,
+                    &[],
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "select F3D circular pattern axis candidate"
+                    && refusal.additional == 1
+        ));
     };
     run_pattern_constructions_fixture(Some(probe));
 }
@@ -1501,6 +1600,30 @@ fn circular_pattern_historical_wrappers_refuse_collection_limit() {
     bytes.extend_from_slice(&503u64.to_le_bytes());
     indexed_header(&mut bytes, *b"308", 83);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    for (operation, additional) in [
+        ("find F3D circular pattern selection reference", 1),
+        ("validate F3D circular pattern axis paired class tag", 3),
+        ("count F3D circular pattern historical axis wrappers", 2),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                super::exact_legacy_circular_pattern_axis(
+                    ctx, &bytes, &records, 0, 129, 50, &scope,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && refusal.operation == operation
+                    && refusal.additional == additional
+        ));
+    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
@@ -1574,9 +1697,53 @@ fn rectangular_instance_fixture() -> (
 }
 
 #[test]
+fn rectangular_pattern_search_refuses_at_each_admitted_operation() {
+    let (bytes, records, scope, construction) = rectangular_instance_fixture();
+    // Each targeted limit admits earlier requests, then refuses at the named traversal.
+    for operation in [
+        "scan F3D rectangular pattern scope references",
+        "scan F3D rectangular pattern record indexes",
+        "find F3D rectangular pattern start candidate",
+        "index F3D rectangular pattern candidate range",
+        "scan F3D rectangular pattern matrix marker bytes",
+        "validate F3D rectangular pattern matrix",
+        "scan F3D rectangular pattern first candidates",
+        "scan F3D rectangular pattern final candidates",
+        "match F3D rectangular pattern endpoints",
+        "scan F3D rectangular pattern intermediate records",
+        "scan F3D rectangular pattern intermediate candidates",
+        "match F3D rectangular pattern intermediate",
+        "scan F3D rectangular pattern instance indexes",
+        "scan F3D rectangular pattern instance transforms",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                super::exact_rectangular_pattern_instances(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    &construction,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && refusal.operation == operation
+        ));
+    }
+}
+
+#[test]
 fn rectangular_pattern_search_preserves_work_refusals() {
     let (bytes, records, scope, construction) = rectangular_instance_fixture();
-    let mut scan_work = 0;
+    let mut scan_work = u64_from_index(scope.reference_members().len() + 3);
     for index in [100, 120, 130] {
         let start = records.first_at_or_after(0, index).unwrap();
         let end = scope
@@ -1588,11 +1755,22 @@ fn rectangular_pattern_search_preserves_work_refusals() {
             .unwrap();
         scan_work += 18 + u64_from_index(end - start - 120) + 152;
     }
+    // The total includes nine scope refs, three record indexes, 18 units per
+    // range and start search, marker bytes and one 152-unit matrix validation.
     for (work, operation) in [
-        (0, "index F3D rectangular pattern candidate range"),
-        (18, "scan F3D rectangular pattern matrices"),
-        (scan_work, "match F3D rectangular pattern endpoints"),
-        (scan_work + 24, "match F3D rectangular pattern intermediate"),
+        (
+            u64_from_index(scope.reference_members().len()) + 3 + 9 - 1,
+            "index F3D rectangular pattern candidate range",
+        ),
+        (
+            u64_from_index(scope.reference_members().len()) + 3 + 18,
+            "scan F3D rectangular pattern matrix marker bytes",
+        ),
+        (scan_work + 2, "match F3D rectangular pattern endpoints"),
+        (
+            scan_work + 2 + 24 + 2,
+            "match F3D rectangular pattern intermediate",
+        ),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;

@@ -16,9 +16,12 @@ use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::scope::DesignParameterScope;
 
 pub(super) fn exact_assembly_operand_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<[DesignAssemblyOperandFrame; 2]> {
+) -> Result<Option<[DesignAssemblyOperandFrame; 2]>, cadmpeg_core::CodecError> {
+    (|| {
+
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let frame_variant = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length(),
@@ -67,7 +70,11 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388
     ) {
-        exact_legacy_class_388_scope(bytes, scope)?;
+        match exact_legacy_class_388_scope(ctx, bytes, scope) {
+            Ok(Some(())) => {},
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
         if bytes.get(start + 11..start + class_388_assemble::SCOPE_FLAGS)?
             != [0; class_388_assemble::SCOPE_FLAGS - 11]
             || bytes.get(
@@ -147,7 +154,9 @@ pub(super) fn exact_assembly_operand_frames(
     };
     let first = frame(start + frame_offsets.0, start + frame_offsets.1)?;
     let second = frame(start + frame_offsets.2, start + frame_offsets.3)?;
-    (first.reference_record_index != second.reference_record_index).then_some([first, second])
+    (first.reference_record_index != second.reference_record_index).then_some([first, second]).map(Ok)
+
+    })().transpose()
 }
 
 pub(super) fn exact_as_built_operand_frames(

@@ -52,9 +52,8 @@ pub(crate) fn decode_recipes(
     scan: &ContainerScan,
 ) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D parameter recipe streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -69,16 +68,15 @@ pub(crate) fn decode_parameters(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignParameter>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D parameter streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
-        while let Some(at) = next_indexed_record_offset(bytes, position) {
-            let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
+        while let Some(at) = next_indexed_record_offset(ctx, bytes, position)? {
+            let end = next_indexed_record_offset(ctx, bytes, at + 11)?.unwrap_or(bytes.len());
             if let Some(parsed) = parse_design_parameter(ctx, &bytes[at..end])? {
                 // The Design primary index exposes one live header for each
                 // logical record index. Keep the first serialized parameter
@@ -308,7 +306,10 @@ pub(in crate::design) fn parse_design_parameter(
         let valid_expression_trailer = if discriminated && owner_record_index.is_none() {
             expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
         } else {
-            expression_trailer.iter().all(|byte| *byte == 0)
+match ctx.admit_iter(expression_trailer, "scan F3D parameter expression trailer") {
+Ok(mut bytes) => bytes.all(|byte| *byte == 0),
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            }
         };
         if !valid_expression_trailer {
             return None;
@@ -377,7 +378,10 @@ pub(in crate::design) fn parse_design_parameter(
         let tail = payload.get(name_end + 8..)?;
         if tail.len() != 12
             || tail[0..2] != [0, 1]
-            || tail[3..].iter().any(|byte| *byte != 0)
+|| match ctx.admit_iter(&tail[3..], "scan F3D parameter trailer padding") {
+Ok(mut bytes) => bytes.any(|byte| *byte != 0),
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            }
             || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
             || source_kind.is_empty()
         {
@@ -457,9 +461,13 @@ fn parse_legacy_287_design_parameter(
         if tail.len() != legacy_287_tail::LEN
             || tail[..2] != legacy_287_tail::TAIL_PREFIX_VALUE
             || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
-            || tail[legacy_287_tail::ZERO_RUN_9..]
-                .iter()
-                .any(|byte| *byte != 0)
+            || match ctx.admit_iter(
+                &tail[legacy_287_tail::ZERO_RUN_9..],
+                "scan F3D legacy parameter trailer padding",
+) {
+Ok(mut bytes) => bytes.any(|byte| *byte != 0),
+                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+            }
             || source_kind.is_empty()
         {
             return None;
@@ -594,14 +602,14 @@ pub(crate) fn decode_parameter_owners(
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignParameterOwner>, CodecError> {
-    if parameters
-        .iter()
+    if ctx
+        .admit_iter(parameters, "scan F3D parameter owner references")?
         .all(|parameter| parameter.owner_record_index().is_none())
     {
         return Ok(Vec::new());
     }
     let mut headers_by_stream = HashMap::<&str, HashMap<u32, &DesignRecordHeader>>::new();
-    for header in headers {
+    for header in ctx.admit_iter(headers, "scan F3D parameter owner headers")? {
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
@@ -623,9 +631,8 @@ pub(crate) fn decode_parameter_owners(
         }
     }
     let mut streams = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D parameter owner streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -642,7 +649,7 @@ pub(crate) fn decode_parameter_owners(
             .or_insert((entry, IndexedRecordOffsets::build(ctx, bytes)?));
     }
     let mut out = Vec::new();
-    for parameter in parameters {
+    for parameter in ctx.admit_iter(parameters, "scan F3D parameter owner bindings")? {
         let Some(owner_index) = parameter.owner_record_index() else {
             continue;
         };
@@ -674,7 +681,7 @@ pub(crate) fn decode_parameter_owners(
         let at = usize::try_from(header.byte_offset)
             .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
         let end = records
-            .frames(owner_index)
+            .frames(ctx, owner_index)?
             .find_map(|(start, end)| (start == at).then_some(end))
             .ok_or_else(|| malformed("has no following same-index paired header"))?;
         let frame = bytes
@@ -684,9 +691,14 @@ pub(crate) fn decode_parameter_owners(
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
-        let owner = parse_parameter_owner(frame)
-            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header.byte_offset))
-            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header.byte_offset))
+        let parsed_owner = match parse_parameter_owner(ctx, frame)? {
+            Some(owner) => Some(owner),
+            None => match parse_legacy_parameter_owner_68(ctx, frame, evaluated, header.byte_offset)? {
+                Some(owner) => Some(owner),
+                None => parse_legacy_parameter_owner_88(ctx, frame, evaluated, header.byte_offset)?,
+            },
+        };
+        let owner = parsed_owner
             .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
             .into_record(&entry.name, header.byte_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
@@ -766,9 +778,17 @@ impl ParsedParameterOwner {
     }
 }
 
-pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
+pub(in crate::design) fn parse_parameter_owner(
+    ctx: &DecodeContext<'_>,
+    frame: &[u8],
+) -> Result<Option<ParsedParameterOwner>, CodecError> {
+    let parsed = (|| {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error.into())),
+    };
     if after_tag != indexed_header::RECORD_INDEX
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
         || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER) != Some(&[1, 1, 0, 0, 0])
@@ -818,12 +838,14 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
             && variant <= 1)
             .then_some((at, Some(variant)))
     });
-    if [without_variant, with_variant, with_compact_variant]
-        .into_iter()
-        .flatten()
-        .count()
-        != 1
-    {
+    let candidate_count = match ctx.admit_iter(
+        &[without_variant, with_variant, with_compact_variant],
+        "count F3D parameter owner suffix variants",
+    ) {
+        Ok(candidates) => candidates.filter(|candidate| candidate.is_some()).count(),
+        Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+    };
+    if candidate_count != 1 {
         return None;
     }
     let (repeated_scope_marker, variant) =
@@ -865,7 +887,7 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
         return None;
     }
 
-    Some(ParsedParameterOwner {
+    Some(Ok(ParsedParameterOwner {
         frame_length: u64::try_from(frame.len()).ok()?,
         class_tag,
         record_index,
@@ -877,7 +899,9 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
         owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
         variant,
         companion_record_index,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Parse the legacy owner envelope whose scope and scalar lanes are absent.
@@ -885,10 +909,12 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
 /// The class admission is intentional. A short frame is not enough to select
 /// this grammar because older class tags also occur on modern owner records.
 fn parse_legacy_parameter_owner_68(
+    ctx: &DecodeContext<'_>,
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
-) -> Option<ParsedParameterOwner> {
+) -> Result<Option<ParsedParameterOwner>, CodecError> {
+    let parsed = (|| {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_68_class(class_tag)
         || frame.len() != legacy_owner_68::LEN
@@ -916,9 +942,14 @@ fn parse_legacy_parameter_owner_68(
     if !consecutive(record_index, parameter_record_index, companion_record_index) {
         return None;
     }
-    Some(ParsedParameterOwner {
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
@@ -928,16 +959,20 @@ fn parse_legacy_parameter_owner_68(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
 /// whose scalar and local-ordinal lanes are absent.
 fn parse_legacy_parameter_owner_88(
+    ctx: &DecodeContext<'_>,
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
-) -> Option<ParsedParameterOwner> {
+) -> Result<Option<ParsedParameterOwner>, CodecError> {
+    let parsed = (|| {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_88_class(class_tag)
         || frame.len() != legacy_owner_88::LEN
@@ -977,9 +1012,14 @@ fn parse_legacy_parameter_owner_88(
     if !consecutive(record_index, parameter_record_index, companion_record_index) {
         return None;
     }
-    Some(ParsedParameterOwner {
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        class_tag,
         record_index,
         scope_record_index,
         local_ordinal: 0,
@@ -989,7 +1029,9 @@ fn parse_legacy_parameter_owner_88(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Decode the fixed prefix of every indexed record paired with a parameter
@@ -1001,7 +1043,7 @@ pub(crate) fn decode_parameter_companions(
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
     let mut headers_by_record = HashMap::new();
-    for header in headers {
+    for header in ctx.admit_iter(headers, "scan F3D parameter companion headers")? {
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
@@ -1012,7 +1054,7 @@ pub(crate) fn decode_parameter_companions(
         headers_by_record.insert(key, header);
     }
     let mut out = Vec::new();
-    for owner in owners {
+    for owner in ctx.admit_iter(owners, "scan F3D parameter companion owners")? {
         let Some(scope) = native_stream(owner.id()) else {
             continue;
         };
@@ -1026,7 +1068,11 @@ pub(crate) fn decode_parameter_companions(
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
         let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
-        let Some(parsed) = prefix.and_then(parse_parameter_companion) else {
+        let parsed = match prefix {
+            Some(prefix) => parse_parameter_companion(ctx, prefix)?,
+            None => None,
+        };
+        let Some(parsed) = parsed else {
             continue;
         };
         if parsed.record_index != owner.companion_record_index()
@@ -1091,9 +1137,17 @@ impl ParsedParameterCompanion {
     }
 }
 
-fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
+fn parse_parameter_companion(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<Option<ParsedParameterCompanion>, CodecError> {
+    let parsed = (|| {
     let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
+    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+        Ok(Ok(class_tag)) => class_tag,
+        Ok(Err(_)) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
@@ -1107,7 +1161,7 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
     }
     let timestamp_micros =
         std::num::NonZeroU64::new(View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?)?;
-    Some(ParsedParameterCompanion {
+    Some(Ok(ParsedParameterCompanion {
         class_tag,
         record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
         owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
@@ -1115,7 +1169,9 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
         timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(
             companion_prefix::TIMESTAMP_MICROS,
         ))),
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Records a companion payload is resolved against.
@@ -1230,7 +1286,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
         return Ok(None);
     };
     let mut owned = Vec::new();
-    for recipe in recipes.iter().filter(|recipe| {
+    for recipe in ctx.admit_iter(*recipes, "scan F3D companion owned recipes")?.filter(|recipe| {
         native_stream(&recipe.id) == Some(stream)
             && recipe.byte_offset >= u64_from_index(start)
             && recipe.byte_offset < u64_from_index(end)
@@ -1248,7 +1304,10 @@ fn companion_payload<S: std::hash::BuildHasher>(
         "sort f3d design parameters 4",
     )?;
     let mut owned_ids = Vec::new();
-    for recipe in owned {
+    for recipe in ctx
+        .admit_iter(&owned, "scan F3D companion owned recipe IDs")?
+        .copied()
+    {
         let id = String::from_utf8(ctx.copy_retained(
             recipe.id.as_bytes(),
             "f3d companion owned recipe identifier",

@@ -58,6 +58,27 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         })
         .collect::<Vec<_>>();
     let mut bytes = assembly_operand_frame_fixture(scope_record_index);
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D alignment reference positions",
+        0,
+        |ctx| {
+            exact_assembly_alignment(
+                ctx,
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &scope,
+                &owners,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D alignment reference positions"
+    ));
     let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
         exact_assembly_alignment(
             ctx,

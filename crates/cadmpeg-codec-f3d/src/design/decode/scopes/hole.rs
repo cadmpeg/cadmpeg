@@ -2,6 +2,7 @@
 //! Exact hole constructions and hole face selections.
 
 use super::parameter_scope::payload_prologue;
+use super::parameter_scope::reference_members;
 use crate::bytes::finite_reals_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
@@ -19,18 +20,27 @@ use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
-fn graphic_ascii_end(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<usize> {
-    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
-    if !bounds.contains(&length) {
-        return None;
-    }
-    let start = at.checked_add(4)?;
-    let end = start.checked_add(length)?;
-    bytes
-        .get(start..end)?
-        .iter()
-        .all(u8::is_ascii_graphic)
-        .then_some(end)
+fn graphic_ascii_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<usize>, CodecError> {
+    let parsed = (|| {
+        let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        if !bounds.contains(&length) {
+            return None;
+        }
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(length)?;
+        let text = bytes.get(start..end)?;
+        let is_graphic = match ctx.admit_iter(text, "validate F3D hole ASCII field") {
+            Ok(mut admitted) => admitted.all(u8::is_ascii_graphic),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        is_graphic.then_some(Ok(end))
+    })();
+    parsed.transpose()
 }
 
 /// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
@@ -68,26 +78,40 @@ pub(in crate::design::decode) fn exact_hole_construction(
                 Err(error) => return Some(Err(error)),
             };
         let mut candidate = None;
-        for record_index in scope.reference_members().values() {
-            let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+        let references = match reference_members(
+            ctx,
+            scope.reference_members(),
+            "scan F3D Hole scope references",
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        };
+        for record_index in references {
+            let Some((type_guid, version)) = stream_types.get(&u64::from(record_index)) else {
                 continue;
             };
             if *type_guid != HOLE_POINT_DATA_TYPE_GUID || !matches!(*version, 1 | 4) {
                 continue;
             }
-            for (start, paired_at) in records.frames(*record_index) {
+            let frames = match records.frames(ctx, record_index) {
+                Ok(frames) => frames,
+                Err(error) => return Some(Err(error)),
+            };
+            for (start, paired_at) in frames {
                 let Some((_, after_tag)) =
                     lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
                 else {
                     continue;
                 };
                 if after_tag != start + 7
-                    || View::u32_le_at(bytes, after_tag) != Some(*record_index)
+                    || View::u32_le_at(bytes, after_tag) != Some(record_index)
                 {
                     continue;
                 }
-                let Some(payload_at) = graphic_ascii_end(bytes, after_tag + 8, 0..=256) else {
-                    continue;
+                let payload_at = match graphic_ascii_end(ctx, bytes, after_tag + 8, 0..=256) {
+                    Ok(Some(payload_at)) => payload_at,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
                 };
                 let next = match hole_construction_frame_at(
                     ctx,
@@ -95,7 +119,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
                     start,
                     paired_at,
                     payload_at,
-                    *record_index,
+                    record_index,
                     *version,
                 ) {
                     Ok(next) => next,
@@ -124,21 +148,27 @@ fn exact_hole_face_selection(
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignHoleFaceSelection>, CodecError> {
     let mut candidate = None;
-    for record_index in scope.reference_members().values() {
-        if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
+    for record_index in reference_members(
+        ctx,
+        scope.reference_members(),
+        "scan F3D Hole face-selection scope references",
+    )? {
+        if stream_types.get(&u64::from(record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
         {
             continue;
         }
-        for (start, _paired_at) in records.frames(*record_index) {
+        for (start, _paired_at) in records.frames(ctx, record_index)? {
             let Some((class_tag, after_tag)) =
                 lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
-            let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag) else {
-                continue;
+            let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => continue,
+                Err(error) => return Err(error),
             };
-            if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(*record_index) {
+            if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(record_index) {
                 continue;
             }
             let Ok(start_offset) = u64::try_from(start) else {
@@ -147,7 +177,7 @@ fn exact_hole_face_selection(
             let Some(frame) = parse_entity_selection_frame(
                 ctx,
                 bytes,
-                *record_index,
+                record_index,
                 start_offset,
                 class_tag.as_str(),
             )
@@ -201,7 +231,11 @@ fn hole_construction_frame_at(
 ) -> Result<Option<DesignHoleConstruction>, CodecError> {
     (|| {
         let body = bytes.get(..paired_at)?;
-        let mut cursor = payload_prologue(body, payload_at, paired_at)?;
+        let mut cursor = match payload_prologue(ctx, body, payload_at, paired_at) {
+            Ok(Some(cursor)) => cursor,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let _bounding_box_index = View::u32_le_at(body, cursor)?;
         cursor = cursor.checked_add(4)?;
         let position_at = cursor;
@@ -262,9 +296,18 @@ fn hole_construction_frame_at(
                 offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
             });
         }
-        if (version == 4 && cursor != paired_at)
-            || (version == 1 && next_indexed_record_offset(bytes, cursor)? != paired_at)
-        {
+        let paired_end_matches = if version == 4 {
+            cursor == paired_at
+        } else if version == 1 {
+            match next_indexed_record_offset(ctx, bytes, cursor) {
+                Ok(Some(next)) => next == paired_at,
+                Ok(None) => false,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            true
+        };
+        if !paired_end_matches {
             return None;
         }
         Some(Ok(DesignHoleConstruction {

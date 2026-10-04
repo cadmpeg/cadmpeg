@@ -105,8 +105,30 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D shell reference members",
+        0,
+        |ctx| {
+            crate::design::decode::scopes::thicken_shell::exact_shell_class_369_261(
+                ctx, &bytes, &records, &scope,
+            )
+        },
+    );
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &records, &scope),
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && refusal.operation == "scan F3D shell reference members"
+    ));
+    assert!(matches!(
+        exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+            &scope,
+        )
+        .unwrap(),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness,
             thickness_record_index: 9_000,
@@ -119,11 +141,25 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     let mut wrong_pair = scope.clone();
     wrong_pair.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
+    assert!(exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &wrong_pair,
+    )
+    .unwrap()
+    .is_none());
 
     let mut invalid_outward = bytes;
     invalid_outward[shell_369_261::OUTWARD] = 2;
-    assert!(exact_direct_face_operation(&invalid_outward, &records, &scope).is_none());
+    assert!(exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
+        &invalid_outward,
+        &records,
+        &scope,
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -160,11 +196,12 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
+
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
-    )
+    ).unwrap()
     .expect("class-322/261 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
@@ -178,12 +215,64 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
         .copy_from_slice(b"262");
     assert_eq!(
         exact_work_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
             &wrong_pair,
             &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
             &scope,
-        ),
+        )
+        .unwrap(),
         None
     );
+}
+
+#[test]
+fn work_plane_reference_member_admission_refusal_propagates() {
+    let transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = vec![0; work_plane_class_322_332::LEN];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"322");
+    bytes[7..11].copy_from_slice(&85u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = work_plane_class_322_332::MATRIX + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&85u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:work-plane-admission#85",
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
+        85,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![85]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D work-plane reference members",
+        0,
+        |ctx| exact_work_plane_frame(ctx, &bytes, &records, &scope),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && refusal.operation == "scan F3D work-plane reference members"
+                && refusal.additional == 1
+    ));
 }
 
 #[test]
@@ -222,11 +311,12 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
+
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
-    )
+    ).unwrap()
     .expect("class-350 WorkPlane frame");
     for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
         for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
@@ -274,11 +364,12 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(
+    let decoded = exact_work_plane_frame(&cadmpeg_test_support::service_decode_context(),
+
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
-    )
+    ).unwrap()
     .expect("class-400 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
@@ -336,12 +427,14 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-        )
-        .expect("legacy Move transform frame");
+let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+&cadmpeg_test_support::service_decode_context(),
+&bytes,
+&crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+&scope,
+)
+.unwrap()
+.expect("legacy Move transform frame");
 
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_record_index, record_index);
@@ -353,12 +446,14 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             let paired_class_at = frame_at + 253 + 4;
             bytes[paired_class_at..paired_class_at + 3].copy_from_slice(b"262");
             assert!(
-                crate::design::decode::scopes::direct_face::exact_move_operation(
-                    &bytes,
-                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-                    &scope,
-                )
-                .is_none(),
+crate::design::decode::scopes::direct_face::exact_move_operation(
+&cadmpeg_test_support::service_decode_context(),
+&bytes,
+&crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+&scope,
+)
+.unwrap()
+.is_none(),
                 "class-456 Move requires paired class 258"
             );
         }
@@ -444,11 +539,26 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D indexed record frames",
+            0,
+            |ctx| exact_work_axis_construction(ctx, &bytes, &records, &scope),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && refusal.operation == "scan F3D indexed record frames"
+        ));
         let construction = exact_work_axis_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &records,
             &scope,
         )
+        .unwrap()
         .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
@@ -533,7 +643,10 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     along_parameter.id = "generated:parameter#83".into();
     along_parameter.record_index = 83;
 
-    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame())
+    let mut taper_owner = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_parameter_owner(ctx, &parameter_owner_frame())
+    })
+        .expect("taper owner parser succeeds")
         .expect("taper owner")
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
@@ -600,12 +713,13 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     }
 
     let fixed = exact_fixed_extrude_parameters(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &[taper_parameter, along_parameter],
         &[taper_owner, along_owner],
-    )
+    ).unwrap()
     .expect("fixed owner lanes");
     assert!(matches!(
         fixed.along_distance,

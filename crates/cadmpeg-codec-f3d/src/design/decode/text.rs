@@ -6,12 +6,13 @@ use cadmpeg_core::CodecError;
 
 /// Validate a borrowed three-digit class tag before making its fixed-size copy.
 pub(in crate::design::decode) fn class_tag_from_view(
+    ctx: &DecodeContext<'_>,
     value: &str,
-) -> Result<crate::records::references::DesignClassTag, String> {
-    if value.len() != 3 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err("class_tag must contain three ASCII digits".into());
+) -> Result<Result<crate::records::references::DesignClassTag, String>, CodecError> {
+    if value.len() != 3 || !ctx.admit_iter(value.as_bytes(), "validate F3D class tag digits")?.all(|byte| byte.is_ascii_digit()) {
+        return Ok(Err("class_tag must contain three ASCII digits".into()));
     }
-    crate::records::references::DesignClassTag::try_from(value.to_owned())
+    Ok(crate::records::references::DesignClassTag::try_from(value.to_owned()))
 }
 
 /// Compose a native scope and record suffix under the retained text budget.
@@ -29,20 +30,27 @@ pub(in crate::design::decode) fn design_record_id_charged(
 
 /// Validate an exact 36-code-unit relaxed GUID into a fixed ASCII array.
 pub(in crate::design::decode) fn fixed_guid_ascii(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     count_at: usize,
-) -> Option<([u8; 36], usize)> {
-    (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
-    let start = count_at.checked_add(4)?;
-    let end = start.checked_add(72)?;
+) -> Result<Option<([u8; 36], usize)>, CodecError> {
+    let Some((units, end)) = (|| {
+        (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
+        let start = count_at.checked_add(4)?;
+        let end = start.checked_add(72)?;
+        Some((bytes.get(start..end)?, end))
+    })() else { return Ok(None); };
+    let width = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| CodecError::malformed("F3D GUID code unit width is zero"))?;
     let mut guid = [0; 36];
-    for (slot, unit) in guid.iter_mut().zip(bytes.get(start..end)?.chunks_exact(2)) {
+    for (unit, slot) in ctx.admit_iter(units, "validate F3D relaxed GUID code units")?
+        .chunks(width).zip(guid.iter_mut()) {
         if unit[1] != 0 || !(unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_')) {
-            return None;
+            return Ok(None);
         }
         *slot = unit[0];
     }
-    Some((guid, end))
+    Ok(Some((guid, end)))
 }
 
 /// Read a fixed-width relaxed GUID into its native value after code-unit validation.
@@ -51,8 +59,7 @@ pub(in crate::design::decode) fn fixed_relaxed_guid_text(
     bytes: &[u8],
     count_at: usize,
 ) -> Result<Option<(crate::records::mesh::DesignRelaxedGuidText, usize)>, CodecError> {
-    ctx.charge_work(36, "validate F3D relaxed GUID code units")?;
-    let Some((guid, end)) = fixed_guid_ascii(bytes, count_at) else {
+    let Some((guid, end)) = fixed_guid_ascii(ctx, bytes, count_at)? else {
         return Ok(None);
     };
     // UTF-8 validation, copy, GUID validation, and identity-key validation.
@@ -66,46 +73,48 @@ pub(in crate::design::decode) fn fixed_relaxed_guid_text(
 }
 
 /// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
-pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
-    fixed_guid_ascii(bytes, count_at).map(|(_, end)| end)
+pub(in crate::design::decode) fn fixed_guid_end(
+    ctx: &DecodeContext<'_>, bytes: &[u8], count_at: usize,
+) -> Result<Option<usize>, CodecError> {
+    Ok(fixed_guid_ascii(ctx, bytes, count_at)?.map(|(_, end)| end))
 }
 
 /// Validate a counted relaxed GUID without allocating its text.
-pub(in crate::design::decode) fn relaxed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
-    let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
-    if !(36..=38).contains(&count) {
-        return None;
-    }
-    let start = count_at.checked_add(4)?;
-    let end = start.checked_add(count.checked_mul(2)?)?;
-    bytes
-        .get(start..end)?
-        .chunks_exact(2)
-        .all(|unit| {
-            unit[1] == 0 && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
-        })
-        .then_some(end)
+pub(in crate::design::decode) fn relaxed_guid_end(
+    ctx: &DecodeContext<'_>, bytes: &[u8], count_at: usize,
+) -> Result<Option<usize>, CodecError> {
+    let Some((units, end)) = (|| {
+        let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+        if !(36..=38).contains(&count) { return None; }
+        let start = count_at.checked_add(4)?;
+        let end = start.checked_add(count.checked_mul(2)?)?;
+        Some((bytes.get(start..end)?, end))
+    })() else { return Ok(None); };
+    let width = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| CodecError::malformed("F3D GUID code unit width is zero"))?;
+    Ok(ctx.admit_iter(units, "validate F3D counted relaxed GUID")?.chunks(width)
+        .all(|unit| unit[1] == 0 && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_')))
+        .then_some(end))
 }
 
 /// Match an ASCII literal encoded as a counted UTF-16LE field without copying it.
 pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
-    bytes: &[u8],
-    count_at: usize,
-    expected: &str,
-) -> Option<usize> {
-    if !expected.is_ascii()
-        || usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected.len()
-    {
-        return None;
-    }
-    let start = count_at.checked_add(4)?;
-    let end = start.checked_add(expected.len().checked_mul(2)?)?;
-    bytes
-        .get(start..end)?
-        .chunks_exact(2)
-        .zip(expected.bytes())
-        .all(|(unit, expected_byte)| unit == [expected_byte, 0])
-        .then_some(end)
+    ctx: &DecodeContext<'_>, bytes: &[u8], count_at: usize, expected: &str,
+) -> Result<Option<usize>, CodecError> {
+    let Some((units, end)) = (|| {
+        if !expected.is_ascii()
+            || usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected.len() {
+            return None;
+        }
+        let start = count_at.checked_add(4)?;
+        let end = start.checked_add(expected.len().checked_mul(2)?)?;
+        Some((bytes.get(start..end)?, end))
+    })() else { return Ok(None); };
+    let width = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| CodecError::malformed("F3D ASCII code unit width is zero"))?;
+    Ok(ctx.admit_iter(units, "match F3D UTF-16 ASCII field")?.chunks(width)
+        .zip(ctx.admit_iter(expected.as_bytes(), "scan F3D UTF-16 ASCII literal bytes")?)
+        .all(|(unit, byte)| unit == [*byte, 0]).then_some(end))
 }
 
 #[cfg(test)]
@@ -179,7 +188,7 @@ mod tests {
                 .unwrap()
             })
             .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
-            assert_eq!(relaxed_guid_end(&bytes, 0), owned);
+            assert_eq!(relaxed_guid_end(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap(), owned);
         }
     }
 
@@ -209,7 +218,7 @@ mod tests {
                 .unwrap()
             })
             .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
-            let current = fixed_guid_ascii(&bytes, 0)
+            let current = fixed_guid_ascii(&cadmpeg_test_support::service_decode_context(), &bytes, 0).unwrap()
                 .map(|(guid, end)| (String::from_utf8(guid.to_vec()).unwrap(), end));
             assert_eq!(current, prior);
         }
@@ -241,9 +250,9 @@ mod tests {
                 .unwrap()
             })
             .and_then(|(text, end)| (text == expected).then_some(end));
-            assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), decoded);
+            assert_eq!(fixed_utf16_ascii_eq(&cadmpeg_test_support::service_decode_context(), &bytes, 0, expected).unwrap(), decoded);
             bytes.pop();
-            assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), None);
+            assert_eq!(fixed_utf16_ascii_eq(&cadmpeg_test_support::service_decode_context(), &bytes, 0, expected).unwrap(), None);
         }
     }
 
@@ -279,9 +288,83 @@ mod tests {
     fn borrowed_class_tag_conversion_matches_owned_conversion() {
         for value in ["123", "000", "12", "1234", "12a", "éé"] {
             assert_eq!(
-                class_tag_from_view(value),
+                class_tag_from_view(&cadmpeg_test_support::service_decode_context(), value).unwrap(),
                 crate::records::references::DesignClassTag::try_from(value.to_owned())
             );
         }
     }
+    #[test]
+    fn borrowed_class_tag_refuses_work_before_digit_validation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(class_tag_from_view(&ctx, "123"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate F3D class tag digits"
+                    && limit.additional == 3));
+    }
+
+    #[test]
+    fn fixed_guid_ascii_refuses_work_before_code_unit_validation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = crate::bytes::lp_utf16_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(fixed_guid_ascii(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate F3D relaxed GUID code units"
+                    && limit.additional == 72));
+    }
+
+    #[test]
+    fn relaxed_guid_end_refuses_work_before_code_unit_validation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = crate::bytes::lp_utf16_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(relaxed_guid_end(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate F3D counted relaxed GUID"
+                    && limit.additional == 72));
+    }
+
+    #[test]
+    fn fixed_utf16_ascii_eq_refuses_work_before_code_unit_comparison() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = crate::bytes::lp_utf16_bytes("Thicken").unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(fixed_utf16_ascii_eq(&ctx, &bytes, 0, "Thicken"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "match F3D UTF-16 ASCII field"
+                    && limit.additional == 14));
+    }
+
+    #[test]
+    fn fixed_utf16_ascii_literal_iterator_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = crate::bytes::lp_utf16_bytes("Thicken").unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D UTF-16 ASCII literal bytes", 0,
+            |ctx| fixed_utf16_ascii_eq(ctx, &bytes, 0, "Thicken"),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan F3D UTF-16 ASCII literal bytes"
+                && limit.additional == 7));
+    }
+
 }

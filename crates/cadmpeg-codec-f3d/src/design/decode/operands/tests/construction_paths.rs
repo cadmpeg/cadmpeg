@@ -229,8 +229,11 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
         record_index,
     };
 
-    let parsed = parse_construction_operand_transform(&bytes, &header)
-        .expect("exact construction-operand transform");
+    let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_operand_transform(ctx, &bytes, &header).transpose()
+    })
+    .expect("contextful construction-operand transform parse")
+    .expect("exact construction-operand transform");
     assert_eq!(parsed.transform, transform.try_into().unwrap());
     assert_eq!(parsed.transform_offset(), 22);
     assert_eq!(parsed.following_record_index(), 301);
@@ -238,7 +241,11 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     assert_eq!(parsed.following_class_tag.as_str(), "432");
 
     bytes[150] = 0;
-    assert!(parse_construction_operand_transform(&bytes, &header).is_none());
+    let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_operand_transform(ctx, &bytes, &header).transpose()
+    })
+    .expect("contextful malformed transform parse");
+    assert!(parsed.is_none());
 
     let secondary = [
         [1.0_f64, 0.0, 0.0, 2.0],
@@ -321,8 +328,12 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
         record_index,
     };
-    let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
-        .expect("expanded selection path");
+    let expanded = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_operand_path(ctx, &expanded, scope_record_index, &expanded_header)
+            .transpose()
+    })
+    .expect("contextful expanded selection path parse")
+    .expect("expanded selection path");
     assert_eq!(expanded.entity_ref, 174);
     assert_eq!(
         expanded.clone().into_draft().placement,
@@ -350,8 +361,12 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     compact.extend_from_slice(&[0; 6]);
     let compact_following_at = compact.len();
     indexed_header(&mut compact, *b"390", record_index + 1);
-    let compact = parse_construction_operand_path(&compact, scope_record_index, &expanded_header)
-        .expect("compact selection path");
+    let compact = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_operand_path(ctx, &compact, scope_record_index, &expanded_header)
+            .transpose()
+    })
+    .expect("contextful compact selection path parse")
+    .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
     assert_eq!(
         compact.clone().into_draft().placement,
@@ -398,12 +413,12 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     }
 
     let absent = tracking_path(None, None);
-    let absent = parse_construction_tracking_path(
-        &absent,
-        0,
-        300,
-        &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
-    )
+    let wrapper_class_tag =
+        crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap();
+    let absent = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_tracking_path(ctx, &absent, 0, 300, &wrapper_class_tag).transpose()
+    })
+    .expect("contextful tracking path parse")
     .expect("tracking path without related identities");
     assert_eq!(absent.carrier_record_index(), 301);
     assert_eq!(absent.carrier_byte_offset(), 33);
@@ -417,12 +432,10 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(absent.following_byte_offset(), 114);
 
     let present = tracking_path(Some(113), Some(119));
-    let present = parse_construction_tracking_path(
-        &present,
-        0,
-        300,
-        &crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap(),
-    )
+    let present = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_tracking_path(ctx, &present, 0, 300, &wrapper_class_tag).transpose()
+    })
+    .expect("contextful tracking path parse")
     .expect("tracking path with related identities");
     assert_eq!(
         present

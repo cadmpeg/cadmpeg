@@ -130,6 +130,14 @@ impl<T, O> ReferenceRun<T, O> {
         Self(ReferenceRunData::Located(rows))
     }
 
+    /// Unlocated values when this run has no encoding locations.
+    pub(crate) fn unlocated_values(&self) -> Option<&[T]> {
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => Some(values),
+            ReferenceRunData::Located(_) => None,
+        }
+    }
+
     pub(crate) fn located_rows(&self) -> Option<&[Located<T, O>]> {
         match &self.0 {
             ReferenceRunData::Located(rows) => Some(rows),

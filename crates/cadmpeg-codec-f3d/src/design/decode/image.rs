@@ -17,7 +17,7 @@ pub(super) fn neutral_asset_id_charged(
     const PREFIX: &str = "f3d:model:asset#";
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded_len = 0usize;
-    for character in entry_name.chars() {
+    for character in ctx.admit_iter(entry_name, "scan F3D asset identifier characters")? {
         let bytes = character.len_utf8();
         let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             bytes.checked_mul(3)
@@ -46,10 +46,13 @@ pub(super) fn neutral_asset_id_charged(
     id.push_str(PREFIX);
     write!(&mut id, "{encoded_len}:")
         .map_err(|_| CodecError::malformed("F3D asset identifier formatting failed"))?;
-    for character in entry_name.chars() {
+    for character in ctx.admit_iter(entry_name, "encode F3D asset identifier characters")? {
         if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             let mut bytes = [0u8; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
+            for byte in ctx.admit_iter(
+                character.encode_utf8(&mut bytes).as_bytes(),
+                "encode F3D escaped asset identifier bytes",
+            )? {
                 id.push('%');
                 id.push(char::from(HEX[usize::from(byte >> 4)]));
                 id.push(char::from(HEX[usize::from(byte & 0x0f)]));
@@ -120,14 +123,13 @@ pub(super) fn decode_scoped_images<T>(
     id: impl Fn(&T) -> &str,
 ) -> Result<Vec<T>, CodecError> {
     let mut images = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D image stream entries")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = native_scope_charged(ctx, &entry.name)?;
-        for scope in scopes.iter().filter(|scope| {
+        for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")?.filter(|scope| {
             scope.kind().as_str() == kind.as_str()
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {

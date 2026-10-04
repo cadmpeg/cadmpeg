@@ -18,7 +18,13 @@ fn face_source_reference_headers_refuse_collection_limit() {
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        face_source_reference_headers(&ctx, &[], 0, [7u32, 8].iter(), &records),
+        face_source_reference_headers(
+            &ctx,
+            &[],
+            0,
+            &crate::records::identity::ReferenceRun::unlocated(vec![7u32, 8]),
+            &records,
+        ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d face source reference headers"
