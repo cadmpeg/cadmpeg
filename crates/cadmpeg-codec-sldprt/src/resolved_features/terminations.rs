@@ -748,17 +748,17 @@ fn compact_termination_face_vote(
                 .unwrap_or_default();
             let mut identity = String::new();
             ctx.append_retained(&mut identity, canonical, OPERATION)?;
-            identity.push('|');
+            ctx.push_retained_char(&mut identity, '|', OPERATION)?;
             for (index, producer) in ctx
                 .admit_iter(&selection.producer_feature_refs, OPERATION)?
                 .enumerate()
             {
                 if index != 0 {
-                    identity.push(',');
+                    ctx.push_retained_char(&mut identity, ',', OPERATION)?;
                 }
                 ctx.append_retained(&mut identity, producer, OPERATION)?;
             }
-            identity.push('|');
+            ctx.push_retained_char(&mut identity, '|', OPERATION)?;
             ctx.append_retained(&mut identity, terminal, OPERATION)?;
             identity
         }
@@ -1208,23 +1208,16 @@ fn component_local_ids(
     components: &[FeatureInputComponentPathEntry],
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    use std::fmt::Write;
-    let size = components
-        .len()
-        .checked_mul(11)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(u64_from_index(size), operation)?;
     let mut local_id = String::new();
-    ctx.try_reserve_retained_text(&mut local_id, size, operation)?;
-    for (index, component) in components.iter().enumerate() {
+    for (index, component) in ctx.admit_iter(components, operation)?.enumerate() {
         if index != 0 {
-            local_id.push(',');
+            ctx.push_retained_char(&mut local_id, ',', operation)?;
         }
         match component.local_id {
-            Some(id) => write!(&mut local_id, "{id}").map_err(|_| {
-                cadmpeg_core::CodecError::malformed("SLDPRT sweep local identity formatting failed")
-            })?,
-            None => local_id.push('_'),
+            Some(id) => {
+                ctx.append_formatted_retained(&mut local_id, format_args!("{id}"), operation)?;
+            }
+            None => ctx.push_retained_char(&mut local_id, '_', operation)?,
         }
     }
     Ok(local_id)
@@ -2865,7 +2858,7 @@ pub(crate) fn compact_surface_selection_value(
     ctx.append_retained(&mut value, PREFIX, OPERATION)?;
     for (index, component) in ctx.admit_iter(components, OPERATION)?.enumerate() {
         if index != 0 {
-            value.push(',');
+            ctx.push_retained_char(&mut value, ',', OPERATION)?;
         }
         match component.local_id {
             Some(local_id) => {
