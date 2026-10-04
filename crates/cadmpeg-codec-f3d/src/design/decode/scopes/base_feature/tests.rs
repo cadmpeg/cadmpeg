@@ -329,3 +329,56 @@ fn base_feature_snapshot_guid_refusal_is_not_an_absent_candidate() {
                 && limit.operation == "retain F3D relaxed GUID" && limit.additional == 36)
     );
 }
+
+
+#[test]
+fn base_feature_267_byte_metadata_copy_refuses_each_resource_limit() {
+    let mut bytes = vec![0u8; 267];
+    bytes[37..41].copy_from_slice(&301u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-267",
+        DesignFeatureKind::BaseFeature,
+        0,
+    );
+    scope.class_tag = DesignClassTag::try_from("000".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("000".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 267;
+            draft.paired_byte_offset = 267;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let operation = "f3d BaseFeature 267-byte metadata field";
+    let result = exact_base_feature_construction(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &scope,
+    )
+    .unwrap()
+    .expect("generic 267-byte BaseFeature frame");
+    let DesignBaseFeatureConstruction::ResultBodies { metadata_field, .. } = result else {
+        panic!("267-byte BaseFeature frame selected the wrong form");
+    };
+    assert_eq!(metadata_field, [0; 6]);
+
+    for (dimension, additional) in [
+        (ResourceDimension::WorkUnits, 6),
+        (ResourceDimension::CollectionItems, 6),
+        (ResourceDimension::RetainedBytes, 6),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| exact_base_feature_construction(ctx, &bytes, &scope).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+            && limit.additional == additional
+        ));
+    }
+}
