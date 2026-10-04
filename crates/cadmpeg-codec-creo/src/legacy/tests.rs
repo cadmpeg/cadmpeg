@@ -1713,3 +1713,14 @@ fn legacy_compact_real_radix_parse_refuses_work() {
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo compact real hexadecimal parsing"));
 }
+
+#[test]
+fn legacy_declaration_utf8_refuses_before_malformed_input() {
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo legacy declaration UTF-8 validation",
+        |ctx| super::parse_declaration(ctx, b"@name 1 1\xff"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy declaration UTF-8 validation"));
+}
