@@ -1505,3 +1505,39 @@ fn pcurve_decode_cost_counts_each_sample_coordinate() {
         Ok::<(), cadmpeg_core::CodecError>(())
     }).expect("pcurve cost fits service work");
 }
+
+#[test]
+fn topology_curve_row_deduplication_refuses_work() {
+    let payload = one_framed_curve_input();
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo topology curve row deduplication",
+        |ctx| topology_rows_with_face_ids(ctx, &payload, None),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo topology curve row deduplication"));
+}
+
+#[test]
+fn topology_curve_row_cost_counts_active_face_identifiers() {
+    let mut row = CurveTopologyRow {
+        id: 7,
+        type_byte: 8,
+        feature_id: 4,
+        directions: [1, 0xf6],
+        faces: [NonZeroU32::new(10), NonZeroU32::new(11)],
+        next_edges: [7, 7],
+        offset: 15,
+    };
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let offset_cost = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+        let cost = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&row, ctx, "topology curve row cost")?;
+        // The cost counts scalar fields, two option tags, both active face IDs and the offset.
+        assert_eq!(cost, 29 + offset_cost);
+        row.faces = [None, None];
+        let cost = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&row, ctx, "topology curve row cost")?;
+        // Absent faces contribute only their two option tags.
+        assert_eq!(cost, 21 + offset_cost);
+        Ok::<(), CodecError>(())
+    }).expect("topology curve row cost fits service work");
+}
