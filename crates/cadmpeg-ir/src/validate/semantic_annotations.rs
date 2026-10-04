@@ -2,9 +2,8 @@
 //! Semantic annotation graph and numeric validation.
 
 use super::{orders::Orders, record_finding};
-use crate::index::identities::BorrowedIdentities;
-
 use crate::document::CadIr;
+use crate::index::ModelIndex;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -13,18 +12,18 @@ use crate::report::{
 pub(super) fn check_semantic_annotations(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut orders = Orders::new(ctx)?;
     for annotation in &ir.model.semantic_annotations {
         ctx.charge_work(1, "semantic annotation row scan")?;
-        let mut refs_valid = all_ids.contains(ctx, &annotation.object)?
-            && all_ids.contains(ctx, &annotation.native_ref)?;
+        let mut refs_valid = all_ids.contains(annotation.object.as_str(), ctx)?
+            && all_ids.contains(annotation.native_ref.as_str(), ctx)?;
         if refs_valid {
             for id in &annotation.assets {
                 ctx.charge_work(1, "semantic annotation asset scan")?;
-                if !all_ids.contains(ctx, id)? {
+                if !all_ids.contains(id, ctx)? {
                     refs_valid = false;
                     break;
                 }
@@ -36,7 +35,7 @@ pub(super) fn check_semantic_annotations(
                 for target in targets {
                     ctx.charge_work(1, "semantic annotation reference scan")?;
                     if let Some(id) = target.local_target() {
-                        if !all_ids.contains(ctx, id)? {
+                        if !all_ids.contains(id, ctx)? {
                             refs_valid = false;
                             break 'groups;
                         }
@@ -63,6 +62,7 @@ pub(super) fn check_semantic_annotations(
 mod tests {
     use super::check_semantic_annotations;
     use crate::document::CadIr;
+    use crate::index::ModelIndex;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -87,9 +87,12 @@ mod tests {
     fn semantic_annotations_preserve_scan_order_and_finding_resource_refusals() {
         let ir = fixture();
         let source = cadmpeg_test_support::service_decode_context();
-        let ids =
-            super::BorrowedIdentities::build(&source, |add| add("test:source:unknown#record", ()))
-                .unwrap();
+        let ids = ModelIndex::with_additional_native_identities(
+            &ir,
+            ["test:source:unknown#record"],
+            &source,
+        )
+        .unwrap();
         for dimension in [
             ResourceDimension::WorkUnits,
             ResourceDimension::MaterializedBytes,
@@ -124,9 +127,12 @@ mod tests {
     fn semantic_annotations_report_the_second_duplicate_order_and_release_storage() {
         let ir = fixture();
         let source = cadmpeg_test_support::service_decode_context();
-        let ids =
-            super::BorrowedIdentities::build(&source, |add| add("test:source:unknown#record", ()))
-                .unwrap();
+        let ids = ModelIndex::with_additional_native_identities(
+            &ir,
+            ["test:source:unknown#record"],
+            &source,
+        )
+        .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 4096;

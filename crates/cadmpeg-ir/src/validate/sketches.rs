@@ -495,7 +495,7 @@ pub(super) fn check_sketches(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = BorrowedIdentities::build(ctx, |add| {
-        for entity in &ir.model.sketch_entities {
+        for entity in ctx.admit_iter(&ir.model.sketch_entities, "sketch entity identity scan")? {
             add(entity.id().as_str(), &entity.geometry)?;
         }
         Ok(())
@@ -505,8 +505,7 @@ pub(super) fn check_sketches(
         if sketch.resolved_placement().is_none() {
             continue;
         }
-        for profile in &sketch.profiles {
-            ctx.charge_work(1, "sketch profile scan")?;
+        for profile in ctx.admit_iter(sketch.profiles.as_slice(), "sketch profile scan")? {
             for adjacent in profile.windows(2) {
                 ctx.charge_work(1, "sketch profile adjacency scan")?;
                 let Some(left) = geometry
@@ -536,13 +535,16 @@ pub(super) fn check_sketches(
     }
 
     let spatial_sketches = BorrowedIdentities::build(ctx, |add| {
-        for sketch in &ir.model.spatial_sketches {
+        for sketch in ctx.admit_iter(&ir.model.spatial_sketches, "spatial sketch identity scan")? {
             add(sketch.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let spatial_geometry = BorrowedIdentities::build(ctx, |add| {
-        for entity in &ir.model.spatial_sketch_entities {
+        for entity in ctx.admit_iter(
+            &ir.model.spatial_sketch_entities,
+            "spatial sketch geometry identity scan",
+        )? {
             add(entity.id().as_str(), (&entity.sketch, &entity.geometry))?;
         }
         Ok(())
@@ -665,7 +667,7 @@ pub(super) fn check_sketches(
     }
 
     let parameter_values = BorrowedIdentities::build(ctx, |add| {
-        for parameter in &ir.model.parameters {
+        for parameter in ctx.admit_iter(&ir.model.parameters, "sketch parameter identity scan")? {
             add(parameter.id.as_str(), &parameter.value)?;
         }
         Ok(())
@@ -691,42 +693,47 @@ pub(super) fn check_sketches(
             SpatialConstraint::SplineGroup { entities: members }
             | SpatialConstraint::RepeatedLineLength {
                 entities: members, ..
-            } => entities.extend(members)?,
+            } => entities.extend(members, |member| member)?,
             SpatialConstraint::Coincident { first, second }
             | SpatialConstraint::Tangent { first, second }
             | SpatialConstraint::PointDistance { first, second, .. }
             | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
-                entities.extend([first, second])?;
+                entities.extend(&[first, second], |entity| *entity)?;
             }
             SpatialConstraint::PointLineDistance { point, line, .. } => {
-                entities.extend([point, line])?;
+                entities.extend(&[point, line], |entity| *entity)?;
             }
             SpatialConstraint::LineLength { entity, .. }
             | SpatialConstraint::ParallelToDirection { entity, .. } => entities.push(entity)?,
             SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => {
                 for pair in pairs {
                     ctx.charge_work(1, "spatial constraint pair scan")?;
-                    entities.extend([&pair.first, &pair.second])?;
+                    entities.extend(&[&pair.first, &pair.second], |entity| *entity)?;
                 }
             }
             SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
-                entities.extend(first.iter().chain(second))?;
+                entities.extend(first, |entity| entity)?;
+                entities.extend(second, |entity| entity)?;
             }
             SpatialConstraint::Offset {
                 sources, results, ..
-            } => entities.extend(sources.iter().chain(results))?,
+            } => {
+                entities.extend(sources, |entity| entity)?;
+                entities.extend(results, |entity| entity)?;
+            }
             SpatialConstraint::Symmetric {
                 first,
                 second,
                 axis,
-            } => entities.extend([first, second, axis])?,
-            SpatialConstraint::Midpoint { point, entity } => entities.extend([point, entity])?,
+            } => entities.extend(&[first, second, axis], |entity| *entity)?,
+            SpatialConstraint::Midpoint { point, entity } => {
+                entities.extend(&[point, entity], |entity| *entity)?;
+            }
             SpatialConstraint::PointOnSurface { point, surface } => {
-                entities.extend([point, surface])?;
+                entities.extend(&[point, surface], |entity| *entity)?;
             }
         }
-        for &entity in entities.iter() {
-            ctx.charge_work(1, "spatial constraint member scan")?;
+        for &entity in ctx.admit_iter(&*entities, "spatial constraint member scan")? {
             if !same_spatial_owner(
                 ctx,
                 spatial_geometry
@@ -1582,8 +1589,8 @@ pub(super) fn check_sketches(
                 format_args!("{message}"),
             )?;
         }
-        for locus in constraint_loci(ctx, constraint.definition.kind())? {
-            ctx.charge_work(1, "sketch constraint locus scan")?;
+        let loci = constraint_loci(ctx, constraint.definition.kind())?;
+        for locus in ctx.admit_iter(&*loci, "sketch constraint locus scan")? {
             let Some(entity_geometry) = geometry.get(ctx, locus_entity(locus).as_str())? else {
                 continue;
             };
@@ -1621,8 +1628,7 @@ pub(super) fn check_sketches(
             pairs, distance, ..
         } = constraint.definition.kind()
         {
-            for pair in pairs {
-                ctx.charge_work(1, "sketch constraint pair scan")?;
+            for pair in ctx.admit_iter(pairs, "sketch constraint pair scan")? {
                 let valid = match geometry
                     .get(ctx, pair.source.as_str())?
                     .zip(geometry.get(ctx, pair.result.as_str())?)
@@ -1949,7 +1955,7 @@ fn constraint_loci<'ctx, 'definition>(
 
     let mut loci = Scratch::new(ctx)?;
     match definition {
-        Constraint::CoincidentLoci { loci: members } => loci.extend(members)?,
+        Constraint::CoincidentLoci { loci: members } => loci.extend(members, |locus| locus)?,
         Constraint::Midpoint { point, .. }
         | Constraint::PointOnObject { point, .. }
         | Constraint::PointCoordinateValues { point, .. } => loci.push(point)?,
@@ -1959,9 +1965,14 @@ fn constraint_loci<'ctx, 'definition>(
         | Constraint::MidpointCoordinate { first, second, .. }
         | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
-        | Constraint::VerticalDistance { first, second, .. } => loci.extend([first, second])?,
+        | Constraint::VerticalDistance { first, second, .. } => {
+            loci.extend(&[first, second], |locus| *locus)?;
+        }
         Constraint::EqualDistance { first, second } => {
-            loci.extend([&first.first, &first.second, &second.first, &second.second])?;
+            loci.extend(
+                &[&first.first, &first.second, &second.first, &second.second],
+                |locus| *locus,
+            )?;
         }
         Constraint::RepeatedDistance { measurements, .. } => {
             for measurement in measurements {
@@ -1971,16 +1982,16 @@ fn constraint_loci<'ctx, 'definition>(
                     | SketchDistanceMeasurement::Horizontal { first, second }
                     | SketchDistanceMeasurement::Vertical { first, second } => (first, second),
                 };
-                loci.extend([first, second])?;
+                loci.extend(&[first, second], |locus| *locus)?;
             }
         }
         Constraint::SnellsLaw {
             incident,
             refracted,
             ..
-        } => loci.extend([incident, refracted])?,
+        } => loci.extend(&[incident, refracted], |locus| *locus)?,
         Constraint::Group { elements } | Constraint::Text { elements, .. } => {
-            loci.extend(elements)?;
+            loci.extend(elements, |locus| locus)?;
         }
         _ => {}
     }
