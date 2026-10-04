@@ -1233,7 +1233,8 @@ fn procedural_attachment_admits_owner_identity_bytes_before_comparison() {
             panic!("owner comparison must use the caller budget");
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.used, 2);
+        // One carrier scan completes before the owner identity byte charge refuses.
+        assert_eq!(limit.used, 1);
         assert_eq!(
             limit.operation,
             if surface {

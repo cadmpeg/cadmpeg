@@ -18,11 +18,7 @@ pub trait ModelAdmission {
     fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
 
     /// Compare identity text after admitting the comparison.
-    fn equal(&self, left: &str, right: &str, operation: &'static str) -> Result<bool, Self::Error> {
-        self.work(1, operation)?;
-        self.work(left.len().min(right.len()), operation)?;
-        Ok(left == right)
-    }
+    fn equal(&self, left: &str, right: &str, operation: &'static str) -> Result<bool, Self::Error>;
 
     /// Format a retained rejection message.
     fn text(
@@ -63,6 +59,9 @@ impl ModelAdmission for StandardAdmission {
     fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Infallible> {
         Ok(())
     }
+    fn equal(&self, left: &str, right: &str, _operation: &'static str) -> Result<bool, Infallible> {
+        Ok(left == right)
+    }
     fn text(
         &self,
         args: fmt::Arguments<'_>,
@@ -100,6 +99,9 @@ impl ModelAdmission for DecodeContext<'_> {
 
     fn work(&self, count: usize, operation: &'static str) -> Result<(), CodecError> {
         self.charge_work(u64_from_index(count), operation)
+    }
+    fn equal(&self, left: &str, right: &str, operation: &'static str) -> Result<bool, CodecError> {
+        DecodeContext::equal(self, left, right, operation)
     }
     fn text(
         &self,
