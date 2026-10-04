@@ -186,6 +186,55 @@ fn rational_arc_pcurve_retains_an_interior_knot_in_a_wide_parameter_range() {
 }
 
 #[test]
+fn rational_arc_span_generation_preserves_work_refusal() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x19,
+        object_id: 7,
+        payload: Vec::new(),
+    };
+    let inputs = crate::families::b5::graph::RationalArcPcurveInputs {
+        record: &record,
+        surface: 1,
+        center: [0.0, 0.0],
+        reference_x: [1.0, 0.0],
+        reference_y: [0.0, 1.0],
+        radius: 1.0,
+        parameter_range: [-f64::MAX, f64::MAX],
+        angle_range: [0.0, std::f64::consts::PI],
+    };
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::rational_arc_pcurve(ctx, inputs)
+    })
+        .expect("service work budget")
+        .expect("two-span rational arc");
+    assert_eq!(
+        service
+            .distinct_knots
+            .iter()
+            .map(|knot| knot.get())
+            .collect::<Vec<_>>(),
+        vec![-f64::MAX, 0.0, f64::MAX]
+    );
+
+    let operation = "catia_b5_rational_arc_span_generation";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = super::super::rational_arc_pcurve(ctx, inputs);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+    ));
+}
+
+#[test]
 fn sparse_reference_tokens_fill_selected_id_bytes() {
     let mut position = 0;
     assert_eq!(

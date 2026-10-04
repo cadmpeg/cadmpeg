@@ -1340,7 +1340,7 @@ fn parse_a8_curve(
         u64_from_index(payload_bytes.len()),
         "catia_a8_jet_preflight",
     )?;
-    let Some((count, knot_start, multiplicity_start, block_start, block_bytes)) = (|| {
+    let Some((count, knot_start, multiplicity_start, block_bytes)) = (|| {
         let mut at = payload.checked_add(1)?;
         let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
         let degree = compact_int(data, &mut at)?;
@@ -1360,28 +1360,32 @@ fn parse_a8_curve(
         }
         let knot_start = at;
         at = at.checked_add(count.checked_mul(8)?)?;
-        let multiplicity_start = at;
-        for index in 0..count {
-            let multiplicity = compact_int(data, &mut at)?;
-            if (index == 0 || index + 1 == count) && multiplicity != 6 {
-                return None;
-            }
-            if index != 0 && index + 1 != count && !matches!(multiplicity, 1 | 3) {
-                return None;
-            }
+        Some((count, knot_start, at, block_bytes))
+    })() else {
+        return Ok(None);
+    };
+    let multiplicity_indices = 0..count;
+    let mut at = multiplicity_start;
+    for index in ctx.admit_iter(
+        &multiplicity_indices,
+        "catia_a8_jet_multiplicity_preflight_scan",
+    )? {
+        let Some(multiplicity) = compact_int(data, &mut at) else {
+            return Ok(None);
+        };
+        if (index == 0 || index + 1 == count) && multiplicity != 6 {
+            return Ok(None);
         }
-        let block_start = at;
+        if index != 0 && index + 1 != count && !matches!(multiplicity, 1 | 3) {
+            return Ok(None);
+        }
+    }
+    let Some(block_start) = (|| {
         let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
         if blocks_end > end || end - blocks_end != 59 {
             return None;
         }
-        Some((
-            count,
-            knot_start,
-            multiplicity_start,
-            block_start,
-            block_bytes,
-        ))
+        Some(at)
     })() else {
         return Ok(None);
     };
@@ -1727,7 +1731,7 @@ fn parse_object_stream_pcurve(
         u64_from_index(payload_bytes.len()),
         "catia_object_stream_pcurve_preflight",
     )?;
-    let Some(parsed) = (|| {
+    let Some((support_id, count, knot_start, array_bytes, mut at)) = (|| {
         let mut at = payload + 1;
         let support_id = object_stream_reference(data, &mut at)?;
         let degree = compact_int(data, &mut at)?;
@@ -1749,15 +1753,26 @@ fn parse_object_stream_pcurve(
         }
         let knot_start = at;
         at = at.checked_add(knot_bytes)?;
-        for index in 0..count {
-            let multiplicity = compact_int(data, &mut at)?;
-            if (index == 0 || index + 1 == count) && multiplicity != 6 {
-                return None;
-            }
-            if index != 0 && index + 1 != count && multiplicity != 3 {
-                return None;
-            }
+        Some((support_id, count, knot_start, array_bytes, at))
+    })() else {
+        return Ok(None);
+    };
+    let multiplicity_indices = 0..count;
+    for index in ctx.admit_iter(
+        &multiplicity_indices,
+        "catia_object_stream_pcurve_multiplicity_preflight_scan",
+    )? {
+        let Some(multiplicity) = compact_int(data, &mut at) else {
+            return Ok(None);
+        };
+        if (index == 0 || index + 1 == count) && multiplicity != 6 {
+            return Ok(None);
         }
+        if index != 0 && index + 1 != count && multiplicity != 3 {
+            return Ok(None);
+        }
+    }
+    let Some((mode, array_starts, range)) = (|| {
         if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
             return None;
         }
@@ -1767,6 +1782,7 @@ fn parse_object_stream_pcurve(
             return None;
         }
         let u = at;
+        let knot_bytes = count.checked_mul(8)?;
         at = at.checked_add(knot_bytes)?;
         let v = at;
         at = at.checked_add(knot_bytes)?;
@@ -1787,17 +1803,11 @@ fn parse_object_stream_pcurve(
         if data.get(at) != Some(&0x07) || mode % 4 != 1 || range[0] >= range[1] || end != at + 1 {
             return None;
         }
-        Some((
-            support_id,
-            mode,
-            count,
-            knot_start,
-            [u, v, du, dv, ddu, ddv],
-            range,
-        ))
+        Some((mode, [u, v, du, dv, ddu, ddv], range))
     })() else {
         return Ok(None);
     };
+    let parsed = (support_id, mode, count, knot_start, array_starts, range);
     #[cfg(test)]
     let (support_id, mode, count, knot_start, array_starts, range) = parsed;
     #[cfg(not(test))]
@@ -2353,12 +2363,13 @@ fn grid_rows<T>(
         return Err(CodecError::malformed("zero NURBS grid row width"));
     }
     let rows = values.len() / row_len;
-    ctx.charge_work(u64_from_index(rows), operation)?;
+    let row_indices = 0..rows;
+    let admitted_rows = ctx.admit_iter(&row_indices, operation)?;
     ctx.charge_work(u64_from_index(values.len()), operation)?;
     let mut result = Vec::new();
     ctx.reserve_vec(&mut result, rows, operation)?;
     let mut values = values.into_iter();
-    for _ in 0..rows {
+    for _ in admitted_rows {
         let mut row = Vec::new();
         ctx.reserve_vec(&mut row, row_len, operation)?;
         row.extend(values.by_ref().take(row_len));
@@ -2643,7 +2654,11 @@ fn scan_a8_lane(
     *at = distinct_end;
     let multiplicity_start = *at;
     let mut total = 0u32;
-    for _ in 0..count {
+    let multiplicity_indices = 0..count;
+    for _ in ctx.admit_iter(
+        &multiplicity_indices,
+        "catia_a8_surface_multiplicity_preflight_scan",
+    )? {
         let Some(multiplicity) = compact_int(data, at) else {
             return Ok(None);
         };
@@ -3195,8 +3210,11 @@ fn a5_weights(
             weights.push(weight);
         }
         *at = end_seed;
-        ctx.charge_work(u64_from_index(cols / 2), "catia_a5_weight_mirror_copy")?;
-        for offset in (0..cols / 2).rev() {
+        let mirror_indices = 0..cols / 2;
+        for offset in ctx
+            .admit_iter(&mirror_indices, "catia_a5_weight_mirror_copy")?
+            .rev()
+        {
             weights.push(weights[row_start + offset]);
         }
         if weights.len() != row_start + cols {

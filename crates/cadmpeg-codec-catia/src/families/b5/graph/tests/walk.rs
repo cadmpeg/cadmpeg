@@ -284,6 +284,32 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
 }
 
 #[test]
+fn a8_class21_multiplicity_scan_preserves_work_refusal() {
+    let payload = a8_class21_test_payload();
+    let service = crate::test_support::with_service_context(|ctx| {
+        parse_a8_class21_pcurve(ctx, 7, &payload)
+    })
+    .expect("service work budget")
+    .expect("complete class-21 jet");
+    assert_eq!(service.multiplicities, [6, 6]);
+
+    let operation = "catia_b5_a8_class21_multiplicity_scan";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = parse_a8_class21_pcurve(ctx, 7, &payload);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+    ));
+}
+
+#[test]
 fn a8_class21_jet_refuses_before_each_admitted_lane() {
     let payload = a8_class21_test_payload();
     let limited = crate::test_support::with_work_limit(0, |ctx| {
