@@ -791,3 +791,26 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         ))
     );
 }
+
+#[test]
+fn parameter_display_kind_queries_refuse_work_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for (kind, operation) in [("Diameter Dimension", "f3d parameter diameter display kind"),
+        ("Radius Dimension", "f3d parameter radius display kind")] {
+        let mut parameter = parse_design_parameter_record(&parameter_record(Some(44), "10 mm", kind,
+            Some("mm"), "Size", 1.0)).unwrap();
+        parameter.id = "f3d:native:parameter#size".into();
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let timelines = crate::design::test_support::synthetic_feature_timelines(&[]);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(&ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: std::slice::from_ref(&parameter), timelines: &timelines,
+                    ..Default::default()
+                })
+        });
+    }
+}

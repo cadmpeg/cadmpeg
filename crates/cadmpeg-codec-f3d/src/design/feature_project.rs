@@ -1617,9 +1617,9 @@ face_operands,
                     parameter.expression(),
                     "f3d projected parameter expression",
                 )?,
-                display: if parameter.source_kind().contains("Diameter Dimension") {
+                display: if ctx.contains_text(parameter.source_kind(), "Diameter Dimension", "f3d parameter diameter display kind")? {
                     Some(DimensionDisplay::Diameter)
-                } else if parameter.source_kind().contains("Radius Dimension") {
+                } else if ctx.contains_text(parameter.source_kind(), "Radius Dimension", "f3d parameter radius display kind")? {
                     Some(DimensionDisplay::Radius)
                 } else {
                     None

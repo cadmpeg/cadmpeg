@@ -150,7 +150,7 @@ fn binder_spatial_member() -> DesignExtrudeSelectionMember {
     .unwrap()
 }
 
-fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bool) {
+fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, dimension: cadmpeg_core::decode::ResourceDimension) {
     let scope = binder_scope();
     let group = binder_group();
     let sketch_id = SketchId::mint("f3d:model:sketch#1").unwrap();
@@ -193,19 +193,16 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
     let scope_histories = HashMap::new();
     {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            } else {
-                cadmpeg_core::decode::ResourceDimension::CollectionItems
-            },
+            dimension,
             operation,
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
+                match dimension {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    other => panic!("unsupported binder test dimension: {other:?}"),
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut feature = binder_feature(&scope, profile.clone());
@@ -243,56 +240,64 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
+            if failure.operation == operation && failure.dimension == dimension));
     }
 }
 
 #[test]
 fn extrude_matching_group_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d extrude matching selection group", 0, false);
+    assert_extrude_binder_refusal("f3d extrude matching selection group", 0, cadmpeg_core::decode::ResourceDimension::CollectionItems);
 }
 
 #[test]
 fn extrude_resolved_selection_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d extrude resolved selection", 1, false);
+    assert_extrude_binder_refusal("f3d extrude resolved selection", 1, cadmpeg_core::decode::ResourceDimension::CollectionItems);
 }
 
 #[test]
 fn extrude_fallback_group_id_refuses_retained_limit() {
-    assert_extrude_binder_refusal("f3d extrude fallback group id", 1, true);
+    assert_extrude_binder_refusal("f3d extrude fallback group id", 1, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
 }
 
 #[test]
 fn extrude_fallback_group_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d extrude fallback group", 1, false);
+    assert_extrude_binder_refusal("f3d extrude fallback group", 1, cadmpeg_core::decode::ResourceDimension::CollectionItems);
 }
 
 #[test]
 fn extrude_unresolved_selection_id_refuses_retained_limit() {
-    assert_extrude_binder_refusal("f3d extrude unresolved selection id", 3, true);
+    assert_extrude_binder_refusal("f3d extrude unresolved selection id", 3, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
 }
 
 #[test]
 fn spatial_extrude_selection_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d spatial profile selection", 2, false);
+    assert_extrude_binder_refusal("f3d spatial profile selection", 2, cadmpeg_core::decode::ResourceDimension::CollectionItems);
 }
 
 #[test]
 fn spatial_extrude_group_id_refuses_retained_limit() {
-    assert_extrude_binder_refusal("f3d spatial extrude selection group id", 2, true);
+    assert_extrude_binder_refusal("f3d spatial extrude selection group id", 2, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
 }
 
 #[test]
 fn spatial_extrude_group_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d spatial extrude selection group", 2, false);
+    assert_extrude_binder_refusal("f3d spatial extrude selection group", 2, cadmpeg_core::decode::ResourceDimension::CollectionItems);
 }
 
 #[test]
 fn spatial_extrude_sketch_id_refuses_retained_limit() {
-    assert_extrude_binder_refusal("f3d profile spatial sketch id", 2, true);
+    assert_extrude_binder_refusal("f3d profile spatial sketch id", 2, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
 }
 
 #[test]
 fn spatial_extrude_profile_index_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d spatial extrude profile index", 4, false);
+    assert_extrude_binder_refusal("f3d spatial extrude profile index", 4, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn spatial_profile_identity_queries_refuse_work_limits() {
+    for operation in ["f3d spatial profile sketch identity split", "f3d spatial profile sketch search",
+        "f3d spatial profile namespace prefix", "f3d spatial profile identity suffix"] {
+        assert_extrude_binder_refusal(operation, 2, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    }
 }

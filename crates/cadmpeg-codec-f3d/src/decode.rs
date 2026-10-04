@@ -282,9 +282,10 @@ fn report_unresolved_configuration_rules(
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
     let count = crate::design::configurations::unresolved_configuration_rule_count(
+        ctx,
         &native.design_configurations,
         &ir.model.configurations,
-    );
+    )?;
     if count != 0 {
         push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationRuleUnbound, format_args!(
             "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."

@@ -416,8 +416,13 @@ pub(crate) fn bind_configuration_parameter_overrides(
             if refusal.is_some() {
                 return true;
             }
-            let Some(name) = key.as_str().strip_prefix("parameter:") else {
-                return true;
+            let name = match ctx.strip_prefix(key.as_str(), "parameter:", "f3d configuration parameter property prefix") {
+                Ok(Some(name)) => name,
+                Ok(None) => return true,
+                Err(error) => {
+                    refusal = Some(error);
+                    return true;
+                }
             };
             let mut matches = parameters.iter().filter(|parameter| parameter.name == name);
             let Some(parameter) = matches.next() else {
@@ -483,8 +488,13 @@ pub(crate) fn bind_configuration_suppressed_features(
             if refusal.is_some() {
                 return true;
             }
-            let Some(name) = key.as_str().strip_prefix("suppressed:") else {
-                return true;
+            let name = match ctx.strip_prefix(key.as_str(), "suppressed:", "f3d configuration suppressed property prefix") {
+                Ok(Some(name)) => name,
+                Ok(None) => return true,
+                Err(error) => {
+                    refusal = Some(error);
+                    return true;
+                }
             };
             let mut matches = features
                 .iter()
@@ -562,20 +572,33 @@ pub(crate) fn unresolved_configuration_suppressed_feature_count(
 }
 
 pub(crate) fn unresolved_configuration_rule_count(
+    ctx: &DecodeContext<'_>,
     native: &[DesignConfiguration],
     projected: &[cadmpeg_ir::features::DesignConfiguration],
-) -> usize {
-    native
-        .iter()
-        .filter(|rule| rule.rule().is_some_and(|payload| !payload.is_empty()))
-        .filter(|rule| {
-            !projected.iter().any(|configuration| {
-                configuration.properties.keys().any(|key| {
-                    key.as_str().strip_prefix("activation_rule:") == Some(rule.entry_name())
-                })
-            })
-        })
-        .count()
+) -> Result<usize, CodecError> {
+    let mut count = 0usize;
+    for rule in ctx.admit_iter(native, "f3d unresolved configuration rules")? {
+        if !rule.rule().is_some_and(|payload| !payload.is_empty()) {
+            continue;
+        }
+        let bound = ctx.any_by(projected, |configuration| {
+            for (key, _) in ctx.admit_iter(&configuration.properties,
+                "f3d configuration activation properties")? {
+                if let Some(entry) = ctx.strip_prefix(key.as_str(), "activation_rule:",
+                    "f3d configuration activation property prefix")? {
+                    if ctx.equal(entry, rule.entry_name(), "f3d configuration rule entry")? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        }, "f3d configuration rule targets")?;
+        if !bound {
+            count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(
+                "f3d unresolved configuration rule count", u64::MAX, u64::MAX))?;
+        }
+    }
+    Ok(count)
 }
 
 pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguration]) -> usize {
@@ -603,6 +626,33 @@ mod tests {
         FeatureOperation, ParameterId,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn configuration_property_prefix_refusals_propagate() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for (prefix, operation) in [("parameter:", "f3d configuration parameter property prefix"),
+            ("suppressed:", "f3d configuration suppressed property prefix")] {
+            let table = crate::test_support::with_decode_context(|ctx| {
+                DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(),
+                    DesignConfigurationKind::Table, vec!["wide".into()],
+                    serde_json::json!({"configurations": {"wide": {}}}).as_object().unwrap().clone())
+            }).unwrap();
+            let mut projected = crate::test_support::with_decode_context(|ctx|
+                project_configurations(ctx, &[table])).unwrap();
+            projected[0].properties.insert(format!("{prefix}width").try_into().unwrap(), "25 mm".into());
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if prefix == "parameter:" {
+                bind_configuration_parameter_overrides(&ctx, &mut projected, &[])
+            } else {
+                bind_configuration_suppressed_features(&ctx, &mut projected, &[])
+            };
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::WorkUnits && failure.operation == operation));
+        }
+    }
 
     #[test]
     fn configuration_variants_follow_serialized_member_order() {
@@ -729,7 +779,7 @@ mod tests {
             let projected =
                 project_configurations(decode_ctx, &native).expect("empty rule projection");
             assert!(projected.is_empty());
-            assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
+            assert_eq!(unresolved_configuration_rule_count(decode_ctx, &native, &projected).unwrap(), 1);
         });
     }
 
@@ -771,7 +821,7 @@ mod tests {
                 projected[0].properties["activation_rule:rule.dsgcfgrule"],
                 "width > 20 mm"
             );
-            assert_eq!(unresolved_configuration_rule_count(&native, &projected), 0);
+            assert_eq!(unresolved_configuration_rule_count(decode_ctx, &native, &projected).unwrap(), 0);
 
             let ambiguous = [
                 table("first.dsgcfg", "wide"),

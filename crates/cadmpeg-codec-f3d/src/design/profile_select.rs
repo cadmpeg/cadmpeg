@@ -528,18 +528,29 @@ pub(crate) fn bind_extrude_profile_selections(
                         if matching_groups.is_empty() {
                             break 'feature_edit;
                         }
-                        let spatial_id_parts = sketch_id.as_str().split_once("f3d:model:sketch#");
-                        if let Some(spatial_sketch) =
-                            resolution.spatial_sketches.iter().find(|candidate| {
+                        let spatial_id_parts = resolution.ctx.split_once(sketch_id.as_str(),
+                            "f3d:model:sketch#", "f3d spatial profile sketch identity split")?;
+                        if let Some(spatial_sketch) = resolution.ctx.find_by(
+                            resolution.spatial_sketches, |candidate| {
                                 match spatial_id_parts {
                                     Some((before, after)) => {
-                                        candidate.id.as_str().strip_prefix(before).and_then(
-                                            |rest| rest.strip_prefix("f3d:model:spatial-sketch#"),
-                                        ) == Some(after)
+                                        let Some(rest) = resolution.ctx.strip_prefix(
+                                            candidate.id.as_str(), before,
+                                            "f3d spatial profile identity prefix")? else {
+                                            return Ok(false);
+                                        };
+                                        match resolution.ctx.strip_prefix(rest,
+                                            "f3d:model:spatial-sketch#",
+                                            "f3d spatial profile namespace prefix")? {
+                                            Some(suffix) => resolution.ctx.equal(suffix, after,
+                                                "f3d spatial profile identity suffix"),
+                                            None => Ok(false),
+                                        }
                                     }
-                                    None => candidate.id.as_str() == sketch_id.as_str(),
+                                    None => resolution.ctx.equal(candidate.id.as_str(),
+                                        sketch_id.as_str(), "f3d spatial profile identity"),
                                 }
-                            })
+                            }, "f3d spatial profile sketch search")?
                         {
                             let mut selections = Vec::new();
                             for group in &matching_groups {
