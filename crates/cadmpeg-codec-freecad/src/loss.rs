@@ -45,6 +45,8 @@ pub(crate) enum FreecadLossCode {
     SourceGuiPropertyKeyBlank,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
+    /// Producer version metadata used an alias or conflicting declarations.
+    ProgramVersionNoncanonical,
 }
 
 impl FreecadLossCode {
@@ -61,6 +63,7 @@ impl FreecadLossCode {
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
         Self::PcurveNotTransferred,
+        Self::ProgramVersionNoncanonical,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -81,6 +84,7 @@ impl FreecadLossCode {
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
+            Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
         }
     }
 
@@ -97,7 +101,8 @@ impl FreecadLossCode {
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
-            | Self::PcurveNotTransferred => Severity::Warning,
+            | Self::PcurveNotTransferred
+            | Self::ProgramVersionNoncanonical => Severity::Warning,
         }
     }
 
@@ -112,6 +117,7 @@ impl FreecadLossCode {
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            Self::ProgramVersionNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -162,6 +168,7 @@ mod tests {
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",
                 "pcurve.not-transferred",
+                "metadata.program-version-noncanonical",
             ]
         );
     }

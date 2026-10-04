@@ -75,6 +75,8 @@ pub(crate) fn has_document_markers(
 
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
+    /// Recoverable container metadata diagnostics.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
     pub(crate) entries: Vec<ContainerEntry>,
     /// Persistence metadata.
@@ -113,7 +115,8 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         ctx.charge_entities(object_count, "admit FCStd document objects")?;
         ctx.charge_collection_items(node_count, "FCStd Document.xml node tree")?;
     }
-    let (document, schema_version) = parse_document(ctx, document_bytes)?;
+    let mut losses = Vec::new();
+    let (document, schema_version) = parse_document(ctx, document_bytes, &mut losses)?;
     let mut data = BTreeMap::new();
     for file in archive.entries() {
         let name = ctx.copy_retained_text(&file.name, "FCStd archive entry name")?;
@@ -142,6 +145,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         });
     }
     Ok(Scan {
+        losses,
         entries: archive.container_entries(ctx, classify)?,
         document,
         schema_version,
@@ -291,9 +295,18 @@ pub(crate) fn summarize(
     scan: &Scan,
 ) -> Result<ContainerSummary, CodecError> {
     let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
-    let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
-        .into_iter()
-        .collect();
+    let mut losses = Vec::new();
+    for loss in scan
+        .losses
+        .iter()
+        .chain(crate::dialect::FcstdDialect::dialect_loss(&matched).iter())
+    {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(loss.message.len()),
+            "FCStd summary loss message",
+        )?;
+        ctx.push_vec(&mut losses, loss.clone(), "FCStd summary losses")?;
+    }
     let mut entries = ctx.collection_vec(scan.entries.len(), "FCStd summary entries")?;
     for entry in &scan.entries {
         let mut attributes = BTreeMap::new();
@@ -524,6 +537,7 @@ fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
 pub(crate) fn parse_document(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(DocumentFacts, String), CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
@@ -592,10 +606,37 @@ pub(crate) fn parse_document(
     }
     let mut domains = ctx.collection_vec(domain_set.len(), "FCStd document domain list")?;
     domains.extend(domain_set);
+    let program_version = match (
+        root.attribute("ProgramVersion"),
+        root.attribute("programVersion"),
+    ) {
+        (canonical, None) => canonical
+            .map(|value| ctx.copy_retained_text(value, "FCStd program version"))
+            .transpose()?,
+        (canonical, Some(alias)) => {
+            let conflict = canonical.is_some_and(|value| value != alias);
+            let message = if conflict {
+                "Document has conflicting ProgramVersion and programVersion metadata; program version omitted"
+            } else {
+                "Document uses programVersion metadata; read as ProgramVersion"
+            };
+            let message = ctx.copy_retained_text(message, "FCStd program version diagnostic")?;
+            ctx.push_vec(
+                losses,
+                crate::loss::FreecadLossCode::ProgramVersionNoncanonical.note(message),
+                "FCStd container losses",
+            )?;
+            if conflict {
+                None
+            } else {
+                Some(ctx.copy_retained_text(alias, "FCStd program version")?)
+            }
+        }
+    };
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         file_version,
-        program_version: canonical_attribute(ctx, root, "ProgramVersion", "programVersion")?,
+        program_version,
         root_name: root.tag_name().name().into(),
         object_count,
         domains,
