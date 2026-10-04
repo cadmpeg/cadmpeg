@@ -269,6 +269,64 @@ mod tests {
     }
 
     #[test]
+    fn part_product_transfer_preserves_typed_product_and_body_ids() {
+        let body_ids = [
+            cadmpeg_ir::ids::BodyId::mint("creo:test:body#1")
+                .expect("valid ASCII body identity"),
+            cadmpeg_ir::ids::BodyId::mint("creo:test:body#support-café")
+                .expect("valid Unicode body identity"),
+        ];
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        for id in &body_ids {
+            ir.model.bodies.push(cadmpeg_ir::topology::Body {
+                id: id.clone(),
+                kind: cadmpeg_ir::topology::BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+        }
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_part_product(
+                ctx,
+                &named_scan(),
+                &mut ir,
+                &mut annotations,
+                &source_carriers,
+            )
+        })
+        .expect("service part product transfer");
+
+        assert!(transferred);
+        assert_eq!(ir.model.product_definitions.len(), 1);
+        let product = &ir.model.product_definitions[0];
+        assert_eq!(product.id.as_str(), "creo:model:product_definition#root");
+        assert_eq!(
+            product
+                .bodies
+                .iter()
+                .map(cadmpeg_ir::ids::BodyId::as_str)
+                .collect::<Vec<_>>(),
+            ["creo:test:body#1", "creo:test:body#support-café"]
+        );
+        assert_eq!(ir.model.occurrences.len(), 1);
+        assert_eq!(
+            ir.model.occurrences[0].id.as_str(),
+            "creo:model:occurrence#root"
+        );
+        assert!(matches!(
+            &ir.model.occurrences[0].prototype,
+            cadmpeg_ir::products::PrototypeReference::Local { definition }
+                if definition.as_str() == product.id.as_str()
+        ));
+    }
+
+    #[test]
     fn part_product_identity_retention_refuses_before_occurrence_transfer() {
         let product_id_len = cadmpeg_core::decode::u64_from_index(
             cadmpeg_ir::ids::ProductDefinitionId::compose(

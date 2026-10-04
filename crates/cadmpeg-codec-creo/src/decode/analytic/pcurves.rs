@@ -1937,7 +1937,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let domain = entry.get_mut();
                     if agree(points[0], points[1]) {
-                        domain.retain(|candidate| agree(*candidate, points[0]));
+                        ctx.retain_vec(
+                            domain,
+                            |candidate| Ok(agree(*candidate, points[0])),
+                            "creo same-vertex pcurve domain retention",
+                        )?;
                     } else {
                         domain.clear();
                     }
@@ -3039,6 +3043,52 @@ mod tests {
             },
         );
         assert_eq!(transferred.len(), 1);
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_selects_minimum_source_offset() {
+        let (mut scan, mut ir) = one_plane_pcurve_fixture();
+        scan.curves.pcurves[0].offset = 41;
+        let mut later_minimum = scan.curves.pcurves[0].clone();
+        later_minimum.offset = 17;
+        scan.curves.pcurves.push(later_minimum);
+
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut annotations,
+                &mut source_carriers,
+            )
+        })
+        .expect("service analytic pcurve transfer");
+
+        assert_eq!(
+            transferred
+                .iter()
+                .map(CurveId::as_str)
+                .collect::<Vec<_>>(),
+            ["creo:visibgeom:curve#7"]
+        );
+        assert_eq!(ir.model.curves.len(), 1);
+        let curve = &ir.model.curves[0];
+        assert_eq!(curve.id.as_str(), "creo:visibgeom:curve#7");
+        assert_eq!(
+            curve
+                .source_object
+                .as_ref()
+                .expect("source object association")
+                .object_id
+                .as_str(),
+            "VisibGeom:7"
+        );
+        let provenance = &annotations.annotations().provenance["creo:visibgeom:curve#7"];
+        assert_eq!(provenance.stream(), "creo:VisibGeom");
+        assert_eq!(provenance.offset, 17);
+        assert_eq!(provenance.tag.as_deref(), Some("analytic_pcurve_carrier"));
     }
 
     #[test]
