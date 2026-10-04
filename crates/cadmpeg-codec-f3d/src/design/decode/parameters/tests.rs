@@ -26,6 +26,24 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+#[test]
+fn design_parameter_class_tag_refuses_retained_bytes() {
+    let bytes = parameter_record(None, "60 mm", "User Parameter", Some("mm"), "Width", 6.0);
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "copy F3D Design parameter class tag",
+        0,
+        |ctx| super::parse_design_parameter(ctx, &bytes).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "copy F3D Design parameter class tag"
+                && limit.additional == 3
+    ));
+}
+
 fn compact_owned_parameter_record(
     owner_record_index: u32,
     source_ordinal: u32,

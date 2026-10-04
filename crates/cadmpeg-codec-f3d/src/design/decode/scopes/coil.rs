@@ -130,8 +130,16 @@ pub(super) fn exact_coil_placement(
         {
             return None;
         }
-        let transform_paired_class_tag =
-            exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
+        let transform_paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            transform_paired,
+            transform_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let frame_length = transform_paired.checked_sub(transform_start)?;
         let explicit_transform = match frame_length {
             coil_legacy_identity::LEN
@@ -490,7 +498,13 @@ fn exact_coil_face_selection(
         let header = DesignRecordHeader {
             id,
             byte_offset: u64::try_from(selection_start).ok()?,
-            class_tag: selection_class_tag.to_owned().try_into().ok()?,
+            class_tag: match ctx.copy_retained_text(
+                selection_class_tag,
+                "copy F3D Coil face-selection class tag",
+            ) {
+                Ok(class_tag) => class_tag.try_into().ok()?,
+                Err(error) => return Some(Err(error)),
+            },
             record_index: selection_record_index,
         };
         let face = parse_face_operand(
@@ -525,6 +539,19 @@ fn exact_coil_face_selection(
             Ok(id) => id,
             Err(error) => return Some(Err(error)),
         };
+        let design = match recipe.design.as_ref() {
+            Some(design) => Some(crate::records::recipes::ConstructionRecipeDesign {
+                id: match ctx.copy_retained_text(
+                    &design.id.value,
+                    "copy F3D Coil recipe design ID",
+                ) {
+                    Ok(id) => id,
+                    Err(error) => return Some(Err(error)),
+                },
+                selector: design.selector,
+            }),
+            None => None,
+        };
         Some(Ok(DesignCoilSelection::FaceRecipe {
             asset_id: prefix.asset_id.try_into().ok()?,
             context_id: prefix.context_id.try_into().ok()?,
@@ -532,12 +559,7 @@ fn exact_coil_face_selection(
             recipe_record_byte_offset: face.recipe_record_byte_offset(),
             recipe_id,
             recipe_kind: scope::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
-            design: recipe.design.as_ref().map(|design| {
-                crate::records::recipes::ConstructionRecipeDesign {
-                    id: design.id.value.clone(),
-                    selector: design.selector,
-                }
-            }),
+            design,
         }))
     })()
     .transpose()

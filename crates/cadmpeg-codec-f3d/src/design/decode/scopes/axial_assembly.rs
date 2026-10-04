@@ -320,11 +320,27 @@ fn exact_assembly_axial_component_operand_at(
     start: usize,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
     (|| {
-        let construction_class_tag =
-            exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
+        let construction_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            start,
+            frame.reference_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
-        let construction_paired_class_tag =
-            exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
+        let construction_paired_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            paired_at,
+            frame.reference_record_index,
+        ) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
         if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
             return None;
@@ -388,20 +404,30 @@ fn exact_assembly_axial_component_operand_at(
             }
         }
         let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
-        let first_axis = exact_paired_indexed_record_between(
+        let first_axis = match exact_paired_indexed_record_between(
+            ctx,
             bytes,
             records,
             first_axis_record_index,
             search_start,
             start,
-        )?;
-        let second_axis = exact_paired_indexed_record_between(
+        ) {
+            Ok(Some(pair)) => pair,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let second_axis = match exact_paired_indexed_record_between(
+            ctx,
             bytes,
             records,
             second_axis_record_index,
             search_start,
             start,
-        )?;
+        ) {
+            Ok(Some(pair)) => pair,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if first_axis.byte_offset >= second_axis.byte_offset {
             return None;
         }
@@ -464,10 +490,16 @@ fn exact_assembly_axial_selector(
         ) else {
             return None;
         };
-        let selector_class_tag =
-            exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
-        let selector_paired_class_tag =
-            exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
+        let selector_class_tag = match exact_indexed_header_at(ctx, bytes, selector_at, selector_record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let selector_paired_class_tag = match exact_indexed_header_at(ctx, bytes, selector_paired_at, selector_record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if bytes.get(
             selector_at.checked_add(axial_selector::ZERO_RUN_11)?
                 ..selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?,
@@ -536,7 +568,11 @@ fn exact_assembly_axial_selector(
         let (Some(role_at), None) = (role_offsets.next(), role_offsets.next()) else {
             return None;
         };
-        let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
+        let role_class_tag = match exact_indexed_header_at(ctx, bytes, role_at, role_record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if bytes.get(
             role_at.checked_add(axial_role::ZERO_RUN_10)?
                 ..role_at.checked_add(axial_role::CONSTANT_ONE)?,
@@ -595,12 +631,13 @@ fn exact_assembly_axial_selector(
 }
 
 fn exact_paired_indexed_record_between(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     start: usize,
     end: usize,
-) -> Option<ExactIndexedRecordPair> {
+) -> Result<Option<ExactIndexedRecordPair>, CodecError> {
     let mut offsets = records
         .offsets(record_index)
         .iter()
@@ -609,17 +646,23 @@ fn exact_paired_indexed_record_between(
     let (Some(primary_at), Some(paired_at), None) =
         (offsets.next(), offsets.next(), offsets.next())
     else {
-        return None;
+        return Ok(None);
     };
-    let class_tag = exact_indexed_header_at(bytes, primary_at, record_index)?;
-    let paired_class_tag = exact_indexed_header_at(bytes, paired_at, record_index)?;
-    Some(ExactIndexedRecordPair {
+    let class_tag = match exact_indexed_header_at(ctx, bytes, primary_at, record_index)? {
+        Some(class_tag) => class_tag,
+        None => return Ok(None),
+    };
+    let paired_class_tag = match exact_indexed_header_at(ctx, bytes, paired_at, record_index)? {
+        Some(class_tag) => class_tag,
+        None => return Ok(None),
+    };
+    Ok(Some(ExactIndexedRecordPair {
         record_index,
         class_tag,
         byte_offset: primary_at,
         paired_class_tag,
         paired_byte_offset: paired_at,
-    })
+    }))
 }
 
 fn exact_single_joint_origin_frame(

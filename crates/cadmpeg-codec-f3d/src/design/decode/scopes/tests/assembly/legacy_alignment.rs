@@ -242,6 +242,24 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 1_006,
             ),
         ];
+        if class_tag == "364" {
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let refusal = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "copy F3D As-built frame class tag",
+                0,
+                |ctx| {
+                    exact_assembly_alignment(ctx, &bytes, &records, &scope, &owners).map(|_| ())
+                },
+            );
+            assert!(matches!(
+                refusal,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && limit.operation == "copy F3D As-built frame class tag"
+                        && limit.additional == 3
+            ));
+        }
         let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
             exact_assembly_alignment(
                 ctx,

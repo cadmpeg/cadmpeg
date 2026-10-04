@@ -1475,6 +1475,31 @@ fn extrude_selection_group_member_copies_refuse_collection_limits() {
 }
 
 #[test]
+fn extrude_selection_group_class_tag_copies_refuse_retained_bytes() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let (bytes, scope, record) = counted_extrude_selection_fixture();
+    for operation in [
+        "copy F3D extrude selection paired class tag",
+        "copy F3D extrude selection class tag",
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            0,
+            |ctx| parse_extrude_selection_group(ctx, &bytes, &scope, 0, &record).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+                    && limit.additional == 3
+        ));
+    }
+}
+
+#[test]
 fn extrude_selection_group_output_refuses_collection_and_id_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

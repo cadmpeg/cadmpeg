@@ -248,10 +248,12 @@ pub(in crate::design) fn parse_design_parameter(
         if !raw_tag.iter().all(u8::is_ascii_graphic) {
             return None;
         }
-        let class_tag = crate::records::references::DesignClassTag::try_from(
-            std::str::from_utf8(raw_tag).ok()?.to_owned(),
-        )
-        .ok()?;
+        let raw_tag = std::str::from_utf8(raw_tag).ok()?;
+        let class_tag = match ctx.copy_retained_text(raw_tag, "copy F3D Design parameter class tag") {
+            Ok(class_tag) => class_tag,
+            Err(error) => return Some(Err(error)),
+        };
+        let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
         let record_index = View::u32_le_at(payload, 7)?;
         if class_tag.as_str() == "287" {
             return match parse_legacy_287_design_parameter(ctx, payload, class_tag, record_index) {

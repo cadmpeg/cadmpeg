@@ -2126,8 +2126,10 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
-                continue;
+            let carrier = match parse_loft_legacy_body_carrier(ctx, bytes, scope, header) {
+                Ok(Some(carrier)) => carrier,
+                Ok(None) => continue,
+                Err(error) => return Err(error),
             };
             push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
         }
@@ -2163,22 +2165,33 @@ fn push_loft_legacy_body_carrier(
 
 /// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
 fn parse_loft_legacy_body_carrier(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
-) -> Option<DesignLoftLegacyBodyCarrier> {
+) -> Result<Option<DesignLoftLegacyBodyCarrier>, CodecError> {
+    let parsed = (|| {
     let start = usize::try_from(header.byte_offset).ok()?;
     let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
         "322" => {
             let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
             let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
             let pair_matches = |at: usize| {
-                indexed_record_header_at(bytes, at).is_some_and(|paired| {
-                    paired.record_index == header.record_index && paired.class_tag.as_str() == "262"
+                indexed_record_header_at(ctx, bytes, at).map(|paired| {
+                    paired.is_some_and(|paired| {
+                        paired.record_index == header.record_index
+                            && paired.class_tag.as_str() == "262"
+                    })
                 })
             };
-            let short_pair_matches = pair_matches(short_paired_offset);
-            let long_pair_matches = pair_matches(long_paired_offset);
+            let short_pair_matches = match pair_matches(short_paired_offset) {
+                Ok(matches) => matches,
+                Err(error) => return Some(Err(error)),
+            };
+            let long_pair_matches = match pair_matches(long_paired_offset) {
+                Ok(matches) => matches,
+                Err(error) => return Some(Err(error)),
+            };
             if short_pair_matches {
                 ("262", legacy_loft_322::LEN, false)
             } else if long_pair_matches {
@@ -2190,8 +2203,12 @@ fn parse_loft_legacy_body_carrier(
         "411" => ("266", legacy_loft_411::LEN, true),
         _ => return None,
     };
-    if indexed_record_header_at(bytes, start)
-        .is_none_or(|parsed| parsed.record_index != header.record_index)
+    let parsed_header = match indexed_record_header_at(ctx, bytes, start) {
+        Ok(Some(parsed)) => parsed,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    if parsed_header.record_index != header.record_index
         || bytes
             .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
             != [0; 10]
@@ -2251,10 +2268,15 @@ fn parse_loft_legacy_body_carrier(
         None
     };
     let paired_byte_offset = start.checked_add(frame_length)?;
-    if cursor != paired_byte_offset
-        || indexed_record_header_at(bytes, paired_byte_offset)
-            .is_none_or(|parsed| parsed.record_index != header.record_index)
-    {
+    if cursor != paired_byte_offset {
+        return None;
+    }
+    let paired_header = match indexed_record_header_at(ctx, bytes, paired_byte_offset) {
+        Ok(Some(parsed)) => parsed,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    if paired_header.record_index != header.record_index {
         return None;
     }
     let paired_class_tag = std::str::from_utf8(bytes.get(
@@ -2265,7 +2287,18 @@ fn parse_loft_legacy_body_carrier(
     if paired_class_tag != paired_class {
         return None;
     }
-    Some(DesignLoftLegacyBodyCarrier {
+    let paired_class_tag = match ctx.copy_retained_text(
+        paired_class_tag,
+        "copy F3D legacy Loft paired class tag",
+    ) {
+        Ok(class_tag) => class_tag,
+        Err(error) => return Some(Err(error)),
+    };
+    let Ok(paired_class_tag) = crate::records::references::DesignClassTag::try_from(paired_class_tag)
+    else {
+        return None;
+    };
+    Some(Ok(DesignLoftLegacyBodyCarrier {
         id: String::new(),
         scope_record_index: scope.record_index,
         record_index: header.record_index,
@@ -2291,9 +2324,11 @@ fn parse_loft_legacy_body_carrier(
         next_record_index,
         next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
         trailing_scope_reference_offset,
-        paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
+        paired_class_tag,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 pub(in crate::design) fn assign_extrude_face_roles(
@@ -2933,20 +2968,26 @@ pub(super) fn parse_construction_operand_group(
             if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
-            if closed
-                .replace((variant, after, paired_class_tag.to_owned()))
-                .is_some()
-            {
+            let paired_class_tag = match ctx.copy_retained_text(
+                paired_class_tag,
+                "copy F3D construction operand paired class tag",
+            ) {
+                Ok(tag) => tag,
+                Err(error) => return Refused(error),
+            };
+            if closed.replace((variant, after, paired_class_tag)).is_some() {
                 return Unclosed;
             }
         }
     }
-    if let Some(legacy_tail) =
-        legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
-    {
-        if closed.replace(legacy_tail).is_some() {
-            return Unclosed;
+    match legacy_body_group_tail(ctx, bytes, scope, header, cursor, opaque_index.get()) {
+        Some(Ok(legacy_tail)) => {
+            if closed.replace(legacy_tail).is_some() {
+                return Unclosed;
+            }
         }
+        Some(Err(error)) => return Refused(error),
+        None => {}
     }
     let Some((variant, paired_at, paired_class_tag)) = closed else {
         return Unclosed;
@@ -3021,12 +3062,13 @@ pub(super) fn parse_construction_operand_group(
 /// terminating zero. The class and feature gates keep this admission separate
 /// from the terminated flag-block grammar used by other construction groups.
 fn legacy_body_group_tail(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &RecordFrame,
     cursor: usize,
     opaque_index: u32,
-) -> Option<(bool, usize, String)> {
+) -> Option<Result<(bool, usize, String), CodecError>> {
     let body_scope = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
         || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody;
     let (flag_pair, variant) = match header.class_tag.as_str() {
@@ -3093,7 +3135,13 @@ fn legacy_body_group_tail(
     if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
         return None;
     }
-    Some((variant, tail, paired_class_tag.to_owned()))
+    Some(
+        ctx.copy_retained_text(
+            paired_class_tag,
+            "copy F3D legacy construction operand paired class tag",
+        )
+        .map(|paired_class_tag| (variant, tail, paired_class_tag)),
+    )
 }
 
 /// Bind exact typed records selected by construction-group trailing runs.
@@ -3945,12 +3993,33 @@ fn parse_extrude_selection_group(
         if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
             return None;
         }
-        let paired_class_tag = match crate::design::decode::text::class_tag_from_view(
-            ctx,
+        if paired_class_tag.len() != 3 {
+            return None;
+        }
+        let paired_class_tag_is_ascii_digits = match ctx
+            .admit_iter(
+                paired_class_tag.as_bytes(),
+                "validate F3D class tag digits",
+            )
+        {
+            Ok(mut bytes) => bytes.all(|byte| byte.is_ascii_digit()),
+            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
+        };
+        if !paired_class_tag_is_ascii_digits {
+            return None;
+        }
+        let paired_class_tag = match ctx.copy_retained_text(
             paired_class_tag,
+            "copy F3D extrude selection paired class tag",
         ) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(class_tag) => class_tag,
+            Err(error) => return Some(Err(error)),
+        };
+        let class_tag = match ctx.copy_retained_text(
+            header.class_tag.as_str(),
+            "copy F3D extrude selection class tag",
+        ) {
+            Ok(class_tag) => class_tag,
             Err(error) => return Some(Err(error)),
         };
         Some(Ok(
@@ -3960,7 +4029,7 @@ fn parse_extrude_selection_group(
                 scope_reference_ordinal,
                 record_index: header.record_index,
                 byte_offset: header.byte_offset,
-                class_tag: header.class_tag.clone().into(),
+                class_tag,
                 member_count_offset: u64::try_from(start + 32).ok()?,
                 members,
                 member_offsets,
@@ -3969,7 +4038,7 @@ fn parse_extrude_selection_group(
                 opaque_scalar,
                 opaque_scalar_offset: u64::try_from(position + 4).ok()?,
                 variant: bytes[position + 28] != 0,
-                paired_class_tag: paired_class_tag.into(),
+                paired_class_tag,
                 paired_byte_offset: u64::try_from(paired_at).ok()?,
             },
         ))
@@ -5610,7 +5679,7 @@ fn parse_sketch_profile_region_selection(
         let Some(at) = next_indexed_record_offset(ctx, bytes, position)? else {
             return Ok(None);
         };
-        Ok(indexed_record_header_at(bytes, at)
+        Ok(indexed_record_header_at(ctx, bytes, at)?
             .filter(|header| header.record_index == expected)
             .map(|_| at))
     };
@@ -6851,7 +6920,8 @@ fn face_recipe_next_boundary(
     let Some(offset) = next_indexed_record_offset(ctx, bytes, position)? else {
         return Ok(None);
     };
-    let Some(record_index) = indexed_record_header_at(bytes, offset).map(|header| header.record_index)
+    let Some(record_index) = indexed_record_header_at(ctx, bytes, offset)?
+        .map(|header| header.record_index)
     else {
         return Ok(None);
     };

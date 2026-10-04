@@ -12,12 +12,22 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(in crate::design::decode) fn exact_indexed_header_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
-) -> Option<String> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    (View::u32_le_at(bytes, after_tag)? == record_index).then(|| class_tag.to_owned())
+) -> Result<Option<String>, CodecError> {
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+    else {
+        return Ok(None);
+    };
+    if View::u32_le_at(bytes, after_tag) != Some(record_index) {
+        return Ok(None);
+    }
+    Ok(Some(
+        ctx.copy_retained_text(class_tag, "copy F3D indexed header class tag")?,
+    ))
 }
 
 pub(super) fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
@@ -112,5 +122,32 @@ pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<Design
         3 => Some(DesignExtrudeOperation::Intersect),
         4 => Some(DesignExtrudeOperation::NewBody),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exact_indexed_header_at;
+    use cadmpeg_core::decode::ResourceDimension;
+
+    #[test]
+    fn indexed_header_class_tag_copy_refuses_retained_bytes() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"123");
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "copy F3D indexed header class tag",
+            0,
+            |ctx| exact_indexed_header_at(ctx, &bytes, 0, 7).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "copy F3D indexed header class tag"
+                    && limit.additional == 3
+        ));
     }
 }

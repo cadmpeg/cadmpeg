@@ -82,8 +82,10 @@ fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {
         class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let carrier = parse_loft_legacy_body_carrier(&bytes, &scope, &header)
-        .expect("class-322 legacy Loft carrier");
+    let carrier = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(ctx, &bytes, &scope, &header).unwrap()
+    })
+    .expect("class-322 legacy Loft carrier");
     let stream = "Design/BulkStream.dat";
     let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
     for (collection_limit, retained_limit, dimension, operation) in [
@@ -524,17 +526,50 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     }
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);
-    let parsed_322 = parse_loft_legacy_body_carrier(
-        &class_322,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322".into(),
-            record_index: 100,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D legacy Loft paired class tag",
+        0,
+        |ctx| {
+            parse_loft_legacy_body_carrier(
+                ctx,
+                &class_322,
+                &scope,
+                &crate::records::decal::DesignRecordHeader {
+                    id: "header-322".into(),
+                    record_index: 100,
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "322".to_owned(),
+                    )
+                    .unwrap(),
+                    byte_offset: 0,
+                },
+            )
+            .map(|_| ())
         },
-    )
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "copy F3D legacy Loft paired class tag"
+                && limit.additional == 3
+    ));
+    let parsed_322 = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &class_322,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322".into(),
+                record_index: 100,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+        .unwrap()
+    })
     .expect("class-322 legacy Loft carrier");
     assert_eq!(parsed_322.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322.paired_byte_offset, 87);
@@ -552,17 +587,21 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     );
 
     let class_322_tail = carrier(b"322", b"262", 12, 200, true);
-    let parsed_322_tail = parse_loft_legacy_body_carrier(
-        &class_322_tail,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322-tail".into(),
-            record_index: 200,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    let parsed_322_tail = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &class_322_tail,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322-tail".into(),
+                record_index: 200,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+        .unwrap()
+    })
     .expect("class-322 legacy Loft carrier with scope tail");
     assert_eq!(parsed_322_tail.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322_tail.paired_byte_offset, 99);
@@ -575,17 +614,21 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert_eq!(parsed_322_tail.trailing_scope_reference_offset, Some(88));
 
     let class_411 = carrier(b"411", b"266", 12, 300, true);
-    let parsed_411 = parse_loft_legacy_body_carrier(
-        &class_411,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-411".into(),
-            record_index: 300,
-            class_tag: crate::records::references::DesignClassTag::try_from("411".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    let parsed_411 = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &class_411,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-411".into(),
+                record_index: 300,
+                class_tag: crate::records::references::DesignClassTag::try_from("411".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+        .unwrap()
+    })
     .expect("class-411 legacy Loft carrier");
     assert_eq!(parsed_411.paired_class_tag.as_str(), "266");
     assert_eq!(parsed_411.paired_byte_offset, 99);
@@ -599,30 +642,38 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
 
     let mut wrong_presence = class_322.clone();
     wrong_presence[21] = 0;
-    assert!(parse_loft_legacy_body_carrier(
-        &wrong_presence,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322".into(),
-            record_index: 100,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &wrong_presence,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322".into(),
+                record_index: 100,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+        .unwrap()
+    })
     .is_none());
 
     let wrong_pair = carrier(b"322", b"266", 12, 400, false);
-    assert!(parse_loft_legacy_body_carrier(
-        &wrong_pair,
-        &scope,
-        &crate::records::decal::DesignRecordHeader {
-            id: "header-322".into(),
-            record_index: 400,
-            class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-        },
-    )
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_loft_legacy_body_carrier(
+            ctx,
+            &wrong_pair,
+            &scope,
+            &crate::records::decal::DesignRecordHeader {
+                id: "header-322".into(),
+                record_index: 400,
+                class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned())
+                    .unwrap(),
+                byte_offset: 0,
+            },
+        )
+        .unwrap()
+    })
     .is_none());
 }

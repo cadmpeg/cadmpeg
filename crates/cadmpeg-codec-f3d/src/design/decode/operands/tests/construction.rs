@@ -202,6 +202,29 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let paired_at = bytes.len();
     indexed_header(&mut bytes, *b"259", 100);
 
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D construction operand paired class tag",
+        0,
+        |ctx| match crate::design::decode::operands::parse_construction_operand_group(
+            ctx,
+            &bytes,
+            &scope,
+            0,
+            &RecordFrame::from(&record),
+        ) {
+            ConstructionOperandGroupParse::Refused(error) => Err(error),
+            _ => Ok(()),
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "copy F3D construction operand paired class tag"
+                && limit.additional == 3
+    ));
+
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("counted Extrude operand group");

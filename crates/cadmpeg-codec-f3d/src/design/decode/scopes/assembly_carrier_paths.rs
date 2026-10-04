@@ -486,15 +486,35 @@ fn exact_class_264_record_frame(
     frame_length: usize,
 ) -> Result<Option<(usize, usize)>, CodecError> {
     let frames = records.frames(ctx, record_index)?;
-    let mut candidates = frames.filter(|(start, paired_at)| {
-        Some(*paired_at) == start.checked_add(frame_length)
-            && exact_indexed_header_at(bytes, *start, record_index).as_deref() == Some(class_tag)
-            && exact_indexed_header_at(bytes, *paired_at, record_index).as_deref() == Some("264")
+    let mut candidates = frames.filter_map(|(start, paired_at)| {
+        if Some(paired_at) != start.checked_add(frame_length) {
+            return None;
+        }
+        let start_class_tag = match exact_indexed_header_at(ctx, bytes, start, record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if start_class_tag != class_tag {
+            return None;
+        }
+        let paired_class_tag = match exact_indexed_header_at(ctx, bytes, paired_at, record_index) {
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        (paired_class_tag == "264").then_some(Ok((start, paired_at)))
     });
-    let Some(candidate) = candidates.next() else {
-        return Ok(None);
+    let candidate = match candidates.next() {
+        Some(Ok(candidate)) => candidate,
+        Some(Err(error)) => return Err(error),
+        None => return Ok(None),
     };
-    Ok(candidates.next().is_none().then_some(candidate))
+    match candidates.next() {
+        Some(Ok(_)) => Ok(None),
+        Some(Err(error)) => Err(error),
+        None => Ok(Some(candidate)),
+    }
 }
 
 fn exact_class_363_identity_guids(
