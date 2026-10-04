@@ -1912,6 +1912,9 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
         endpoints.map(crate::records::SketchInputEntity::id),
         ["start", "end"]
     );
+    crate::test_support::work_refusal_at("deduplicate SLDPRT marker104 arc centers", |ctx| {
+        super::legacy_marker104_arc_center(ctx, &payload, &entities[0], &markers, endpoints)
+    });
     assert_eq!(
         super::legacy_marker104_arc_center(
             &cadmpeg_test_support::service_decode_context(),
