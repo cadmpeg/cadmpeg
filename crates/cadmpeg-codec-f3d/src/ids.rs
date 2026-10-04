@@ -1327,11 +1327,13 @@ macro_rules! native_record_id {
 
 native_record_id!(
     /// The native design-parameter record key.
+    #[cfg(test)]
     native_design_parameter_id,
     "design-parameter"
 );
 native_record_id!(
     /// The native design-parameter-owner record key.
+    #[cfg(test)]
     native_design_parameter_owner_id,
     "design-parameter-owner"
 );

@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design parameter, owner, and companion frames.
 
-use crate::bytes::lp_utf16_bounded_charged;
-use cadmpeg_core::container::ContainerRole;
+use std::collections::{HashMap, HashSet};
+use std::ops::RangeInclusive;
 
-use crate::bytes::lp_ascii_filtered_view;
+use cadmpeg_core::container::{ContainerEntry, ContainerRole};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
+
+use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
+use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::sketch::{
-    native_scope_charged, next_indexed_record_offset, IndexedRecordOffsets,
+    indexed_record_header_at, native_scope_charged, next_indexed_record_offset,
+    IndexedRecordHeader, IndexedRecordOffsets,
 };
-use crate::design::decode::text::design_record_id_charged;
-use crate::ids::{self, native_stream};
+use crate::design::decode::text::{design_record_id_charged, retain_class_tag};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
@@ -24,23 +31,23 @@ use crate::records::{
     decal::DesignRecordHeader,
     entity_header::DesignEntityHeader,
     feature::scope::DesignParameterScope,
-    parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
+    identity::Located,
+    parameters::{
+        DesignParameter, DesignParameterCompanion, DesignParameterDiscriminator,
+        DesignParameterOwner,
+    },
     recipes::ConstructionRecipe,
 };
-use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::scalar::FiniteReal;
-use std::collections::{HashMap, HashSet};
 
-macro_rules! parameter_text {
-    ($ctx:expr, $payload:expr, $at:expr, $bounds:expr) => {
-        match lp_utf16_bounded_charged($ctx, $payload, $at, $bounds, "f3d Design UTF-16 text") {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        }
-    };
+/// A counted UTF-16 text field of `bounds` code units at `at`, copied into
+/// retained storage, and the offset after it.
+fn parameter_text(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    lp_utf16_bounded_charged(ctx, payload, at, bounds, "f3d Design UTF-16 text")
 }
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
@@ -73,30 +80,7 @@ pub(crate) fn decode_parameters(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut position = 0usize;
-        let mut emitted_record_indices = HashSet::new();
-        while let Some(at) = next_indexed_record_offset(ctx, bytes, position)? {
-            let end = next_indexed_record_offset(ctx, bytes, at + 11)?.unwrap_or(bytes.len());
-            if let Some(parsed) = parse_design_parameter(ctx, &bytes[at..end])? {
-                // The Design primary index exposes one live header for each
-                // logical record index. Keep the first serialized parameter
-                // frame so stale copies cannot create duplicate owner
-                // bindings or duplicate neutral parameter identities.
-                if emitted_record_indices.contains(&parsed.record_index) {
-                    position = end;
-                    continue;
-                }
-
-                ctx.reserve_set(&mut emitted_record_indices, 1, "f3d parameter record index")?;
-                emitted_record_indices.insert(parsed.record_index);
-
-                ctx.reserve_vec(&mut out, 1, "f3d decoded parameter records")?;
-                out.push(locate_design_parameter(ctx, parsed, &entry.name, at)?);
-                position = end;
-            } else {
-                position = at + 1;
-            }
-        }
+        decode_stream_parameters(ctx, bytes, &entry.name, &mut out)?;
     }
     ctx.stable_sort_by(
         &mut out[..],
@@ -107,6 +91,64 @@ pub(crate) fn decode_parameters(
     Ok(out)
 }
 
+/// Decode the parameter frames of one Design `BulkStream` into `out`. A frame
+/// runs from an indexed-record header to the first header at least one header
+/// length later. After a header that opens no parameter, the next candidate is
+/// the first later header, so each stream byte is searched once.
+fn decode_stream_parameters(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    out: &mut Vec<DesignParameter>,
+) -> Result<(), CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "f3d parameter record index")?;
+    let mut emitted_record_indices = HashSet::new();
+    // The start of the last frame-end search and the header it found.
+    let mut last_end_search: Option<(usize, Option<usize>)> = None;
+    let mut next = next_indexed_record_offset(ctx, bytes, 0)?;
+    while let Some(at) = next {
+        let from = at + indexed_header::LEN;
+        let end = match last_end_search {
+            Some((searched, found))
+                if searched <= from && found.is_none_or(|found| found >= from) =>
+            {
+                found
+            }
+            _ => next_indexed_record_offset(ctx, bytes, from)?,
+        };
+        last_end_search = Some((from, end));
+        let Some(frame) = bytes.get(at..end.unwrap_or(bytes.len())) else {
+            break;
+        };
+        let Some(parsed) = parse_design_parameter(ctx, frame)? else {
+            next = overlapping_header(bytes, at).or(end);
+            continue;
+        };
+        next = end;
+        // The Design primary index exposes one live header for each logical
+        // record index. Keep the first serialized parameter frame so stale
+        // copies cannot create duplicate owner bindings or duplicate neutral
+        // parameter identities.
+        if emitted_record_indices.contains(&parsed.record_index) {
+            continue;
+        }
+        reservation.with_storage(|| {
+            ctx.reserve_set(&mut emitted_record_indices, 1, "f3d parameter record index")
+        })?;
+        emitted_record_indices.insert(parsed.record_index);
+        ctx.reserve_vec(out, 1, "f3d decoded parameter records")?;
+        out.push(locate_design_parameter(ctx, parsed, stream, at)?);
+    }
+    Ok(())
+}
+
+/// The first indexed-record header that starts inside the header at `at`.
+fn overlapping_header(bytes: &[u8], at: usize) -> Option<usize> {
+    (1..indexed_header::LEN)
+        .map(|delta| at + delta)
+        .find(|start| indexed_record_header_at(bytes, *start).is_some())
+}
+
 /// Design parameter parsed in frame-relative coordinates.
 pub(in crate::design) struct ParsedDesignParameter {
     class_tag: crate::records::references::DesignClassTag,
@@ -114,7 +156,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     source_ordinal: u32,
     source_kind: String,
     owner_record_index: Option<u32>,
-    family_discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
+    family_discriminator: Option<DesignParameterDiscriminator>,
     expression: String,
     expression_offset: FrameRelative,
     source_kind_offset: FrameRelative,
@@ -144,63 +186,85 @@ impl ParsedDesignParameter {
         let expression =
             ctx.validate_nonblank_text(self.expression, "validate parameter expression")?;
         let name = ctx.validate_nonblank_text(self.name, "validate parameter name")?;
-        let unit = self
-            .unit
-            .map(|unit| {
-                Ok::<_, cadmpeg_core::decode::ResourceLimit>((
-                    ctx.validate_nonblank_text(unit.value, "validate parameter unit")?,
-                    unit.offset,
-                ))
+        let unit = match self.unit {
+            Some(unit) => {
+                let value = ctx.validate_nonblank_text(unit.value, "validate parameter unit")?;
+                let Some(offset) = unit.offset.absolute(frame_start) else {
+                    return Ok(None);
+                };
+                Some(crate::records::identity::RecordedValue { value, offset })
+            }
+            None => None,
+        };
+        let family_discriminator = match self.family_discriminator {
+            Some(value) => {
+                let Some(offset) =
+                    FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
+                        .absolute(frame_start)
+                else {
+                    return Ok(None);
+                };
+                Some(Located { value, offset })
+            }
+            None => None,
+        };
+        let Ok(source) = crate::records::parameters::DesignParameterSource::new(
+            source_kind,
+            self.owner_record_index,
+            family_discriminator,
+        ) else {
+            return Ok(None);
+        };
+        let (
+            Some(expression_offset),
+            Some(source_kind_offset),
+            Some(name_offset),
+            Some(evaluated_value_offset),
+        ) = (
+            self.expression_offset.absolute(frame_start),
+            self.source_kind_offset.absolute(frame_start),
+            self.name_offset.absolute(frame_start),
+            self.evaluated_value_offset.absolute(frame_start),
+        )
+        else {
+            return Ok(None);
+        };
+        let id = design_record_id_charged(
+            ctx,
+            stream,
+            ":design-parameter#",
+            frame_start,
+            "f3d parameter identifier",
+        )?;
+        Ok(
+            DesignParameter::try_from(crate::records::parameters::DesignParameterDraft::<
+                cadmpeg_core::text::NonBlankText<String>,
+            > {
+                id,
+                byte_offset: frame_start,
+                class_tag: self.class_tag,
+                record_index: self.record_index,
+                source_ordinal: self.source_ordinal,
+                source,
+                expression,
+                expression_offset,
+                source_kind_offset,
+                unit,
+                name,
+                name_offset,
+                evaluated_value: self.evaluated_value,
+                evaluated_value_offset,
             })
-            .transpose()?;
-        Ok((|| {
-            let family_discriminator = match self.family_discriminator {
-                Some(value) => Some(crate::records::identity::Located {
-                    value,
-                    offset: FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
-                        .absolute(frame_start)?,
-                }),
-                None => None,
-            };
-            let unit = match unit {
-                Some((value, offset)) => Some(crate::records::identity::RecordedValue {
-                    value,
-                    offset: offset.absolute(frame_start)?,
-                }),
-                None => None,
-            };
-            crate::records::parameters::DesignParameter::try_from(
-                crate::records::parameters::DesignParameterDraft::<
-                    cadmpeg_core::text::NonBlankText<String>,
-                > {
-                    id: ids::native_design_parameter_id(stream, frame_start),
-                    byte_offset: frame_start,
-                    class_tag: self.class_tag,
-                    record_index: self.record_index,
-                    source_ordinal: self.source_ordinal,
-                    source: crate::records::parameters::DesignParameterSource::new(
-                        source_kind,
-                        self.owner_record_index,
-                        family_discriminator,
-                    )
-                    .ok()?,
-                    expression,
-                    expression_offset: self.expression_offset.absolute(frame_start)?,
-                    source_kind_offset: self.source_kind_offset.absolute(frame_start)?,
-                    unit,
-                    name,
-                    name_offset: self.name_offset.absolute(frame_start)?,
-                    evaluated_value: self.evaluated_value,
-                    evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-                },
-            )
-            .ok()
-        })())
+            .ok(),
+        )
     }
 }
 
 /// Frame-relative offset of the parameter family discriminator.
 const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: u64 = 22;
+
+/// Retained-copy operation of a parameter class tag.
+const PARAMETER_CLASS_TAG_OPERATION: &str = "copy F3D Design parameter class tag";
 
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
@@ -236,182 +300,166 @@ fn locate_design_parameter(
         })
 }
 
+/// Source fields of a modern parameter prefix.
+struct ParameterPrefix {
+    family_discriminator: Option<DesignParameterDiscriminator>,
+    source_ordinal: u32,
+    owner_record_index: Option<u32>,
+    expression_at: usize,
+}
+
+/// The discriminated prefix: a family discriminator at 22 and an optional
+/// owner whose marker is at 35.
+fn discriminated_parameter_prefix(payload: &[u8]) -> Option<ParameterPrefix> {
+    let family_discriminator =
+        DesignParameterDiscriminator::try_from(View::u64_le_at(payload, 22)?).ok()?;
+    let (owner_record_index, expression_at) = match payload.get(35)? {
+        0 => (None, 36),
+        1 if zeros_at::<6>(payload, 40) => (Some(View::u32_le_at(payload, 36)?), 46),
+        _ => return None,
+    };
+    Some(ParameterPrefix {
+        family_discriminator: Some(family_discriminator),
+        source_ordinal: View::u32_le_at(payload, 31)?,
+        owner_record_index,
+        expression_at,
+    })
+}
+
+/// The compact owned prefix: a source ordinal at 26 and an owner at 31.
+fn compact_owned_parameter_prefix(payload: &[u8]) -> Option<ParameterPrefix> {
+    Some(ParameterPrefix {
+        family_discriminator: None,
+        source_ordinal: View::u32_le_at(payload, 26)?,
+        owner_record_index: Some(View::u32_le_at(payload, 31)?),
+        expression_at: 41,
+    })
+}
+
 pub(in crate::design) fn parse_design_parameter(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
-    let parsed = (|| {
-        if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
-            return None;
-        }
-        let raw_tag = payload.get(4..7)?;
-        if !raw_tag.iter().all(u8::is_ascii_graphic) {
-            return None;
-        }
-        let raw_tag = match ctx.validate_utf8(raw_tag, "validate F3D Design parameter class tag") {
-            Ok(Ok(raw_tag)) => raw_tag,
-            Ok(Err(_)) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let class_tag = match ctx.copy_retained_text(raw_tag, "copy F3D Design parameter class tag")
+    let Some(header) = indexed_record_header_at(payload, 0) else {
+        return Ok(None);
+    };
+    if !zeros_at::<11>(payload, 11) {
+        return Ok(None);
+    }
+    if header.class_code == 287 {
+        return parse_legacy_287_design_parameter(ctx, payload, header);
+    }
+    let compact_owned =
+        zeros_at::<15>(payload, 11) && payload.get(30) == Some(&1) && zeros_at::<6>(payload, 35);
+    let discriminated = !compact_owned && payload.get(30) == Some(&0);
+    let prefix = if discriminated {
+        discriminated_parameter_prefix(payload)
+    } else if compact_owned {
+        compact_owned_parameter_prefix(payload)
+    } else {
+        return parse_legacy_design_parameter(ctx, payload, header);
+    };
+    let Some(ParameterPrefix {
+        family_discriminator,
+        source_ordinal,
+        owner_record_index,
+        expression_at,
+    }) = prefix
+    else {
+        return Ok(None);
+    };
+    let Some((expression, expression_end)) = parameter_text(ctx, payload, expression_at, 1..=256)?
+    else {
+        return Ok(None);
+    };
+    let (trailer_len, valid_expression_trailer) = if !discriminated {
+        (5, zeros_at::<5>(payload, expression_end))
+    } else if owner_record_index.is_none() {
+        (
+            9,
+            bytes_at::<9>(payload, expression_end) == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        )
+    } else {
+        (9, zeros_at::<9>(payload, expression_end))
+    };
+    if !valid_expression_trailer {
+        return Ok(None);
+    }
+    let prefixed_kind_at = expression_end + 10;
+    let prefixed_kind =
+        if discriminated && owner_record_index.is_some() && zeros_at::<10>(payload, expression_end)
         {
-            Ok(class_tag) => class_tag,
-            Err(error) => return Some(Err(error)),
-        };
-        let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
-        let record_index = View::u32_le_at(payload, 7)?;
-        if class_tag.as_str() == "287" {
-            return match parse_legacy_287_design_parameter(ctx, payload, class_tag, record_index) {
-                Ok(value) => value.map(Ok),
-                Err(error) => Some(Err(error)),
-            };
-        }
-        let compact_owned = payload.get(11..26) == Some(&[0; 15])
-            && payload.get(30) == Some(&1)
-            && payload.get(35..41) == Some(&[0; 6]);
-        let discriminated = !compact_owned && payload.get(30) == Some(&0);
-        if !compact_owned && !discriminated {
-            return match parse_legacy_design_parameter(ctx, payload, class_tag, record_index) {
-                Ok(value) => value.map(Ok),
-                Err(error) => Some(Err(error)),
-            };
-        }
-        let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
-            if discriminated {
-                let discriminator =
-                    crate::records::parameters::DesignParameterDiscriminator::try_from(
-                        View::u64_le_at(payload, 22)?,
-                    )
-                    .ok()?;
-                let owner = match payload.get(35)? {
-                    0 => (None, 36, 9),
-                    1 if payload.get(40..46) == Some(&[0; 6]) => {
-                        (Some(View::u32_le_at(payload, 36)?), 46, 9)
-                    }
-                    _ => return None,
-                };
-                (
-                    Some(discriminator),
-                    View::u32_le_at(payload, 31)?,
-                    owner.0,
-                    owner.1,
-                    owner.2,
-                )
-            } else if compact_owned {
-                (
-                    None,
-                    View::u32_le_at(payload, 26)?,
-                    Some(View::u32_le_at(payload, 31)?),
-                    41,
-                    5,
-                )
-            } else {
-                return None;
-            };
-        let (expression, expression_end) = parameter_text!(ctx, payload, expression_at, 1..=256);
-        let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
-        let valid_expression_trailer = if discriminated && owner_record_index.is_none() {
-            expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
-        } else {
-            match ctx.admit_iter(expression_trailer, "scan F3D parameter expression trailer") {
-                Ok(mut bytes) => bytes.all(|byte| *byte == 0),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            }
-        };
-        if !valid_expression_trailer {
-            return None;
-        }
-        let prefixed_kind = if discriminated
-            && owner_record_index.is_some()
-            && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
-        {
-            match lp_utf16_bounded_charged(
-                ctx,
-                payload,
-                expression_end + 10,
-                1..=256,
-                "f3d Design UTF-16 text",
-            ) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            }
+            parameter_text(ctx, payload, prefixed_kind_at, 1..=256)?
         } else {
             None
         };
-        let source_kind_at = if prefixed_kind.is_some() {
-            expression_end + 10
-        } else {
-            expression_end + trailer_len
-        };
-        let (source_kind, source_kind_end) = match prefixed_kind {
-            Some(value) => value,
-            None => parameter_text!(ctx, payload, source_kind_at, 1..=256),
-        };
-        let first_at = source_kind_end + usize::from(discriminated) * 4;
-        if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
-            return None;
-        }
-        let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
-            let name_at = first_at + 4;
-            let (name, name_end) = parameter_text!(ctx, payload, name_at, 1..=256);
-            (None, name, name_at, name_end)
-        } else {
-            let (first, first_end) = parameter_text!(ctx, payload, first_at, 1..=256);
-            let second_field = match lp_utf16_bounded_charged(
-                ctx,
-                payload,
-                first_end,
-                1..=256,
-                "f3d Design UTF-16 text",
-            ) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
+    let (source_kind_at, (source_kind, source_kind_end)) = match prefixed_kind {
+        Some(value) => (prefixed_kind_at, value),
+        None => {
+            let source_kind_at = expression_end + trailer_len;
+            let Some(value) = parameter_text(ctx, payload, source_kind_at, 1..=256)? else {
+                return Ok(None);
             };
-            if let Some((second, second_end)) = second_field {
-                (
-                    Some(ParsedParameterUnit {
-                        value: first,
-                        offset: FrameRelative(i128::from(u64_from_index(first_at + 4))),
-                    }),
-                    second,
-                    first_end,
-                    second_end,
-                )
-            } else {
-                (None, first, first_at, first_end)
-            }
-        };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail = payload.get(name_end + 8..)?;
-        if tail.len() != 12
-            || tail[0..2] != [0, 1]
-            || match ctx.admit_iter(&tail[3..], "scan F3D parameter trailer padding") {
-                Ok(mut bytes) => bytes.any(|byte| *byte != 0),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            }
-            || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
-            || source_kind.is_empty()
-        {
-            return None;
+            (source_kind_at, value)
         }
-        Some(Ok(ParsedDesignParameter {
-            class_tag,
-            record_index,
-            source_ordinal,
-            source_kind,
-            owner_record_index,
-            family_discriminator,
-            expression,
-            expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
-            source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
-            unit,
-            name,
-            name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
-        }))
-    })();
-    parsed.transpose()
+    };
+    let first_at = source_kind_end + usize::from(discriminated) * 4;
+    if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
+        return Ok(None);
+    }
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
+        let name_at = first_at + 4;
+        let Some((name, name_end)) = parameter_text(ctx, payload, name_at, 1..=256)? else {
+            return Ok(None);
+        };
+        (None, name, name_at, name_end)
+    } else {
+        let Some((first, first_end)) = parameter_text(ctx, payload, first_at, 1..=256)? else {
+            return Ok(None);
+        };
+        match parameter_text(ctx, payload, first_end, 1..=256)? {
+            Some((second, second_end)) => (
+                Some(ParsedParameterUnit {
+                    value: first,
+                    offset: FrameRelative::of(first_at + 4),
+                }),
+                second,
+                first_end,
+                second_end,
+            ),
+            None => (None, first, first_at, first_end),
+        }
+    };
+    let Some(evaluated_value) = View::f64_le_at(payload, name_end) else {
+        return Ok(None);
+    };
+    let Some(tail) = payload.get(name_end + 8..) else {
+        return Ok(None);
+    };
+    if tail.len() != 12
+        || bytes_at::<2>(tail, 0) != Some(&[0, 1])
+        || !zeros_at::<9>(tail, 3)
+        || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
+        || source_kind.is_empty()
+    {
+        return Ok(None);
+    }
+    Ok(Some(ParsedDesignParameter {
+        class_tag: header.retain_class_tag(ctx, PARAMETER_CLASS_TAG_OPERATION)?,
+        record_index: header.record_index,
+        source_ordinal,
+        source_kind,
+        owner_record_index,
+        family_discriminator,
+        expression,
+        expression_offset: FrameRelative::of(expression_at + 4),
+        source_kind_offset: FrameRelative::of(source_kind_at + 4),
+        unit,
+        name,
+        name_offset: FrameRelative::of(name_at + 4),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative::of(name_end),
+    }))
 }
 
 /// Parse the class-287 owned parameter family.
@@ -421,140 +469,163 @@ pub(in crate::design) fn parse_design_parameter(
 fn parse_legacy_287_design_parameter(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
-    class_tag: crate::records::references::DesignClassTag,
-    record_index: u32,
+    header: IndexedRecordHeader<'_>,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
-    let parsed = (|| {
-        if payload.get(legacy_287::ZERO_RUN_15..legacy_287::SOURCE_ORDINAL) != Some(&[0; 15])
-            || payload.get(legacy_287::OWNER_MARKER) != Some(&legacy_287::OWNER_MARKER_VALUE)
-            || payload.get(legacy_287::ZERO_RUN_6..legacy_287::EXPRESSION_LENGTH) != Some(&[0; 6])
-        {
-            return None;
-        }
-        let source_ordinal = View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL)?;
-        let owner_record_index = View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX)?;
-        let (expression, expression_end) =
-            parameter_text!(ctx, payload, legacy_287::EXPRESSION_LENGTH, 1..=256);
-        let expression_trailer_end =
-            expression_end.checked_add(CLASS_287_EXPRESSION_TRAILER_LEN)?;
-        let expression_trailer = payload.get(expression_end..expression_trailer_end)?;
-        if !matches!(expression_trailer, [0, 0, 0, 0 | 1, 0]) {
-            return None;
-        }
-        let source_kind_at = expression_trailer_end;
-        let (source_kind, source_kind_end) = parameter_text!(ctx, payload, source_kind_at, 1..=256);
-        let (unit, name, name_at, name_end) =
-            if View::u32_le_at(payload, source_kind_end) == Some(0) {
-                let name_at = source_kind_end.checked_add(4)?;
-                let (name, name_end) = parameter_text!(ctx, payload, name_at, 1..=256);
-                (None, name, name_at, name_end)
-            } else {
-                let (unit, unit_end) = parameter_text!(ctx, payload, source_kind_end, 1..=64);
-                let (name, name_end) = parameter_text!(ctx, payload, unit_end, 1..=256);
-                let unit_offset = source_kind_end.checked_add(4)?;
-                (
-                    Some(ParsedParameterUnit {
-                        value: unit,
-                        offset: FrameRelative(i128::try_from(unit_offset).ok()?),
-                    }),
-                    name,
-                    unit_end,
-                    name_end,
-                )
-            };
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail_start = name_end.checked_add(8)?;
-        let tail = payload.get(tail_start..)?;
-        if tail.len() != legacy_287_tail::LEN
-            || tail[..2] != legacy_287_tail::TAIL_PREFIX_VALUE
-            || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
-            || match ctx.admit_iter(
-                &tail[legacy_287_tail::ZERO_RUN_9..],
-                "scan F3D legacy parameter trailer padding",
-            ) {
-                Ok(mut bytes) => bytes.any(|byte| *byte != 0),
-                Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-            }
-            || source_kind.is_empty()
-        {
-            return None;
-        }
-        Some(Ok(ParsedDesignParameter {
-            class_tag,
-            record_index,
-            source_ordinal,
-            source_kind,
-            owner_record_index: Some(owner_record_index),
-            family_discriminator: None,
-            expression,
-            expression_offset: FrameRelative(
-                i128::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
-            ),
-            source_kind_offset: FrameRelative(i128::try_from(source_kind_at.checked_add(4)?).ok()?),
-            unit,
+    if !zeros_at::<15>(payload, legacy_287::ZERO_RUN_15)
+        || payload.get(legacy_287::OWNER_MARKER) != Some(&legacy_287::OWNER_MARKER_VALUE)
+        || !zeros_at::<6>(payload, legacy_287::ZERO_RUN_6)
+    {
+        return Ok(None);
+    }
+    let (Some(source_ordinal), Some(owner_record_index)) = (
+        View::u32_le_at(payload, legacy_287::SOURCE_ORDINAL),
+        View::u32_le_at(payload, legacy_287::OWNER_RECORD_INDEX),
+    ) else {
+        return Ok(None);
+    };
+    let Some((expression, expression_end)) =
+        parameter_text(ctx, payload, legacy_287::EXPRESSION_LENGTH, 1..=256)?
+    else {
+        return Ok(None);
+    };
+    if !matches!(
+        bytes_at::<CLASS_287_EXPRESSION_TRAILER_LEN>(payload, expression_end),
+        Some([0, 0, 0, 0 | 1, 0])
+    ) {
+        return Ok(None);
+    }
+    let source_kind_at = expression_end + CLASS_287_EXPRESSION_TRAILER_LEN;
+    let Some((source_kind, source_kind_end)) =
+        parameter_text(ctx, payload, source_kind_at, 1..=256)?
+    else {
+        return Ok(None);
+    };
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
+        let name_at = source_kind_end + 4;
+        let Some((name, name_end)) = parameter_text(ctx, payload, name_at, 1..=256)? else {
+            return Ok(None);
+        };
+        (None, name, name_at, name_end)
+    } else {
+        let Some((unit, unit_end)) = parameter_text(ctx, payload, source_kind_end, 1..=64)? else {
+            return Ok(None);
+        };
+        let Some((name, name_end)) = parameter_text(ctx, payload, unit_end, 1..=256)? else {
+            return Ok(None);
+        };
+        (
+            Some(ParsedParameterUnit {
+                value: unit,
+                offset: FrameRelative::of(source_kind_end + 4),
+            }),
             name,
-            name_offset: FrameRelative(i128::try_from(name_at.checked_add(4)?).ok()?),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::try_from(name_end).ok()?),
-        }))
-    })();
-    parsed.transpose()
+            unit_end,
+            name_end,
+        )
+    };
+    let Some(evaluated_value) = View::f64_le_at(payload, name_end) else {
+        return Ok(None);
+    };
+    let Some(tail) = payload.get(name_end + 8..) else {
+        return Ok(None);
+    };
+    if tail.len() != legacy_287_tail::LEN
+        || bytes_at::<2>(tail, 0) != Some(&legacy_287_tail::TAIL_PREFIX_VALUE)
+        || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
+        || !zeros_at::<9>(tail, legacy_287_tail::ZERO_RUN_9)
+        || source_kind.is_empty()
+    {
+        return Ok(None);
+    }
+    Ok(Some(ParsedDesignParameter {
+        class_tag: header.retain_class_tag(ctx, PARAMETER_CLASS_TAG_OPERATION)?,
+        record_index: header.record_index,
+        source_ordinal,
+        source_kind,
+        owner_record_index: Some(owner_record_index),
+        family_discriminator: None,
+        expression,
+        expression_offset: FrameRelative::of(legacy_287::EXPRESSION_LENGTH + 4),
+        source_kind_offset: FrameRelative::of(source_kind_at + 4),
+        unit,
+        name,
+        name_offset: FrameRelative::of(name_at + 4),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative::of(name_end),
+    }))
 }
 
 const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
 
+/// Fixed tail of the legacy parameter frame.
+const LEGACY_PARAMETER_TAIL: [u8; 12] = [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
 fn parse_legacy_design_parameter(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
-    class_tag: crate::records::references::DesignClassTag,
-    record_index: u32,
+    header: IndexedRecordHeader<'_>,
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
-    let parsed = (|| {
-        if payload.get(11..25)? != [0; 14]
-            || payload.get(29) != Some(&1)
-            || payload.get(34..40)? != [0; 6]
-        {
-            return None;
-        }
-        let source_ordinal = View::u32_le_at(payload, 25)?;
-        let owner_record_index = View::u32_le_at(payload, 30)?;
-        let expression_at = 40;
-        let (expression, expression_end) = parameter_text!(ctx, payload, expression_at, 1..=256);
-        if payload.get(expression_end..expression_end + 5)? != [0; 5] {
-            return None;
-        }
-        let source_kind_at = expression_end + 5;
-        let (source_kind, source_kind_end) = parameter_text!(ctx, payload, source_kind_at, 1..=256);
-        let unit_at = source_kind_end;
-        let (unit, unit_end) = parameter_text!(ctx, payload, unit_at, 1..=64);
-        let name_at = unit_end;
-        let (name, name_end) = parameter_text!(ctx, payload, name_at, 1..=256);
-        let evaluated_value = View::f64_le_at(payload, name_end)?;
-        let tail = payload.get(name_end + 8..)?;
-        if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0] || source_kind.is_empty() {
-            return None;
-        }
-        Some(Ok(ParsedDesignParameter {
-            class_tag,
-            record_index,
-            source_ordinal,
-            source_kind,
-            owner_record_index: Some(owner_record_index),
-            family_discriminator: None,
-            expression,
-            expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
-            source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
-            unit: Some(ParsedParameterUnit {
-                value: unit,
-                offset: FrameRelative(i128::from(u64_from_index(unit_at + 4))),
-            }),
-            name,
-            name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
-        }))
-    })();
-    parsed.transpose()
+    if !zeros_at::<14>(payload, 11) || payload.get(29) != Some(&1) || !zeros_at::<6>(payload, 34) {
+        return Ok(None);
+    }
+    let (Some(source_ordinal), Some(owner_record_index)) =
+        (View::u32_le_at(payload, 25), View::u32_le_at(payload, 30))
+    else {
+        return Ok(None);
+    };
+    let expression_at = 40;
+    let Some((expression, expression_end)) = parameter_text(ctx, payload, expression_at, 1..=256)?
+    else {
+        return Ok(None);
+    };
+    if !zeros_at::<5>(payload, expression_end) {
+        return Ok(None);
+    }
+    let source_kind_at = expression_end + 5;
+    let Some((source_kind, source_kind_end)) =
+        parameter_text(ctx, payload, source_kind_at, 1..=256)?
+    else {
+        return Ok(None);
+    };
+    let unit_at = source_kind_end;
+    let Some((unit, unit_end)) = parameter_text(ctx, payload, unit_at, 1..=64)? else {
+        return Ok(None);
+    };
+    let name_at = unit_end;
+    let Some((name, name_end)) = parameter_text(ctx, payload, name_at, 1..=256)? else {
+        return Ok(None);
+    };
+    let Some(evaluated_value) = View::f64_le_at(payload, name_end) else {
+        return Ok(None);
+    };
+    let Some(tail) = payload.get(name_end + 8..) else {
+        return Ok(None);
+    };
+    if tail.len() != LEGACY_PARAMETER_TAIL.len()
+        || bytes_at::<12>(tail, 0) != Some(&LEGACY_PARAMETER_TAIL)
+        || source_kind.is_empty()
+    {
+        return Ok(None);
+    }
+    Ok(Some(ParsedDesignParameter {
+        class_tag: header.retain_class_tag(ctx, PARAMETER_CLASS_TAG_OPERATION)?,
+        record_index: header.record_index,
+        source_ordinal,
+        source_kind,
+        owner_record_index: Some(owner_record_index),
+        family_discriminator: None,
+        expression,
+        expression_offset: FrameRelative::of(expression_at + 4),
+        source_kind_offset: FrameRelative::of(source_kind_at + 4),
+        unit: Some(ParsedParameterUnit {
+            value: unit,
+            offset: FrameRelative::of(unit_at + 4),
+        }),
+        name,
+        name_offset: FrameRelative::of(name_at + 4),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative::of(name_end),
+    }))
 }
 
 pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
@@ -581,7 +652,7 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
 }
 
 fn valid_design_parameter_family(
-    discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
+    discriminator: Option<DesignParameterDiscriminator>,
     source_kind: &str,
     tail: u8,
 ) -> bool {
@@ -604,30 +675,33 @@ fn valid_design_parameter_family(
 /// Decode the exact same-index-delimited owner frame for every owned Design
 /// parameter.
 pub(crate) fn decode_parameter_owners(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignParameterOwner>, CodecError> {
-    if ctx
-        .admit_iter(parameters, "scan F3D parameter owner references")?
-        .all(|parameter| parameter.owner_record_index().is_none())
-    {
+    if !ctx.any_by(
+        parameters,
+        |parameter| Ok(parameter.owner_record_index().is_some()),
+        "scan F3D parameter owner references",
+    )? {
         return Ok(Vec::new());
     }
-    let mut headers_by_stream = HashMap::<&str, HashMap<u32, &DesignRecordHeader>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "f3d owner header index")?;
+    let mut headers_by_record = HashMap::<(&str, u32), &DesignRecordHeader>::new();
     for header in ctx.admit_iter(headers, "scan F3D parameter owner headers")? {
-        let Some(stream) = native_stream(&header.id) else {
+        let Some(stream) = record_stream(ctx, &header.id)? else {
             continue;
         };
-        if !headers_by_stream.contains_key(stream) {
-            ctx.reserve_map(&mut headers_by_stream, 1, "f3d owner header stream")?;
-        }
-        let stream_headers = headers_by_stream.entry(stream).or_default();
-        if !stream_headers.contains_key(&header.record_index) {
-            ctx.reserve_map(stream_headers, 1, "f3d owner header index")?;
-        }
-        if stream_headers.insert(header.record_index, header).is_some() {
+        let previous = reservation.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut headers_by_record,
+                (stream, header.record_index),
+                header,
+                "f3d owner header index",
+            )
+        })?;
+        if previous.is_some() {
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!(
@@ -637,23 +711,27 @@ pub(crate) fn decode_parameter_owners(
             ));
         }
     }
-    let mut streams = HashMap::new();
+    // Each Design `BulkStream` by native scope, with its header index once a
+    // parameter owner needs it.
+    let mut streams = HashMap::<String, (&ContainerEntry, Option<IndexedRecordOffsets>)>::new();
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D parameter owner streams")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = native_scope_charged(ctx, &entry.name)?;
-        if streams.contains_key(&stream) {
+        let stream = reservation.with_storage(|| native_scope_charged(ctx, &entry.name))?;
+        if ctx.contains_key_hash_map(&streams, stream.as_str(), "f3d owner stream index")? {
             return Err(CodecError::Malformed(
                 "F3D contains duplicate Design BulkStream identities".into(),
             ));
         }
-
-        ctx.reserve_map(&mut streams, 1, "f3d owner stream index")?;
-        streams
-            .entry(stream)
-            .or_insert((entry, IndexedRecordOffsets::build(ctx, bytes)?));
+        reservation.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut streams,
+                stream,
+                (entry, None),
+                "f3d owner stream index",
+            )
+        })?;
     }
     let mut out = Vec::new();
     for parameter in ctx.admit_iter(parameters, "scan F3D parameter owner bindings")? {
@@ -669,11 +747,14 @@ pub(crate) fn decode_parameter_owners(
                 ),
             )
         };
-        let scope = native_stream(&parameter.id)
+        let scope = record_stream(ctx, &parameter.id)?
             .ok_or_else(|| malformed("has no Design stream identity"))?;
-        let Some(header) = headers_by_stream
-            .get(scope)
-            .and_then(|headers| headers.get(&owner_index))
+        let Some(header) = ctx
+            .get_hash_map(
+                &headers_by_record,
+                &(scope, owner_index),
+                "find F3D parameter owner header",
+            )?
             .copied()
         else {
             // A parameter can retain a source owner reference after Fusion has
@@ -681,46 +762,42 @@ pub(crate) fn decode_parameter_owners(
             // projection reports the unresolved binding as a loss.
             continue;
         };
-        let (entry, records) = streams
-            .get(scope)
+        let (entry, records) = ctx
+            .get_mut_hash_map(&mut streams, scope, "find F3D parameter owner stream")?
             .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = match records {
+            Some(records) => records,
+            slot @ None => {
+                slot.insert(reservation.with_storage(|| IndexedRecordOffsets::build(ctx, bytes))?)
+            }
+        };
         let at = usize::try_from(header.byte_offset)
             .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
         let end = records
-            .frames(ctx, owner_index)?
-            .find_map(|(start, end)| (start == at).then_some(end))
+            .frame_at(ctx, owner_index, at)?
             .ok_or_else(|| malformed("has no following same-index paired header"))?;
         let frame = bytes
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
-        let evaluated = crate::records::identity::Located {
+        let evaluated = Located {
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
-        let parsed_owner = match parse_parameter_owner(ctx, frame)? {
-            Some(owner) => Some(owner),
-            None => {
-                match parse_legacy_parameter_owner_68(ctx, frame, evaluated, header.byte_offset)? {
-                    Some(owner) => Some(owner),
-                    None => {
-                        parse_legacy_parameter_owner_88(ctx, frame, evaluated, header.byte_offset)?
-                    }
-                }
-            }
-        };
-        let owner = parsed_owner
-            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
-            .into_record(&entry.name, header.byte_offset)
+        let layout = parameter_owner_layout(frame)
+            .or_else(|| legacy_parameter_owner_68_layout(frame, evaluated, header.byte_offset))
+            .or_else(|| legacy_parameter_owner_88_layout(frame, evaluated, header.byte_offset))
+            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?;
+        let owner = layout
+            .retain(ctx)?
+            .locate(ctx, &entry.name, header.byte_offset)?
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
         if owner.record_index() != owner_index
             || owner.parameter_record_index() != parameter.record_index
         {
             return Err(malformed("does not link back to its referencing parameter"));
         }
-
-        ctx.reserve_vec(&mut out, 1, "f3d parameter owner")?;
-        out.push(owner);
+        ctx.push_vec(&mut out, owner, "f3d parameter owner")?;
     }
     ctx.stable_sort_by(
         &mut out[..],
@@ -736,6 +813,11 @@ pub(crate) fn decode_parameter_owners(
 pub(super) struct FrameRelative(pub(crate) i128);
 
 impl FrameRelative {
+    /// The offset `at` bytes after the frame start.
+    fn of(at: usize) -> Self {
+        Self(i128::from(u64_from_index(at)))
+    }
+
     fn between(offset: u64, frame_start: u64) -> Self {
         Self(i128::from(offset) - i128::from(frame_start))
     }
@@ -763,300 +845,346 @@ pub(in crate::design) struct ParsedParameterOwner {
 
 impl ParsedParameterOwner {
     /// Locate this owner in its containing stream.
+    fn locate(
+        self,
+        ctx: &DecodeContext<'_>,
+        stream: &str,
+        frame_start: u64,
+    ) -> Result<Option<DesignParameterOwner>, CodecError> {
+        let Some(evaluated_value_offset) = self.evaluated_value_offset.absolute(frame_start) else {
+            return Ok(None);
+        };
+        let id = design_record_id_charged(
+            ctx,
+            stream,
+            ":design-parameter-owner#",
+            frame_start,
+            "f3d parameter owner identifier",
+        )?;
+        Ok(self.with_id(id, frame_start, evaluated_value_offset))
+    }
+
+    /// Locate this owner in a test stream.
+    #[cfg(test)]
     pub(in crate::design) fn into_record(
         self,
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterOwner> {
-        crate::records::parameters::DesignParameterOwner::from_parts(
-            crate::records::parameters::DesignParameterOwnerWire {
-                id: ids::native_design_parameter_owner_id(stream, frame_start),
-                byte_offset: frame_start,
-                frame_length: self.frame_length,
-                class_tag: self.class_tag,
-                record_index: self.record_index,
-                scope_record_index: self.scope_record_index,
-                local_ordinal: self.local_ordinal,
-                evaluated_value: self.evaluated_value,
-                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-                parameter_record_index: self.parameter_record_index,
-                owned_ordinal: self.owned_ordinal,
-                variant: self.variant,
-                companion_record_index: self.companion_record_index,
-            },
+        let evaluated_value_offset = self.evaluated_value_offset.absolute(frame_start)?;
+        self.with_id(
+            crate::ids::native_design_parameter_owner_id(stream, frame_start),
+            frame_start,
+            evaluated_value_offset,
         )
+    }
+
+    fn with_id(
+        self,
+        id: String,
+        frame_start: u64,
+        evaluated_value_offset: u64,
+    ) -> Option<DesignParameterOwner> {
+        DesignParameterOwner::from_parts(crate::records::parameters::DesignParameterOwnerWire {
+            id,
+            byte_offset: frame_start,
+            frame_length: self.frame_length,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset,
+            parameter_record_index: self.parameter_record_index,
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            companion_record_index: self.companion_record_index,
+        })
         .ok()
     }
+}
+
+/// Parameter owner fields read from fixed offsets, with the class tag still
+/// borrowed from the frame.
+struct ParameterOwnerLayout<'a> {
+    class_tag: &'a [u8; 3],
+    frame_length: u64,
+    record_index: u32,
+    scope_record_index: u32,
+    local_ordinal: u32,
+    evaluated_value: FiniteReal,
+    evaluated_value_offset: FrameRelative,
+    parameter_record_index: u32,
+    owned_ordinal: u32,
+    variant: Option<u8>,
+    companion_record_index: u32,
+}
+
+impl ParameterOwnerLayout<'_> {
+    /// The parsed owner, with its class tag copied into retained storage.
+    fn retain(self, ctx: &DecodeContext<'_>) -> Result<ParsedParameterOwner, CodecError> {
+        Ok(ParsedParameterOwner {
+            frame_length: self.frame_length,
+            class_tag: retain_class_tag(ctx, self.class_tag, "copy F3D class tag")?,
+            record_index: self.record_index,
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset: self.evaluated_value_offset,
+            parameter_record_index: self.parameter_record_index,
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            companion_record_index: self.companion_record_index,
+        })
+    }
+}
+
+/// Whether three record indexes ascend by one.
+fn consecutive(first: u32, second: u32, third: u32) -> bool {
+    first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
 }
 
 pub(in crate::design) fn parse_parameter_owner(
     ctx: &DecodeContext<'_>,
     frame: &[u8],
 ) -> Result<Option<ParsedParameterOwner>, CodecError> {
-    let parsed = (|| {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error.into())),
-        };
-        if after_tag != indexed_header::RECORD_INDEX
-            || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
-            || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER)
-                != Some(&[1, 1, 0, 0, 0])
-            || frame.get(owner_prefix::SCOPE_MARKER) != Some(&1)
-            || frame.get(owner_prefix::ZERO_RUN_6..owner_prefix::LOCAL_ORDINAL) != Some(&[0; 6])
-        {
-            return None;
-        }
-        let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
-        let scope_record_index = View::u32_le_at(frame, owner_prefix::SCOPE_RECORD_INDEX)?;
+    parameter_owner_layout(frame)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
 
-        // Parse the fixed suffix backward from the exact paired-header boundary.
-        // This prevents a valid shorter prefix from being accepted as the record.
-        let final_scope_marker = frame.len().checked_sub(11)?;
-        let companion_marker = final_scope_marker.checked_sub(12)?;
-        if frame.get(final_scope_marker) != Some(&1)
-            || View::u32_le_at(frame, final_scope_marker + 1) != Some(scope_record_index)
-            || frame.get(final_scope_marker + 5..frame.len()) != Some(&[0; 6])
-            || frame.get(companion_marker) != Some(&1)
-            || frame.get(companion_marker + 5..final_scope_marker) != Some(&[0; 7])
-        {
-            return None;
-        }
+/// The modern owner frame: a fixed prefix, a scalar lane and a fixed suffix
+/// read backward from the exact paired-header boundary.
+fn parameter_owner_layout(frame: &[u8]) -> Option<ParameterOwnerLayout<'_>> {
+    let header = indexed_record_header_at(frame, 0)?;
+    if !zeros_at::<8>(frame, owner_prefix::ZERO_RUN_8)
+        || bytes_at::<5>(frame, owner_prefix::ONE_MARKER) != Some(&[1, 1, 0, 0, 0])
+        || frame.get(owner_prefix::SCOPE_MARKER) != Some(&1)
+        || !zeros_at::<6>(frame, owner_prefix::ZERO_RUN_6)
+    {
+        return None;
+    }
+    let record_index = header.record_index;
+    let scope_record_index = View::u32_le_at(frame, owner_prefix::SCOPE_RECORD_INDEX)?;
 
-        let without_variant = companion_marker.checked_sub(13).and_then(|at| {
-            (frame.get(at) == Some(&1)
-                && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
-                && frame.get(at + 5..companion_marker) == Some(&[0; 8]))
-            .then_some((at, None))
-        });
-        let with_variant = companion_marker.checked_sub(14).and_then(|at| {
-            let variant = *frame.get(at + 12)?;
-            (frame.get(at) == Some(&1)
-                && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
-                && frame.get(at + 5..at + 11) == Some(&[0; 6])
-                && frame.get(at + 11) == Some(&1)
-                && variant <= 1
-                && frame.get(at + 13) == Some(&0))
+    // Parse the fixed suffix backward from the exact paired-header boundary.
+    // This prevents a valid shorter prefix from being accepted as the record.
+    let final_scope_marker = frame.len().checked_sub(11)?;
+    let companion_marker = final_scope_marker.checked_sub(12)?;
+    if frame.get(final_scope_marker) != Some(&1)
+        || View::u32_le_at(frame, final_scope_marker + 1) != Some(scope_record_index)
+        || !zeros_at::<6>(frame, final_scope_marker + 5)
+        || frame.get(companion_marker) != Some(&1)
+        || !zeros_at::<7>(frame, companion_marker + 5)
+    {
+        return None;
+    }
+
+    let without_variant = companion_marker.checked_sub(13).and_then(|at| {
+        (frame.get(at) == Some(&1)
+            && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
+            && zeros_at::<8>(frame, at + 5))
+        .then_some((at, None))
+    });
+    let with_variant = companion_marker.checked_sub(14).and_then(|at| {
+        let variant = *frame.get(at + 12)?;
+        (frame.get(at) == Some(&1)
+            && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
+            && zeros_at::<6>(frame, at + 5)
+            && frame.get(at + 11) == Some(&1)
+            && variant <= 1
+            && frame.get(at + 13) == Some(&0))
+        .then_some((at, Some(variant)))
+    });
+    let with_compact_variant = companion_marker.checked_sub(13).and_then(|at| {
+        let variant = *frame.get(at + 12)?;
+        (frame.get(at) == Some(&1)
+            && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
+            && zeros_at::<6>(frame, at + 5)
+            && frame.get(at + 11) == Some(&1)
+            && variant <= 1)
             .then_some((at, Some(variant)))
-        });
-        let with_compact_variant = companion_marker.checked_sub(13).and_then(|at| {
-            let variant = *frame.get(at + 12)?;
-            (frame.get(at) == Some(&1)
-                && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
-                && frame.get(at + 5..at + 11) == Some(&[0; 6])
-                && frame.get(at + 11) == Some(&1)
-                && variant <= 1)
-                .then_some((at, Some(variant)))
-        });
-        let candidate_count = match ctx.admit_iter(
-            &[without_variant, with_variant, with_compact_variant],
-            "count F3D parameter owner suffix variants",
-        ) {
-            Ok(candidates) => candidates.filter(|candidate| candidate.is_some()).count(),
-            Err(error) => return Some(Err(cadmpeg_core::CodecError::ResourceLimit(error))),
-        };
-        if candidate_count != 1 {
-            return None;
-        }
-        let (repeated_scope_marker, variant) =
-            without_variant.or(with_variant).or(with_compact_variant)?;
+    });
+    let candidate_count = usize::from(without_variant.is_some())
+        + usize::from(with_variant.is_some())
+        + usize::from(with_compact_variant.is_some());
+    if candidate_count != 1 {
+        return None;
+    }
+    let (repeated_scope_marker, variant) =
+        without_variant.or(with_variant).or(with_compact_variant)?;
 
-        let owned_ordinal_offset = repeated_scope_marker.checked_sub(8)?;
-        let parameter_marker = owned_ordinal_offset.checked_sub(11)?;
-        if frame.get(owned_ordinal_offset + 4..repeated_scope_marker) != Some(&[0; 4])
-            || frame.get(parameter_marker) != Some(&1)
-            || frame.get(parameter_marker + 5..owned_ordinal_offset) != Some(&[0; 6])
-        {
-            return None;
-        }
+    let owned_ordinal_offset = repeated_scope_marker.checked_sub(8)?;
+    let parameter_marker = owned_ordinal_offset.checked_sub(11)?;
+    if !zeros_at::<4>(frame, owned_ordinal_offset + 4)
+        || frame.get(parameter_marker) != Some(&1)
+        || !zeros_at::<6>(frame, parameter_marker + 5)
+    {
+        return None;
+    }
 
-        let scalar = frame.get(owner_prefix::LEN..parameter_marker)?;
-        let (evaluated_value, evaluated_value_offset) = match scalar.len() {
-            9 if scalar.first() == Some(&0) => (View::f64_le_at(frame, 40)?, 40),
-            6 if matches!(scalar.get(..2), Some([0, 0 | 1])) => {
-                (f64::from(View::u32_le_at(frame, 41)?), 41)
-            }
-            5 if scalar.first() == Some(&0) && variant.is_none() => {
-                (f64::from(View::u32_le_at(frame, 40)?), 40)
-            }
-            13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
-                (View::f64_le_at(frame, 44)?, 44)
-            }
-            _ => return None,
-        };
-        let evaluated_value = FiniteReal::new(evaluated_value)?;
-        let parameter_record_index = View::u32_le_at(frame, parameter_marker + 1)?;
-        let companion_record_index = View::u32_le_at(frame, companion_marker + 1)?;
-        let consecutive = |first: u32, second: u32, third: u32| {
-            first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
-        };
-        if !(consecutive(record_index, parameter_record_index, companion_record_index)
-            || consecutive(parameter_record_index, record_index, companion_record_index)
-            || consecutive(record_index, companion_record_index, parameter_record_index))
-        {
-            return None;
+    let scalar = frame.get(owner_prefix::LEN..parameter_marker)?;
+    let (evaluated_value, evaluated_value_offset) = match scalar.len() {
+        9 if scalar.first() == Some(&0) => (View::f64_le_at(frame, 40)?, 40),
+        6 if matches!(bytes_at::<2>(scalar, 0), Some([0, 0 | 1])) => {
+            (f64::from(View::u32_le_at(frame, 41)?), 41)
         }
+        5 if scalar.first() == Some(&0) && variant.is_none() => {
+            (f64::from(View::u32_le_at(frame, 40)?), 40)
+        }
+        13 if scalar.first() == Some(&1) && zeros_at::<4>(scalar, 1) => {
+            (View::f64_le_at(frame, 44)?, 44)
+        }
+        _ => return None,
+    };
+    let evaluated_value = FiniteReal::new(evaluated_value)?;
+    let parameter_record_index = View::u32_le_at(frame, parameter_marker + 1)?;
+    let companion_record_index = View::u32_le_at(frame, companion_marker + 1)?;
+    if !(consecutive(record_index, parameter_record_index, companion_record_index)
+        || consecutive(parameter_record_index, record_index, companion_record_index)
+        || consecutive(record_index, companion_record_index, parameter_record_index))
+    {
+        return None;
+    }
 
-        Some(Ok(ParsedParameterOwner {
-            frame_length: u64::try_from(frame.len()).ok()?,
-            class_tag,
-            record_index,
-            scope_record_index,
-            local_ordinal: View::u32_le_at(frame, owner_prefix::LOCAL_ORDINAL)?,
-            evaluated_value,
-            evaluated_value_offset: FrameRelative(evaluated_value_offset),
-            parameter_record_index,
-            owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
-            variant,
-            companion_record_index,
-        }))
-    })();
-    parsed.transpose()
+    Some(ParameterOwnerLayout {
+        class_tag: header.class_tag,
+        frame_length: u64::try_from(frame.len()).ok()?,
+        record_index,
+        scope_record_index,
+        local_ordinal: View::u32_le_at(frame, owner_prefix::LOCAL_ORDINAL)?,
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(evaluated_value_offset),
+        parameter_record_index,
+        owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
+        variant,
+        companion_record_index,
+    })
 }
 
 /// Parse the legacy owner envelope whose scope and scalar lanes are absent.
-///
-/// The class admission is intentional. A short frame is not enough to select
-/// this grammar because older class tags also occur on modern owner records.
+#[cfg(test)]
 fn parse_legacy_parameter_owner_68(
     ctx: &DecodeContext<'_>,
     frame: &[u8],
-    evaluated: crate::records::identity::Located<f64>,
+    evaluated: Located<f64>,
     frame_start: u64,
 ) -> Result<Option<ParsedParameterOwner>, CodecError> {
-    let parsed = (|| {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-        if !is_legacy_parameter_owner_68_class(class_tag)
-            || frame.len() != legacy_owner_68::LEN
-            || after_tag != indexed_header::RECORD_INDEX
-            || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER)
-                != Some(&[0; 8])
-            || frame.get(legacy_owner_68::FIRST_MARKER) != Some(&1)
-            || frame.get(legacy_owner_68::ZERO_RUN_13..legacy_owner_68::PARAMETER_MARKER)
-                != Some(&[0; 13])
-            || frame.get(legacy_owner_68::PARAMETER_MARKER) != Some(&1)
-            || frame.get(legacy_owner_68::ZERO_RUN_6..legacy_owner_68::OWNED_ORDINAL)
-                != Some(&[0; 6])
-            || frame.get(legacy_owner_68::ZERO_RUN_7..legacy_owner_68::COMPANION_MARKER)
-                != Some(&[0; 7])
-            || frame.get(legacy_owner_68::COMPANION_MARKER) != Some(&1)
-            || frame.get(legacy_owner_68::ZERO_RUN_8_TAIL..legacy_owner_68::LEN) != Some(&[0; 8])
-        {
-            return None;
-        }
-        let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
-        let parameter_record_index =
-            View::u32_le_at(frame, legacy_owner_68::PARAMETER_RECORD_INDEX)?;
-        let companion_record_index =
-            View::u32_le_at(frame, legacy_owner_68::COMPANION_RECORD_INDEX)?;
-        let consecutive = |first: u32, second: u32, third: u32| {
-            first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
-        };
-        let evaluated_value = FiniteReal::new(evaluated.value)?;
-        if !consecutive(record_index, parameter_record_index, companion_record_index) {
-            return None;
-        }
-        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        Some(Ok(ParsedParameterOwner {
-            frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
-            class_tag,
-            record_index,
-            scope_record_index: 0,
-            local_ordinal: 0,
-            evaluated_value,
-            evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
-            parameter_record_index,
-            owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
-            variant: None,
-            companion_record_index,
-        }))
-    })();
-    parsed.transpose()
+    legacy_parameter_owner_68_layout(frame, evaluated, frame_start)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
+
+/// The legacy owner envelope whose scope and scalar lanes are absent. The
+/// class admission is intentional: a short frame is not enough to select this
+/// grammar because older class tags also occur on modern owner records.
+fn legacy_parameter_owner_68_layout(
+    frame: &[u8],
+    evaluated: Located<f64>,
+    frame_start: u64,
+) -> Option<ParameterOwnerLayout<'_>> {
+    let header = indexed_record_header_at(frame, 0)?;
+    if !is_legacy_parameter_owner_68_class(std::str::from_utf8(header.class_tag).ok()?)
+        || frame.len() != legacy_owner_68::LEN
+        || !zeros_at::<8>(frame, legacy_owner_68::ZERO_RUN_8)
+        || frame.get(legacy_owner_68::FIRST_MARKER) != Some(&1)
+        || !zeros_at::<13>(frame, legacy_owner_68::ZERO_RUN_13)
+        || frame.get(legacy_owner_68::PARAMETER_MARKER) != Some(&1)
+        || !zeros_at::<6>(frame, legacy_owner_68::ZERO_RUN_6)
+        || !zeros_at::<7>(frame, legacy_owner_68::ZERO_RUN_7)
+        || frame.get(legacy_owner_68::COMPANION_MARKER) != Some(&1)
+        || !zeros_at::<8>(frame, legacy_owner_68::ZERO_RUN_8_TAIL)
+    {
+        return None;
+    }
+    let record_index = header.record_index;
+    let parameter_record_index = View::u32_le_at(frame, legacy_owner_68::PARAMETER_RECORD_INDEX)?;
+    let companion_record_index = View::u32_le_at(frame, legacy_owner_68::COMPANION_RECORD_INDEX)?;
+    let evaluated_value = FiniteReal::new(evaluated.value)?;
+    if !consecutive(record_index, parameter_record_index, companion_record_index) {
+        return None;
+    }
+    Some(ParameterOwnerLayout {
+        class_tag: header.class_tag,
+        frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
+        record_index,
+        scope_record_index: 0,
+        local_ordinal: 0,
+        evaluated_value,
+        evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
+        parameter_record_index,
+        owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
+        variant: None,
+        companion_record_index,
+    })
 }
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
 /// whose scalar and local-ordinal lanes are absent.
+#[cfg(test)]
 fn parse_legacy_parameter_owner_88(
     ctx: &DecodeContext<'_>,
     frame: &[u8],
-    evaluated: crate::records::identity::Located<f64>,
+    evaluated: Located<f64>,
     frame_start: u64,
 ) -> Result<Option<ParsedParameterOwner>, CodecError> {
-    let parsed = (|| {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-        if !is_legacy_parameter_owner_88_class(class_tag)
-            || frame.len() != legacy_owner_88::LEN
-            || after_tag != indexed_header::RECORD_INDEX
-            || frame.get(legacy_owner_88::ZERO_RUN_8..legacy_owner_88::FIRST_MARKER)
-                != Some(&[0; 8])
-            || frame.get(legacy_owner_88::FIRST_MARKER) != Some(&1)
-            || frame.get(legacy_owner_88::ZERO_RUN_13..legacy_owner_88::PARAMETER_MARKER)
-                != Some(&[0; 13])
-            || frame.get(legacy_owner_88::PARAMETER_MARKER) != Some(&1)
-            || frame.get(legacy_owner_88::ZERO_RUN_6..legacy_owner_88::OWNED_ORDINAL)
-                != Some(&[0; 6])
-            || frame.get(legacy_owner_88::ZERO_RUN_4..legacy_owner_88::SCOPE_MARKER)
-                != Some(&[0; 4])
-            || frame.get(legacy_owner_88::SCOPE_MARKER) != Some(&1)
-            || frame
-                .get(legacy_owner_88::ZERO_RUN_8_BETWEEN_SCOPES..legacy_owner_88::COMPANION_MARKER)
-                != Some(&[0; 8])
-            || frame.get(legacy_owner_88::COMPANION_MARKER) != Some(&1)
-            || frame.get(legacy_owner_88::ZERO_RUN_7..legacy_owner_88::REPEATED_SCOPE_MARKER)
-                != Some(&[0; 7])
-            || frame.get(legacy_owner_88::REPEATED_SCOPE_MARKER) != Some(&1)
-            || frame.get(legacy_owner_88::ZERO_RUN_6_TAIL..legacy_owner_88::LEN) != Some(&[0; 6])
-        {
-            return None;
-        }
-        let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
-        let parameter_record_index =
-            View::u32_le_at(frame, legacy_owner_88::PARAMETER_RECORD_INDEX)?;
-        let scope_record_index = View::u32_le_at(frame, legacy_owner_88::SCOPE_RECORD_INDEX)?;
-        if scope_record_index == 0
-            || View::u32_le_at(frame, legacy_owner_88::REPEATED_SCOPE_RECORD_INDEX)?
-                != scope_record_index
-        {
-            return None;
-        }
-        let companion_record_index =
-            View::u32_le_at(frame, legacy_owner_88::COMPANION_RECORD_INDEX)?;
-        let consecutive = |first: u32, second: u32, third: u32| {
-            first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
-        };
-        let evaluated_value = FiniteReal::new(evaluated.value)?;
-        if !consecutive(record_index, parameter_record_index, companion_record_index) {
-            return None;
-        }
-        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        Some(Ok(ParsedParameterOwner {
-            frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
-            class_tag,
-            record_index,
-            scope_record_index,
-            local_ordinal: 0,
-            evaluated_value,
-            evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
-            parameter_record_index,
-            owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
-            variant: None,
-            companion_record_index,
-        }))
-    })();
-    parsed.transpose()
+    legacy_parameter_owner_88_layout(frame, evaluated, frame_start)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
+
+/// The legacy owner envelope whose scope is repeated in the suffix but whose
+/// scalar and local-ordinal lanes are absent.
+fn legacy_parameter_owner_88_layout(
+    frame: &[u8],
+    evaluated: Located<f64>,
+    frame_start: u64,
+) -> Option<ParameterOwnerLayout<'_>> {
+    let header = indexed_record_header_at(frame, 0)?;
+    if !is_legacy_parameter_owner_88_class(std::str::from_utf8(header.class_tag).ok()?)
+        || frame.len() != legacy_owner_88::LEN
+        || !zeros_at::<8>(frame, legacy_owner_88::ZERO_RUN_8)
+        || frame.get(legacy_owner_88::FIRST_MARKER) != Some(&1)
+        || !zeros_at::<13>(frame, legacy_owner_88::ZERO_RUN_13)
+        || frame.get(legacy_owner_88::PARAMETER_MARKER) != Some(&1)
+        || !zeros_at::<6>(frame, legacy_owner_88::ZERO_RUN_6)
+        || !zeros_at::<4>(frame, legacy_owner_88::ZERO_RUN_4)
+        || frame.get(legacy_owner_88::SCOPE_MARKER) != Some(&1)
+        || !zeros_at::<8>(frame, legacy_owner_88::ZERO_RUN_8_BETWEEN_SCOPES)
+        || frame.get(legacy_owner_88::COMPANION_MARKER) != Some(&1)
+        || !zeros_at::<7>(frame, legacy_owner_88::ZERO_RUN_7)
+        || frame.get(legacy_owner_88::REPEATED_SCOPE_MARKER) != Some(&1)
+        || !zeros_at::<6>(frame, legacy_owner_88::ZERO_RUN_6_TAIL)
+    {
+        return None;
+    }
+    let record_index = header.record_index;
+    let parameter_record_index = View::u32_le_at(frame, legacy_owner_88::PARAMETER_RECORD_INDEX)?;
+    let scope_record_index = View::u32_le_at(frame, legacy_owner_88::SCOPE_RECORD_INDEX)?;
+    if scope_record_index == 0
+        || View::u32_le_at(frame, legacy_owner_88::REPEATED_SCOPE_RECORD_INDEX)?
+            != scope_record_index
+    {
+        return None;
+    }
+    let companion_record_index = View::u32_le_at(frame, legacy_owner_88::COMPANION_RECORD_INDEX)?;
+    let evaluated_value = FiniteReal::new(evaluated.value)?;
+    if !consecutive(record_index, parameter_record_index, companion_record_index) {
+        return None;
+    }
+    Some(ParameterOwnerLayout {
+        class_tag: header.class_tag,
+        frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
+        record_index,
+        scope_record_index,
+        local_ordinal: 0,
+        evaluated_value,
+        evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
+        parameter_record_index,
+        owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
+        variant: None,
+        companion_record_index,
+    })
 }
 
 /// Decode the fixed prefix of every indexed record paired with a parameter
@@ -1067,23 +1195,34 @@ pub(crate) fn decode_parameter_companions(
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "f3d parameter companion headers")?;
     let mut headers_by_record = HashMap::new();
     for header in ctx.admit_iter(headers, "scan F3D parameter companion headers")? {
-        let Some(stream) = native_stream(&header.id) else {
+        let Some(stream) = record_stream(ctx, &header.id)? else {
             continue;
         };
-        let key = (stream, header.record_index);
-        if !headers_by_record.contains_key(&key) {
-            ctx.reserve_map(&mut headers_by_record, 1, "f3d parameter companion headers")?;
-        }
-        headers_by_record.insert(key, header);
+        reservation.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut headers_by_record,
+                (stream, header.record_index),
+                header,
+                "f3d parameter companion headers",
+            )
+        })?;
     }
     let mut out = Vec::new();
     for owner in ctx.admit_iter(owners, "scan F3D parameter companion owners")? {
-        let Some(scope) = native_stream(owner.id()) else {
+        let Some(scope) = record_stream(ctx, owner.id())? else {
             continue;
         };
-        let Some(header) = headers_by_record.get(&(scope, owner.companion_record_index())) else {
+        let Some(header) = ctx
+            .get_hash_map(
+                &headers_by_record,
+                &(scope, owner.companion_record_index()),
+                "find F3D parameter companion header",
+            )?
+            .copied()
+        else {
             continue;
         };
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
@@ -1091,13 +1230,11 @@ pub(crate) fn decode_parameter_companions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let at = usize::try_from(header.byte_offset).ok();
-        let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
-        let parsed = match prefix {
-            Some(prefix) => parse_parameter_companion(ctx, prefix)?,
-            None => None,
-        };
-        let Some(parsed) = parsed else {
+        let Some(parsed) = usize::try_from(header.byte_offset)
+            .ok()
+            .and_then(|at| bytes.get(at..at.checked_add(companion_prefix::LEN)?))
+            .and_then(parse_parameter_companion)
+        else {
             continue;
         };
         if parsed.record_index != owner.companion_record_index()
@@ -1108,9 +1245,7 @@ pub(crate) fn decode_parameter_companions(
         let Some(companion) = parsed.into_record(ctx, &entry.name, header.byte_offset)? else {
             continue;
         };
-
-        ctx.reserve_vec(&mut out, 1, "f3d parameter companions")?;
-        out.push(companion);
+        ctx.push_vec(&mut out, companion, "f3d parameter companions")?;
     }
     ctx.stable_sort_by(
         &mut out[..],
@@ -1121,16 +1256,17 @@ pub(crate) fn decode_parameter_companions(
     Ok(out)
 }
 
-/// Parameter companion prefix parsed in frame-relative coordinates.
-struct ParsedParameterCompanion {
-    class_tag: crate::records::references::DesignClassTag,
+/// Parameter companion prefix parsed in frame-relative coordinates, with the
+/// class tag still borrowed from the frame.
+struct ParsedParameterCompanion<'a> {
+    class_tag: &'a [u8; 3],
     record_index: u32,
     owner_record_index: u32,
     timestamp_micros: std::num::NonZeroU64,
     timestamp_micros_offset: FrameRelative,
 }
 
-impl ParsedParameterCompanion {
+impl ParsedParameterCompanion<'_> {
     /// Locate this companion prefix in its containing stream. The owned payload
     /// extent and recipes are bound afterward by
     /// `bind_parameter_companion_payloads`.
@@ -1143,6 +1279,7 @@ impl ParsedParameterCompanion {
         let Some(timestamp_offset) = self.timestamp_micros_offset.absolute(frame_start) else {
             return Ok(None);
         };
+        let class_tag = retain_class_tag(ctx, self.class_tag, "copy F3D class tag")?;
         let id = design_record_id_charged(
             ctx,
             stream,
@@ -1153,7 +1290,7 @@ impl ParsedParameterCompanion {
         Ok(Some(DesignParameterCompanion::unbound(
             id,
             frame_start,
-            self.class_tag,
+            class_tag,
             self.record_index,
             self.owner_record_index,
             self.timestamp_micros,
@@ -1162,44 +1299,26 @@ impl ParsedParameterCompanion {
     }
 }
 
-fn parse_parameter_companion(
-    ctx: &DecodeContext<'_>,
-    prefix: &[u8],
-) -> Result<Option<ParsedParameterCompanion>, CodecError> {
-    let parsed = (|| {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
-        let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if prefix.len() != companion_prefix::LEN
-            || after_tag != indexed_header::RECORD_INDEX
-            || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
-                != Some(&[0; 20])
-            || prefix.get(companion_prefix::OWNER_MARKER) != Some(&1)
-            || prefix.get(companion_prefix::ZERO_RUN_6..companion_prefix::TIMESTAMP_MICROS)
-                != Some(&[0; 6])
-            || prefix.get(companion_prefix::ZERO_RUN_8..companion_prefix::LEN) != Some(&[0; 8])
-        {
-            return None;
-        }
-        let timestamp_micros = std::num::NonZeroU64::new(View::u64_le_at(
+fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion<'_>> {
+    let header = indexed_record_header_at(prefix, 0)?;
+    if prefix.len() != companion_prefix::LEN
+        || !zeros_at::<20>(prefix, companion_prefix::ZERO_RUN_20)
+        || prefix.get(companion_prefix::OWNER_MARKER) != Some(&1)
+        || !zeros_at::<6>(prefix, companion_prefix::ZERO_RUN_6)
+        || !zeros_at::<8>(prefix, companion_prefix::ZERO_RUN_8)
+    {
+        return None;
+    }
+    Some(ParsedParameterCompanion {
+        class_tag: header.class_tag,
+        record_index: header.record_index,
+        owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
+        timestamp_micros: std::num::NonZeroU64::new(View::u64_le_at(
             prefix,
             companion_prefix::TIMESTAMP_MICROS,
-        )?)?;
-        Some(Ok(ParsedParameterCompanion {
-            class_tag,
-            record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
-            owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
-            timestamp_micros,
-            timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(
-                companion_prefix::TIMESTAMP_MICROS,
-            ))),
-        }))
-    })();
-    parsed.transpose()
+        )?)?,
+        timestamp_micros_offset: FrameRelative::of(companion_prefix::TIMESTAMP_MICROS),
+    })
 }
 
 /// Records a companion payload is resolved against.
@@ -1228,19 +1347,15 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
-    let mut bound = Vec::new();
-    ctx.reserve_vec(
-        &mut bound,
-        companions.len(),
+    ctx.try_collect_vec(
+        companions.into_iter().map(|companion| {
+            Ok::<_, CodecError>(match companion_payload(ctx, &companion, inputs)? {
+                Some(payload) => companion.bound(payload),
+                None => companion,
+            })
+        }),
         "f3d bound parameter companions",
-    )?;
-    for companion in companions {
-        bound.push(match companion_payload(ctx, &companion, inputs)? {
-            Some(payload) => companion.bound(payload),
-            None => companion,
-        });
-    }
-    Ok(bound)
+    )
 }
 
 /// Resolve the byte interval and nested recipes one companion owns.
@@ -1249,99 +1364,60 @@ fn companion_payload<S: std::hash::BuildHasher>(
     companion: &DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
-    let ParameterCompanionInputs {
-        parameters,
-        owners,
-        scopes,
-        entities,
-        headers,
-        recipes,
-        stream_lengths,
-    } = inputs;
-    let Some(stream) = native_stream(companion.id()) else {
+    let Some(stream) = record_stream(ctx, companion.id())? else {
         return Ok(None);
     };
-    let Some(stream_length) = stream_lengths.get(stream).copied() else {
+    let Some(stream_length) = ctx
+        .get_hash_map(
+            inputs.stream_lengths,
+            stream,
+            "find F3D companion stream length",
+        )?
+        .copied()
+    else {
         return Ok(None);
     };
-    let Some((start, mut end)) = companion_owned_interval(
+    let Some((start, end)) = companion_owned_interval(
         ctx,
         companion,
-        parameters.iter(),
-        owners,
-        scopes,
-        headers,
+        ctx.admit_iter(inputs.parameters, "scan F3D companion parameters")?,
+        inputs.owners,
+        inputs.scopes,
+        inputs.headers,
         stream_length,
     )?
     else {
         return Ok(None);
     };
-    // Entity headers precede their owning scope record. A parameter companion
-    // immediately before a new scope does not own that scope's preamble even
-    // though no indexed sibling separates the two records. Bind the preamble
-    // through the scope's entity identity, not by an assumed class-tag or byte
-    // length.
-    let Ok(preamble_limit) = u64::try_from(end) else {
-        return Ok(None);
-    };
-    end = scopes
-        .iter()
-        .filter(|scope| {
-            native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() >= preamble_limit
-                && scope.sketch_entity().is_some()
-        })
-        .filter_map(|scope| {
-            entities
-                .iter()
-                .filter(|entity| {
-                    native_stream(&entity.id) == Some(stream)
-                        && scope.sketch_entity().is_some_and(|binding| {
-                            binding.entity_id.suffix() == entity.entity_id.suffix()
-                        })
-                        && entity.byte_offset >= u64_from_index(start)
-                        && entity.byte_offset < u64_from_index(end)
-                })
-                .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
-                .min()
-        })
-        .min()
-        .unwrap_or(end);
-    let Ok(byte_offset) = u64::try_from(start) else {
-        return Ok(None);
-    };
-    let Ok(byte_length) = u64::try_from(end - start) else {
-        return Ok(None);
-    };
+    let end = scope_preamble_start(ctx, stream, start, end, inputs.scopes, inputs.entities)?;
+    let byte_offset = u64_from_index(start);
+    let byte_length = u64_from_index(end - start);
+    let mut reservation = ctx.reserve_scoped(0, "f3d companion owned recipes")?;
     let mut owned = Vec::new();
-    for recipe in ctx
-        .admit_iter(*recipes, "scan F3D companion owned recipes")?
-        .filter(|recipe| {
-            native_stream(&recipe.id) == Some(stream)
-                && recipe.byte_offset >= u64_from_index(start)
-                && recipe.byte_offset < u64_from_index(end)
-        })
-    {
-        ctx.reserve_vec(&mut owned, 1, "f3d companion owned recipes")?;
-        owned.push(recipe);
+    for recipe in ctx.admit_iter(inputs.recipes, "scan F3D companion owned recipes")? {
+        if recipe.byte_offset < byte_offset
+            || recipe.byte_offset >= u64_from_index(end)
+            || !in_stream(ctx, &recipe.id, stream)?
+        {
+            continue;
+        }
+        ctx.push_scoped_vec(
+            &mut reservation,
+            &mut owned,
+            recipe,
+            "f3d companion owned recipes",
+        )?;
     }
     ctx.stable_sort_by_key(
         &mut owned[..],
-        |value| {
-            let recipe = value;
-            recipe.byte_offset
-        },
+        |recipe| recipe.byte_offset,
         Ord::cmp,
         "sort f3d design parameters 4",
     )?;
     let mut owned_ids = Vec::new();
-    for recipe in ctx
-        .admit_iter(&owned, "scan F3D companion owned recipe IDs")?
-        .copied()
-    {
+    for recipe in ctx.admit_iter(&owned, "scan F3D companion owned recipe IDs")? {
         let id = ctx.copy_retained_text(&recipe.id, "f3d companion owned recipe identifier")?;
-        ctx.reserve_vec(&mut owned_ids, 1, "f3d companion owned recipe identifiers")?;
-        owned_ids.push(id);
+        ctx.push_vec(&mut owned_ids, id, "f3d companion owned recipe identifiers")?;
     }
     Ok(Some(
         crate::records::parameters::DesignCompanionPayload::new(
@@ -1350,6 +1426,70 @@ fn companion_payload<S: std::hash::BuildHasher>(
             owned_ids,
         ),
     ))
+}
+
+/// The end of a companion's owned interval `start..end` in `stream` after
+/// scope preambles are excluded.
+///
+/// Entity headers precede their owning scope record. A parameter companion
+/// immediately before a new scope does not own that scope's preamble even
+/// though no indexed sibling separates the two records. The preamble is bound
+/// through the scope's sketch-entity identity, not by an assumed class tag or
+/// byte length: the interval ends at the first entity header in it whose
+/// entity is the sketch entity of a scope record of `stream` at or after `end`.
+fn scope_preamble_start(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    start: usize,
+    end: usize,
+    scopes: &[DesignParameterScope],
+    entities: &[DesignEntityHeader],
+) -> Result<usize, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "f3d companion preamble entities")?;
+    let mut sketch_entities = Vec::new();
+    for scope in ctx.admit_iter(scopes, "scan F3D companion preamble scopes")? {
+        let Some(binding) = scope.sketch_entity() else {
+            continue;
+        };
+        if scope.byte_offset() < u64_from_index(end) || !in_stream(ctx, &scope.id, stream)? {
+            continue;
+        }
+        ctx.push_scoped_vec(
+            &mut reservation,
+            &mut sketch_entities,
+            binding.entity_id.suffix(),
+            "f3d companion preamble entities",
+        )?;
+    }
+    if sketch_entities.is_empty() {
+        return Ok(end);
+    }
+    ctx.sort_unstable_by_key(
+        &mut sketch_entities,
+        |entity_id| *entity_id,
+        Ord::cmp,
+        "sort F3D companion preamble entities",
+    )?;
+    let mut preamble = end;
+    for entity in ctx.admit_iter(entities, "scan F3D companion preamble entities")? {
+        let Ok(offset) = usize::try_from(entity.byte_offset) else {
+            continue;
+        };
+        if offset < start || offset >= preamble || !in_stream(ctx, &entity.id, stream)? {
+            continue;
+        }
+        if ctx
+            .binary_search(
+                &sketch_entities,
+                &entity.entity_id.suffix(),
+                "find F3D companion preamble entity",
+            )?
+            .is_ok()
+        {
+            preamble = offset;
+        }
+    }
+    Ok(preamble)
 }
 
 #[cfg(test)]
