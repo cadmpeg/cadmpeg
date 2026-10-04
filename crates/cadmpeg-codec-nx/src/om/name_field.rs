@@ -167,7 +167,7 @@ fn name_text<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], length_offset: usize)
         let text = bytes.get(text_start..text_end)?;
         if text.is_empty() || !propagate_resource!(ctx.admit_iter(text, "NX name text validation").map_err(CodecError::from)).all(u8::is_ascii_graphic)
             || bytes.get(text_end) != Some(&0) { return None; }
-        std::str::from_utf8(text).ok().map(Ok)
+        propagate_resource!(ctx.validate_utf8(text, "NX name text UTF-8 validation")).ok().map(Ok)
     })().transpose()
 }
 
@@ -179,6 +179,14 @@ mod tests {
 
     fn scan_test(bytes: &[u8]) -> Vec<NameField<&str, usize, ()>> {
         crate::test_support::with_decode_context(|ctx| scan(ctx, bytes)).unwrap()
+    }
+
+    #[test]
+    fn name_text_utf8_refusal_propagates() {
+        let bytes = [3, 5, b'A', b'B', b'C', 0];
+        assert_eq!(crate::test_support::with_decode_context(|ctx| super::name_text(ctx, &bytes, 1)).unwrap(), Some("ABC"));
+        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX name text UTF-8 validation", |ctx| super::name_text(ctx, &bytes, 1));
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3));
     }
 
     #[test]
