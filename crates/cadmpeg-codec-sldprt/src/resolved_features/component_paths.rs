@@ -848,7 +848,7 @@ fn append_compact_edge_path_charged(
             }
             let digits = edge_id.to_string();
             ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
-            value.push_str(&digits);
+            ctx.append_retained(value, &digits, OPERATION)?;
         }
     } else {
         for (index, component) in selection.components.iter().enumerate() {
@@ -860,7 +860,7 @@ fn append_compact_edge_path_charged(
             if let Some(id) = component.local_id {
                 let digits = id.to_string();
                 ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
-                value.push_str(&digits);
+                ctx.append_retained(value, &digits, OPERATION)?;
             } else {
                 ctx.try_reserve_retained_text(value, 1, OPERATION)?;
                 value.push('_');
@@ -906,7 +906,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
                 }
                 let digits = edge_id.to_string();
                 ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
-                value.push_str(&digits);
+                ctx.append_retained(&mut value, &digits, OPERATION)?;
             }
             return Ok(value);
         }
@@ -939,7 +939,7 @@ pub(crate) fn compact_body_selection_value_charged(
         }
         let digits = body_id.to_string();
         ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
-        value.push_str(&digits);
+        ctx.append_retained(&mut value, &digits, OPERATION)?;
     }
     Ok(value)
 }

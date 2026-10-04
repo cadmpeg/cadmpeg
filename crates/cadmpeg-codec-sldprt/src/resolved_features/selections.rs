@@ -3382,7 +3382,7 @@ pub(super) fn variable_fillet_control_references(
         }
         let mut name_text = String::new();
         ctx.try_reserve_retained_text(&mut name_text, name.value.len(), OPERATION)?;
-        name_text.push_str(&name.value);
+        ctx.append_retained(&mut name_text, &name.value, OPERATION)?;
         ctx.reserve_vec(&mut result, 1, OPERATION)?;
         result.push(VariableFilletControl(name_text, references));
         start = marker;

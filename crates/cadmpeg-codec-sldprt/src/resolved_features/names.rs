@@ -13,7 +13,7 @@ fn retained_text(
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut retained = String::new();
     ctx.try_reserve_retained_text(&mut retained, text.len(), operation)?;
-    retained.push_str(text);
+    ctx.append_retained(&mut retained, text, operation)?;
     Ok(retained)
 }
 

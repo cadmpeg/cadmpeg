@@ -86,8 +86,8 @@ fn scoped_reference_name<'a>(
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
     let (mut name, reservation) = ctx.scoped_string(len, operation)?;
-    name.push_str(source_name);
-    name.push_str("@reference");
+    ctx.append_retained(&mut name, source_name, operation)?;
+    ctx.append_retained(&mut name, "@reference", operation)?;
     if let Some(offset) = offset {
         write!(&mut name, ":{offset}").map_err(|_| {
             cadmpeg_core::CodecError::malformed("cannot format SLDPRT reference name")
@@ -616,7 +616,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .map_or(relation.id.as_str(), |(_, key)| key);
             let (mut key_text, _key_reservation) =
                 ctx.scoped_string(relation_key.len(), OPERATION)?;
-            key_text.push_str(relation_key);
+            ctx.append_retained(&mut key_text, relation_key, OPERATION)?;
             let Ok(relation_key) = cadmpeg_ir::ids::IdentityKey::try_new(key_text) else {
                 continue;
             };
@@ -874,7 +874,7 @@ pub(crate) fn project_compact_body_selections(
                         let digits = id.to_string();
                         let mut text = String::new();
                         ctx.try_reserve_retained_text(&mut text, digits.len(), OPERATION)?;
-                        text.push_str(&digits);
+                        ctx.append_retained(&mut text, &digits, OPERATION)?;
                         ids.push(text);
                     }
                     let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
@@ -917,7 +917,7 @@ pub(crate) fn project_compact_edge_selections(
         ctx.charge_work(1, INDEX_OPERATION)?;
         let mut id_text = String::new();
         ctx.try_reserve_retained_text(&mut id_text, feature.id.as_str().len(), INDEX_OPERATION)?;
-        id_text.push_str(feature.id.as_str());
+        ctx.append_retained(&mut id_text, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
         if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
@@ -927,7 +927,7 @@ pub(crate) fn project_compact_edge_selections(
         ctx.reserve_map(&mut feature_ids_by_native, 1, INDEX_OPERATION)?;
         let mut native = String::new();
         ctx.try_reserve_retained_text(&mut native, native_ref.len(), INDEX_OPERATION)?;
-        native.push_str(native_ref);
+        ctx.append_retained(&mut native, native_ref, INDEX_OPERATION)?;
         feature_ids_by_native.insert(native, id);
     }
     let mut selections = HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new();
@@ -974,7 +974,7 @@ pub(crate) fn project_compact_edge_selections(
                     };
                     let mut id_text = String::new();
                     ctx.try_reserve_retained_text(&mut id_text, feature_id.as_str().len(), OPERATION)?;
-                    id_text.push_str(feature_id.as_str());
+                    ctx.append_retained(&mut id_text, feature_id.as_str(), OPERATION)?;
                     let feature = cadmpeg_ir::features::FeatureId::mint(id_text)
                         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT generated edge feature id"))?;
                     let local_id = compact_edge_path_value_charged(ctx, selection)?;
@@ -1060,7 +1060,7 @@ pub(crate) fn project_compact_edge_selections(
                     }
                     let mut id_text = String::new();
                     ctx.try_reserve_retained_text(&mut id_text, dependency.as_str().len(), DEPENDENCY_OPERATION)?;
-                    id_text.push_str(dependency.as_str());
+                    ctx.append_retained(&mut id_text, dependency.as_str(), DEPENDENCY_OPERATION)?;
                     let id = cadmpeg_ir::features::FeatureId::mint(id_text)
                         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT edge dependency id"))?;
                     ctx.charge_work(u64_from_index(dependencies.len()), DEPENDENCY_OPERATION)?;
@@ -1237,7 +1237,7 @@ fn variable_fillet_radius_groups<'a>(
                     ctx.reserve_set(&mut control_names, 1, OPERATION)?;
                     let mut retained_name = String::new();
                     ctx.try_reserve_retained_text(&mut retained_name, name.len(), OPERATION)?;
-                    retained_name.push_str(&name);
+                    ctx.append_retained(&mut retained_name, &name, OPERATION)?;
                     control_names.insert(retained_name);
                     let Some(radius) = ctx.get_btree_map(&feature.parameters, name.as_str(), OPERATION)?.and_then(|value| {
                         crate::history::literals::parse_positive_dimension_length_mm(value)
@@ -1500,7 +1500,7 @@ pub(crate) fn project_compact_surface_selections(
         ctx.charge_work(1, INDEX_OPERATION)?;
         let mut id_text = String::new();
         ctx.try_reserve_retained_text(&mut id_text, feature.id.as_str().len(), INDEX_OPERATION)?;
-        id_text.push_str(feature.id.as_str());
+        ctx.append_retained(&mut id_text, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
         if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
@@ -1510,7 +1510,7 @@ pub(crate) fn project_compact_surface_selections(
         ctx.reserve_map(&mut feature_ids_by_native, 1, INDEX_OPERATION)?;
         let mut native = String::new();
         ctx.try_reserve_retained_text(&mut native, native_ref.len(), INDEX_OPERATION)?;
-        native.push_str(native_ref);
+        ctx.append_retained(&mut native, native_ref, INDEX_OPERATION)?;
         feature_ids_by_native.insert(native, id);
     }
     let mut history_features = Vec::new();
@@ -2262,7 +2262,7 @@ pub(crate) fn project_draft_operands(
         ctx.charge_work(1, INDEX_OPERATION)?;
         let mut id = String::new();
         ctx.try_reserve_retained_text(&mut id, feature.id.as_str().len(), INDEX_OPERATION)?;
-        id.push_str(feature.id.as_str());
+        ctx.append_retained(&mut id, feature.id.as_str(), INDEX_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT draft feature id"))?;
         if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
@@ -2272,7 +2272,7 @@ pub(crate) fn project_draft_operands(
         ctx.reserve_map(&mut feature_ids_by_native, 1, INDEX_OPERATION)?;
         let mut native = String::new();
         ctx.try_reserve_retained_text(&mut native, native_ref.len(), INDEX_OPERATION)?;
-        native.push_str(native_ref);
+        ctx.append_retained(&mut native, native_ref, INDEX_OPERATION)?;
         feature_ids_by_native.insert(native, id);
     }
     let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
@@ -2563,7 +2563,7 @@ fn format_surface_path_set<'a>(
     let mut value = String::new();
     ctx.try_reserve_retained_text(&mut value, total_bytes, operation)?;
     if unique_count != 1 {
-        value.push_str(set_prefix);
+        ctx.append_retained(&mut value, set_prefix, operation)?;
     }
     let mut emitted = 0usize;
     for index in 0..path_count {
@@ -2581,7 +2581,7 @@ fn format_surface_path_set<'a>(
         if emitted != 0 {
             value.push(';');
         }
-        value.push_str(PATH_PREFIX);
+        ctx.append_retained(&mut value, PATH_PREFIX, operation)?;
         for (component_index, component) in components.iter().enumerate() {
             if component_index != 0 {
                 value.push(',');
@@ -2743,7 +2743,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         ctx.charge_work(1, ID_OPERATION)?;
         let (mut id_text, id_reservation) =
             ctx.scoped_string(feature.id.as_str().len(), ID_OPERATION)?;
-        id_text.push_str(feature.id.as_str());
+        ctx.append_retained(&mut id_text, feature.id.as_str(), ID_OPERATION)?;
         let id = cadmpeg_ir::features::FeatureId::mint(id_text).map_err(|_| {
             cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id")
         })?;
@@ -2757,7 +2757,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             .with_storage(|| ctx.reserve_map(&mut feature_ids_by_native, 1, ID_OPERATION))?;
         let (mut native_key, key_reservation) =
             ctx.scoped_string(native_ref.len(), ID_OPERATION)?;
-        native_key.push_str(native_ref);
+        ctx.append_retained(&mut native_key, native_ref, ID_OPERATION)?;
         lookup_storage.with_storage(|| ctx.reserve_vec(&mut scoped_ids, 1, ID_OPERATION))?;
         scoped_ids.push(key_reservation);
         feature_ids_by_native.insert(native_key, id);
@@ -2935,7 +2935,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     }
                     let mut native = String::new();
                     ctx.try_reserve_retained_text(&mut native, bytes, NATIVE_OPERATION)?;
-                    native.push_str(PREFIX);
+                    ctx.append_retained(&mut native, PREFIX, NATIVE_OPERATION)?;
                     last = None;
                     for (reference, _, _) in &references {
                         if last == Some(reference.as_str()) {
@@ -2944,7 +2944,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         if last.is_some() {
                             native.push(',');
                         }
-                        native.push_str(reference);
+                        ctx.append_retained(&mut native, reference, NATIVE_OPERATION)?;
                         last = Some(reference.as_str());
                     }
                     Some(native)
