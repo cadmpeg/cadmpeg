@@ -51,7 +51,7 @@ fn ascii_at<'bytes>(ctx: &DecodeContext<'_>, bytes: &'bytes [u8], at: usize)
     })() else { return Ok(None); };
     if !ctx.admit_iter(raw, "scan F3D unit ASCII field")?
         .all(|byte| byte.is_ascii_graphic() || *byte == b' ') { return Ok(None); }
-    Ok(std::str::from_utf8(raw).ok().map(|text| (text, end)))
+    Ok(ctx.validate_utf8(raw, "validate F3D unit UTF-8 field")?.ok().map(|text| (text, end)))
 }
 
 /// Read the `u32` field at `at` and check it equals `expected`, returning the
@@ -552,6 +552,25 @@ pub(crate) mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "scan F3D unit name literal bytes"
                 && limit.additional == 4));
+    }
+
+    #[test]
+    fn unit_ascii_utf8_validation_preserves_result_and_refusal() {
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "Custom");
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(super::ascii_at(&ctx, &bytes, 0).unwrap(), Some(("Custom", 10)));
+        assert_eq!(super::ascii_at(&ctx, &[1, 0, 0, 0, 0xff], 0).unwrap(), None);
+        assert_eq!(super::ascii_at(&ctx, &[0, 0, 0, 0], 0).unwrap(), Some(("", 4)));
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "validate F3D unit UTF-8 field", 0,
+            |ctx| super::ascii_at(ctx, &bytes, 0),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D unit UTF-8 field"
+                && limit.additional == 6));
     }
 
 }
