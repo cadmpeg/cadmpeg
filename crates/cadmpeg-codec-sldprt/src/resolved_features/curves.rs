@@ -1220,12 +1220,7 @@ pub(super) fn resolve_connected_marker_arcs(
             component_replacements.push((index, geometry));
         }
         if component_replacements.len() >= 2 {
-            ctx.reserve_vec(
-                &mut replacements,
-                component_replacements.len(),
-                "collect SLDPRT connected arc replacements",
-            )?;
-            replacements.extend(component_replacements);
+            ctx.extend_vec(&mut replacements, component_replacements, "collect SLDPRT connected arc replacements")?;
         }
     }
     for (index, geometry) in replacements {

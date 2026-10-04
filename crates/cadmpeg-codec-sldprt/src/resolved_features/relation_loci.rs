@@ -2851,21 +2851,7 @@ fn unique_dynamic_marker_point_pair(
                 loci_by_marker,
                 sketch_entities,
             )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(additions.len())
-                    .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        SketchLocus,
-                    >(
-                    )))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            ctx.reserve_vec(
-                &mut candidates,
-                additions.len(),
-                "append SLDPRT dynamic point candidates",
-            )?;
-            candidates.extend(additions);
+            ctx.extend_vec(&mut candidates, additions, "append SLDPRT dynamic point candidates")?;
         }
         Ok(candidates)
     };

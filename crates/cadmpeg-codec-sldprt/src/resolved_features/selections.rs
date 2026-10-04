@@ -438,12 +438,10 @@ pub(super) fn compact_edge_selections(
         }
         if let Some(token) = compact_edge_token {
             let repeated = repeated_edge_selections(ctx, &lane.native_payload, start, end, token)?;
-            ctx.reserve_vec(&mut selections, repeated.len(), OPERATION)?;
-            selections.extend(repeated);
+            ctx.extend_vec(&mut selections, repeated, OPERATION)?;
         }
         let interval = edge_selection_vectors_in_interval(ctx, &lane.native_payload, start, end)?;
-        ctx.reserve_vec(&mut selections, interval.len(), OPERATION)?;
-        selections.extend(interval);
+        ctx.extend_vec(&mut selections, interval, OPERATION)?;
         ctx.sort_unstable_by(
             &mut selections,
             |value| &value.0,
@@ -852,8 +850,7 @@ pub(super) fn compact_surface_selections(
                 if let Some(prefix) = mirror_surface_prefix {
                     let inline =
                         inline_mirror_surface_paths(ctx, &lane.native_payload, start, end, prefix)?;
-                    ctx.reserve_vec(&mut candidates, inline.len(), OPERATION)?;
-                    candidates.extend(inline);
+                    ctx.extend_vec(&mut candidates, inline, OPERATION)?;
                 }
                 candidates
             }
@@ -1365,8 +1362,7 @@ fn operation_surface_selection_candidates(
     for token in component_face_tokens {
         let repeated =
             component_face_reference_candidates(ctx, &lane.native_payload, token, start, end)?;
-        ctx.reserve_vec(&mut candidates, repeated.len(), OPERATION)?;
-        candidates.extend(repeated);
+        ctx.extend_vec(&mut candidates, repeated, OPERATION)?;
     }
     order_surface_candidates(ctx, &mut candidates, OPERATION)?;
     Ok(if candidates.len() == 1 {
@@ -1615,8 +1611,7 @@ fn cosmetic_thread_component_references(
         object_start,
         object_end,
     )?;
-    ctx.reserve_vec(&mut class_ranges, repeated.len(), OPERATION)?;
-    class_ranges.extend(repeated);
+    ctx.extend_vec(&mut class_ranges, repeated, OPERATION)?;
     let mut references = Vec::new();
     for marker in class_ranges.into_iter().flatten() {
         ctx.charge_work(16, OPERATION)?;

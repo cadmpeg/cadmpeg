@@ -1265,12 +1265,7 @@ fn variable_fillet_radius_groups<'a>(
                         return Ok(None);
                     }
                     ctx.insert_hash_set(&mut non_vertex_control_names, name, OPERATION)?;
-                    ctx.reserve_vec(
-                        &mut non_vertex_control_references,
-                        references.len(),
-                        OPERATION,
-                    )?;
-                    non_vertex_control_references.extend(references);
+                    ctx.extend_vec(&mut non_vertex_control_references, references, OPERATION)?;
                 }
                 _ => return Ok(None),
             }
