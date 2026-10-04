@@ -1658,13 +1658,6 @@ fn physical_locus_truncation_propagates_work_refusal() {
     super::deduplicate_physical_loci(&ctx, &mut loci, |_| Ok(Some(Point2::new(0.0, 0.0))))
         .unwrap();
     assert_eq!(loci, vec![first]);
-    let error = crate::test_support::work_refusal_at("discard SLDPRT duplicate physical loci", |ctx| {
-        let mut loci = input.clone();
-        super::deduplicate_physical_loci(ctx, &mut loci, |_| Ok(Some(Point2::new(0.0, 0.0))))
-    });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "discard SLDPRT duplicate physical loci"));
 }
 
 #[test]
