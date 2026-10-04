@@ -235,18 +235,14 @@ impl InventorLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     pub(crate) fn kind(self, ctx: &DecodeContext<'_>) -> Result<LossKind, CodecError> {
         let code = ctx.copy_retained_text(self.code(), "retain Inventor loss code")?;
-        ctx.charge_work(8, "copy Inventor loss namespace")?;
-        ctx.charge_retained(8, "retain Inventor loss namespace")?;
-        Ok(LossKind::namespaced(
-            const {
-                match cadmpeg_ir::report::loss::LossNamespace::new("inventor") {
-                    Ok(namespace) => namespace,
-                    Err(_) => panic!("reserved codec namespace"),
-                }
-            },
+        let namespace = ctx.copy_retained_text("inventor", "retain Inventor loss namespace")?;
+        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
+            namespace,
             code,
             self.shared_taxonomy(),
-        ))
+        )
+        .map_err(CodecError::malformed)?;
+        Ok(LossKind::Namespaced(kind))
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
