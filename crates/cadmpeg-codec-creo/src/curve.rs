@@ -452,6 +452,15 @@ pub(crate) struct CurveTopologyRow {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for CurveTopologyRow {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &((&self.id, &self.type_byte, &self.feature_id, &self.directions),
+                (&self.faces, &self.next_edges, &self.offset)), ctx, operation,
+        )
+    }
+}
+
 impl CurveTopologyRow {
     /// The face identifiers bounding the two half-edge sides, in side order,
     /// skipping sides that bound no face.
@@ -7806,7 +7815,7 @@ pub(crate) fn topology_rows_with_face_ids(
         Ord::cmp,
         "creo topology rows with face ids rows ordering",
     )?;
-    rows.dedup_by_key(|row| row.offset);
+    ctx.dedup_by_key(&mut rows, |row| Ok(row.offset), "creo topology curve row deduplication")?;
     Ok(rows)
 }
 
