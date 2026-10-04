@@ -654,25 +654,20 @@ pub(crate) fn enrich_history_split_lines(
     {
         if observations.get(&feature.id) == Some(&(true, false)) {
             let mode_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY);
-            ctx.admit_btree_entry(
-                &feature.properties,
-                &mode_key,
+            ctx.insert_btree_map(
+                &mut feature.properties,
+                mode_key,
+                SPLIT_LINE_PROJECTION_MODE.into(),
                 "bind SLDPRT split-line mode",
             )?;
-            feature
-                .properties
-                .insert(mode_key, SPLIT_LINE_PROJECTION_MODE.into());
             if let Some(tool) = tools.get(&feature.id) {
                 let tool_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY);
-                ctx.admit_btree_entry(
-                    &feature.properties,
-                    &tool_key,
-                    "bind SLDPRT split-line tool",
-                )?;
-                feature.properties.insert(
+                ctx.insert_btree_map(
+                    &mut feature.properties,
                     tool_key,
                     copy_retained_string(ctx, tool, "retain SLDPRT split-line tool property")?,
-                );
+                    "bind SLDPRT split-line tool",
+                )?;
             }
         }
     }
