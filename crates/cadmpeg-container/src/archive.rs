@@ -268,6 +268,38 @@ impl<'a> ArchiveSnapshot<'a> {
         Ok(false)
     }
 
+    /// Tests readable, unencrypted entry names and skips unreadable entries.
+    /// An invalid ZIP returns false; resource refusals propagate unchanged.
+    /// The predicate admits its own name scans. Payloads are not decompressed.
+    pub fn probe_readable_names(
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+        mut matches: impl FnMut(&str) -> Result<bool, CodecError>,
+    ) -> Result<bool, CodecError> {
+        let mut index = match ZipIndex::new(ctx, root.window()) {
+            Ok(index) => index,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(false),
+        };
+        for ordinal in ctx.admit_iter(0..index.archive.len(), "ZIP readable name probe")? {
+            // zip 8.6 reads the 30-byte local header and seeks past variable fields.
+            ctx.charge_work(30, "ZIP readable name probe")?;
+            let Ok(entry) = index.archive.by_index_raw(ordinal) else {
+                continue;
+            };
+            if entry.encrypted()
+                || entry.get_metadata().aes_mode.is_some()
+                || !matches!(entry.compression(), CompressionMethod::Stored | CompressionMethod::Deflated | CompressionMethod::Zstd)
+            {
+                continue;
+            }
+            if matches(entry.name())? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Returns central-directory records in archive order.
     pub fn entries(&self) -> &[EntryRecord] {
         &self.entries
@@ -1308,6 +1340,8 @@ mod tests {
     use zip::CompressionMethod;
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
+
+    mod probe;
 
     fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
