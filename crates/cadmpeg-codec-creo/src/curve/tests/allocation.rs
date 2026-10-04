@@ -1659,3 +1659,15 @@ fn relation_record_line_utf8_refuses_before_comment_skip() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo UTF-8 validation"));
 }
+
+#[test]
+fn prohibited_construct_trim_refuses_before_comment_skip() {
+    let lines = expression_lines(&["  /* comment */  "]);
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo prohibited construct whitespace trim",
+        |ctx| super::super::curve_equation_prohibited_constructs(ctx, &lines),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "creo prohibited construct whitespace trim"));
+}

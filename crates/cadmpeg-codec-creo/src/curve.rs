@@ -1284,7 +1284,7 @@ fn curve_equation_prohibited_constructs(
         &["abs", "ceil", "floor", "extract", "if", "itos", "search"];
     let mut prohibited = BTreeSet::new();
     for line in lines {
-        let source = line.text.trim();
+        let source = ctx.trim_text(&line.text, "creo prohibited construct whitespace trim")?;
         if source.starts_with("/*") {
             continue;
         }
