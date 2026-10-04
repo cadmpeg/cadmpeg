@@ -1036,7 +1036,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             Ord::cmp,
             "sort SLDPRT revolution profile sources",
         )?;
-        object_ids.dedup();
+        ctx.dedup_vec(&mut object_ids, "deduplicate SLDPRT revolution profile sources")?;
         if let [object_id] = object_ids.as_slice() {
             feature.source_id = FeatureSource::from_value(*object_id);
         }

@@ -58,6 +58,9 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
     crate::test_support::work_refusal_at("deduplicate SLDPRT rectangle u coordinates", |ctx| {
         ordered_rectangle_corners(ctx, &corners)
     });
+    crate::test_support::work_refusal_at("deduplicate SLDPRT rectangle v coordinates", |ctx| {
+        ordered_rectangle_corners(ctx, &corners)
+    });
     let duplicate = [corners[0], corners[0], corners[2], corners[3]];
     assert_eq!(
         ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &duplicate)
@@ -106,6 +109,12 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
     let marker_refs = markers.iter().collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    for operation in ["deduplicate SLDPRT dimensioned rectangle u coordinates",
+        "deduplicate SLDPRT rectangle v coordinates"] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            unique_dimensioned_rectangle_markers(ctx, &marker_refs, &[8.5, 5.5])
+        });
+    }
     assert_eq!(
         unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5])
             .unwrap()

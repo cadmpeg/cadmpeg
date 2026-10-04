@@ -41,3 +41,21 @@ fn rectangle_coordinate_collections_preserve_output_and_refusals() {
         }
     }
 }
+
+#[test]
+fn connected_arc_endpoint_deduplication_preserves_native_geometry_and_refusal() {
+    const EPS_CONNECTED_ARC: f64 = 1.0e-9;
+    let mut entities = super::connected_arc_limit_entities();
+    entities.push(cadmpeg_ir::sketches::SketchEntity::new(
+        cadmpeg_ir::sketches::SketchEntityId::mint("synthetic:test:id#duplicate-endpoint-arc").unwrap(),
+        entities[1].sketch.clone(), entities[1].geometry.clone(),
+    ).with_native_ref(Some("duplicate-arc".into()))
+        .with_endpoint_refs(vec!["p".into(), "p".into()]));
+    let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut candidates = entities.clone();
+        super::super::resolve_connected_marker_arcs(ctx, &mut candidates, EPS_CONNECTED_ARC)
+            .map(|()| candidates)
+    };
+    assert_eq!(solve(&cadmpeg_test_support::service_decode_context()).unwrap(), entities);
+    crate::test_support::work_refusal_at("deduplicate SLDPRT connected arc endpoints", solve);
+}

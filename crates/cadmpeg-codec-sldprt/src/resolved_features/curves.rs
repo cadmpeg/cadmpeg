@@ -1175,7 +1175,7 @@ pub(super) fn resolve_connected_marker_arcs(
             Ord::cmp,
             "sort SLDPRT connected arc endpoints",
         )?;
-        endpoint_refs.dedup();
+        ctx.dedup_vec(&mut endpoint_refs, "deduplicate SLDPRT connected arc endpoints")?;
         let mut component_points = Vec::new();
         let mut missing_point = false;
         for endpoint in &endpoint_refs {
@@ -1677,7 +1677,7 @@ pub(super) fn ordered_rectangle_corners(
         f64::total_cmp,
         "sldprt rectangle v sort",
     )?;
-    v.dedup();
+    ctx.dedup_vec(&mut v, "deduplicate SLDPRT rectangle v coordinates")?;
     let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
         return Ok(None);
     };
@@ -2374,14 +2374,14 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
         Ord::cmp,
         "sldprt rectangle cells u sort",
     )?;
-    u.dedup();
+    ctx.dedup_vec(&mut u, "deduplicate SLDPRT dimensioned rectangle u coordinates")?;
     ctx.sort_unstable_by(
         &mut v,
         |value| value,
         Ord::cmp,
         "sldprt rectangle cells v sort",
     )?;
-    v.dedup();
+    ctx.dedup_vec(&mut v, "deduplicate SLDPRT rectangle v coordinates")?;
     let dimension_count = cadmpeg_core::decode::u64_from_index(dimensions_mm.len());
     let dimension_work = dimension_count
         .checked_mul(dimension_count)

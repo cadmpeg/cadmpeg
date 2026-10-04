@@ -2976,7 +2976,7 @@ pub(super) fn coordinate_roster_arc_center(
         OPERATION,
     )?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    centers.dedup();
+    ctx.dedup_vec(&mut centers, "deduplicate SLDPRT endpoint centers")?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };
@@ -3121,7 +3121,7 @@ pub(super) fn legacy_compact_diameter_arc_center(
         });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    centers.dedup();
+    ctx.dedup_vec(&mut centers, "deduplicate SLDPRT endpoint centers")?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };

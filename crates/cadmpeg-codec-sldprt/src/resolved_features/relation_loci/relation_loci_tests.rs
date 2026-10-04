@@ -1677,3 +1677,5 @@ fn qualified_point_suffix_propagates_work_refusal() {
     assert_eq!(super::qualified_point_loci(&ctx, "marker", &loci).unwrap(), Some(&[][..]));
     assert_eq!(super::qualified_point_loci(&ctx, "other", &loci).unwrap(), None);
 }
+
+mod deduplication;

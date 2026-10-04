@@ -1016,7 +1016,7 @@ fn fillet_face_selection_candidates(
         Ord::cmp,
         "sort SLDPRT full round fillet class bodies",
     )?;
-    class_bodies.dedup();
+    ctx.dedup_vec(&mut class_bodies, "deduplicate SLDPRT full round fillet class bodies")?;
     let mut candidates = Vec::new();
     if let Some(scan_end) = end.checked_sub(6) {
         for (body, token) in class_bodies {
@@ -1521,7 +1521,7 @@ fn cosmetic_thread_cylinder_references(
         Ord::cmp,
         "sort SLDPRT cosmetic thread cylinder offsets",
     )?;
-    offsets.dedup();
+    ctx.dedup_vec(&mut offsets, "deduplicate SLDPRT cosmetic thread cylinder offsets")?;
     let mut references = Vec::new();
     for offset in offsets {
         ctx.charge_work(1, OPERATION)?;
@@ -1732,6 +1732,30 @@ pub(super) struct CylinderMarkerReference(
     pub Option<Vec<FeatureInputComponentPathEntry>>,
 );
 
+impl cadmpeg_core::decode::cost::DecodeCost for CylinderMarkerReference {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let mut bytes = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.0, self.1.is_some()), ctx, operation,
+        )?;
+        if let Some(components) = &self.1 {
+            for component in ctx.admit_iter(components, operation)? {
+                let child = cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                    &(&component.instance, &component.type_signature, &component.local_id),
+                    ctx, operation,
+                )?;
+                bytes = bytes.checked_add(child).ok_or_else(|| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+        }
+        Ok(bytes)
+    }
+}
+
 pub(super) fn cosmetic_thread_cylinder_marker_reference(
     ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
@@ -1767,7 +1791,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         Ord::cmp,
         "sort SLDPRT cosmetic thread cylinder markers",
     )?;
-    markers.dedup();
+    ctx.dedup_vec(&mut markers, "deduplicate SLDPRT cosmetic thread cylinder markers")?;
     let mut references = Vec::new();
     ctx.reserve_vec(&mut references, markers.len(), OPERATION)?;
     for marker in markers {
