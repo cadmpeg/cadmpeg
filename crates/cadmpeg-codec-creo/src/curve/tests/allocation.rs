@@ -1671,3 +1671,5 @@ fn prohibited_construct_trim_refuses_before_comment_skip() {
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "creo prohibited construct whitespace trim"));
 }
+
+mod trimming;

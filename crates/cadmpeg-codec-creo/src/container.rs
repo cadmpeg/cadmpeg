@@ -626,7 +626,7 @@ fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String,
     ctx.charge_work(text_work, "creo version text work")?;
     let mut line = ctx.copy_retained_lossy_utf8(bytes, "creo version line")?;
     let leading = line.len() - line.trim_start().len();
-    let trimmed_len = line.trim().len();
+    let trimmed_len = ctx.trim_text(&line, "creo version line trim")?.len();
     line.drain(..leading);
     line.truncate(trimmed_len);
     Ok(line)

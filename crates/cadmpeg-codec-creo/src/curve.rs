@@ -1382,17 +1382,17 @@ fn expression_assignment(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     line: &CurveExpressionLine,
 ) -> Result<Option<CurveExpressionAssignment>, cadmpeg_core::CodecError> {
-    let source = line.text.trim();
+    let source = ctx.trim_text(&line.text, "creo assignment source line trim")?;
     if source.starts_with("/*") {
         return Ok(None);
     }
     let Some((name, expression)) = split_expression_assignment(source) else {
         return Ok(None);
     };
-    let Some(target) = expression_assignment_target(ctx, name.trim())? else {
+    let Some(target) = expression_assignment_target(ctx, ctx.trim_text(name, "creo assignment name trim")?)? else {
         return Ok(None);
     };
-    let expression = expression.trim();
+    let expression = ctx.trim_text(expression, "creo assignment expression trim")?;
     if expression.is_empty() {
         return Ok(None);
     }
@@ -1574,7 +1574,7 @@ fn curve_expression_solve_program(
     let mut program = CurveExpressionSolveProgram::default();
     let mut pending = None::<PendingCurveExpressionSolveBlock>;
     for (index, line) in lines.iter().enumerate() {
-        let source = line.text.trim();
+        let source = ctx.trim_text(&line.text, "creo solve source line trim")?;
         let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(ctx, source, "solve")? {
                 ctx.insert_btree_set(
@@ -1667,7 +1667,7 @@ fn curve_expression_solve_program(
             block.valid = false;
             continue;
         };
-        let (left, right) = (left.trim(), right.trim());
+        let (left, right) = (ctx.trim_text(left, "creo solve left operand trim")?, ctx.trim_text(right, "creo solve right operand trim")?);
         if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
             program.unresolved_control = true;
             block.valid = false;
@@ -1772,7 +1772,7 @@ fn expression_assignment_target(
         let Some(unit) = source.get(unit_start + 1..source.len() - 1) else {
             return Ok(None);
         };
-        let unit = unit.trim();
+        let unit = ctx.trim_text(unit, "creo relation declared unit trim")?;
         if unit.is_empty() {
             return Ok(None);
         }
@@ -1833,7 +1833,7 @@ fn expression_target_function_call<'a>(
     let Some(body) = source.get(argument_start + 1..source.len() - 1) else {
         return Ok(None);
     };
-    let arguments = if body.trim().is_empty() {
+    let arguments = if ctx.trim_text(body, "creo function target body trim")?.is_empty() {
         Vec::new()
     } else {
         let Some(arguments) = split_assignment_target_arguments(ctx, body)? else {
@@ -1920,7 +1920,7 @@ fn split_assignment_target_arguments<'a>(
                 let Some(argument) = source.get(start..offset) else {
                     return Ok(None);
                 };
-                let argument = argument.trim();
+                let argument = ctx.trim_text(argument, "creo separated target argument trim")?;
                 if argument.is_empty() {
                     return Ok(None);
                 }
@@ -1937,7 +1937,7 @@ fn split_assignment_target_arguments<'a>(
     let Some(argument) = source.get(start..) else {
         return Ok(None);
     };
-    let argument = argument.trim();
+    let argument = ctx.trim_text(argument, "creo final target argument trim")?;
     if argument.is_empty() {
         return Ok(None);
     }
@@ -2051,7 +2051,7 @@ impl ConditionalStack {
 }
 
 fn conditional_keyword_expression<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &'a str, keyword: &str) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
-    let source = source.trim();
+    let source = ctx.trim_text(source, "creo relation condition trim")?;
     let prefix = { let Some(value) = source.get(..keyword.len()) else { return Ok(None); }; value };
     { let Some(value) = ctx.eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?.then_some(()) else { return Ok(None); }; value };
     { let Some(value) = source
@@ -2064,7 +2064,7 @@ fn conditional_keyword_expression<'a>(ctx: &cadmpeg_core::decode::DecodeContext<
 }
 
 fn starts_relation_keyword(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &str, keyword: &str) -> Result<bool, cadmpeg_core::CodecError> {
-    let source = source.trim();
+    let source = ctx.trim_text(source, "creo relation keyword trim")?;
     Ok(match source
         .get(..keyword.len()) { Some(prefix) => ctx.eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?, None => false }
         && source
@@ -2079,7 +2079,7 @@ fn expression_program_control_is_valid(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut else_seen = Vec::new();
     for line in lines {
-        let source = line.text.trim();
+        let source = ctx.trim_text(&line.text, "creo relation control line trim")?;
         if starts_relation_keyword(ctx, source, "if")? {
             if conditional_keyword_expression(ctx, source, "if")?.is_none() {
                 return Ok(false);
@@ -2375,7 +2375,7 @@ fn evaluate_expression_program_details(
         if !solve_line_is_executable(&index) {
             continue;
         }
-        let source = line.text.trim();
+        let source = ctx.trim_text(&line.text, "creo evaluated relation line trim")?;
         if let Some(condition_source) = conditional_keyword_expression(ctx, source, "if")? {
             let condition = if activity == CurveExpressionActivation::Active {
                 parse_relation_expression::<CurveExpressionValue>(
