@@ -626,13 +626,11 @@ impl Persistence {
                 Some((known, _)) if known != text => all_conflict = true,
                 Some(_) => {}
             }
-            let is_root_solid = record
-                .parent
-                .as_ref()
-                .and_then(|parent| objects.get(parent))
-                .is_some_and(|object| {
-                    object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
-                });
+            let is_root_solid = match record.parent.as_ref().and_then(|parent| objects.get(parent)) {
+                Some(object) => object.parent.is_none()
+                    && ctx.eq_ignore_ascii_case(&object.name, "solid", "creo legacy root object name")?,
+                None => false,
+            };
             if is_root_solid {
                 match preferred {
                     None => preferred = Some((text, record.offset)),
@@ -663,22 +661,26 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<(String, usize)>, CodecError> {
-        let selected = self
-            .string_values
-            .iter()
-            .filter(|record| record.name == "model_name")
-            .filter_map(|record| {
-                let StringPayload::Scalar {
-                    value: StringValue::Utf8 { text },
-                } = &record.payload
-                else {
-                    return None;
-                };
-                let text = text.trim();
-                (!text.is_empty() && !text.eq_ignore_ascii_case("NULL"))
-                    .then_some((text, record.offset))
-            })
-            .min_by_key(|(_, offset)| *offset);
+        let mut selected = None::<(&str, usize)>;
+        for record in ctx.admit_iter(&self.string_values, "creo legacy source model rows")? {
+            if record.name != "model_name" {
+                continue;
+            }
+            let StringPayload::Scalar {
+                value: StringValue::Utf8 { text },
+            } = &record.payload else {
+                continue;
+            };
+            let text = text.trim();
+            if text.is_empty()
+                || ctx.eq_ignore_ascii_case(text, "NULL", "creo legacy null source model name")?
+            {
+                continue;
+            }
+            if selected.is_none_or(|(_, offset)| record.offset < offset) {
+                selected = Some((text, record.offset));
+            }
+        }
         selected
             .map(|(text, offset)| {
                 ctx.copy_retained_text(text, "creo legacy first source model name")

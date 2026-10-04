@@ -583,7 +583,7 @@ fn curve_expression_properties(
     let intrinsic_dependencies = joined_dependency_names(
         ctx,
         &assignment.dependencies,
-        |name| Ok(name.eq_ignore_ascii_case("t")),
+        |name| ctx.eq_ignore_ascii_case(name, "t", "creo relation intrinsic parameter"),
         "creo curve-expression intrinsic dependency text",
     )?;
     let mut properties = BTreeMap::new();

@@ -388,3 +388,63 @@ fn relation_argument_storage_is_scoped_and_released() {
         matches!(error, CodecError::ResourceLimit(ref resource) if resource.dimension == ResourceDimension::RetainedBytes && resource.used == 2)
     );
 }
+
+#[test]
+fn relation_function_name_comparison_refuses_work() {
+    assert_work(
+        &crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo math function name",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "SIN(0)",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
+        "creo math function name",
+    );
+}
+
+#[test]
+fn relation_unit_comparison_refuses_inside_function_argument() {
+    assert_work(
+        &crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo relation text comparison",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "SIN(1[mm])",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
+        "creo relation text comparison",
+    );
+}
+
+#[test]
+fn reserved_relation_symbol_comparison_refuses_work() {
+    assert_work(
+        &crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo relation text comparison",
+            |ctx| {
+                crate::curve::parse_relation_expression::<DimensionProbeValue>(
+                    ctx,
+                    "PI",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
+        "creo relation text comparison",
+    );
+}
