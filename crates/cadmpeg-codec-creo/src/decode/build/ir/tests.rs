@@ -1122,3 +1122,58 @@ fn display_strip_position_and_normal_sources_refuse_work_before_projection() {
     assert_eq!(shaded.model.tessellations[0].vertices()[0].get(), Point3::new(25.4, 0.0, 0.0));
     assert!(matches!(shaded.model.tessellations[0].mesh(), cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }));
 }
+
+#[test]
+fn placed_plane_duplicate_comparison_refuses_before_identity_search() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("plane", &[]));
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 18,
+        body: Vec::new(),
+        slots: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].map(Some),
+        layout: Some(PlaneSupportFrameLayout::SupportTriples),
+        classification: LocalSystemClassification::Simple,
+        row_offset: 0,
+        offset: 0,
+    });
+    let mut ir = CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_placed_plane_surfaces_into_ir(
+            ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut SourceUnitCarriers::default(),
+        )
+    }).expect("initial plane transfer");
+    assert_eq!(ir.model.surfaces.len(), 1);
+
+    let arena = DecodeArena::new();
+    let mut limit = 0;
+    let mut compared = false;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = transfer_placed_plane_surfaces_into_ir(
+            &ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut SourceUnitCarriers::default(),
+        ).expect_err("comparison is reached before the duplicate is retained");
+        let CodecError::ResourceLimit(resource) = error else {
+            panic!("expected work refusal");
+        };
+        assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(ir.model.surfaces.len(), 1);
+        if resource.operation == "creo placed plane surface identity comparison" {
+            compared = true;
+            break;
+        }
+        limit = resource.used.checked_add(resource.additional).expect("next work boundary");
+    }
+    assert!(compared, "the duplicate comparison must be charged");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_placed_plane_surfaces_into_ir(
+            ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut SourceUnitCarriers::default(),
+        )
+    }).expect("duplicate plane transfer");
+    assert_eq!(ir.model.surfaces.len(), 1);
+}

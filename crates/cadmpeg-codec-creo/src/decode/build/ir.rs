@@ -749,7 +749,14 @@ fn transfer_placed_plane_surfaces_into_ir(
             surface_id,
             "creo placed plane surface identity",
         )?;
-        if ctx.admit_iter(&ir.model.surfaces, "creo placed plane surface search")?.any(|surface| surface.id == id) {
+        let mut already_transferred = false;
+        for surface in ctx.admit_iter(&ir.model.surfaces, "creo placed plane surface search")? {
+            if ctx.equal(&surface.id, &id, "creo placed plane surface identity comparison")? {
+                already_transferred = true;
+                break;
+            }
+        }
+        if already_transferred {
             continue;
         }
         let tag = if ctx.admit_iter(&scan.planes.positional_frames, "creo positional plane tag search")?
