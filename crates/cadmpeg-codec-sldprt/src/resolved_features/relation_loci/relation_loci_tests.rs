@@ -1666,3 +1666,14 @@ fn physical_locus_truncation_propagates_work_refusal() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && limit.operation == "discard SLDPRT duplicate physical loci"));
 }
+
+#[test]
+fn qualified_point_suffix_propagates_work_refusal() {
+    let loci = std::collections::HashMap::from([("marker:qualified-point".to_owned(), Vec::new())]);
+    crate::test_support::work_refusal_at("strip SLDPRT qualified point suffix", |ctx| {
+        super::qualified_point_loci(ctx, "marker", &loci)
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(super::qualified_point_loci(&ctx, "marker", &loci).unwrap(), Some(&[][..]));
+    assert_eq!(super::qualified_point_loci(&ctx, "other", &loci).unwrap(), None);
+}

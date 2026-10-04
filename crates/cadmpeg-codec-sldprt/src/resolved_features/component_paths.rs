@@ -601,12 +601,20 @@ pub(crate) fn is_dissected_profile_feature(
     ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
 ) -> Result<bool, CodecError> {
-    Ok(feature.properties.get("Description") == Some(&feature.name)
-        && ctx.rsplit_once(&feature.name, "<", "split SLDPRT dissected profile ordinal")?
-            .and_then(|(_, suffix)| suffix.strip_suffix('>'))
-            .is_some_and(|ordinal| {
-                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-            }))
+    if feature.properties.get("Description") != Some(&feature.name) {
+        return Ok(false);
+    }
+    let Some((_, suffix)) = ctx.rsplit_once(
+        &feature.name,
+        "<",
+        "split SLDPRT dissected profile ordinal",
+    )? else {
+        return Ok(false);
+    };
+    let ordinal = ctx.strip_suffix(suffix, ">", "strip SLDPRT dissected profile ordinal suffix")?;
+    Ok(ordinal.is_some_and(|ordinal| {
+        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+    }))
 }
 
 pub(crate) fn project_dissected_sketches(
