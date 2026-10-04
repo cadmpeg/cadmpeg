@@ -2132,7 +2132,9 @@ pub(super) fn decode(
             else {
                 continue;
             };
-            if boundaries.is_empty() || !ctx.admit_iter(boundaries.as_slice(), "STEP bounded surface carrier validation")?.all(|curve| step_instance_id(curve.as_str()).is_some_and(|id| carrier_index.curves.contains_key(&id))) {
+            if boundaries.is_empty() || !ctx.admit_iter(boundaries.as_slice(), "STEP bounded surface carrier validation")?
+                .map(|curve| -> Result<Option<()>, CodecError> { Ok((!step_instance_id(ctx, curve.as_str())?.is_some_and(|id| carrier_index.curves.contains_key(&id))).then_some(())) })
+                .find_map(Result::transpose).transpose()?.is_none() {
                 continue;
             }
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
@@ -2507,7 +2509,7 @@ pub(super) fn decode(
     }
     let mut surface_parameter_scales = BTreeMap::new();
     for surface in ctx.admit_iter(&(ir.model.surfaces)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let Some(id) = step_instance_id(surface.id.as_str()) else {
+        let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
         if let Some(scales) = surface_parameter_scales_for_step(
@@ -2604,7 +2606,7 @@ pub(super) fn decode(
     // references whose pcurve carrier did not decode.
     let mut decoded_pcurve_steps = BTreeSet::new();
     for pcurve in ctx.admit_iter(&(ir.model.pcurves)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if let Some(id) = step_instance_id(pcurve.id.as_str()) {
+        if let Some(id) = step_instance_id(ctx, pcurve.id.as_str())? {
             ctx.insert_btree_set(&mut decoded_pcurve_steps, id, "step_decoded_pcurve_steps")?;
         }
     }
@@ -2617,7 +2619,7 @@ pub(super) fn decode(
                 return Ok(());
             };
             ctx.retain_vec(boundary_pcurves, |pcurve| Ok(
-                step_instance_id(pcurve.as_str())
+                step_instance_id(ctx, pcurve.as_str())?
                     .is_some_and(|id| decoded_pcurve_steps.contains(&id))
             ), "STEP decoded boundary pcurve retention")
         })?;
@@ -3386,28 +3388,34 @@ pub(super) fn topology_owned_carriers(
                 )[..], "STEP topology owned carriers chain traversal")?
                 .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| &use_.curve)),
         )
-        .filter_map(|curve| step_instance_id(curve.as_str()))
-        .filter_map(|id| index.curves.get(&id).copied())
+        .map(|curve| step_instance_id(ctx, curve.as_str()))
+        .filter_map(Result::transpose)
+        .map(|id| id.map(|id| index.curves.get(&id).copied()))
+        .filter_map(Result::transpose)
     {
-        ctx.insert_hash_set(&mut curves, curve, "step_owned_curve_carriers")?;
+        ctx.insert_hash_set(&mut curves, curve?, "step_owned_curve_carriers")?;
     }
     let mut surfaces = HashSet::new();
     for surface in ctx.admit_iter(&(ir
         .model
         .faces)[..], "STEP topology owned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(|face| step_instance_id(face.surface.as_str()))
-        .filter_map(|id| index.surfaces.get(&id).copied())
+        .map(|face| step_instance_id(ctx, face.surface.as_str()))
+        .filter_map(Result::transpose)
+        .map(|id| id.map(|id| index.surfaces.get(&id).copied()))
+        .filter_map(Result::transpose)
     {
-        ctx.insert_hash_set(&mut surfaces, surface, "step_owned_surface_carriers")?;
+        ctx.insert_hash_set(&mut surfaces, surface?, "step_owned_surface_carriers")?;
     }
     let mut points = HashSet::new();
     for point in ctx.admit_iter(&(ir
         .model
         .vertices)[..], "STEP topology owned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(|vertex| step_instance_id(vertex.point.as_str()))
-        .filter_map(|id| index.points.get(&id).map(|point| &point.index).copied())
+        .map(|vertex| step_instance_id(ctx, vertex.point.as_str()))
+        .filter_map(Result::transpose)
+        .map(|id| id.map(|id| index.points.get(&id).map(|point| &point.index).copied()))
+        .filter_map(Result::transpose)
     {
-        ctx.insert_hash_set(&mut points, point, "step_owned_point_carriers")?;
+        ctx.insert_hash_set(&mut points, point?, "step_owned_point_carriers")?;
     }
     Ok(OwnedCarriers {
         curves,
@@ -5904,7 +5912,7 @@ fn directrix_parameter_scale(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<f64>, CodecError> {
     if let Some(source_scale) =
-        step_instance_id(curve_id.as_str()).and_then(|id| source_curve_parameter_scales.get(&id))
+        step_instance_id(ctx, curve_id.as_str())?.and_then(|id| source_curve_parameter_scales.get(&id))
     {
         return Ok(Some(source_scale.get()));
     }

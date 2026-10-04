@@ -834,10 +834,13 @@ fn retain_unowned_carriers(
                 .filter(|surface| surface.source_object.is_none())
                 .map(|surface| surface.id.as_str()),
         )
-        .filter_map(step_instance_id)
-        .filter(|id| exchange.records().contains_key(id) && !referenced.contains(id));
+        .map(|identity| step_instance_id(ctx, identity))
+        .filter_map(Result::transpose)
+        .map(|id| id.map(|id| (exchange.records().contains_key(&id) && !referenced.contains(&id)).then_some(id)))
+        .filter_map(Result::transpose);
     let mut unowned_direct_carriers = BTreeSet::new();
     for id in direct_carriers {
+        let id = id?;
         ctx.insert_btree_set(
             &mut unowned_direct_carriers,
             id,
@@ -909,7 +912,7 @@ fn retain_unowned_carriers(
                 )[..], "STEP retain unowned carriers chain traversal")?
                 .map(|surface| Ok(surface.id.as_str())),
         )
-        .map(|identity: Result<&str, CodecError>| identity.map(step_instance_id))
+        .map(|identity: Result<&str, CodecError>| identity.and_then(|identity| step_instance_id(ctx, identity)))
         .filter_map(Result::transpose)
     {
         ctx.insert_btree_set(&mut roots, identity?, "step_unowned_protected_roots")?;
@@ -923,39 +926,51 @@ fn retain_unowned_carriers(
     let deleted_pcurves = ctx.admit_iter(&(ir
         .model
         .pcurves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter(|pcurve| !retains_carrier(pcurve.id.as_str(), &removed_closure, &protected))
-        .count();
+        .map(|pcurve| retains_carrier(ctx, pcurve.id.as_str(), &removed_closure, &protected))
+        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
+            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+        })?;
     let deleted_points = ctx.admit_iter(&(ir
         .model
         .points)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter(|point| !retains_carrier(point.id.as_str(), &removed_closure, &protected))
-        .count();
+        .map(|point| retains_carrier(ctx, point.id.as_str(), &removed_closure, &protected))
+        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
+            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+        })?;
     let deleted_curves = ctx.admit_iter(&(ir
         .model
         .curves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
-        .count();
+        .map(|curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected))
+        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
+            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+        })?;
     let deleted_surfaces = ctx.admit_iter(&(ir
         .model
         .surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
-        .count();
+        .map(|surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected))
+        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
+            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+        })?;
     let deleted_procedural_curves = ctx.admit_iter(&(ir
         .model
         .procedural_curves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
-        .count();
+        .map(|curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected))
+        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
+            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+        })?;
     let deleted_procedural_surfaces = ctx.admit_iter(&(ir
         .model
         .procedural_surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
-        .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
-        .count();
+        .map(|surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected))
+        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
+            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+        })?;
     ctx.retain_vec(&mut ir.model.pcurves, |pcurve| ctx.contains_btree_set(&owned, pcurve.id.as_str(), "STEP owned pcurve identity lookup"), "STEP unowned pcurves retention")?;
-    ctx.retain_vec(&mut ir.model.points, |point| Ok(retains_carrier(point.id.as_str(), &removed_closure, &protected)), "STEP unowned points retention")?;
-    ctx.retain_vec(&mut ir.model.curves, |curve| Ok(retains_carrier(curve.id.as_str(), &removed_closure, &protected)), "STEP unowned curves retention")?;
-    ctx.retain_vec(&mut ir.model.surfaces, |surface| Ok(retains_carrier(surface.id.as_str(), &removed_closure, &protected)), "STEP unowned surfaces retention")?;
-    ctx.retain_vec(&mut ir.model.procedural_curves, |curve| Ok(retains_carrier(curve.id.as_str(), &removed_closure, &protected)), "STEP unowned procedural_curves retention")?;
-    ctx.retain_vec(&mut ir.model.procedural_surfaces, |surface| Ok(retains_carrier(surface.id.as_str(), &removed_closure, &protected)), "STEP unowned procedural_surfaces retention")?;
+    ctx.retain_vec(&mut ir.model.points, |point| retains_carrier(ctx, point.id.as_str(), &removed_closure, &protected), "STEP unowned points retention")?;
+    ctx.retain_vec(&mut ir.model.curves, |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected), "STEP unowned curves retention")?;
+    ctx.retain_vec(&mut ir.model.surfaces, |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected), "STEP unowned surfaces retention")?;
+    ctx.retain_vec(&mut ir.model.procedural_curves, |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected), "STEP unowned procedural_curves retention")?;
+    ctx.retain_vec(&mut ir.model.procedural_surfaces, |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected), "STEP unowned procedural_surfaces retention")?;
     typed_records.retain(|id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
     });
@@ -975,7 +990,7 @@ fn associate_unowned_direct_carriers(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for point in &mut ir.model.points {
-        let Some(id) = step_instance_id(point.id.as_str()) else {
+        let Some(id) = step_instance_id(ctx, point.id.as_str())? else {
             continue;
         };
         if ids.contains(&id) && point.source_object.is_none() {
@@ -983,7 +998,7 @@ fn associate_unowned_direct_carriers(
         }
     }
     for curve in &mut ir.model.curves {
-        let Some(id) = step_instance_id(curve.id.as_str()) else {
+        let Some(id) = step_instance_id(ctx, curve.id.as_str())? else {
             continue;
         };
         if ids.contains(&id) && curve.source_object.is_none() {
@@ -991,7 +1006,7 @@ fn associate_unowned_direct_carriers(
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(id) = step_instance_id(surface.id.as_str()) else {
+        let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
         if ids.contains(&id) && surface.source_object.is_none() {
@@ -1027,17 +1042,19 @@ fn step_source_association(
 }
 
 fn retains_carrier(
+    ctx: &DecodeContext<'_>,
     identity: &str,
     removed_closure: &BTreeSet<u64>,
     protected: &BTreeSet<u64>,
-) -> bool {
-    step_instance_id(identity)
-        .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+) -> Result<bool, CodecError> {
+    Ok(step_instance_id(ctx, identity)?
+        .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id)))
 }
 
 /// Extract the numeric STEP instance id from a canonical IR identity.
-fn step_instance_id(identity: &str) -> Option<u64> {
-    identity.rsplit_once('#')?.1.parse().ok()
+fn step_instance_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
+    let Some((_, number)) = ctx.rsplit_once(identity, "#", "STEP instance identity reverse split")? else { return Ok(None); };
+    Ok(ctx.parse_text::<u64>(number, "STEP instance identity number parse")?.ok())
 }
 
 fn record_closure(
@@ -1150,7 +1167,7 @@ fn record_targets(
     let mut targets = BTreeMap::<u64, BTreeSet<String>>::new();
     for identity in cadmpeg_ir::index::ModelIndex::build(ir, ctx)?.identities(ctx) {
         let identity = identity?;
-        let Some(record_id) = source_record_id(identity) else {
+        let Some(record_id) = source_record_id(ctx, identity)? else {
             continue;
         };
         if !include_record(record_id) {
@@ -1176,8 +1193,10 @@ fn record_targets(
     Ok(targets)
 }
 
-fn source_record_id(identity: &str) -> Option<u64> {
-    identity.rsplit_once('#')?.1.split('-').next()?.parse().ok()
+fn source_record_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
+    let Some((_, suffix)) = ctx.rsplit_once(identity, "#", "STEP source record identity reverse split")? else { return Ok(None); };
+    let Some(number) = suffix.split('-').next() else { return Ok(None); };
+    Ok(number.parse().ok())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
