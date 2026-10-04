@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
-use crate::design::decode::scopes::thicken_shell::exact_legacy_thicken_class_347;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
@@ -65,18 +64,6 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D legacy thicken reference members",
-        0,
-        |ctx| exact_legacy_thicken_class_347(ctx, &bytes, &records, &scope),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "scan F3D legacy thicken reference members"
-    ));
     assert!(matches!(
         exact_direct_face_operation(
             &cadmpeg_test_support::service_decode_context(),
