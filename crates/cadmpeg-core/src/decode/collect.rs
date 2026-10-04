@@ -542,16 +542,6 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    fn admit_vector_extension<T>(
-        &self,
-        target: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.admit_inline_moves::<T>(count, 1, operation)?;
-        self.reserve_vec(target, count, operation)
-    }
-
     /// Moves all source items into a vector after charging their slots.
     pub fn append_vec<T>(
         &self,
@@ -559,21 +549,21 @@ impl DecodeContext<'_> {
         source: &mut Vec<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.admit_vector_extension(target, source.len(), operation)?;
+        self.admit_moves(source, 1, operation)?;
+        self.reserve_vec(target, source.len(), operation)?;
         target.append(source);
         Ok(())
     }
 
-    /// Moves owned items or copies borrowed inline values after admitting growth.
+    /// Moves owned items or copies borrowed `Copy` values after admitting
+    /// their moves and the vector's growth.
     pub fn extend_vec<T>(
         &self,
         target: &mut Vec<T>,
         source: impl ExtendSource<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.admit_vector_extension(target, source.known_len(), operation)?;
-        target.extend(source.into_values());
-        Ok(())
+        source.extend_into(self, target, operation)
     }
 
     /// Collects iterator values with a charged slot for each value.

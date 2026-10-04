@@ -218,15 +218,17 @@ pub fn dropped_suffix(
     }
     if let Some(removed) = values.get(length..) {
         ctx.charge_key(removed, 1, "wrong target")?;
-        other.truncate(length); // finding: uncharged_decode_work
+        other.truncate(length);
     }
     if let Some(removed) = values.get(length..) {
         ctx.charge_key(removed, 1, "wrong length")?;
-        values.truncate(wrong_length); // finding: uncharged_decode_work
+        values.truncate(wrong_length);
     }
     ctx.charge_key(&values[length..], 1, "indexed suffix")?;
     values.truncate(length);
-    values.truncate(length); // finding: uncharged_decode_work
+    // Releasing values is paid by the charges that admitted them; truncation
+    // needs no receipt.
+    values.truncate(length);
     Ok(())
 }
 

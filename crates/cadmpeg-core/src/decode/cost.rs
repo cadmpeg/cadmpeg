@@ -264,18 +264,11 @@ impl DecodeContext<'_> {
     /// node but the root holds at least five keys and six children, so a tree
     /// of h levels holds at least 2 * 6^(h-1) - 1 entries.
     pub(crate) fn tree_height(length: usize) -> u64 {
-        let length = u128::from(u64_from_index(length));
-        if length == 0 {
-            return 0;
-        }
-        let mut height = 1;
-        let mut fanout: u128 = 1;
-        loop {
-            fanout *= 6;
-            if 2 * fanout - 1 > length {
-                return height;
-            }
-            height += 1;
+        // 2 * 6^(h-1) - 1 <= length exactly when 6^(h-1) <= (length + 1) / 2.
+        match u64_from_index(length).checked_add(1).map(|count| count / 2) {
+            Some(0) => 0,
+            Some(half) => u64::from(half.ilog(6)) + 1,
+            None => u64::from((u64::MAX / 2).ilog(6)) + 1,
         }
     }
 }

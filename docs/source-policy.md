@@ -433,8 +433,9 @@ and storage. Work receipts match the character. Storage receipts also
 identify the output string. Each receipt is consumed once and is invalidated
 by mutation. Scoped text uses the same operation inside
 `reservation.with_storage`.
-Range receipts identify the range kind and each bound. Truncation consumes
-the receipt for the same vector's removed suffix and cutoff.
+Range receipts identify the range kind and each bound. A move receipt for a
+vector's suffix from an index pays for `Vec::insert` at that index.
+Truncating or clearing a collection needs no receipt.
 
 Decode code uses `HashMap` and `HashSet` only for keyed lookup, insertion
 and removal. Iteration order is unspecified, so decoded output must not

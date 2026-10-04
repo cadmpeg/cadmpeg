@@ -3,9 +3,11 @@
 use super::cost::DecodeCost;
 use super::{u64_from_index, DecodeContext, ScopedReservation};
 use crate::CodecError;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DecodeContext<'_> {
-    /// Inserts one value after admitting its move, suffix moves and slot growth.
+    /// Inserts one value after admitting the suffix shift and slot growth.
+    /// An index past the end is malformed; an earlier refusal is returned first.
     pub fn insert_vec<T>(
         &self,
         values: &mut Vec<T>,
@@ -14,12 +16,13 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         self.charge_work(0, operation)?;
-        let suffix = values
-            .get(index..)
-            .ok_or_else(|| CodecError::malformed("vector insertion index exceeds length"))?;
-        self.admit_moves(suffix, 1, operation)?;
-        self.admit_moves(std::slice::from_ref(&value), 1, operation)?;
+        if index > values.len() {
+            return Err(CodecError::malformed(
+                "vector insertion index exceeds length",
+            ));
+        }
         self.reserve_vec(values, 1, operation)?;
+        self.admit_moves(&values[index..], 1, operation)?;
         values.insert(index, value);
         Ok(())
     }
@@ -68,50 +71,11 @@ impl DecodeContext<'_> {
         moves: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.admit_inline_moves::<T>(values.len(), moves, operation)
-    }
-
-    /// Admits moves for an exact collection extent without traversing its values.
-    pub(super) fn admit_inline_moves<T>(
-        &self,
-        count: usize,
-        moves: u64,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        let count = u64_from_index(count);
+        let count = u64_from_index(values.len());
         let bytes =
             self.cost_product(count, u64_from_index(std::mem::size_of::<T>()), operation)?;
         let bytes = self.cost_product(bytes, moves, operation)?;
         self.charge_work(self.cost_sum(count, bytes, operation)?, operation)
-    }
-
-    /// Retains hash entries after admitting the complete bucket scan.
-    /// The predicate admits child work. A predicate refusal keeps that entry
-    /// and all later entries; entries already removed stay removed.
-    pub fn retain_hash_map<K, V, S>(
-        &self,
-        values: &mut std::collections::HashMap<K, V, S>,
-        mut keep: impl FnMut(&K, &mut V) -> Result<bool, CodecError>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_work(u64_from_index(values.capacity()), operation)?;
-        let mut refusal = None;
-        values.retain(|key, value| {
-            if refusal.is_some() {
-                return true;
-            }
-            match keep(key, value) {
-                Ok(keep) => keep,
-                Err(error) => {
-                    refusal = Some(error);
-                    true
-                }
-            }
-        });
-        match refusal {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
     }
 
     /// Copies equal-length slices after admitting all inline source bytes.
@@ -411,6 +375,76 @@ impl DecodeContext<'_> {
         self.truncate_vec(values, write, operation)
     }
 
+    /// Keeps selected B-tree map entries in key order. Every entry visit is
+    /// admitted first; each removal admits its rebalancing before the entry is
+    /// removed. The predicate admits child work. On refusal the remaining
+    /// entries are kept and the original refusal is returned.
+    pub fn retain_btree_map<K: Ord, V>(
+        &self,
+        values: &mut BTreeMap<K, V>,
+        mut keep: impl FnMut(&K, &mut V) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        let len = values.len();
+        let mut refusal = None;
+        values.retain(|key, value| {
+            if refusal.is_some() {
+                return true;
+            }
+            match keep(key, value)
+                .and_then(|kept| self.admit_tree_removal::<K, V>(kept, len, operation))
+            {
+                Ok(kept) => kept,
+                Err(error) => {
+                    refusal = Some(error);
+                    true
+                }
+            }
+        });
+        refusal.map_or(Ok(()), Err)
+    }
+
+    /// Keeps selected B-tree set values in order, admitting visits and each
+    /// removal as `retain_btree_map` does.
+    pub fn retain_btree_set<T: Ord>(
+        &self,
+        values: &mut BTreeSet<T>,
+        mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        let len = values.len();
+        let mut refusal = None;
+        values.retain(|value| {
+            if refusal.is_some() {
+                return true;
+            }
+            match keep(value)
+                .and_then(|kept| self.admit_tree_removal::<T, ()>(kept, len, operation))
+            {
+                Ok(kept) => kept,
+                Err(error) => {
+                    refusal = Some(error);
+                    true
+                }
+            }
+        });
+        refusal.map_or(Ok(()), Err)
+    }
+
+    fn admit_tree_removal<K, V>(
+        &self,
+        kept: bool,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if !kept {
+            self.admit_tree_mutation::<K, V>(len, operation)?;
+        }
+        Ok(kept)
+    }
+
     /// Removes adjacent equal values and keeps the first value in each run.
     pub fn dedup_vec<T: DecodeCost + PartialEq>(
         &self,
@@ -705,15 +739,15 @@ mod tests {
     }
 
     #[test]
-    fn hash_retention_refuses_before_predicate_and_propagates_child_refusal() {
+    fn btree_retention_refuses_before_predicate_and_propagates_child_refusal() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut values = std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]);
+        let mut values = std::collections::BTreeMap::from([(1_u8, 2_u8), (3, 4)]);
         let called = std::cell::Cell::new(false);
         let CodecError::ResourceLimit(first) = ctx
-            .retain_hash_map(
+            .retain_btree_map(
                 &mut values,
                 |_, _| {
                     called.set(true);
@@ -721,7 +755,7 @@ mod tests {
                 },
                 "retain",
             )
-            .expect_err("refusal")
+            .expect_err("two visits exceed one unit")
         else {
             panic!("refusal")
         };
@@ -736,7 +770,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         let mut calls = 0;
         let CodecError::ResourceLimit(child) = ctx
-            .retain_hash_map(
+            .retain_btree_map(
                 &mut values,
                 |_, _| {
                     calls += 1;
@@ -752,18 +786,17 @@ mod tests {
         assert_eq!(child.operation, "child");
         assert_eq!(
             values,
-            std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)])
+            std::collections::BTreeMap::from([(1_u8, 2_u8), (3, 4)])
         );
     }
 
     #[test]
-    fn hash_retention_charges_capacity_and_preserves_selected_entries() {
+    fn btree_retention_charges_visits_and_each_removal() {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-        let mut values = std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]);
-        let capacity = values.capacity();
-        ctx.retain_hash_map(
+        let mut values = std::collections::BTreeMap::from([(1_u8, 2_u8), (3, 4)]);
+        ctx.retain_btree_map(
             &mut values,
             |key, value| {
                 *value += 1;
@@ -772,14 +805,26 @@ mod tests {
             "retain",
         )
         .expect("admission");
-        assert_eq!(values, std::collections::HashMap::from([(3_u8, 5_u8)]));
+        assert_eq!(values, std::collections::BTreeMap::from([(3_u8, 5_u8)]));
+        let mut set = std::collections::BTreeSet::from([1_u8, 3]);
+        ctx.retain_btree_set(&mut set, |value| Ok(*value == 1), "retain set")
+            .expect("admission");
+        assert_eq!(set, std::collections::BTreeSet::from([1_u8]));
         let CodecError::ResourceLimit(limit) =
             ctx.charge_work(u64::MAX, "probe").expect_err("probe")
         else {
             panic!("refusal")
         };
-        // The scan admits the hash table's complete capacity, including empty buckets.
-        assert_eq!(limit.used, crate::decode::u64_from_index(capacity));
+        // Two visits per tree, and one removal per tree over a root and a new root.
+        let node_bytes = |slot: usize| {
+            crate::decode::u64_from_index(
+                11 * slot + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>(),
+            )
+        };
+        assert_eq!(
+            limit.used,
+            2 + 2 + 4 * 2 * node_bytes(2) + 4 * 2 * node_bytes(1)
+        );
     }
 
     #[test]
@@ -984,16 +1029,19 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut values = Vec::with_capacity(4);
         values.extend([1_u8, 3, 4]);
+        // Shifting the two-byte suffix visits and moves two slots.
         ctx.insert_vec(&mut values, 1, 2, "insert")
-            .expect("suffix and value moves");
+            .expect("suffix moves");
         assert_eq!(values, [1, 2, 3, 4]);
         let CodecError::ResourceLimit(first) = ctx
             .insert_vec(&mut values, 0, 0, "next insertion")
-            .expect_err("move refusal")
+            .expect_err("growth of the full vector exceeds the remaining work")
         else {
             panic!("resource refusal")
         };
-        assert_eq!(first.used, 6);
+        // Reallocating the full four-slot vector copies four slots first.
+        assert_eq!(first.used, 4);
+        assert_eq!(first.additional, 4);
         assert_eq!(values, [1, 2, 3, 4]);
         let CodecError::ResourceLimit(repeated) = ctx
             .insert_vec(&mut values, 4, 5, "later")

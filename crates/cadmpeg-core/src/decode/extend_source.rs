@@ -1,77 +1,99 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed sources for vector extension without child cloning.
 
+use super::DecodeContext;
+use crate::CodecError;
+
 mod sealed {
     pub trait Source<T> {}
 }
 
-/// Couples the exact source extent to its consuming iterator.
+/// A source whose values extend a vector through charged core operations.
+/// Owned values move; borrowed `Copy` values are copied.
 pub trait ExtendSource<T>: sealed::Source<T> {
-    /// Iterator over the source values.
-    type Iter: Iterator<Item = T>;
-    /// Returns the exact value count without a scan.
-    fn known_len(&self) -> usize;
-    /// Moves or copies each admitted inline value exactly once.
-    fn into_values(self) -> Self::Iter;
+    /// Moves or copies every source value onto the end of `target`.
+    fn extend_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError>;
 }
 
 impl<T> sealed::Source<T> for Vec<T> {}
 impl<T> ExtendSource<T> for Vec<T> {
-    type Iter = std::vec::IntoIter<T>;
-    fn known_len(&self) -> usize {
-        self.len()
-    }
-    fn into_values(self) -> Self::Iter {
-        self.into_iter()
+    fn extend_into(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        ctx.append_vec(target, &mut self, operation)
     }
 }
+
 impl<T> sealed::Source<T> for Option<T> {}
 impl<T> ExtendSource<T> for Option<T> {
-    type Iter = std::option::IntoIter<T>;
-    fn known_len(&self) -> usize {
-        usize::from(self.is_some())
-    }
-    fn into_values(self) -> Self::Iter {
-        self.into_iter()
+    fn extend_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        match self {
+            Some(value) => ctx.push_vec(target, value, operation),
+            None => Ok(()),
+        }
     }
 }
+
 impl<T, const N: usize> sealed::Source<T> for [T; N] {}
 impl<T, const N: usize> ExtendSource<T> for [T; N] {
-    type Iter = std::array::IntoIter<T, N>;
-    fn known_len(&self) -> usize {
-        self.len()
-    }
-    fn into_values(self) -> Self::Iter {
-        self.into_iter()
+    fn extend_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        for value in ctx.admit_iter(self, operation)? {
+            ctx.push_vec(target, value, operation)?;
+        }
+        Ok(())
     }
 }
+
 impl<T: Copy> sealed::Source<T> for &[T] {}
-impl<'a, T: Copy> ExtendSource<T> for &'a [T] {
-    type Iter = std::iter::Copied<std::slice::Iter<'a, T>>;
-    fn known_len(&self) -> usize {
-        self.len()
-    }
-    fn into_values(self) -> Self::Iter {
-        self.iter().copied()
+impl<T: Copy> ExtendSource<T> for &[T] {
+    fn extend_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        ctx.extend_from_slice(target, self, operation)
     }
 }
+
 impl<T: Copy> sealed::Source<T> for &Vec<T> {}
-impl<'a, T: Copy> ExtendSource<T> for &'a Vec<T> {
-    type Iter = std::iter::Copied<std::slice::Iter<'a, T>>;
-    fn known_len(&self) -> usize {
-        self.len()
-    }
-    fn into_values(self) -> Self::Iter {
-        self.iter().copied()
+impl<T: Copy> ExtendSource<T> for &Vec<T> {
+    fn extend_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        ctx.extend_from_slice(target, self, operation)
     }
 }
+
 impl<T: Copy, const N: usize> sealed::Source<T> for &[T; N] {}
-impl<'a, T: Copy, const N: usize> ExtendSource<T> for &'a [T; N] {
-    type Iter = std::iter::Copied<std::slice::Iter<'a, T>>;
-    fn known_len(&self) -> usize {
-        self.len()
-    }
-    fn into_values(self) -> Self::Iter {
-        self.iter().copied()
+impl<T: Copy, const N: usize> ExtendSource<T> for &[T; N] {
+    fn extend_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        ctx.extend_from_slice(target, self, operation)
     }
 }
