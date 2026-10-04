@@ -1154,6 +1154,11 @@ fn generic_instance_limits_reject_depth_and_distinct_state_overflow() {
 }
 
 #[test]
+fn codec_backend_calls_delegate_to_checked_implementations() {
+    check_fixture("codec_backend");
+}
+
+#[test]
 fn member_key_callbacks_run_inside_hash_insertion() {
     check_fixture("member_keys");
 }

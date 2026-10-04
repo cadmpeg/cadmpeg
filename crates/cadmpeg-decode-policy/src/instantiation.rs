@@ -754,27 +754,31 @@ pub(crate) fn check_imported<'tcx>(
                 );
                 continue;
             }
-            if crate::conversion::core_conversion_trait(tcx, *definition, "Into")
-                && receiver.is_some_and(|source| {
-                    let output = instance.instantiate_mir(
-                        tcx,
-                        rustc_middle::ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty),
-                    );
-                    crate::conversion::forwarded_from(
-                        tcx,
-                        reporter.typing_env(),
-                        resolved,
-                        source,
-                        output,
-                    )
-                    .is_some_and(|target| {
+            // `Into` forwards to the target's `From`; a checked `From` body is
+            // checked for this concrete instance in place of the forwarder.
+            let resolved = if crate::conversion::core_conversion_trait(tcx, *definition, "Into") {
+                receiver
+                    .and_then(|source| {
+                        let output = instance.instantiate_mir(
+                            tcx,
+                            rustc_middle::ty::EarlyBinder::bind(tcx, destination.ty(body, tcx).ty),
+                        );
+                        crate::conversion::forwarded_from(
+                            tcx,
+                            reporter.typing_env(),
+                            resolved,
+                            source,
+                            output,
+                        )
+                    })
+                    .filter(|target| {
                         !types::standard(tcx, target.def_id())
                             && reporter.checked_body(target.def_id())
                     })
-                })
-            {
-                continue;
-            }
+                    .unwrap_or(resolved)
+            } else {
+                resolved
+            };
             if !types::standard(tcx, resolved.def_id()) && reporter.checked_body(resolved.def_id())
             {
                 let fixed: Vec<bool> = args
