@@ -273,15 +273,18 @@ impl<'a> ArchiveSnapshot<'a> {
     /// The predicate admits its own name scans. Payloads are not decompressed.
     pub fn probe_readable_names(
         ctx: &DecodeContext<'_>,
-        root: View<'_>,
+        bytes: &[u8],
         mut matches: impl FnMut(&str) -> Result<bool, CodecError>,
     ) -> Result<bool, CodecError> {
-        let mut index = match ZipIndex::new(ctx, root.window()) {
+        let mut index = match ZipIndex::new(ctx, bytes) {
             Ok(index) => index,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(false),
         };
-        for ordinal in ctx.admit_iter(0..index.archive.len(), "ZIP readable name probe")? {
+        // The probe stops at the first match, so each visited entry is charged
+        // when it is reached.
+        let mut ordinals = 0..index.archive.len();
+        while let Some(ordinal) = ctx.next_charged(&mut ordinals, "ZIP readable name probe")? {
             // zip 8.6 reads the 30-byte local header and seeks past variable fields.
             ctx.charge_work(30, "ZIP readable name probe")?;
             let Ok(entry) = index.archive.by_index_raw(ordinal) else {

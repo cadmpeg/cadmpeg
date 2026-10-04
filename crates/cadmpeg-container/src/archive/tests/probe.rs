@@ -25,7 +25,7 @@ fn readable_name_probe_matches_readable_entries_and_skips_bad_local_headers() {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                     .expect("context");
-            let found = ArchiveSnapshot::probe_readable_names(&ctx, root, |name| {
+            let found = ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |name| {
                 ctx.equal(name, target, "probe comparison")
             })
             .expect("probe");
@@ -37,7 +37,7 @@ fn readable_name_probe_matches_readable_entries_and_skips_bad_local_headers() {
         DecodeContext::from_root_bytes(b"not a ZIP", &arena, &DecodePolicy::service())
             .expect("context");
     assert!(
-        !ArchiveSnapshot::probe_readable_names(&ctx, root, |_| panic!(
+        !ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |_| panic!(
             "invalid archive has no callback"
         ))
         .expect("invalid is false")
@@ -56,7 +56,7 @@ fn readable_name_probe_skips_encrypted_and_unsupported_members() {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("context");
-        let found = ArchiveSnapshot::probe_readable_names(&ctx, root, |name| {
+        let found = ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |name| {
             ctx.equal(name, "stored.bin", "probe comparison")
         })
         .expect("probe");
@@ -72,14 +72,16 @@ fn readable_name_probe_keeps_child_refusal_and_short_circuits() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let calls = std::cell::Cell::new(0);
-    assert!(ArchiveSnapshot::probe_readable_names(&ctx, root, |_| {
-        calls.set(calls.get() + 1);
-        Ok(true)
-    })
-    .expect("match"));
+    assert!(
+        ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |_| {
+            calls.set(calls.get() + 1);
+            Ok(true)
+        })
+        .expect("match")
+    );
     assert_eq!(calls.get(), 1);
     let CodecError::ResourceLimit(first) =
-        ArchiveSnapshot::probe_readable_names(&ctx, root, |_| {
+        ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |_| {
             Err(ctx.refuse_codec_limit("predicate", 0, 1))
         })
         .expect_err("predicate refusal")
@@ -88,7 +90,7 @@ fn readable_name_probe_keeps_child_refusal_and_short_circuits() {
     };
     assert_eq!(first.operation, "predicate");
     let CodecError::ResourceLimit(repeated) =
-        ArchiveSnapshot::probe_readable_names(&ctx, root, |_| Ok(true))
+        ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |_| Ok(true))
             .expect_err("original refusal")
     else {
         panic!("resource refusal")
@@ -105,7 +107,7 @@ fn readable_name_probe_refuses_before_callback() {
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
     let called = std::cell::Cell::new(false);
     assert!(matches!(
-        ArchiveSnapshot::probe_readable_names(&ctx, root, |_| {
+        ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |_| {
             called.set(true);
             Ok(true)
         }),
@@ -141,7 +143,7 @@ fn readable_name_probe_preserves_duplicate_name_behavior() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
-    let found = ArchiveSnapshot::probe_readable_names(&ctx, root, |name| {
+    let found = ArchiveSnapshot::probe_readable_names(&ctx, root.window(), |name| {
         ctx.equal(name, "a.xml", "duplicate probe")
     })
     .expect("tolerant probe");
