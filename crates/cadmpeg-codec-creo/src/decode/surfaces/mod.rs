@@ -413,15 +413,10 @@ pub(super) fn transfer_part_product(
         "creo product body references",
     )?;
     for body in ctx.admit_iter(&ir.model.bodies, "creo transfer part product bodies traversal")? {
-        let body_id = ctx.copy_retained_text(body.id.as_str(), "creo product body IDs")?;
-        bodies.push(
-            cadmpeg_ir::ids::BodyId::mint(body_id).map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        bodies.push(body.id.try_clone_for_decode(ctx, "creo product body IDs")?);
     }
-    let product_ref = ProductDefinitionId::mint(
-        ctx.copy_retained_text(product_id.as_str(), "creo product definition reference")?,
-    )
-    .map_err(cadmpeg_core::CodecError::malformed)?;
+    let product_ref =
+        product_id.try_clone_for_decode(ctx, "creo product definition reference")?;
     let source_name = ctx.copy_retained_text(model_name, "creo product source name")?;
     let label = ctx.copy_retained_text(model_name, "creo product label")?;
     let part_number = ctx.copy_retained_text(model_name, "creo product part number")?;

@@ -892,3 +892,91 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
         vec![producer]
     );
 }
+
+#[test]
+fn feature_dependency_identity_validation_refuses_at_work_boundary() {
+    let scan = crate::test_support::empty_container_scan();
+    let mut ir = reconciliation_ir_with_generated_dependency();
+    ir.model.features[0].id =
+        IrFeatureId::mint("creo:model:feature#3").expect("fixture feature ID");
+    let dependencies = crate::test_support::assert_work_boundaries(
+        &["creo feature dependency identity validation"],
+        |ctx| {
+            feature_dependencies(
+                ctx,
+                &scan,
+                &ir,
+                17,
+                &BTreeMap::from([(17, vec![3])]),
+            )
+        },
+    );
+    assert_eq!(
+        dependencies,
+        vec![IrFeatureId::mint("creo:model:feature#3").expect("fixture dependency ID")],
+    );
+}
+
+#[test]
+fn reconciliation_identity_and_order_work_boundaries_preserve_parent_edges() {
+    let scan = regeneration_scan();
+    let ir = crate::test_support::assert_work_boundaries(
+        &[
+            "creo reconciled native dependency identity validation",
+            "creo regeneration parent identity validation",
+            "creo remaining feature ordering step",
+        ],
+        |ctx| {
+            let mut ir = reconciliation_ir_for_ordering();
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
+            Ok::<_, CodecError>(ir)
+        },
+    );
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    let child_record = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == child)
+        .expect("child feature exists");
+    assert_eq!(child_record.dependencies.as_slice(), &[parent.clone()]);
+    assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
+    assert_eq!(ir.model.features[0].ordinal, 0);
+    assert_eq!(ir.model.features[1].ordinal, 1);
+}
+
+#[test]
+fn remaining_feature_order_removal_charges_only_suffix_bytes() {
+    let scan = regeneration_scan();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo remaining feature order removal shifts",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut ir = reconciliation_ir_for_ordering();
+            super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(ref resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo remaining feature order removal shifts"
+                && resource.additional == cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<usize>(),
+                )),
+        "{error:?}"
+    );
+
+    let mut ir = reconciliation_ir_for_ordering();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+    })
+    .expect("service profile admits feature ordering");
+    assert_eq!(ir.model.features[0].ordinal, 0);
+    assert_eq!(ir.model.features[1].ordinal, 1);
+}

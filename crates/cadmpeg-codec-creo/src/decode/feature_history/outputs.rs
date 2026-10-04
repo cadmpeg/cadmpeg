@@ -25,8 +25,7 @@ pub(in super::super) fn copy_body_id(
     ctx: &DecodeContext<'_>,
     body: &BodyId,
 ) -> Result<BodyId, CodecError> {
-    BodyId::mint(ctx.copy_retained_text(body.as_str(), "creo feature output body IDs")?)
-        .map_err(CodecError::malformed)
+    body.try_clone_for_decode(ctx, "creo feature output body IDs")
 }
 
 struct FeatureOutputHistory<'ctx> {
@@ -434,6 +433,10 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
                 cadmpeg_core::decode::u64_from_index(candidate.len()),
                 "creo evaluated sweep body IDs",
             )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(candidate.len()),
+                "creo evaluated sweep body identity validation",
+            )?;
             let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
             ctx.reserve_vec(&mut outputs, 1, "creo evaluated sweep output bodies")?;
             outputs.push(body);
@@ -631,6 +634,7 @@ fn insert_feature_parameter(
     let (key, key_reservation) = if parameters.contains_key(&base) {
         let mut occurrence = 2usize;
         loop {
+            ctx.charge_work(1, "creo feature parameter collision candidate")?;
             let candidate = ctx.format_scoped(
                 format_args!("{base}#{occurrence}"),
                 "creo feature parameter key candidate",
@@ -638,7 +642,13 @@ fn insert_feature_parameter(
             if !parameters.contains_key(&candidate.0) {
                 break candidate;
             }
-            occurrence += 1;
+            occurrence = occurrence.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo feature parameter collision ordinal",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
         }
     } else {
         (base, base_reservation)

@@ -48,6 +48,10 @@ pub(in super::super) fn feature_dependencies(
             format_args!("creo:model:feature#{dependency}"),
             "creo feature dependency IDs",
         )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "creo feature dependency identity validation",
+        )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         let mut feature_exists = false;
@@ -535,10 +539,11 @@ pub(in super::super) fn reconcile_feature_links(
         if emitted.contains(&feature.id) {
             continue;
         }
-        let id = IrFeatureId::mint(lookup_storage.with_storage(|| {
-            ctx.copy_retained_text(feature.id.as_str(), "creo emitted feature identity text")
-        })?)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        let id = lookup_storage.with_storage(|| {
+            feature
+                .id
+                .try_clone_for_decode(ctx, "creo emitted feature identity text")
+        })?;
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(&mut emitted, id, "creo emitted feature identity nodes")
         })?;
@@ -589,6 +594,10 @@ pub(in super::super) fn reconcile_feature_links(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",
             )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(text.len()),
+                "creo reconciled native dependency identity validation",
+            )?;
             let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if emitted.contains(&id)
                 && !ctx.equal(
@@ -612,11 +621,8 @@ pub(in super::super) fn reconcile_feature_links(
         for dependency in ctx
             .admit_iter(&generated_dependencies, "creo reconciled generated dependency references")?
         {
-            let id = IrFeatureId::mint(ctx.copy_retained_text(
-                dependency.as_str(),
-                "creo reconciled generated dependency IDs",
-            )?)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id = dependency
+                .try_clone_for_decode(ctx, "creo reconciled generated dependency IDs")?;
             ctx.reserve_vec(
                 &mut generated_ids,
                 1,
@@ -642,6 +648,10 @@ pub(in super::super) fn reconcile_feature_links(
                 format_args!("creo:model:feature#{parent_id}"),
                 "creo regeneration parent IDs",
             )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(text.len()),
+                "creo regeneration parent identity validation",
+            )?;
             let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if !ctx.equal(
                 &parent,
@@ -649,10 +659,9 @@ pub(in super::super) fn reconcile_feature_links(
                 "creo regeneration feature identity comparison",
             )? && emitted.contains(&parent)
             {
-                let child = IrFeatureId::mint(
-                    ctx.copy_retained_text(feature.id.as_str(), "creo regeneration child IDs")?,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                let child = feature
+                    .id
+                    .try_clone_for_decode(ctx, "creo regeneration child IDs")?;
                 lookup_storage.with_storage(|| {
                     ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")
                 })?;
@@ -682,6 +691,7 @@ pub(in super::super) fn reconcile_feature_links(
     })?;
     let mut preceding = BTreeSet::new();
     while !remaining.is_empty() {
+        ctx.charge_work(1, "creo remaining feature ordering step")?;
         let mut position = None;
         for (candidate_position, index) in ctx
             .admit_iter(&remaining, "creo remaining feature order search")?
@@ -709,6 +719,29 @@ pub(in super::super) fn reconcile_feature_links(
         let Some(position) = position else {
             break;
         };
+        let shifted_len = remaining
+            .len()
+            .checked_sub(position)
+            .and_then(|after_removed| after_removed.checked_sub(1))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo remaining feature order removal shifts",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
+        let shift_bytes = cadmpeg_core::decode::u64_from_index(shifted_len)
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<usize>(),
+            ))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo remaining feature order removal shifts",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
+        ctx.charge_work(shift_bytes, "creo remaining feature order removal shifts")?;
         let index = remaining.remove(position);
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
@@ -801,10 +834,7 @@ pub(in super::super) fn reconciled_dependencies(
         {
             continue;
         }
-        let id = IrFeatureId::mint(
-            ctx.copy_retained_text(dependency.as_str(), "creo established dependency IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
+        let id = dependency.try_clone_for_decode(ctx, "creo established dependency IDs")?;
         ctx.reserve_vec(&mut dependencies, 1, "creo reconciled dependencies")?;
         dependencies.push(id);
     }

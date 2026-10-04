@@ -1202,11 +1202,26 @@ pub(in crate::decode) fn saved_profile_chains(
     for (index, _) in ctx.admit_iter(&rows, "creo saved profile remaining nodes")?.enumerate() {
         ctx.insert_btree_set(&mut remaining, index, "creo saved profile remaining nodes")?;
     }
-    while let Some(seed) = remaining
-        .iter()
-        .min_by_key(|index| rows[**index].0)
-        .copied()
-    {
+    while !remaining.is_empty() {
+        ctx.charge_work(1, "creo saved profile components")?;
+        let mut candidates = ctx.admit_iter(
+            &remaining,
+            "creo saved profile seed candidates",
+        )?;
+        let Some(first_candidate) = candidates.next() else {
+            break;
+        };
+        let mut seed = *first_candidate;
+        for candidate in candidates {
+            if ctx.compare(
+                &rows[*candidate].0,
+                &rows[seed].0,
+                "creo saved profile seed comparisons",
+            )? == std::cmp::Ordering::Less
+            {
+                seed = *candidate;
+            }
+        }
         if mates[seed].iter().any(Option::is_none) {
             remaining.remove(&seed);
             continue;
@@ -1216,6 +1231,7 @@ pub(in crate::decode) fn saved_profile_chains(
         let mut row = seed;
         let mut reversed = false;
         loop {
+            ctx.charge_work(1, "creo saved profile chain steps")?;
             if used.contains(&row) {
                 break;
             }
@@ -1274,11 +1290,15 @@ pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
     } else {
         saved_section_arc(ctx, definition, segment)?.and_then(SavedSectionArc::into_geometry)
     };
-    let saved = saved.or_else(|| {
-        missing_line
+    let saved = match saved {
+        Some(saved) => Some(saved),
+        None => missing_line
             .filter(|(offset, _)| *offset == segment.offset)
-            .map(|(_, geometry)| geometry.clone())
-    });
+            .map(|(_, geometry)| {
+                geometry.try_clone_for_decode(ctx, "creo missing line fallback geometry")
+            })
+            .transpose()?,
+    };
     Ok(match (stored, saved) {
         (Some(stored), Some(saved)) => {
             let agree = match (stored.definition(), saved.definition()) {

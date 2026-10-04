@@ -635,3 +635,46 @@ fn unbounded_plane_rejects_conflicting_carriers() {
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ));
 }
+
+#[test]
+fn thicken_face_identity_validation_refuses_at_work_boundary() {
+    let scan = thicken_scan();
+    let definition = crate::test_support::assert_work_boundaries(
+        &["creo thicken face identity validation"],
+        |ctx| thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17),
+    );
+    assert!(matches!(
+        definition,
+        IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
+            faces: cadmpeg_ir::features::FaceSelection::Generated { .. },
+            ..
+        })
+    ));
+}
+
+#[test]
+fn hole_face_identity_validation_refuses_at_work_boundary() {
+    let scan = crate::test_support::empty_container_scan();
+    let mut ir = CadIr::empty();
+    ir.model.faces.push(resolved_hole_face());
+    let selection = crate::test_support::assert_work_boundaries(
+        &["creo hole face identity validation"],
+        |ctx| {
+            hole_face_selection(
+                ctx,
+                &scan,
+                &ir,
+                9,
+                11,
+                &std::collections::BTreeMap::new(),
+                &std::collections::BTreeSet::new(),
+            )
+        },
+    );
+    assert!(matches!(
+        selection,
+        cadmpeg_ir::features::FaceSelection::Resolved { faces, native }
+            if faces == vec![resolved_hole_face().id]
+                && native == "creo:visibgeom:surface#11"
+    ));
+}

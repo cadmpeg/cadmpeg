@@ -824,13 +824,21 @@ fn split_neutral_component_shells(
         )?;
     }
     let mut shell_specs = Vec::new();
-    while let Some(start) = remaining_faces.pop_first() {
+    while !remaining_faces.is_empty() {
+        ctx.charge_work(1, "creo B-rep shell component face visits")?;
+        let Some(start) = remaining_faces.pop_first() else {
+            break;
+        };
         let mut group = BTreeSet::new();
         ctx.insert_btree_set(&mut group, start, "creo B-rep shell group face nodes")?;
         let mut pending = Vec::new();
         ctx.reserve_vec(&mut pending, 1, "creo B-rep pending shell faces")?;
         pending.push(start);
-        while let Some(face_id) = pending.pop() {
+        while !pending.is_empty() {
+            ctx.charge_work(1, "creo B-rep pending shell face traversal")?;
+            let Some(face_id) = pending.pop() else {
+                break;
+            };
             let Some(neighbours) = face_adjacency.get(&face_id) else { continue; };
             for neighbour in ctx.admit_iter(neighbours, "creo B-rep adjacent face traversal")?.copied() {
                 if remaining_faces.remove(&neighbour) {
@@ -1994,7 +2002,7 @@ fn native_loop_ring(
         .map_err(cadmpeg_core::CodecError::from)?
     {
         Ok(ring) => Ok(ring),
-        Err(error) => Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        Err(error) => Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!("VisibGeom face {face_id} loop ring: {error}"),
             "creo B-rep loop ring error text",
         )?)),

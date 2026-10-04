@@ -840,6 +840,7 @@ fn next_section_component(
     let mut pending = std::collections::VecDeque::new();
     ctx.push_back(&mut pending, seed, "creo section pending seed")?;
     while let Some(variable) = pending.pop_front() {
+        ctx.charge_work(1, "creo section coordinate graph visits")?;
         for &neighbor in ctx.admit_iter(&adjacency[variable], "creo component adjacency links")? {
             if ctx.insert_btree_set(&mut component, neighbor, "creo section component neighbors")? {
                 remaining.remove(&neighbor);
@@ -912,6 +913,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     let mut remaining = section_remaining_variables(ctx, variables.len())?;
     let mut resolved = BTreeMap::new();
     while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
+        ctx.charge_work(1, "creo unsigned coordinate components")?;
         let mut component_distances = Vec::new();
         for &(first, second, coordinate, magnitude) in
             ctx.admit_iter(distances, "creo component distance rows")?
@@ -1326,6 +1328,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     let mut solved = BTreeMap::<SectionCoordinateVariable, f64>::new();
     let mut remaining = section_remaining_variables(ctx, variables.len())?;
     while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
+        ctx.charge_work(1, "creo section coordinate components")?;
         let mut columns = Vec::new();
         ctx.reserve_vec(
             &mut columns,
@@ -1430,24 +1433,59 @@ fn uniquely_solved_linear_variables(
     let mut pivot_rows = BTreeMap::new();
     let mut pivot_row = 0;
     for column in 0..variable_count {
-        let Some(selected) = (pivot_row..matrix.len()).max_by(|&first, &second| {
-            matrix[first]
-                .coefficients
-                .get(&column)
+        let mut pivot_candidate_rows = ctx
+            .admit_iter(
+                &matrix[pivot_row..],
+                "creo section pivot candidate rows",
+            )?
+            .enumerate();
+        if pivot_candidate_rows.next().is_none() {
+            break;
+        }
+        let comparison_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>())
+            .checked_mul(2)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo section pivot comparison work",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
+        let mut selected = pivot_row;
+        for (offset, _) in pivot_candidate_rows {
+            let candidate = pivot_row.checked_add(offset).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "creo section pivot candidate index",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
+            let selected_value = ctx
+                .get_btree_map(
+                    &matrix[selected].coefficients,
+                    &column,
+                    "creo section pivot selected coefficient lookup",
+                )?
                 .copied()
                 .unwrap_or(0.0)
-                .abs()
-                .total_cmp(
-                    &matrix[second]
-                        .coefficients
-                        .get(&column)
-                        .copied()
-                        .unwrap_or(0.0)
-                        .abs(),
-                )
-        }) else {
-            break;
-        };
+                .abs();
+            let candidate_value = ctx
+                .get_btree_map(
+                    &matrix[candidate].coefficients,
+                    &column,
+                    "creo section pivot candidate coefficient lookup",
+                )?
+                .copied()
+                .unwrap_or(0.0)
+                .abs();
+            ctx.charge_work(
+                comparison_work,
+                "creo section pivot coefficient comparisons",
+            )?;
+            if selected_value.total_cmp(&candidate_value) != std::cmp::Ordering::Greater {
+                selected = candidate;
+            }
+        }
         let divisor = matrix[selected]
             .coefficients
             .get(&column)

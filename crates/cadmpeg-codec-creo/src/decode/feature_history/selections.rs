@@ -102,6 +102,10 @@ pub(in super::super) fn feature_edge_selection(
             format_args!("creo:visibgeom:edge#{id}"),
             "creo selected edge IDs",
         )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "creo selected edge identity validation",
+        )?;
         let edge = EdgeId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo edge ID is invalid".into()))?;
         ctx.reserve_vec(&mut edges, 1, "creo selected edge identities")?;
@@ -232,6 +236,10 @@ pub(in super::super) fn generated_curve_edge_refs(
         let feature_text = ctx.format_retained(
             format_args!("creo:model:feature#{}", row.feature_id),
             "creo generated curve feature IDs",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(feature_text.len()),
+            "creo generated curve feature identity validation",
         )?;
         let feature = IrFeatureId::mint(feature_text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
@@ -660,4 +668,45 @@ mod tests {
         })
         .expect("service profile admits one result edge");
     }
+
+    #[test]
+    fn feature_edge_identity_validation_refuses_at_work_boundary() {
+        let scan = one_selected_edge();
+        let selection = crate::test_support::assert_work_boundaries(
+            &["creo selected edge identity validation"],
+            |ctx| {
+                feature_edge_selection(
+                    ctx,
+                    &scan,
+                    &cadmpeg_ir::document::CadIr::empty(),
+                    10,
+                )
+            },
+        );
+        assert!(matches!(
+            selection,
+            Some(cadmpeg_ir::features::EdgeSelection::Native(native))
+                if native == "creo:allfeatur:edgs_affected#10:45"
+        ));
+    }
+
+
+    #[test]
+    fn generated_curve_feature_identity_validation_refuses_at_work_boundary() {
+        let rows = one_edge();
+        let available = BTreeSet::from([
+            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
+                .expect("fixture feature ID"),
+        ]);
+        let results = std::collections::BTreeMap::from([(97, vec![77])]);
+        let generated = crate::test_support::assert_work_boundaries(
+            &["creo generated curve feature identity validation"],
+            |ctx| generated_curve_edge_refs(ctx, &[77], &rows, &available, &results),
+        )
+        .expect("the feature result contains the selected curve");
+        assert_eq!(generated.len(), 1);
+        assert_eq!(generated[0].feature.as_str(), "creo:model:feature#97");
+        assert_eq!(generated[0].local_id.as_str(), "curve#77");
+    }
+
 }

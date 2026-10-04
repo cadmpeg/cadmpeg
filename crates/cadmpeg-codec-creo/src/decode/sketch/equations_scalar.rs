@@ -295,6 +295,17 @@ pub(in crate::decode::sketch) struct SectionEquationMidpointConstraint {
     result: SectionScalarVariable,
 }
 
+#[cfg(test)]
+impl SectionEquationMidpointConstraint {
+    pub(in crate::decode::sketch) fn new_for_test(
+        first: SectionCoordinateVariable,
+        second: SectionCoordinateVariable,
+        result: SectionScalarVariable,
+    ) -> Self {
+        Self { first, second, result }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(in crate::decode::sketch) struct SectionEquationPointBinding {
     point: u32,
@@ -1233,11 +1244,13 @@ fn scalar_equality_components(
     }
     let mut components = Vec::new();
     while let Some(seed) = remaining.pop_first() {
+        ctx.charge_work(1, "creo scalar equality components")?;
         let mut component = BTreeSet::new();
         ctx.insert_btree_set(&mut component, seed, "creo section scalar component nodes")?;
         let mut pending = std::collections::VecDeque::new();
         ctx.push_back(&mut pending, seed, "creo section scalar pending nodes")?;
         while let Some(variable) = pending.pop_front() {
+            ctx.charge_work(1, "creo scalar equality graph visits")?;
             if let Some(neighbors) = adjacency.get(&variable) {
                 for &neighbor in ctx.admit_iter(neighbors, "creo scalar adjacency neighbors")? {
                 if ctx.insert_btree_set(

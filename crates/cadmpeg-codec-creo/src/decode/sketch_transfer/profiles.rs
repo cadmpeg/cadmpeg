@@ -59,9 +59,11 @@ pub(in super::super) fn resolved_profile_chains(
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
         ctx.charge_collection_items(1, "creo trim profile component nodes")?;
+        ctx.charge_work(1, "creo trim profile components")?;
         let mut component = BTreeSet::from([seed]);
         let mut frontier = ctx.alloc_filled(1, seed, "creo trim profile frontier")?;
         while let Some(index) = frontier.pop() {
+            ctx.charge_work(1, "creo trim profile frontier visits")?;
             for vertex in rows[index].0.vertices {
                 for adjacent in
                     ctx.admit_iter(&incident[&vertex], "creo trim profile adjacent rows")?
@@ -131,6 +133,7 @@ pub(in super::super) fn resolved_profile_chains(
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
+            ctx.charge_work(1, "creo trim profile row visits")?;
             let mut candidates = ctx
                 .admit_iter(&incident[&vertex], "creo trim profile candidates")?
                 .filter(|index| unused.contains(index))
@@ -249,9 +252,11 @@ fn resolved_segment_profile_chains(
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
         ctx.charge_collection_items(1, "creo segment profile component nodes")?;
+        ctx.charge_work(1, "creo segment profile components")?;
         let mut component = BTreeSet::from([seed]);
         let mut frontier = ctx.alloc_filled(1, seed, "creo segment profile frontier")?;
         while let Some(index) = frontier.pop() {
+            ctx.charge_work(1, "creo segment profile frontier visits")?;
             for point in rows[index].point_ids() {
                 for adjacent in
                     ctx.admit_iter(&incident[&point], "creo segment profile adjacent rows")?
@@ -298,6 +303,7 @@ fn resolved_segment_profile_chains(
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
+            ctx.charge_work(1, "creo segment profile row visits")?;
             let mut candidates = ctx
                 .admit_iter(&incident[&point], "creo segment profile candidates")?
                 .filter(|index| unused.contains(index))
@@ -977,6 +983,64 @@ use cadmpeg_core::CodecError;
             profiles[0][0].entity.as_str(),
             "creo:featdefs:sketch_entity#917:42"
         );
+    }
+
+    #[test]
+    fn trim_profile_scans_refuse_before_component_frontier_and_path_visits() {
+        let definition = single_trim_profile();
+        let sketch =
+            cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
+        let emitted = std::collections::BTreeSet::from([42]);
+        let profiles = crate::test_support::assert_work_boundaries(
+            &[
+                "creo trim profile components",
+                "creo trim profile frontier visits",
+                "creo trim profile row visits",
+            ],
+            |ctx| resolved_profile_chains(ctx, &definition, &sketch, &emitted),
+        );
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 1);
+    }
+
+    #[test]
+    fn segment_profile_scans_refuse_before_component_frontier_and_path_visits() {
+        let mut definition = definition(201, false);
+        let segment = |external_id| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
+        };
+        definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+            declared_count: 2,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: [segment(10), segment(11)]
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
+            offset: 0,
+        });
+        let sketch =
+            cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
+        let emitted = std::collections::BTreeSet::from([10, 11]);
+        let profiles = crate::test_support::assert_work_boundaries(
+            &[
+                "creo segment profile components",
+                "creo segment profile frontier visits",
+                "creo segment profile row visits",
+            ],
+            |ctx| resolved_profile_chains(ctx, &definition, &sketch, &emitted),
+        );
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 2);
     }
 
     #[test]

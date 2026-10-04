@@ -44,7 +44,7 @@ fn revolution_unit_axis(
     direction: cadmpeg_ir::features::FeatureDirection3,
 ) -> Result<cadmpeg_ir::units::UnitVector3, cadmpeg_core::CodecError> {
     let Some(axis) = cadmpeg_ir::units::UnitVector3::new(direction.get()) else {
-        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "feature {feature_id} revolution axis direction does not have unit length"
             ),
@@ -60,7 +60,7 @@ fn directrix_parameter_range(
     knots: &[f64],
 ) -> Result<[f64; 2], cadmpeg_core::CodecError> {
     let Some((first, last)) = knots.first().zip(knots.last()) else {
-        return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+        return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
             format_args!("FeatDefs saved spline at offset {offset} has no knots"),
             "creo revolution knot error text",
         )?));

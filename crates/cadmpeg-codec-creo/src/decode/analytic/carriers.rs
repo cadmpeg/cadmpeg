@@ -1006,7 +1006,26 @@ fn ordered_contained_face_loops<'a>(
     let Some(outer) = outer else {
         return Ok(None);
     };
+    let remove_operation = "creo ordered face loop removal shift";
+    let remove_shift_count = loops
+        .len()
+        .checked_sub(outer)
+        .and_then(|length| length.checked_sub(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(remove_operation, u64::MAX, u64::MAX))?;
+    let remove_shift_bytes = cadmpeg_core::decode::u64_from_index(remove_shift_count)
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            &'a crate::topology::Loop,
+        >()))
+        .ok_or_else(|| ctx.refuse_codec_limit(remove_operation, u64::MAX, u64::MAX))?;
+    ctx.charge_work(remove_shift_bytes, remove_operation)?;
     let selected = loops.remove(outer);
+    let insert_operation = "creo ordered face loop insertion shift";
+    let insert_shift_bytes = cadmpeg_core::decode::u64_from_index(loops.len())
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            &'a crate::topology::Loop,
+        >()))
+        .ok_or_else(|| ctx.refuse_codec_limit(insert_operation, u64::MAX, u64::MAX))?;
+    ctx.charge_work(insert_shift_bytes, insert_operation)?;
     loops.insert(0, selected);
     Ok(Some(loops))
 }
