@@ -16,7 +16,7 @@ pub(crate) struct ParameterName<S, I = Option<u32>> {
 
 impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
     pub(crate) fn new(spelling: S) -> Self {
-        let (index, qualifier_start) = match canonical_parts(spelling.as_ref(), |text| Ok::<_, Infallible>(text.chars())) {
+        let (index, qualifier_start) = match canonical_parts(spelling.as_ref(), |text| Ok::<_, Infallible>(text.chars()), |text| Ok::<_, Infallible>(text.parse::<u32>())) {
                 Ok(parts) => parts,
                 Err(error) => match error {},
             }
@@ -29,8 +29,8 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
     }
     pub(crate) fn from_wire(ctx: &DecodeContext<'_>, spelling: S) -> Result<Self, CodecError> {
         let (index, qualifier_start) = canonical_parts(spelling.as_ref(), |text| {
-            ctx.admit_iter(text, "NX parameter name syntax")
-        })?.map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
+            ctx.admit_iter(text, "NX parameter name syntax").map_err(CodecError::from)
+        }, |text| ctx.parse_text::<u32>(text, "NX parameter index decimal parse"))?.map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
         Ok(Self { spelling, index, qualifier_start })
     }
 
@@ -38,7 +38,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
 
 impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
     pub(crate) fn parse(spelling: S) -> Option<Self> {
-        let (index, qualifier_start) = match canonical_parts(spelling.as_ref(), |text| Ok::<_, Infallible>(text.chars())) {
+        let (index, qualifier_start) = match canonical_parts(spelling.as_ref(), |text| Ok::<_, Infallible>(text.chars()), |text| Ok::<_, Infallible>(text.parse::<u32>())) {
             Ok(parts) => parts?,
             Err(error) => match error {},
         };
@@ -50,8 +50,8 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
     }
     pub(crate) fn parse_wire(ctx: &DecodeContext<'_>, spelling: S) -> Result<Option<Self>, CodecError> {
         let Some((index, qualifier_start)) = canonical_parts(spelling.as_ref(), |text| {
-            ctx.admit_iter(text, "NX canonical parameter name syntax")
-        })? else { return Ok(None); };
+            ctx.admit_iter(text, "NX canonical parameter name syntax").map_err(CodecError::from)
+        }, |text| ctx.parse_text::<u32>(text, "NX parameter index decimal parse"))? else { return Ok(None); };
         Ok(Some(Self { spelling, index, qualifier_start }))
     }
 
@@ -80,11 +80,12 @@ impl<S: crate::immutable_text::ImmutableText, I: Copy> ParameterName<S, I> {
 fn canonical_parts<'a, E, I: Iterator<Item = char>>(
     name: &'a str,
     mut admit: impl FnMut(&'a str) -> Result<I, E>,
+    mut parse_decimal: impl FnMut(&str) -> Result<Result<u32, std::num::ParseIntError>, E>,
 ) -> Result<Option<(u32, Option<usize>)>, E> {
     let Some(tail) = name.strip_prefix('p') else { return Ok(None); };
     let digit_count = admit(tail)?.take_while(char::is_ascii_digit).count();
     if digit_count == 0 { return Ok(None); }
-    let Ok(index) = tail[..digit_count].parse() else { return Ok(None); };
+    let Ok(index) = parse_decimal(&tail[..digit_count])? else { return Ok(None); };
     match &tail[digit_count..] {
         "" => Ok(Some((index, None))),
         suffix => {
@@ -100,6 +101,20 @@ fn canonical_parts<'a, E, I: Iterator<Item = char>>(
 #[cfg(test)]
 mod tests {
     use super::ParameterName;
+
+    #[test]
+    fn parameter_index_decimal_parse_refusal_propagates() {
+        for name in ["p12_face_A", "p4294967296"] {
+            for canonical in [false, true] {
+                let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX parameter index decimal parse", |ctx| if canonical {
+                    ParameterName::<_, u32>::parse_wire(ctx, name).map(|name| name.is_some())
+                } else {
+                    ParameterName::from_wire(ctx, name).map(|name| name.index().is_some())
+                });
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == if name == "p12_face_A" { 2 } else { 10 }));
+            }
+        }
+    }
 
     #[test]
     fn parameter_name_immutable_storage_retains_the_checked_parts() {
