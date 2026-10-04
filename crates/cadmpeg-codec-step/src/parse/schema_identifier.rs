@@ -119,7 +119,7 @@ impl AdmittedSchemaIdentifier {
             let ComponentForm::Number(number) = schema_oid_component_form(ctx, component)? else {
                 return Ok(None);
             };
-            let Ok(number) = number.parse() else {
+            let Ok(number) = ctx.parse_text::<u64>(number, "STEP object identifier component number parse")? else {
                 return Ok(None);
             };
             ctx.push_vec(

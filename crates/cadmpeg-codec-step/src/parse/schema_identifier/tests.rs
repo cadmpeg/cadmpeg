@@ -302,3 +302,18 @@ fn schema_object_identifier_number_split_preserves_refusal() {
         result
     });
 }
+
+#[test]
+fn schema_numeric_component_parse_preserves_refusal() {
+    let setup = cadmpeg_test_support::service_decode_context();
+    let identifier = AdmittedSchemaIdentifier::admit(&setup, "AP242 { 1 0 10303 }".to_owned()).unwrap().unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP object identifier component number parse", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = identifier.numeric_object_identifier(&ctx).map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

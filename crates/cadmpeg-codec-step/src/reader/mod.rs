@@ -1196,7 +1196,7 @@ fn record_targets(
 fn source_record_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
     let Some((_, suffix)) = ctx.rsplit_once(identity, "#", "STEP source record identity reverse split")? else { return Ok(None); };
     let Some(number) = suffix.split('-').next() else { return Ok(None); };
-    Ok(number.parse().ok())
+    Ok(ctx.parse_text::<u64>(number, "STEP source record identity number parse")?.ok())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1527,13 +1527,13 @@ fn find_record_value<T>(
     Ok(None)
 }
 
-fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
-    let suffix = identity
-        .strip_prefix("step:data:")?
-        .strip_prefix(kind)?
-        .strip_prefix('#')?;
+fn source_numeric_id(ctx: &DecodeContext<'_>, identity: &str, kind: &str) -> Result<Option<u64>, CodecError> {
+    let Some(suffix) = identity.strip_prefix("step:data:")
+        .and_then(|suffix| suffix.strip_prefix(kind))
+        .and_then(|suffix| suffix.strip_prefix('#')) else { return Ok(None); };
     let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
-    suffix.split('-').next()?.parse().ok()
+    let Some(number) = suffix.split('-').next() else { return Ok(None); };
+    Ok(ctx.parse_text::<u64>(number, "STEP source numeric identity parse")?.ok())
 }
 
 fn inspect_opaque_offsets(

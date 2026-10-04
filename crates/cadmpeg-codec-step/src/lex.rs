@@ -516,8 +516,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 let (raw, _temporary) =
                     self.normalized(digits, self.at, LiteralStorage::Transient)?;
-                let value = raw
-                    .parse::<u64>()
+                let value = self.budget.parse_text::<u64>(raw.as_str(), "STEP occurrence number parse")?
                     .ok()
                     .map_or_else(|| Err(self.error(start, "instance name is out of range")?), Ok)?;
                 if value == 0 {
@@ -595,14 +594,13 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 index += 1;
             }
-            let parsed = raw
-                .parse::<f64>()
+            let parsed = self.budget.parse_text::<f64>(raw.as_str(), "STEP real number parse")?
                 .or_else(|_| Err(self.error(start, "invalid real")?))?;
             FiniteReal::new(parsed)
                 .map(TokenKind::Real)
                 .map_or_else(|| Err(self.error(start, "real exceeds finite binary64 range")?), Ok)
         } else {
-            raw.parse()
+            self.budget.parse_text::<i64>(raw.as_str(), "STEP integer number parse")?
                 .map(TokenKind::Integer)
                 .or_else(|_| Err(self.error(start, "invalid integer")?))
         }
