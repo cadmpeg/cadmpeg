@@ -171,7 +171,8 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         radius,
         start_angle,
         end_angle,
-    }) = section_arc_geometry(&points, &segment)
+    }) = crate::decode::with_test_decode_ctx(|ctx| section_arc_geometry(ctx, &points, &segment))
+        .expect("zero-orientation arc fits service limits")
         .map(cadmpeg_ir::sketches::SketchGeometry::into_definition)
     else {
         panic!("complete arc");

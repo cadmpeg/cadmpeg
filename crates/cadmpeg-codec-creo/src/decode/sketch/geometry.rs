@@ -74,17 +74,29 @@ pub(in crate::decode) fn section_point_geometry(
 }
 
 pub(in crate::decode) fn section_arc_geometry(
+    ctx: &DecodeContext<'_>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    (matches!(
+) -> Result<Option<SketchGeometry>, CodecError> {
+    if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
-    ) && segment.arc_orientation == Some(0))
-    .then_some(())?;
-    let center = points.get(&segment.center_id?)?;
-    let first = points.get(&segment.point_ids()[0])?;
-    let second = points.get(&segment.point_ids()[1])?;
+    ) || segment.arc_orientation != Some(0)
+    {
+        return Ok(None);
+    }
+    let Some(center_id) = segment.center_id else {
+        return Ok(None);
+    };
+    let Some(center) = points.get(&center_id) else {
+        return Ok(None);
+    };
+    let Some(first) = points.get(&segment.point_ids()[0]) else {
+        return Ok(None);
+    };
+    let Some(second) = points.get(&segment.point_ids()[1]) else {
+        return Ok(None);
+    };
     let offset = |point: &[f64; 2]| [point[0] - center[0], point[1] - center[1]];
     let first_offset = offset(first);
     let second_offset = offset(second);
@@ -96,20 +108,30 @@ pub(in crate::decode) fn section_arc_geometry(
         || first_radius <= EPS_POINT_NONZERO
         || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
-        return None;
+        return Ok(None);
     }
     let start = second_offset[1].atan2(second_offset[0]);
     let mut end = first_offset[1].atan2(first_offset[0]);
     while end <= start {
+        ctx.charge_work(1, "creo section arc angle normalization")?;
         end += std::f64::consts::TAU;
     }
-    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+    let Some(radius) = Length::new(first_radius) else {
+        return Ok(None);
+    };
+    let Some(start_angle) = Angle::new(start) else {
+        return Ok(None);
+    };
+    let Some(end_angle) = Angle::new(end) else {
+        return Ok(None);
+    };
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
-        radius: Length::new(first_radius)?,
-        start_angle: Angle::new(start)?,
-        end_angle: Angle::new(end)?,
+        radius,
+        start_angle,
+        end_angle,
     })
-    .ok()
+    .ok())
 }
 
 pub(in crate::decode) fn section_circle_geometry(
@@ -230,12 +252,17 @@ pub(in crate::decode) fn resolved_section_reference_line_geometry(
 }
 
 pub(in crate::decode) fn section_segment_geometry(
+    ctx: &DecodeContext<'_>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    section_line_geometry(points, segment)
-        .or_else(|| section_arc_geometry(points, segment))
-        .or_else(|| section_point_geometry(points, segment))
+) -> Result<Option<SketchGeometry>, CodecError> {
+    if let Some(geometry) = section_line_geometry(points, segment) {
+        return Ok(Some(geometry));
+    }
+    if let Some(geometry) = section_arc_geometry(ctx, points, segment)? {
+        return Ok(Some(geometry));
+    }
+    Ok(section_point_geometry(points, segment))
 }
 
 pub(in crate::decode) fn saved_section_line_geometry(
@@ -612,6 +639,7 @@ pub(in crate::decode) fn saved_section_arc(
     let start = second[1].atan2(second[0]);
     let mut end = first[1].atan2(first[0]);
     while end <= start {
+        ctx.charge_work(1, "creo saved section arc angle normalization")?;
         end += std::f64::consts::TAU;
     }
     let Some(start_angle) = Angle::new(start) else {
@@ -779,6 +807,41 @@ pub(in crate::decode) fn saved_section_entity_geometry(
         } else {
             None
         };
+    let arc_angles = if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = entity {
+        let ([Some(center_u), Some(center_v)], Some(radius)) = (
+            [arc.center[0], arc.center[1]],
+            arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
+        ) else {
+            return Ok(None);
+        };
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+            arc.endpoints
+        else {
+            return Ok(None);
+        };
+        let first = [first_u - center_u, first_v - center_v];
+        let second = [second_u - center_u, second_v - center_v];
+        let scale = radius
+            .max(first[0].hypot(first[1]))
+            .max(second[0].hypot(second[1]));
+        if ![radius, first[0], first[1], second[0], second[1], scale]
+            .into_iter()
+            .all(f64::is_finite)
+            || (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+            || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+        {
+            return Ok(None);
+        }
+        let start_angle = second[1].atan2(second[0]);
+        let mut end_angle = first[1].atan2(first[0]);
+        while end_angle <= start_angle {
+            ctx.charge_work(1, "creo saved entity arc angle normalization")?;
+            end_angle += std::f64::consts::TAU;
+        }
+        Some((center_u, center_v, radius, start_angle, end_angle))
+    } else {
+        None
+    };
     let result = (|| match entity {
         crate::feature::definitions::FeatureSavedEntity::Line(line) => {
             let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints
@@ -796,35 +859,9 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             ))
         }
         crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
-            let ([Some(center_u), Some(center_v)], Some(radius)) = (
-                [arc.center[0], arc.center[1]],
-                arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
-            ) else {
+            let Some((center_u, center_v, radius, start_angle, end_angle)) = arc_angles else {
                 return None;
             };
-            let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
-                arc.endpoints
-            else {
-                return None;
-            };
-            let first = [first_u - center_u, first_v - center_v];
-            let second = [second_u - center_u, second_v - center_v];
-            let scale = radius
-                .max(first[0].hypot(first[1]))
-                .max(second[0].hypot(second[1]));
-            if ![radius, first[0], first[1], second[0], second[1], scale]
-                .into_iter()
-                .all(f64::is_finite)
-                || (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-                || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-            {
-                return None;
-            }
-            let start_angle = second[1].atan2(second[0]);
-            let mut end_angle = first[1].atan2(first[0]);
-            while end_angle <= start_angle {
-                end_angle += std::f64::consts::TAU;
-            }
             Some((
                 arc.entity_id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -1283,7 +1320,7 @@ pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-    let stored = section_segment_geometry(points, segment);
+    let stored = section_segment_geometry(ctx, points, segment)?;
     let saved_line = saved_section_line_geometry(ctx, definition, segment)?;
     let saved = if saved_line.is_some() {
         saved_line

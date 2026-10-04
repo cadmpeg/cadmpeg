@@ -1388,7 +1388,7 @@ fn section_skamp_arc_midpoint(
         let Some(second) = complete_section_coordinate(coordinates, segment.point_ids()[1]) else {
             return Ok(None);
         };
-        return Ok(oriented_arc_midpoint(center, first, second, None));
+        return oriented_arc_midpoint(ctx, center, first, second, None);
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return Ok(None);
@@ -1398,7 +1398,7 @@ fn section_skamp_arc_midpoint(
     else {
         return Ok(None);
     };
-    Ok(saved_arc_midpoint(arc))
+    saved_arc_midpoint(ctx, arc)
 }
 
 fn complete_section_coordinate(
@@ -1412,16 +1412,18 @@ fn complete_section_coordinate(
 }
 
 fn saved_arc_midpoint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     arc: &crate::feature::definitions::FeatureSavedArc,
-) -> Option<FiniteVector<2>> {
+) -> Result<Option<FiniteVector<2>>, cadmpeg_core::CodecError> {
     let [Some(center_u), Some(center_v), _] = arc.center else {
-        return None;
+        return Ok(None);
     };
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
     else {
-        return None;
+        return Ok(None);
     };
     oriented_arc_midpoint(
+        ctx,
         [center_u, center_v],
         [first_u, first_v],
         [second_u, second_v],
@@ -1430,11 +1432,12 @@ fn saved_arc_midpoint(
 }
 
 fn oriented_arc_midpoint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 2],
     first: [f64; 2],
     second: [f64; 2],
     stored_radius: Option<f64>,
-) -> Option<FiniteVector<2>> {
+) -> Result<Option<FiniteVector<2>>, cadmpeg_core::CodecError> {
     let first_offset = [first[0] - center[0], first[1] - center[1]];
     let second_offset = [second[0] - center[0], second[1] - center[1]];
     let first_radius = first_offset[0].hypot(first_offset[1]);
@@ -1451,18 +1454,19 @@ fn oriented_arc_midpoint(
         || (first_radius - second_radius).abs() > EPS_LOCUS_RADIUS_AGREEMENT * scale
         || (radius - first_radius).abs() > EPS_LOCUS_RADIUS_AGREEMENT * scale
     {
-        return None;
+        return Ok(None);
     }
     let start = second_offset[1].atan2(second_offset[0]);
     let mut end = first_offset[1].atan2(first_offset[0]);
     while end <= start {
+        ctx.charge_work(1, "creo sketch arc midpoint angle normalization")?;
         end += std::f64::consts::TAU;
     }
     let angle = f64::midpoint(start, end);
-    FiniteVector::new([
+    Ok(FiniteVector::new([
         center[0] + radius * angle.cos(),
         center[1] + radius * angle.sin(),
-    ])
+    ]))
 }
 
 pub(in super::super) fn section_skamp_active(status: u32) -> bool {
@@ -1546,6 +1550,8 @@ mod tests {
     use cadmpeg_ir::sketches::SketchEntityId;
     use cadmpeg_ir::sketches::{SketchId, SketchLocus};
     use std::collections::BTreeMap;
+
+    const EPS_ARC_ANGLE: f64 = 1.0e-12;
 
     #[test]
     fn relation_skamp_scan_refuses_before_callback() {
@@ -1660,13 +1666,69 @@ mod tests {
 
     #[test]
     fn arc_midpoint_overflow_is_not_a_coordinate_source() {
-        assert!(oriented_arc_midpoint(
-            [f64::MAX, 0.0],
-            [f64::MAX, f64::MAX],
-            [f64::MAX, -f64::MAX],
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            oriented_arc_midpoint(
+                ctx,
+                [f64::MAX, 0.0],
+                [f64::MAX, f64::MAX],
+                [f64::MAX, -f64::MAX],
+                None,
+            )
+        })
+        .expect("overflowing arc remains an absent coordinate source")
+        .is_none());
+    }
+
+    #[test]
+    fn arc_midpoint_angle_normalization_refuses_work_and_preserves_service_result() {
+        let midpoint = crate::test_support::assert_work_boundaries(
+            &["creo sketch arc midpoint angle normalization"],
+            |ctx| oriented_arc_midpoint(ctx, [0.0, 0.0], [-1.0, -0.0], [-1.0, 0.0], None),
+        );
+        let Some(midpoint) = midpoint else {
+            panic!("service arc midpoint");
+        };
+        assert!((midpoint[0] - 1.0).abs() < EPS_ARC_ANGLE);
+        assert!(midpoint[1].abs() < EPS_ARC_ANGLE);
+
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let no_normalization = oriented_arc_midpoint(
+            &ctx,
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
             None,
         )
+        .expect("zero-iteration midpoint uses no work")
+        .expect("valid zero-iteration midpoint");
+        assert!((no_normalization[0] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPS_ARC_ANGLE);
+        assert!((no_normalization[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPS_ARC_ANGLE);
+        assert!(oriented_arc_midpoint(
+            &ctx,
+            [0.0, 0.0],
+            [f64::INFINITY, 0.0],
+            [0.0, 1.0],
+            None,
+        )
+        .expect("nonfinite midpoint uses no work")
         .is_none());
+        let absent = crate::feature::definitions::FeatureSavedArc {
+            entity_id: 1,
+            center: [None; 3],
+            radius: None,
+            endpoints: [[None; 3]; 2],
+            parameters: [None; 2],
+            body: Vec::new(),
+            offset: 0,
+        };
+        assert!(super::saved_arc_midpoint(&ctx, &absent)
+            .expect("absent saved midpoint uses no work")
+            .is_none());
     }
 
     #[test]

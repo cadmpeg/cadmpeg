@@ -206,7 +206,11 @@ fn extruded_segment_surface(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SurfaceGeometry> {
-    extruded_geometry_surface(transform, &section_segment_geometry(points, segment)?)
+    let geometry = crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_geometry(ctx, points, segment)
+    })
+    .expect("test section segment geometry");
+    extruded_geometry_surface(transform, &geometry?)
 }
 
 #[cfg(test)]
@@ -215,7 +219,11 @@ fn placed_section_curve_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<CurveGeometry> {
-    placed_section_geometry_curve(transform, &section_segment_geometry(points, segment)?)
+    let geometry = crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_geometry(ctx, points, segment)
+    })
+    .expect("test section segment geometry");
+    placed_section_geometry_curve(transform, &geometry?)
 }
 
 #[cfg(test)]
