@@ -92,7 +92,7 @@ pub(crate) fn decode_body_members(
         };
 
         let mut decoded = Vec::new();
-        ctx.reserve_vec(&mut decoded, count, "f3d body members")?;
+        ctx.reserve_capacity(&mut decoded, count, "f3d body members")?;
         for _ in 0..count {
             let cursor = view.position();
             if view.u8() != Some(1) {
@@ -120,7 +120,8 @@ pub(crate) fn decode_body_members(
                 })?,
                 "admit F3D body member identity",
             )?;
-            decoded.push(
+            ctx.push_vec(
+                &mut decoded,
                 DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
                     id,
                     byte_offset: u64_from_index(cursor),
@@ -128,7 +129,8 @@ pub(crate) fn decode_body_members(
                     flags,
                 })
                 .map_err(CodecError::Malformed)?,
-            );
+                "f3d body members",
+            )?;
         }
         if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
             ctx.reserve_vec(&mut out, decoded.len(), "f3d decoded body members")?;
