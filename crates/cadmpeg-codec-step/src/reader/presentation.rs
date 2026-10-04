@@ -1847,39 +1847,42 @@ fn style_domain_at(
             return Ok(if same { first } else { StyleDomain::Any });
         }
     }
-    let has_point = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
+    let has_point = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?
+        .map(|partial| -> Result<Option<()>, CodecError> {
         let name = partial.name.as_str();
-        name.contains("POINT") || name.contains("VERTEX")
-    });
+        Ok((ctx.contains_text(name, "POINT", "STEP style domain point containment")? || ctx.contains_text(name, "VERTEX", "STEP style domain vertex containment")?).then_some(()))
+    }).find_map(Result::transpose).transpose()?.is_some();
     if has_point {
         active.remove(&id);
         return Ok(StyleDomain::Point);
     }
-    let has_curve = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
+    let has_curve = ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?
+        .map(|partial| -> Result<Option<()>, CodecError> {
         let name = partial.name.as_str();
-        name.contains("CURVE")
-            || name.contains("EDGE")
-            || name.contains("_LINE")
+        Ok((ctx.contains_text(name, "CURVE", "STEP style domain curve containment")?
+            || ctx.contains_text(name, "EDGE", "STEP style domain edge containment")?
+            || ctx.contains_text(name, "_LINE", "STEP style domain line containment")?
             || matches!(
                 name,
                 "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
-            )
-    });
+            )).then_some(()))
+    }).find_map(Result::transpose).transpose()?.is_some();
     if has_curve {
         active.remove(&id);
         return Ok(StyleDomain::Curve);
     }
-    let result = if ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
+    let result = if ctx.admit_iter(&(record.partials)[..], "STEP style domain at traversal").map_err(cadmpeg_core::CodecError::from)?
+        .map(|partial| -> Result<Option<()>, CodecError> {
         let name = partial.name.as_str();
-        name.contains("FACE")
-            || name.contains("SURFACE")
-            || name.contains("SOLID")
-            || name.contains("SHELL")
+        Ok((ctx.contains_text(name, "FACE", "STEP style domain face containment")?
+            || ctx.contains_text(name, "SURFACE", "STEP style domain surface containment")?
+            || ctx.contains_text(name, "SOLID", "STEP style domain solid containment")?
+            || ctx.contains_text(name, "SHELL", "STEP style domain shell containment")?
             || matches!(
                 name,
                 "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
-            )
-    }) {
+            )).then_some(()))
+    }).find_map(Result::transpose).transpose()?.is_some() {
         StyleDomain::Surface
     } else {
         StyleDomain::Any

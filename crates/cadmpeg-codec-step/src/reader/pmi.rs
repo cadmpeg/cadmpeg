@@ -2343,24 +2343,24 @@ fn measure_inner(
         Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value)
             .and_then(|value| PmiValue::new(value, PmiQuantity::Ratio)),
         Value::Real(value) => PmiValue::new(value.get(), PmiQuantity::Ratio),
-        Value::Typed(name, value) => value.number().and_then(|number| {
+        Value::Typed(name, value) => match value.number() { Some(number) => {
             PmiValue::new(
-                if name.contains("LENGTH") {
+                if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
                     number * measurements.length_scale
-                } else if name.contains("ANGLE") {
+                } else if ctx.contains_text(name.as_str(), "ANGLE", "STEP PMI typed angle containment")? {
                     number * measurements.angle_scale
                 } else {
                     number
                 },
-                if name.contains("LENGTH") {
+                if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
                     PmiQuantity::Length
-                } else if name.contains("ANGLE") {
+                } else if ctx.contains_text(name.as_str(), "ANGLE", "STEP PMI typed angle containment")? {
                     PmiQuantity::Angle
                 } else {
                     PmiQuantity::Ratio
                 },
             )
-        }),
+        }, None => None },
         Value::Reference(id) => {
             if active.contains(id) {
                 return Ok(None);
@@ -2380,9 +2380,13 @@ fn measure_inner(
                 }
             }
     }
-            let quantity = if let Some(quantity) = quantity { quantity } else if ctx.admit_iter(&record.partials[..], "STEP PMI length classifier traversal")?.any(|partial| partial.name.contains("LENGTH")) {
+            let quantity = if let Some(quantity) = quantity { quantity } else if ctx.admit_iter(&record.partials[..], "STEP PMI length classifier traversal")?
+                .map(|partial| -> Result<Option<()>, CodecError> { Ok(ctx.contains_text(partial.name.as_str(), "LENGTH", "STEP PMI record length containment")?.then_some(())) })
+                .find_map(Result::transpose).transpose()?.is_some() {
                 PmiQuantity::Length
-            } else if ctx.admit_iter(&record.partials[..], "STEP PMI angle classifier traversal")?.any(|partial| partial.name.contains("ANGLE")) {
+            } else if ctx.admit_iter(&record.partials[..], "STEP PMI angle classifier traversal")?
+                .map(|partial| -> Result<Option<()>, CodecError> { Ok(ctx.contains_text(partial.name.as_str(), "ANGLE", "STEP PMI record angle containment")?.then_some(())) })
+                .find_map(Result::transpose).transpose()?.is_some() {
                 PmiQuantity::Angle
             } else { PmiQuantity::Ratio };
             let mut unit = None;
@@ -2476,11 +2480,11 @@ fn measure_quantity(
     let _depth = ctx.enter_nested("step_pmi_measure_quantity_walk")?;
     Ok(match value {
         Value::Typed(name, value) => {
-            if name.contains("LENGTH") {
+            if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
                 Some(PmiQuantity::Length)
-            } else if name.contains("ANGLE") {
+            } else if ctx.contains_text(name.as_str(), "ANGLE", "STEP PMI typed angle containment")? {
                 Some(PmiQuantity::Angle)
-            } else if name.contains("RATIO") {
+            } else if ctx.contains_text(name.as_str(), "RATIO", "STEP PMI typed ratio containment")? {
                 Some(PmiQuantity::Ratio)
             } else {
                 measure_quantity(value, ctx)?

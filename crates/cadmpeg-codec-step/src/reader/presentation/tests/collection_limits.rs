@@ -815,3 +815,144 @@ fn binding_style_number_parse_preserves_refusal() {
         result
     });
 }
+
+#[test]
+fn style_domain_point_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_POINT();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain point containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_vertex_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_VERTEX();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain vertex containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_curve_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_CURVE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain curve containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_edge_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_EDGE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain edge containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_line_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A__LINE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain line containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_face_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_FACE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain face containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_surface_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_SOLID();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain surface containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_surface_name_stops_at_face_containment() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_SURFACE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain face containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+    assert!(matches!(super::super::style_domain(1, &exchange, &cadmpeg_test_support::service_decode_context()).unwrap(), super::super::StyleDomain::Surface));
+}
+
+#[test]
+fn style_domain_solid_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_SOLID();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain solid containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn style_domain_shell_containment_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=A_SHELL();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP style domain shell containment", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
