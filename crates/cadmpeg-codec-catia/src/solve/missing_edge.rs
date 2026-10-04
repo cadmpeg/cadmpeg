@@ -2644,10 +2644,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                             self.gaps.get(gap + 1).and_then(|next| {
                                 self.corner_points.get(&(self.face, next.cycle, next.start))
                             }) {
-                            Some(Arc::new(
-                                self.ctx
-                                    .copy_retained_set(source, "catia_gap_next_corner_points")?,
-                            ))
+                            Some(Arc::new(self.ctx.collect_hash_set(
+                                source.iter().copied(),
+                                "catia_gap_next_corner_points",
+                            )?))
                         } else {
                             None
                         };
@@ -2886,8 +2886,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             .first()
             .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)))
         {
-            Some(Arc::new(ctx.copy_retained_set(
-                source,
+            Some(Arc::new(ctx.collect_hash_set(
+                source.iter().copied(),
                 "catia_gap_initial_corner_points",
             )?))
         } else {
@@ -3391,8 +3391,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                     if let Some(stored) = corner_points.get_mut(&key) {
                         stored.retain(|point| points.contains(point));
                     } else {
-                        let copied =
-                            ctx.copy_retained_set(&points, "catia_mesh_corner_point_copy")?;
+                        let copied = ctx.collect_hash_set(
+                            points.iter().copied(),
+                            "catia_mesh_corner_point_copy",
+                        )?;
                         ctx.insert_hash_map(
                             &mut corner_points,
                             key,
@@ -4304,7 +4306,8 @@ fn standard_mesh_assignment_corner_points(
                         return None;
                     }
                 } else {
-                    let copied = match ctx.copy_retained_set(&candidates, "catia_corner_point_copy")
+                    let copied = match ctx
+                        .collect_hash_set(candidates.iter().copied(), "catia_corner_point_copy")
                     {
                         Ok(copied) => copied,
                         Err(error) => return Some(Err(error)),

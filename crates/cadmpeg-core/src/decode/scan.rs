@@ -1056,8 +1056,8 @@ mod tests {
     }
 
     #[test]
-    fn iteration_sources_charge_text_bytes_and_hash_capacity() {
-        use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+    fn iteration_sources_charge_text_bytes() {
+        use std::collections::{BTreeMap, BTreeSet, VecDeque};
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
@@ -1066,10 +1066,6 @@ mod tests {
         let queue = VecDeque::from([1, 2]);
         let tree = BTreeMap::from([(1, 2)]);
         let ordered = BTreeSet::from([1, 2]);
-        let mut map = HashMap::with_capacity(100);
-        map.insert(1, 2);
-        let mut set = HashSet::with_capacity(100);
-        set.insert(1);
         assert_eq!(
             ctx.admit_iter(&vector, "vector").expect("vector").count(),
             2
@@ -1085,18 +1081,13 @@ mod tests {
                 .count(),
             2
         );
-        assert_eq!(ctx.admit_iter(&map, "map").expect("map").count(), 1);
-        assert_eq!(ctx.admit_iter(&set, "set").expect("set").count(), 1);
         let CodecError::ResourceLimit(limit) =
             ctx.charge_work(u64::MAX, "probe").expect_err("probe")
         else {
             panic!("resource refusal");
         };
-        // Nine collection slots, four text bytes, and both hash capacity scans.
-        assert_eq!(
-            limit.used,
-            13 + super::u64_from_index(map.capacity() + set.capacity())
-        );
+        // Nine collection slots and four text bytes.
+        assert_eq!(limit.used, 13);
     }
 
     #[test]

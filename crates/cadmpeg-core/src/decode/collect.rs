@@ -302,8 +302,9 @@ impl DecodeContext<'_> {
         work_operation: &'static str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), work_operation)?;
-        reservation.with_storage(|| self.insert_btree_set(values, value, operation))
+        reservation.with_storage(|| {
+            self.insert_btree_set_with_lookup(values, value, work_operation, operation)
+        })
     }
 
     /// Inserts a vacant scoped tree entry after charging lookup work and node storage.
@@ -316,7 +317,6 @@ impl DecodeContext<'_> {
         work_operation: &'static str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), work_operation)?;
         reservation.with_storage(|| {
             if self.contains_key_btree_map(values, &key, work_operation)? {
                 return Ok(false);
@@ -675,7 +675,6 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
         if self.contains_hash_set(values, &value, operation)? {
             return Ok(false);
         }
@@ -691,8 +690,6 @@ impl DecodeContext<'_> {
         value: &str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        self.charge_work(u64_from_index(value.len()), operation)?;
         if self.contains_hash_set(values, value, operation)? {
             return Ok(false);
         }
@@ -1123,13 +1120,27 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Copies a retained set after charging storage and entries.
-    pub fn copy_retained_set<T: Copy + Eq + Hash + DecodeCost>(
+    /// Charges rehashing every stored key when hash-table growth reallocates.
+    /// Fixed-cost keys are charged without visiting the table. Variable-cost
+    /// keys are measured where they are stored: one more visit per key, and the
+    /// unspecified visit order does not affect the sum. Bucket visits are
+    /// amortized by the insertions that filled the table.
+    fn charge_rehash<'keys, K: DecodeCost + 'keys>(
         &self,
-        values: &HashSet<T>,
+        len: usize,
+        keys: impl Iterator<Item = &'keys K>,
         operation: &'static str,
-    ) -> Result<HashSet<T>, CodecError> {
-        self.collect_hash_set(self.admit_iter(values, operation)?.copied(), operation)
+    ) -> Result<(), CodecError> {
+        let len = u64_from_index(len);
+        self.charge_work(len, operation)?;
+        if let Some(bytes) = K::FIXED_BYTES {
+            return self.charge_work(self.cost_product(len, bytes, operation)?, operation);
+        }
+        self.charge_work(len, operation)?;
+        for key in keys {
+            self.charge_key(key, 1, operation)?;
+        }
+        Ok(())
     }
 
     // SwissTable has a maximum 7/8 load, power-of-two bucket storage, and
@@ -1210,10 +1221,7 @@ impl DecodeContext<'_> {
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required > values.capacity() {
-            self.charge_work(u64_from_index(values.len()), operation)?;
-            for key in self.admit_iter(&*values, operation)? {
-                self.charge_key(key, 1, operation)?;
-            }
+            self.charge_rehash(values.len(), values.iter(), operation)?;
         }
         let (bytes, _growth) =
             self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
@@ -1245,10 +1253,7 @@ impl DecodeContext<'_> {
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         if required > values.capacity() {
-            self.charge_work(u64_from_index(values.len()), operation)?;
-            for key in self.admit_iter(&*values, operation)? {
-                self.charge_key(key.0, 1, operation)?;
-            }
+            self.charge_rehash(values.len(), values.keys(), operation)?;
         }
         let (bytes, _growth) =
             self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
@@ -1368,8 +1373,17 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        if self.contains_btree_set(values, &value, operation)? {
+        self.insert_btree_set_with_lookup(values, value, operation, operation)
+    }
+
+    fn insert_btree_set_with_lookup<T: Ord + DecodeCost>(
+        &self,
+        values: &mut BTreeSet<T>,
+        value: T,
+        lookup_operation: &'static str,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if self.contains_btree_set(values, &value, lookup_operation)? {
             return Ok(false);
         }
         self.admit_btree_node_storage::<T, ()>(values.len(), operation)?;

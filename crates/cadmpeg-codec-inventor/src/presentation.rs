@@ -170,7 +170,7 @@ pub(crate) fn project_bindings(
     inventory: &PresentationInventory<'_>,
     appearances: &[Appearance],
     bodies: &[BodyId],
-    face_keys: &std::collections::HashMap<FaceId, u64>,
+    face_keys: &BTreeMap<FaceId, u64>,
 ) -> Result<PresentationProjection, CodecError> {
     let mut projection = project_default_bindings(ctx, inventory, appearances, bodies)?;
     project_face_bindings(ctx, inventory, face_keys, &mut projection)?;
@@ -392,7 +392,7 @@ fn project_default_bindings(
 fn project_face_bindings(
     ctx: &DecodeContext<'_>,
     inventory: &PresentationInventory<'_>,
-    face_keys: &std::collections::HashMap<FaceId, u64>,
+    face_keys: &BTreeMap<FaceId, u64>,
     projection: &mut PresentationProjection,
 ) -> Result<(), CodecError> {
     let mut key_counts_storage = ctx.reserve_scoped(0, "count Inventor presentation face keys")?;
@@ -1548,7 +1548,7 @@ mod tests {
             issues: Vec::new(),
         };
         let face = FaceId::mint("inventor:test:face#1").expect("face id");
-        let face_keys = std::collections::HashMap::from([(face, 42)]);
+        let face_keys = BTreeMap::from([(face, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
@@ -2306,7 +2306,7 @@ mod tests {
     fn projects_face_override_through_native_key_and_style_graph() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
-        let face_keys = std::collections::HashMap::from([(face_id.clone(), 42)]);
+        let face_keys = BTreeMap::from([(face_id.clone(), 42)]);
 
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -2341,7 +2341,7 @@ mod tests {
     fn face_binding_projection_refuses_entity_limits_before_creations() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
-        let face_keys = std::collections::HashMap::from([(face_id, 42)]);
+        let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         for (max_entities, operation) in [
             (0, "project Inventor face appearance"),
@@ -2373,10 +2373,10 @@ mod tests {
     fn face_binding_projection_refuses_work_limit_before_graph_scan() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
-        let face_keys = std::collections::HashMap::from([(face_id, 42)]);
+        let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two bucket traversals, an eight-byte hash key, five iterator/sort visits, and two sort levels precede the scan.
+        // Two face-key traversals, an eight-byte hash key, five iterator/sort visits, and two sort levels precede the scan.
         let id_len = face_keys
             .keys()
             .next()
@@ -2385,7 +2385,7 @@ mod tests {
             .len();
         let pair_bytes = std::mem::size_of::<(&FaceId, &u64)>();
         policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
-            2 * face_keys.capacity() + 8 + 5 + (pair_bytes + 2 * id_len) * 2 * 8,
+            2 * face_keys.len() + 8 + 5 + (pair_bytes + 2 * id_len) * 2 * 8,
         );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
