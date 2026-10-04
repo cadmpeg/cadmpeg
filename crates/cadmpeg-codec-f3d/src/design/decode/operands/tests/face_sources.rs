@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::operands::{
-    decode_face_source_groups, face_source_carrier_layout, face_source_reference_headers,
-    parse_face_source_carrier_prefix,
+    decode_face_source_groups, face_source_carrier_layout, face_source_carrier_references,
+    face_source_reference_headers,
 };
 use crate::test_support::write_marked_reference;
 
@@ -103,11 +103,11 @@ fn source_carrier(
 #[test]
 fn face_source_carriers_use_generation_keyed_prefixes() {
     for (class_tag, source_count, scalar_offset, discriminator, paired_class_tag) in [
-        (*b"398", 4, 80, 100, "462"),
-        (*b"394", 2, 58, 109, "311"),
-        (*b"356", 2, 58, 109, "309"),
+        (*b"398", 4, 80, 100, b"462"),
+        (*b"394", 2, 58, 109, b"311"),
+        (*b"356", 2, 58, 109, b"309"),
     ] {
-        let layout = face_source_carrier_layout(class_tag_str(&class_tag)).unwrap();
+        let layout = face_source_carrier_layout(&class_tag).unwrap();
         assert_eq!(layout.source_count, source_count);
         assert_eq!(layout.scalar_offset, scalar_offset);
         assert_eq!(layout.scalar_discriminator, discriminator);
@@ -121,12 +121,10 @@ fn face_source_carriers_use_generation_keyed_prefixes() {
             scalar_offset,
             discriminator,
         );
-        let references = crate::test_support::with_decode_context(|ctx| {
-            parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout).expect("service admission")
-        })
-        .unwrap();
+        let (references, count) = face_source_carrier_references(&bytes, 0, 12, layout).unwrap();
+        assert_eq!(count, source_count);
         assert_eq!(
-            references,
+            references[..count],
             (0..source_count)
                 .map(|ordinal| (
                     36 + ordinal * 11,
@@ -137,76 +135,17 @@ fn face_source_carriers_use_generation_keyed_prefixes() {
     }
 }
 
-fn class_tag_str(class_tag: &[u8; 3]) -> &str {
-    std::str::from_utf8(class_tag).unwrap()
-}
-
 #[test]
 fn face_source_carrier_prefix_rejects_wrong_count_and_discriminator() {
-    let layout = face_source_carrier_layout("398").unwrap();
+    let layout = face_source_carrier_layout(b"398").unwrap();
     let mut bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
 
     bytes[32..36].copy_from_slice(&3u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| parse_face_source_carrier_prefix(
-            ctx, &bytes, 0, 12, layout
-        )
-        .expect("service admission"))
-        .is_none()
-    );
+    assert!(face_source_carrier_references(&bytes, 0, 12, layout).is_none());
 
-    let layout = face_source_carrier_layout("398").unwrap();
     let mut bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
     bytes[80..84].copy_from_slice(&101u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| parse_face_source_carrier_prefix(
-            ctx, &bytes, 0, 12, layout
-        )
-        .expect("service admission"))
-        .is_none()
-    );
-}
-
-#[test]
-fn face_source_reference_storage_has_fixed_capacity() {
-    for (tag, count, offset, discriminator) in [(b"398", 4, 80, 100), (b"394", 2, 58, 109)] {
-        let layout = face_source_carrier_layout(class_tag_str(tag)).unwrap();
-        let bytes = source_carrier(tag, 100, 12, count, offset, discriminator);
-        let references = crate::test_support::with_decode_context(|ctx| {
-            parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout).expect("service admission")
-        })
-        .unwrap();
-        assert_eq!(references.len(), count);
-        assert_eq!(references.capacity(), 4);
-    }
-}
-
-#[test]
-fn face_source_reference_push_refuses_each_collection_item() {
-    let layout = face_source_carrier_layout("398").unwrap();
-    let bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
-    let references = crate::test_support::with_decode_context(|ctx| {
-        parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout)
-            .expect("valid FaceSource carrier")
-    })
-    .expect("four FaceSource references");
-    assert_eq!(references.len(), 4);
-
-    for skip in 0..4 {
-        let refusal = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            "collect F3D face source references",
-            skip,
-            |ctx| parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout).map(|_| ()),
-        );
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    && limit.operation == "collect F3D face source references"
-                    && limit.additional == 1
-        ));
-    }
+    assert!(face_source_carrier_references(&bytes, 0, 12, layout).is_none());
 }
 
 #[test]

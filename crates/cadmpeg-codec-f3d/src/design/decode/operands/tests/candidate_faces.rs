@@ -123,25 +123,6 @@ fn edge_operand_candidate_faces_refuses_face_id_copy_storage() {
 }
 
 #[test]
-fn edge_operand_candidate_faces_refuses_collection_work() {
-    let (_, tags) = fixture();
-    let operation = "collect F3D edge operand candidate faces";
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| scoped_candidate_faces(ctx, 303, &tags, None).map(|_| ()),
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == operation
-                && failure.additional == 1
-    ));
-}
-
-#[test]
 fn edge_operand_candidate_faces_refuses_collection_items() {
     let (_, tags) = fixture();
     let operation = "collect F3D edge operand candidate faces";

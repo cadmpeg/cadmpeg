@@ -33,7 +33,7 @@ fn parse_edge_operand(
         recipes,
         terminal_group_limit,
     )
-    .map(|result| result.expect("recipe allocation admitted"))
+    .expect("recipe allocation admitted")
 }
 
 fn parse_face_operand(
@@ -62,7 +62,7 @@ fn parse_face_operand(
         },
         recipes,
     )
-    .map(|result| result.expect("recipe allocation admitted"))
+    .expect("recipe allocation admitted")
 }
 
 fn parse_vertex_recipe(
@@ -79,7 +79,7 @@ fn parse_vertex_recipe(
     crate::design::decode::operands::parse_vertex_recipe(
         &ctx, bytes, records, stream, header, recipes,
     )
-    .map(|result| result.expect("recipe allocation admitted"))
+    .expect("recipe allocation admitted")
 }
 
 #[test]

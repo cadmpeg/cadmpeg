@@ -232,7 +232,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     };
 
     let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_construction_operand_transform(ctx, &bytes, &header).transpose()
+        parse_construction_operand_transform(ctx, &bytes, &header)
     })
     .expect("contextful construction-operand transform parse")
     .expect("exact construction-operand transform");
@@ -244,7 +244,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
 
     bytes[150] = 0;
     let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_construction_operand_transform(ctx, &bytes, &header).transpose()
+        parse_construction_operand_transform(ctx, &bytes, &header)
     })
     .expect("contextful malformed transform parse");
     assert!(parsed.is_none());
@@ -267,8 +267,11 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     dual.extend_from_slice(&3u32.to_le_bytes());
     dual.extend_from_slice(b"432");
     dual.extend_from_slice(&(record_index + 1).to_le_bytes());
-    let parsed = parse_construction_operand_dual_transform(&dual, &header)
-        .expect("exact dual construction-operand transform");
+    let parsed = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_operand_dual_transform(ctx, &dual, &header)
+    })
+    .expect("decode budget")
+    .expect("exact dual construction-operand transform");
     assert_eq!(parsed.first_transform, transform.try_into().unwrap());
     assert_eq!(parsed.first_transform_offset, 21);
     assert_eq!(parsed.second_transform, secondary.try_into().unwrap());
@@ -291,12 +294,22 @@ fn construction_operand_trailing_flag_has_exact_compact_frame() {
         record_index: 33602,
     };
 
-    let flag = parse_construction_operand_flag(&bytes, &header).expect("compact trailing flag");
+    let flag = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_construction_operand_flag(ctx, &bytes, &header)
+    })
+    .expect("decode budget")
+    .expect("compact trailing flag");
     assert!(flag.value);
     assert_eq!(flag.value_offset, 22);
 
     bytes[22] = 2;
-    assert!(parse_construction_operand_flag(&bytes, &header).is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_construction_operand_flag(ctx, &bytes, &header)
+        })
+        .expect("decode budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -332,7 +345,6 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     };
     let expanded = crate::design::test_support::with_test_decode_context(|ctx| {
         parse_construction_operand_path(ctx, &expanded, scope_record_index, &expanded_header)
-            .transpose()
     })
     .expect("contextful expanded selection path parse")
     .expect("expanded selection path");
@@ -365,7 +377,6 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     indexed_header(&mut compact, *b"390", record_index + 1);
     let compact = crate::design::test_support::with_test_decode_context(|ctx| {
         parse_construction_operand_path(ctx, &compact, scope_record_index, &expanded_header)
-            .transpose()
     })
     .expect("contextful compact selection path parse")
     .expect("compact selection path");
@@ -418,7 +429,7 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     let wrapper_class_tag =
         crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap();
     let absent = crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_construction_tracking_path(ctx, &absent, 0, 300, &wrapper_class_tag).transpose()
+        parse_construction_tracking_path(ctx, &absent, 0, 300, &wrapper_class_tag)
     })
     .expect("contextful tracking path parse")
     .expect("tracking path without related identities");
@@ -435,7 +446,7 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
 
     let present = tracking_path(Some(113), Some(119));
     let present = crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_construction_tracking_path(ctx, &present, 0, 300, &wrapper_class_tag).transpose()
+        parse_construction_tracking_path(ctx, &present, 0, 300, &wrapper_class_tag)
     })
     .expect("contextful tracking path parse")
     .expect("tracking path with related identities");

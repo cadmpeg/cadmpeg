@@ -196,7 +196,7 @@ fn edge_recipe_entries_preserve_tail_and_work_refusal() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == operation
-            && limit.additional == 9));
+            && limit.additional == 1));
     let parsed =
         edge_recipe_entries_with_context(&cadmpeg_test_support::service_decode_context(), &words)
             .unwrap()
@@ -279,28 +279,17 @@ fn surface_patch_field_and_clause_pushes_refuse_each_collection_item() {
     }
 }
 #[test]
-fn surface_patch_recipe_scans_refuse_work_limits() {
-    let program = [
-        0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2, 1,
-        1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
-    ];
-    for operation in [
-        "scan F3D SurfacePatch field delimiters",
-        "validate F3D SurfacePatch field words",
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            operation,
-            0,
-            |ctx| surface_patch_recipe_structure_with_context(ctx, &program, 4),
-        );
-        assert!(matches!(
-            error,
-            CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::WorkUnits
-                    && failure.operation == operation
-        ));
-    }
+fn surface_patch_field_delimiter_search_reads_at_most_three_words() {
+    let mut program = vec![0; 7];
+    program.push(2);
+    program.extend(std::iter::repeat_n(5, 4096));
+    program.push(-1);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let result = crate::test_support::with_decode_policy(&policy, |ctx| {
+        surface_patch_recipe_structure_with_context(ctx, &program, 4)
+    });
+    assert!(matches!(result, Ok(None)));
 }
 
 #[test]

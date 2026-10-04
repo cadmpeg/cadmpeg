@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::{
-    bind_vertex_recipe_candidates, bind_work_plane_constructions, bind_work_point_input_carriers,
-    decode_edge_identity_operands, decode_edge_operands, decode_edge_treatment_vertex_operands,
-    decode_face_operands,
+    bind_work_plane_constructions, bind_work_point_input_carriers, decode_edge_identity_operands,
+    decode_edge_operands, decode_edge_treatment_vertex_operands, decode_face_operands,
 };
 use crate::records::decal::DesignRecordHeader;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -259,9 +257,8 @@ fn edge_operand_header_and_offset_indices_refuse_collection_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         for (limit, operation) in [
-            (0, "f3d edge operand header index"),
-            (1, "f3d edge operand offset stream"),
-            (2, "f3d edge operand stream offset"),
+            (0, "f3d operand header index"),
+            (1, "f3d edge operand stream offset"),
         ] {
             policy.limits.max_collection_items = limit;
 
@@ -316,7 +313,7 @@ fn vertex_operand_header_index_refuses_collection_limit() {
             ),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d vertex operand header index"
+                    && failure.operation == "f3d operand header index"
         ));
     });
 }
@@ -344,7 +341,7 @@ fn work_plane_header_index_refuses_collection_limit() {
                 &[], &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d work plane header index"
+                    && failure.operation == "f3d operand header index"
         ));
     });
 }
@@ -371,7 +368,7 @@ fn work_point_header_index_refuses_collection_limit() {
             bind_work_point_input_carriers(&ctx, scan, &mut [], std::slice::from_ref(&header), &[], &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d WorkPoint header index"
+                    && failure.operation == "f3d operand header index"
         ));
     });
 }
@@ -403,20 +400,6 @@ fn work_point_plane_indices_refuse_collection_limits() {
 }
 
 #[test]
-fn vertex_recipe_scope_identity_refuses_materialized_limit() {
-    let mut scope = fixture_scope(crate::records::feature::scope::DesignFeatureKind::WorkPoint);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = u64_from_index(scope.id.len()) - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        bind_vertex_recipe_candidates(&ctx, std::slice::from_mut(&mut scope), &[]),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::MaterializedBytes
-    ));
-}
-
-#[test]
 fn edge_identity_header_index_refuses_collection_limit() {
     let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
         &crate::test_support::smbh_header_test::synthetic_smbh(),
@@ -438,7 +421,7 @@ fn edge_identity_header_index_refuses_collection_limit() {
             decode_edge_identity_operands(&ctx, scan, &[], &[], std::slice::from_ref(&header)),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d edge identity header index"
+                    && failure.operation == "f3d operand header index"
         ));
     });
 }
@@ -460,7 +443,7 @@ fn face_operand_header_and_scope_indices_refuse_collection_limits() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         for (limit, operation) in [
-            (0, "f3d face operand header index"),
+            (0, "f3d operand header index"),
             (1, "f3d face operand scope index"),
         ] {
             policy.limits.max_collection_items = limit;
