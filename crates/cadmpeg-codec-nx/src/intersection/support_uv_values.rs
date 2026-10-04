@@ -6,6 +6,8 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
+use std::convert::Infallible;
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SupportUvPacking {
@@ -48,11 +50,13 @@ pub(crate) struct SupportUvValues {
     count: u32,
 }
 impl SupportUvValues {
-    fn with_storage(
+    fn with_storage<'values, E, I: Iterator<Item = &'values f64>>(
         packing: SupportUvPacking,
-        values: Vec<f64>,
+        values: &'values [f64],
         mut finite: Vec<FiniteReal>,
-    ) -> Result<Self, &'static str> {
+        admit: impl FnOnce(&'values [f64]) -> Result<I, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        let validation: Result<u32, &'static str> = (|| {
         let count = u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
         if values.is_empty() || !values.len().is_multiple_of(packing.width()) {
             return Err("values: must contain nonempty complete tuples for marker");
@@ -60,14 +64,23 @@ impl SupportUvValues {
         if !finite.is_empty() || finite.capacity() < values.len() {
             return Err("values: admitted storage is too small or not empty");
         }
-        for value in values {
-            finite.push(FiniteReal::new(value).ok_or("values: scalars must be finite")?);
+        Ok(count)
+        })();
+        let count = match validation {
+            Ok(count) => count,
+            Err(error) => return Ok(Err(error)),
+        };
+        for value in admit(values)? {
+            let Some(value) = FiniteReal::new(*value) else {
+                return Ok(Err("values: scalars must be finite"));
+            };
+            finite.push(value);
         }
-        Ok(Self {
+        Ok(Ok(Self {
             packing,
             values: finite,
             count,
-        })
+        }))
     }
 
     pub(crate) fn new_charged(
@@ -75,10 +88,9 @@ impl SupportUvValues {
         packing: SupportUvPacking,
         values: Vec<f64>,
     ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(u64_from_index(values.len()), "admit NX support-UV scalars")?;
         let (finite, reservation) =
             ctx.temporary_vec(values.len(), "NX finite support-UV values")?;
-        let data = Self::with_storage(packing, values, finite).ok();
+        let data = Self::with_storage(packing, &values, finite, |values| ctx.admit_iter(values, "admit NX support-UV scalars"))?.ok();
         if data.is_some() {
             reservation.commit()?;
         }
@@ -91,7 +103,10 @@ impl SupportUvValues {
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
         .map_err(|_| "values: storage allocation failed")?;
-        Self::with_storage(packing, values, finite)
+        match Self::with_storage(packing, &values, finite, |values| Ok::<_, Infallible>(values.iter())) {
+            Ok(value) => value,
+            Err(never) => match never {},
+        }
     }
 
     pub(crate) fn count(&self) -> u32 {
@@ -167,8 +182,10 @@ impl SupportUvValues {
         } else {
             None
         };
-        ctx.charge_work(count_u64, "project NX support-UV tuples")?;
-        for row in self.values.chunks_exact(self.packing.width()) {
+        let Some(width) = NonZeroUsize::new(self.packing.width()) else {
+            return Ok([None, None]);
+        };
+        for row in ctx.admit_iter(&self.values, "project NX support-UV tuples")?.chunks(width) {
             first.push(FiniteVector::from([row[0], row[1]]));
             if let Some(values) = &mut second {
                 values.push(FiniteVector::from([row[2], row[3]]));
@@ -263,4 +280,16 @@ mod physical_lane_tests {
             });
         }
     }
+    #[test]
+    fn support_uv_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "admit NX support-UV scalars",
+            |ctx| { SupportUvValues::new_charged(ctx, SupportUvPacking::Form2, vec![0.0, 0.0]) },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "admit NX support-UV scalars"));
+    }
+
 }

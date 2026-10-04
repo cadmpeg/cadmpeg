@@ -10,6 +10,16 @@ impl<S: crate::immutable_text::ImmutableText> ProductText<S> {
     fn new(value: S) -> Result<Self, &'static str> {
         let value = PrintableString::new(value)
             .map_err(|_| "product_version/version: requires printable ASCII")?;
+        Self::from_printable(value)
+    }
+
+    fn from_wire(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: S) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        Ok(PrintableString::from_wire(ctx, value)?
+            .map_err(|_| "product_version/version: requires printable ASCII")
+            .and_then(Self::from_printable))
+    }
+
+    fn from_printable(value: PrintableString<S>) -> Result<Self, &'static str> {
         if !value.as_str().starts_with("NX ") || value.as_str().len() > 253 {
             return Err("product_version/version: requires NX-prefixed text of at most 253 bytes");
         }
@@ -29,7 +39,7 @@ impl ProductText<&str> {
         let value = self.as_str();
         let mut owned = ctx.retained_string(value.len(), "retain NX store version")?;
         ctx.append_retained(&mut owned, value, "NX admitted text append")?;
-        ProductText::new(owned)
+        ProductText::from_wire(ctx, owned)?
             .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))
     }
 }
@@ -60,7 +70,8 @@ pub(crate) struct ProductRecord<'a> {
 }
 
 impl<'a> ProductRecord<'a> {
-    pub(crate) fn read(bytes: &'a [u8], form: ProductRecordForm) -> Option<Self> {
+    pub(crate) fn read(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &'a [u8], form: ProductRecordForm) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        (|| {
         let (length_offset, text_start): (usize, usize) = match form {
             ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => {
                 (2, 3)
@@ -71,8 +82,9 @@ impl<'a> ProductRecord<'a> {
         let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
         let text_end = text_start.checked_add(text_length)?;
         let text =
-            ProductText::new(std::str::from_utf8(bytes.get(text_start..text_end)?).ok()?).ok()?;
-        (bytes.get(text_end) == Some(&0)).then_some(Self { form, text })
+            propagate_resource!(ProductText::from_wire(ctx, std::str::from_utf8(bytes.get(text_start..text_end)?).ok()?)).ok()?;
+        (bytes.get(text_end) == Some(&0)).then_some(Ok(Self { form, text }))
+        })().transpose()
     }
 
     pub(super) fn text(self) -> ProductText<&'a str> {
@@ -91,6 +103,38 @@ impl<'a> ProductRecord<'a> {
 #[cfg(test)]
 mod tests {
     use super::{ProductRecord, ProductRecordForm, ProductText};
+
+    #[test]
+    fn product_record_text_iteration_refusal_propagates() {
+        for (bytes, form) in [
+            (&b"\x04\x01\x05NX \0"[..], ProductRecordForm::Modern),
+            (&b"\x05\x01\x05NX \0"[..], ProductRecordForm::Modern),
+            (&b"\x01\x05NX \0"[..], ProductRecordForm::LegacyFeature),
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                bytes, cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                "NX printable string syntax", |ctx| ProductRecord::read(ctx, bytes, form),
+            );
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "NX printable string syntax"));
+        }
+    }
+
+    #[test]
+    fn retained_product_text_iteration_refusal_propagates() {
+        let text = ProductText::new("NX ").unwrap();
+        crate::test_support::with_decode_context_over(
+            &[],
+            // The append reads three bytes before the constructor validates them.
+            |policy| policy.limits.max_work_units = 3,
+            |ctx| {
+                let error = text.try_into_owned_for_decode(ctx).unwrap_err();
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("text validation must refuse"); };
+                assert_eq!(limit.operation, "NX printable string syntax");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            },
+        );
+    }
 
     #[test]
     fn product_text_preserves_wire_and_length_bound() {
@@ -126,17 +170,17 @@ mod tests {
     fn product_frames_derive_lengths_for_both_modern_markers_and_legacy() {
         for marker in [4, 5] {
             let frame = [marker, 1, 5, b'N', b'X', b' ', 0];
-            let product = ProductRecord::read(&frame, ProductRecordForm::Modern).unwrap();
+            let product = crate::test_support::with_decode_context(|ctx| ProductRecord::read(ctx, &frame, ProductRecordForm::Modern)).unwrap().unwrap();
             assert_eq!(product.text().as_str(), "NX ");
             assert_eq!(product.byte_len(), frame.len());
         }
         let frame = [1, 5, b'N', b'X', b' ', 0];
         assert_eq!(
-            ProductRecord::read(&frame, ProductRecordForm::LegacyFeature)
+            crate::test_support::with_decode_context(|ctx| ProductRecord::read(ctx, &frame, ProductRecordForm::LegacyFeature)).unwrap()
                 .unwrap()
                 .byte_len(),
             frame.len()
         );
-        assert!(ProductRecord::read(&frame[..5], ProductRecordForm::LegacyFeature).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| ProductRecord::read(ctx, &frame[..5], ProductRecordForm::LegacyFeature)).unwrap().is_none());
     }
 }

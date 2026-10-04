@@ -275,6 +275,7 @@ fn native_boolean(
 
 #[test]
 fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
+crate::test_support::with_decode_context(|ctx| {
     let mut write = native_body_write("write");
     write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
         write.frame.body_identity(),
@@ -286,24 +287,25 @@ fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     .unwrap();
     let boolean = native_boolean(40, vec![41, 42]);
 
-    assert!(body_writes_match_boolean_target(&[&write], None));
-    assert!(body_writes_match_boolean_target(&[], Some(&boolean)));
-    assert!(body_writes_match_boolean_target(&[&write], Some(&boolean)));
+    assert!(body_writes_match_boolean_target(ctx, &[&write], None).unwrap());
+    assert!(body_writes_match_boolean_target(ctx, &[], Some(&boolean)).unwrap());
+    assert!(body_writes_match_boolean_target(ctx, &[&write], Some(&boolean)).unwrap());
 
     let wrong_target = native_boolean(43, vec![41, 42]);
-    assert!(!body_writes_match_boolean_target(
+    assert!(!body_writes_match_boolean_target(ctx,
         &[&write],
         Some(&wrong_target)
-    ));
+    ).unwrap());
     let target_is_tool = native_boolean(40, vec![40, 41]);
-    assert!(!body_writes_match_boolean_target(
+    assert!(!body_writes_match_boolean_target(ctx,
         &[&write],
         Some(&target_is_tool)
-    ));
-    assert!(!body_writes_match_boolean_target(
+    ).unwrap());
+    assert!(!body_writes_match_boolean_target(ctx,
         &[&write, &write],
         Some(&boolean)
-    ));
+    ).unwrap());
+});
 }
 
 #[test]

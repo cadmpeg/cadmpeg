@@ -703,7 +703,7 @@ fn owned_symbolic_thread(
             id: frame_id,
             symbolic_thread: owner,
             ordinal: ordinal_u32,
-            value: crate::payload_text::PayloadText::new(value)
+            value: crate::payload_text::PayloadText::from_wire(ctx, value)?
                 .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?,
             source_offset: entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))

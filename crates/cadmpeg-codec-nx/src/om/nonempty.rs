@@ -38,6 +38,10 @@ impl<T> NonEmpty<T> {
         self.initial.iter().chain(std::iter::once(&self.last))
     }
 
+    pub(crate) fn initial(&self) -> &[T] {
+        &self.initial
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.initial.len() + 1
     }

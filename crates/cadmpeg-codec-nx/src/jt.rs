@@ -142,19 +142,16 @@ fn unpack_predictor_scratch<'ctx>(
     residuals: &[i32],
     predictor: Predictor,
 ) -> Result<ScratchLane<'ctx, i32>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(residuals.len()),
-        "unpack JT predictor residuals",
-    )?;
     let (mut values, reservation) = ctx.temporary_vec(residuals.len(), "nx JT decoded vector")?;
     if predictor == Predictor::Null {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(residuals.len()), "unpack JT predictor residuals")?;
         values.extend_from_slice(residuals);
         return Ok(ScratchLane {
             values,
             reservation,
         });
     }
-    for (index, &residual) in residuals.iter().enumerate() {
+    for (index, &residual) in ctx.admit_iter(residuals, "unpack JT predictor residuals")?.enumerate() {
         if index < 4 {
             values.push(residual);
             continue;
@@ -177,13 +174,9 @@ fn lossless_coordinate_component<'ctx>(
         if exponents.len() != mantissae.len() {
             return None;
         }
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(exponents.len()),
-            "form JT lossless component"
-        ));
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(exponents.len(), "nx JT decoded vector"));
-        for (&exponent, &mantissa) in exponents.iter().zip(mantissae) {
+        for (&exponent, &mantissa) in propagate_resource!(ctx.admit_iter(exponents, "form JT lossless exponents").map_err(CodecError::from)).zip(propagate_resource!(ctx.admit_iter(mantissae, "form JT lossless mantissae").map_err(CodecError::from))) {
             let exponent = exponent.cast_unsigned() & 0x1ff;
             let mantissa = mantissa.cast_unsigned() & 0x7f_ffff;
             let value = f32::from_bits((exponent << 23) | mantissa);
@@ -371,7 +364,7 @@ fn decode_vertex_normals_inner(
             }
             let mut normals =
                 propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
-            for ((x, y), z) in components[0].iter().zip(&components[1]).zip(&components[2]) {
+            for ((x, y), z) in propagate_resource!(ctx.admit_iter(&components[0].values, "form JT normal x values").map_err(CodecError::from)).zip(propagate_resource!(ctx.admit_iter(&components[1].values, "form JT normal y values").map_err(CodecError::from))).zip(propagate_resource!(ctx.admit_iter(&components[2].values, "form JT normal z values").map_err(CodecError::from))) {
                 normals.push([*x, *y, *z]);
             }
             normals
@@ -391,7 +384,7 @@ fn decode_vertex_normals_inner(
             let mut normals =
                 propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
             for (((sextant, octant), theta), psi) in
-                codes[0].iter().zip(&codes[1]).zip(&codes[2]).zip(&codes[3])
+                propagate_resource!(ctx.admit_iter(&codes[0].values, "form JT normal sextants").map_err(CodecError::from)).zip(propagate_resource!(ctx.admit_iter(&codes[1].values, "form JT normal octants").map_err(CodecError::from))).zip(propagate_resource!(ctx.admit_iter(&codes[2].values, "form JT normal theta").map_err(CodecError::from))).zip(propagate_resource!(ctx.admit_iter(&codes[3].values, "form JT normal psi").map_err(CodecError::from)))
             {
                 normals.push(deering_normal(
                     Sextant::from_index(*sextant)?,
@@ -473,7 +466,7 @@ fn decode_vertex_texture_coordinates_inner(
                 ranges.push(QuantizedRange::new(minimum, maximum)?);
                 cursor = cursor.checked_add(9)?;
             }
-            for range in ranges {
+            for range in propagate_resource!(ctx.admit_iter(&ranges, "JT quantization range traversal").map_err(CodecError::from)).copied() {
                 let (residuals, byte_len) =
                     propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
                 cursor = cursor.checked_add(byte_len)?;
@@ -482,10 +475,8 @@ fn decode_vertex_texture_coordinates_inner(
                 }
                 let (mut component, reservation) =
                     propagate_resource!(ctx.temporary_vec(count, "nx JT decoded vector"));
-                for code in
-                    propagate_resource!(unpack_predictor_scratch(ctx, &residuals, Predictor::Lag1))
-                        .iter()
-                        .copied()
+                let predicted = propagate_resource!(unpack_predictor_scratch(ctx, &residuals, Predictor::Lag1));
+                for code in propagate_resource!(ctx.admit_iter(&predicted.values, "JT predicted value traversal").map_err(CodecError::from)).copied()
                 {
                     component.push(dequantize_uniform(
                         u32::try_from(code).ok()?,
@@ -629,10 +620,8 @@ fn decode_vertex_colors_inner(
                 }
                 let (mut values, reservation) =
                     propagate_resource!(ctx.temporary_vec(count, "nx JT decoded vector"));
-                for code in
-                    propagate_resource!(unpack_predictor_scratch(ctx, &residuals, Predictor::Lag1))
-                        .iter()
-                        .copied()
+                let predicted = propagate_resource!(unpack_predictor_scratch(ctx, &residuals, Predictor::Lag1));
+                for code in propagate_resource!(ctx.admit_iter(&predicted.values, "JT predicted value traversal").map_err(CodecError::from)).copied()
                 {
                     values.push(dequantize_uniform(
                         u32::try_from(code).ok()?,
@@ -720,7 +709,7 @@ fn decode_vertex_flags_inner(
             return None;
         }
         let mut flags = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
-        for value in values.iter().copied() {
+        for value in propagate_resource!(ctx.admit_iter(&values.values, "JT flag value traversal").map_err(CodecError::from)).copied() {
             flags.push(u32::try_from(value).ok().filter(|value| *value <= 1)?);
         }
         Some(Ok((flags, 4usize.checked_add(byte_len)?)))
@@ -807,10 +796,8 @@ fn decode_vertex_coordinates_inner(
                 }
                 let (mut values, reservation) =
                     propagate_resource!(ctx.temporary_vec(vertex_count, "nx JT decoded vector"));
-                for code in
-                    propagate_resource!(unpack_predictor_scratch(ctx, &residuals, Predictor::Lag1))
-                        .iter()
-                        .copied()
+                let predicted = propagate_resource!(unpack_predictor_scratch(ctx, &residuals, Predictor::Lag1));
+                for code in propagate_resource!(ctx.admit_iter(&predicted.values, "JT predicted value traversal").map_err(CodecError::from)).copied()
                 {
                     values.push(dequantize_uniform(
                         u32::try_from(code).ok()?,
@@ -918,11 +905,7 @@ fn frame_int32_cdp2_inner(
             usize::try_from(value_count).ok()?,
             &entries,
         ))?;
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(symbols.len()),
-            "count JT escape symbols"
-        ));
-        let escape_count = symbols.iter().filter(|value| value.is_none()).count();
+        let escape_count = propagate_resource!(ctx.admit_iter(&symbols.values, "count JT escape symbols").map_err(CodecError::from)).filter(|value| value.is_none()).count();
         let (out_of_band_count, _, out_of_band_len) =
             propagate_resource!(frame_int32_cdp2_inner(ctx, bytes.get(cursor..)?, depth + 1))?;
         if usize::try_from(out_of_band_count).ok()? != escape_count {
@@ -1050,20 +1033,14 @@ fn decode_arithmetic<'a>(
                 u64::MAX,
             )));
         };
-        let budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK));
-        if !budget.charge_by(work) {
-            let error = match ctx.resource_refusal() {
-                Some(limit) => CodecError::ResourceLimit(limit),
-                None => ctx.refuse_codec_limit(
-                    "decode JT arithmetic symbols",
-                    cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK),
-                    cadmpeg_core::decode::u64_from_index(work),
-                ),
-            };
-            return Some(Err(error));
+        if work > MAX_ARITHMETIC_WORK {
+            return Some(Err(ctx.refuse_codec_limit(
+                "decode JT arithmetic symbols",
+                cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK),
+                cadmpeg_core::decode::u64_from_index(work),
+            )));
         }
-        let total: u32 = entries
-            .iter()
+        let total: u32 = propagate_resource!(ctx.admit_iter(entries, "JT probability total traversal").map_err(CodecError::from))
             .try_fold(0u32, |sum, entry| sum.checked_add(entry.occurrence_count))?;
         if total == 0 || total > u32::from(u16::MAX) {
             return None;
@@ -1085,7 +1062,7 @@ fn decode_arithmetic<'a>(
             let range = u32::from(high.checked_sub(low)?) + 1;
             let scaled = ((u32::from(code.checked_sub(low)?) + 1) * total - 1) / range;
             let mut cumulative = 0u32;
-            let entry = entries.iter().find(|entry| {
+            let entry = propagate_resource!(ctx.admit_iter(entries, "JT probability entry search").map_err(CodecError::from)).find(|entry| {
                 let end = cumulative + entry.occurrence_count;
                 let contains = scaled >= cumulative && scaled < end;
                 if !contains {
@@ -1281,11 +1258,7 @@ fn decode_int32_cdp2_inner<'ctx>(
             } else {
                 (1_u32 << shift) - 1
             };
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(value_count),
-                "validate JT low symbols"
-            ));
-            if lsb.iter().any(|value| {
+            if propagate_resource!(ctx.admit_iter(&lsb.values, "validate JT low symbols").map_err(CodecError::from)).any(|value| {
                 u32::try_from(*value)
                     .ok()
                     .is_none_or(|value| value > low_mask)
@@ -1294,11 +1267,7 @@ fn decode_int32_cdp2_inner<'ctx>(
             }
             let (mut values, reservation) =
                 propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(value_count),
-                "combine JT chopped symbols"
-            ));
-            for (high, low) in msb.iter().copied().zip(lsb.iter().copied()) {
+            for (high, low) in propagate_resource!(ctx.admit_iter(&msb.values, "combine JT high symbols").map_err(CodecError::from)).copied().zip(propagate_resource!(ctx.admit_iter(&lsb.values, "combine JT low symbols").map_err(CodecError::from)).copied()) {
                 let high = high.checked_shl(u32::from(shift))?;
                 // wrapping-exception: JT chopped Int32 symbols add bias modulo 2^32
                 values.push((low | high).wrapping_add(bias));
@@ -1334,11 +1303,8 @@ fn decode_int32_cdp2_inner<'ctx>(
             value_count,
             &entries
         ))?;
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(symbols.len()),
-            "count JT escape symbols"
-        ));
-        let escape_count = symbols.iter().filter(|value| value.is_none()).count();
+        let escape_count = propagate_resource!(ctx.admit_iter(&symbols.values, "count JT escape symbols").map_err(CodecError::from))
+            .filter(|value| value.is_none()).count();
         let (out_of_band, oob_len) = propagate_resource!(decode_int32_cdp2_inner(
             ctx,
             bytes.get(cursor..)?,
@@ -1351,11 +1317,7 @@ fn decode_int32_cdp2_inner<'ctx>(
         let mut out_of_band = out_of_band.iter().copied();
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(value_count),
-            "form JT arithmetic values"
-        ));
-        for value in symbols.iter().copied() {
+        for value in propagate_resource!(ctx.admit_iter(&symbols.values, "form JT arithmetic values").map_err(CodecError::from)).copied() {
             values.push(value.or_else(|| out_of_band.next())?);
         }
         Some(Ok((

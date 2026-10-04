@@ -5132,7 +5132,7 @@ pub(super) fn feature_payload_strings(
                             None,
                         )?,
                         ordinal: ordinal_u32,
-                        value: crate::payload_text::PayloadText::new(text)
+                        value: crate::payload_text::PayloadText::from_wire(ctx, text)?
                             .map_err(|error| CodecError::InvalidInput(error.to_string()))?,
                         source_offset,
                     });
@@ -5164,7 +5164,11 @@ pub(super) fn feature_body_references(
             if failure.is_some() {
                 return;
             }
-            let Some(reference) = crate::om::operation_body_reference(record.body_view()) else {
+            let reference = match crate::om::operation_body_reference(ctx, record.body_view()) {
+                Ok(reference) => reference,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(reference) = reference else {
                 return;
             };
             let result = (|| -> Result<(), CodecError> {
@@ -6662,7 +6666,7 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
                 csys.descriptor.descriptor().identity().as_str(),
                 "NX datum descriptor shared identity",
             )?;
-            let identity = CsysIdentity::try_from(identity_text)
+            let identity = CsysIdentity::from_wire(ctx, identity_text)?
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
             let datum_plane_descriptor =
                 ctx.copy_retained_text(&plane.id, "NX datum identity plane descriptor")?;

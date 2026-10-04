@@ -296,8 +296,9 @@ pub(crate) fn incomplete_expression_parameters(
                         return Ok(None);
                     };
                     let mut dependencies = Vec::new();
-                    for name in crate::native::om::expression_parameter_names(&parameter.expression)
+                    for name in crate::native::om::expression_parameter_names(ctx, &parameter.expression)
                     {
+                        let name = name?;
                         let Some(ids) = ids_by_name.get(&(name, unit)) else {
                             return Ok(None);
                         };

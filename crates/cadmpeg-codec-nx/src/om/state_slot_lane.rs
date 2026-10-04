@@ -9,10 +9,11 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StateSlotLane<O = usize> {
     offset: O,
+    end: O,
     slots: StateSlots<Option<StateIndexToken>>,
 }
 
-impl<O: Copy + From<u8> + std::ops::Add<Output = O>> StateSlotLane<O> {
+impl<O: Copy> StateSlotLane<O> {
     pub(crate) fn offset(&self) -> O {
         self.offset
     }
@@ -23,11 +24,7 @@ impl<O: Copy + From<u8> + std::ops::Add<Output = O>> StateSlotLane<O> {
         self.slots
     }
     pub(crate) fn end_offset(&self) -> O {
-        self.slots
-            .iter()
-            .fold(self.offset + O::from(5), |end, (_, slot)| {
-                end + O::from(slot.map_or(1, StateIndexToken::byte_len))
-            })
+        self.end
     }
 }
 
@@ -52,14 +49,14 @@ impl StateSlotLane {
                 return Ok(None);
             };
             if bytes.get(cursor..marker_end) == Some(&[0x02, 0x11]) {
-                let (Some(_), Some(offset), Ok(slots)) = (
+                let (Some(end), Some(offset), Ok(slots)) = (
                     base.checked_add(marker_end),
                     base.checked_add(at),
                     StateSlots::new(slots),
                 ) else {
                     return Ok(None);
                 };
-                return Ok(Some(Self { offset, slots }));
+                return Ok(Some(Self { offset, end, slots }));
             }
             let Some(slot) = OperationStateIndex::read_at(bytes, cursor, base) else {
                 return Ok(None);
@@ -96,14 +93,33 @@ impl StateSlotLane<u64> {
         offset: u64,
         slots: StateSlots<Option<StateIndexToken>>,
     ) -> Result<Self, &'static str> {
-        let byte_len = slots.iter().fold(5u64, |len, (_, slot)| {
-            len + u64::from(slot.map_or(1, StateIndexToken::byte_len))
-        });
-        offset
-            .checked_add(byte_len)
-            .ok_or("source_offset: slot-lane extent overflows")?;
-        Ok(Self { offset, slots })
+        let end = match Self::extent(offset, slots.as_slice(), |slots| {
+            Ok::<_, std::convert::Infallible>(slots.iter())
+        }) {
+            Ok(end) => end?,
+            Err(error) => match error {},
+        };
+        Ok(Self { offset, end, slots })
     }
+
+    pub(crate) fn from_wire(
+        ctx: &DecodeContext<'_>, offset: u64, slots: StateSlots<Option<StateIndexToken>>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::extent(offset, slots.as_slice(), |slots| {
+            ctx.admit_iter(slots, "NX native state slot widths")
+        })?.map(|end| Self { offset, end, slots }))
+    }
+
+    fn extent<'a, E, I: Iterator<Item = &'a Option<StateIndexToken>>>(
+        offset: u64, slots: &'a [Option<StateIndexToken>],
+        admit: impl FnOnce(&'a [Option<StateIndexToken>]) -> Result<I, E>,
+    ) -> Result<Result<u64, &'static str>, E> {
+        let end = admit(slots)?.try_fold(offset, |end, slot| {
+            end.checked_add(u64::from(slot.map_or(1, StateIndexToken::byte_len)))
+        }).and_then(|end| end.checked_add(5));
+        Ok(end.ok_or("source_offset: slot-lane extent overflows"))
+    }
+
 }
 
 #[cfg(test)]
@@ -149,4 +165,16 @@ mod tests {
             },
         );
     }
+    #[test]
+    fn native_state_slot_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX native state slot widths",
+            |ctx| super::StateSlotLane::from_wire(ctx, 100, super::StateSlots::new(vec![None]).unwrap()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX native state slot widths"));
+    }
+
 }

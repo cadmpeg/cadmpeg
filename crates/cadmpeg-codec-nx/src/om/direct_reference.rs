@@ -103,8 +103,9 @@ pub(crate) fn operation_reference_fields(
 ) -> Result<Vec<DirectReferenceFrame<usize>>, CodecError> {
     let prefix = kind.prefix();
     let mut fields = Vec::new();
-    for (marker, window) in record.payload().windows(prefix.len()).enumerate() {
-        if window != prefix {
+    for (end, _) in ctx.admit_iter(record.payload(), "NX direct reference prefix windows")?.enumerate().skip(2) {
+        let marker = end - 2;
+        if record.payload()[marker..=end] != prefix {
             continue;
         }
         let Some(token) = marker.checked_add(prefix.len()) else {

@@ -177,7 +177,7 @@ fn operation_state_journal_start_accepts_count_token_runs() {
     let mut bytes = prefix.to_vec();
     bytes.extend(group);
 
-    let start = operation_state_journal_start(&bytes, 0).expect("journal prefix");
+    let start = crate::test_support::with_decode_context(|ctx| operation_state_journal_start(ctx, &bytes, 0)).unwrap().expect("journal prefix");
     assert_eq!(start, prefix.len());
     let groups = crate::test_support::with_decode_context(|ctx| {
         operation_state_journal_groups_before_boundary(ctx, &bytes, start, bytes.len(), 0)

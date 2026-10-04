@@ -6,11 +6,31 @@ pub(crate) struct PayloadText<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
-        let text = value.as_ref();
-        if text.is_empty() || text.chars().any(char::is_control) {
-            return Err("value: must be nonempty text without control characters");
+        match Self::validate(value.as_ref(), |text| {
+            Ok::<_, std::convert::Infallible>(text.chars())
+        }) {
+            Ok(valid) => valid?,
+            Err(error) => match error {},
         }
         Ok(Self(value))
+    }
+
+    pub(crate) fn from_wire(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: S,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        Ok(Self::validate(value.as_ref(), |text| {
+            ctx.admit_iter(text, "NX payload text syntax")
+        })?.map(|()| Self(value)))
+    }
+
+    fn validate<'a, E, I: Iterator<Item = char>>(
+        text: &'a str,
+        admit: impl FnOnce(&'a str) -> Result<I, E>,
+    ) -> Result<Result<(), &'static str>, E> {
+        if text.is_empty() || admit(text)?.any(char::is_control) {
+            return Ok(Err("value: must be nonempty text without control characters"));
+        }
+        Ok(Ok(()))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -79,6 +99,20 @@ mod tests {
                 serde_json::to_string(&owned).unwrap(),
                 serde_json::to_string(text).unwrap()
             );
+        }
+    }
+
+    #[test]
+    fn payload_text_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        for text in ["Name", "Name\n"] {
+            let error = crate::test_support::resource_refusal_at(
+                &[], ResourceDimension::WorkUnits, "NX payload text syntax",
+                |ctx| PayloadText::from_wire(ctx, text).map(|value| value.is_ok()),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX payload text syntax"));
         }
     }
 }

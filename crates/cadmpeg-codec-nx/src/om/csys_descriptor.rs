@@ -18,8 +18,11 @@ impl Serialize for CsysIdentity {
 impl TryFrom<String> for CsysIdentity {
     type Error = &'static str;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if !(30..=32).contains(&value.len()) || !value.bytes().all(is_identity_byte) {
-            return Err("identity must contain 30 through 32 lowercase hexadecimal digits");
+        match Self::validate(&value, |value| {
+            Ok::<_, std::convert::Infallible>(value.chars())
+        }) {
+            Ok(valid) => valid?,
+            Err(error) => match error {},
         }
         Ok(Self(value))
     }
@@ -39,6 +42,19 @@ impl From<CsysIdentity> for String {
 }
 
 impl CsysIdentity {
+    pub(crate) fn from_wire(ctx: &DecodeContext<'_>, value: String) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::validate(&value, |value| {
+            ctx.admit_iter(value, "NX datum CSYS identity syntax")
+        })?.map(|()| Self(value)))
+    }
+
+    fn validate<'a, E, I: Iterator<Item = char>>(value: &'a str, admit: impl FnOnce(&'a str) -> Result<I, E>) -> Result<Result<(), &'static str>, E> {
+        if !(30..=32).contains(&value.len()) || !admit(value)?.all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch)) {
+            return Ok(Err("identity must contain 30 through 32 lowercase hexadecimal digits"));
+        }
+        Ok(Ok(()))
+    }
+
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }

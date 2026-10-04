@@ -148,8 +148,7 @@ impl DraftIdentityFrame {
         let Some(tail) = bytes.get(start..) else {
             return Ok(None);
         };
-        let len = tail
-            .iter()
+        let len = ctx.admit_iter(tail, "NX draft identity hexadecimal run")?
             .take_while(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
             .count();
         if len == 0 || tail.get(len) != Some(&b'?') {

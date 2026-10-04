@@ -163,12 +163,12 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
             if cadmpeg_core::decode::index_from_u32(branch.terminal.ordinal) != members.len() {
                 return Err("terminal.ordinal must equal members length");
             }
-            branches.push(ThruCurveBranch {
-                mode: branch.mode,
-                members: ThruCurveBranchItems::from_parts(members, &branch.state_lane)?,
-                terminal: (branch.terminal.token, branch.terminal.data_block),
-                suffix: branch.suffix,
-            });
+            branches.push(ThruCurveBranch::new(
+                branch.mode,
+                ThruCurveBranchItems::from_parts(members, &branch.state_lane)?,
+                (branch.terminal.token, branch.terminal.data_block),
+                branch.suffix,
+            )?);
             locations.push((
                 branch.source_offset,
                 positions,

@@ -719,7 +719,7 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
     let label = "SKIN";
     let payload = b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = crate::om::surface_envelope::surface_feature_payload_references(record)
+    let field = super::surface_feature_payload_references_test(record)
         .expect("complete envelope");
     assert_eq!(
         field
@@ -737,13 +737,13 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
         "Studio Surface",
     )
     .unwrap();
-    assert!(crate::om::surface_envelope::surface_feature_payload_references(studio).is_some());
+    assert!(super::surface_feature_payload_references_test(studio).is_some());
 
     let mut malformed = payload.to_vec();
     let last = malformed.len() - 1;
     malformed[last] = 0x00;
     assert!(
-        crate::om::surface_envelope::surface_feature_payload_references(
+        super::surface_feature_payload_references_test(
             crate::om::operation_record::OperationPayload::new(
                 &malformed,
                 record.payload_offset(),
@@ -756,7 +756,7 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
 
     let ambiguous = [payload.as_slice(), &payload[51..]].concat();
     assert!(
-        crate::om::surface_envelope::surface_feature_payload_references(
+        super::surface_feature_payload_references_test(
             crate::om::operation_record::OperationPayload::new(
                 &ambiguous,
                 record.payload_offset(),
@@ -1193,7 +1193,7 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
         [0x31, 0x32]
     );
     assert_eq!(branch.terminal.value(), 0x33);
-    assert_eq!(record.payload_offset() + branch.byte_len(), 259);
+    assert_eq!(record.payload_offset() + crate::test_support::with_decode_context(|ctx| branch.byte_len(ctx)).unwrap(), 259);
 
     let mut malformed_witness = payload.clone();
     malformed_witness[45] = 1;
@@ -1602,7 +1602,7 @@ fn om_index_retains_partially_overlapping_indexed_interpretations() {
 #[test]
 fn om_store_version_can_follow_control_prefix() {
     let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
-    let version = store_version(bytes, 100).expect("store version");
+    let version = crate::test_support::with_decode_context(|ctx| store_version(ctx, bytes, 100)).unwrap().expect("store version");
     assert_eq!(version.offset, 108);
     assert_eq!(version.value.as_str(), "NX 2027.3102");
 }

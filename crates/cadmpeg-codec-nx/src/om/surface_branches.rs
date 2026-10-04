@@ -66,6 +66,7 @@ impl<'de> Deserialize<'de> for SurfaceSuffix {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SurfaceBranch<B> {
     offset: u64,
+    terminal_relative: u64,
     mode: SurfaceBranchMode,
     witnessed: bool,
     members: BranchItems<(PayloadIndexToken, B)>,
@@ -82,24 +83,37 @@ impl<B> SurfaceBranch<B> {
         terminal: (PayloadIndexToken, B),
         suffix: SurfaceSuffix,
     ) -> Result<Self, &'static str> {
-        let branch = Self {
-            offset,
-            mode,
-            witnessed,
-            members,
-            terminal,
-            suffix,
+        let terminal_relative = match Self::extent(offset, witnessed, &members, &terminal, &suffix, |members| {
+            Ok::<_, std::convert::Infallible>(members.iter())
+        }) {
+            Ok(offset) => offset?,
+            Err(error) => match error {},
         };
-        branch
-            .offset
-            .checked_add(
-                branch.terminal_relative_offset()
-                    + cadmpeg_core::decode::u64_from_index(branch.terminal.0.raw().len())
-                    + 1
-                    + cadmpeg_core::decode::u64_from_index(branch.suffix.0.len()),
-            )
-            .ok_or("source_offset: surface branch frame overflows")?;
-        Ok(branch)
+        Ok(Self { offset, terminal_relative, mode, witnessed, members, terminal, suffix })
+    }
+
+    fn from_wire(ctx: &DecodeContext<'_>, offset: u64, mode: SurfaceBranchMode, witnessed: bool, members: BranchItems<(PayloadIndexToken, B)>, terminal: (PayloadIndexToken, B), suffix: SurfaceSuffix) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::extent(offset, witnessed, &members, &terminal, &suffix, |members| {
+            ctx.admit_iter(members, "NX surface branch token widths")
+        })?.map(|terminal_relative| Self { offset, terminal_relative, mode, witnessed, members, terminal, suffix }))
+    }
+
+    fn extent<'a, E, I: Iterator<Item = &'a (PayloadIndexToken, B)>>(
+        offset: u64, witnessed: bool, members: &'a BranchItems<(PayloadIndexToken, B)>, terminal: &(PayloadIndexToken, B), suffix: &SurfaceSuffix,
+        admit: impl FnOnce(&'a [(PayloadIndexToken, B)]) -> Result<I, E>,
+    ) -> Result<Result<u64, &'static str>, E> where B: 'a {
+        let state_bytes = if witnessed { u64::from(members.declared_count()) + 5 } else { 5 };
+        let relative = admit(members.as_slice())?.try_fold(3_u64, |length, (token, _)| {
+            length.checked_add(u64_from_index(token.raw().len()))
+        }).and_then(|length| length.checked_add(state_bytes))
+            .and_then(|length| length.checked_add(3));
+        let valid = relative.and_then(|relative| {
+            offset.checked_add(relative)?
+                .checked_add(u64_from_index(terminal.0.raw().len()))?
+                .checked_add(1)?.checked_add(u64_from_index(suffix.0.len()))?;
+            Some(relative)
+        });
+        Ok(valid.ok_or("source_offset: surface branch frame overflows"))
     }
 
     pub(crate) fn offset(&self) -> u64 {
@@ -130,20 +144,7 @@ impl<B> SurfaceBranch<B> {
         })
     }
 
-    fn terminal_relative_offset(&self) -> u64 {
-        let token_bytes = self
-            .members
-            .as_slice()
-            .iter()
-            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
-            .sum::<u64>();
-        let state_bytes = if self.witnessed {
-            u64::from(self.members.declared_count()) + 5
-        } else {
-            5
-        };
-        3 + token_bytes + state_bytes + 3
-    }
+    fn terminal_relative_offset(&self) -> u64 { self.terminal_relative }
 
     pub(crate) fn terminal_offset(&self) -> u64 {
         self.offset + self.terminal_relative_offset()
@@ -164,15 +165,14 @@ impl SurfaceBranch<()> {
             .members
             .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
         let terminal = (self.terminal.0, target(self.terminal.0)?);
-        Ok(SurfaceBranch::new(
-            offset,
+        Ok(SurfaceBranch::from_wire(
+            ctx, offset,
             self.mode,
             self.witnessed,
             members,
             terminal,
             self.suffix,
-        )
-        .ok())
+        )?.ok())
     }
 }
 
@@ -241,7 +241,7 @@ fn surface_feature_branch_paths(
     let Some(zero_lane) = payload.get(cursor..cursor + zero_count) else {
         return Ok(Vec::new());
     };
-    if !zero_lane.iter().all(|&byte| byte == 0) {
+    if !ctx.admit_iter(zero_lane, "NX surface branch zero lane")?.all(|&byte| byte == 0) {
         return Ok(Vec::new());
     }
     cursor += zero_count;
@@ -290,7 +290,7 @@ fn surface_feature_branch_paths(
         };
         for mut continuation in continuations {
             let mut member_copy = Vec::new();
-            for member in members.as_slice().iter().copied() {
+            for member in ctx.admit_iter(members.as_slice(), "NX surface branch copied members")?.copied() {
                 ctx.reserve_vec(&mut member_copy, 1, "NX surface branch member copy")?;
                 member_copy.push(member);
             }
@@ -302,14 +302,15 @@ fn surface_feature_branch_paths(
             let Ok(suffix_copy) = SurfaceSuffix::new(suffix_copy) else {
                 continue;
             };
-            let Ok(branch) = SurfaceBranch::new(
+            let Ok(branch) = SurfaceBranch::from_wire(
+                ctx,
                 offset,
                 mode,
                 witnessed,
                 member_copy,
                 (terminal, ()),
                 suffix_copy,
-            ) else {
+            )? else {
                 continue;
             };
             ctx.reserve_vec(&mut continuation, 1, "NX surface branch path entries")?;

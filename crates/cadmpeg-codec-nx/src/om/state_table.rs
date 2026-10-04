@@ -5,6 +5,8 @@ use super::nonempty::NonEmpty;
 use super::state_index::StateIndexToken;
 use super::state_slots::StateSlots;
 use super::state_status::StateStatus;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StateTableEntry<'a> {
@@ -13,14 +15,17 @@ pub(crate) enum StateTableEntry<'a> {
 }
 
 impl StateTableEntry<'_> {
-    pub(super) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         match self {
-            Self::Status(body) => body.byte_len(),
-            Self::Slots(slots) => slots.iter().fold(5, |len, (_, slot)| {
-                len + usize::from(slot.map_or(1, StateIndexToken::byte_len))
-            }),
+            Self::Status(body) => Ok(body.byte_len()),
+            Self::Slots(slots) => ctx.admit_iter(slots.as_slice(), "NX status slot token widths")?
+                .try_fold(5_usize, |length, slot| {
+                    length.checked_add(usize::from(slot.map_or(1, StateIndexToken::byte_len)))
+                        .ok_or_else(|| ctx.refuse_codec_limit("NX status slot extent", u64::MAX, u64::MAX))
+                }),
         }
     }
+
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,19 +35,23 @@ pub(crate) struct OperationStateStatusTable<'a> {
 }
 
 impl<'a> OperationStateStatusTable<'a> {
-    pub(super) fn new(offset: usize, entries: NonEmpty<StateTableEntry<'a>>) -> Option<Self> {
-        entries
-            .iter()
-            .try_fold(offset, |end, entry| end.checked_add(entry.byte_len()))?;
-        Some(Self { offset, entries })
+    pub(super) fn new(ctx: &DecodeContext<'_>, offset: usize, entries: NonEmpty<StateTableEntry<'a>>) -> Result<Option<Self>, CodecError> {
+        let mut end = offset;
+        for entry in ctx.admit_iter(entries.initial(), "NX status table entries")?
+            .chain(ctx.admit_iter(std::slice::from_ref(entries.last()), "NX status table entries")?) {
+            let Some(next) = end.checked_add(entry.byte_len(ctx)?) else { return Ok(None); };
+            end = next;
+        }
+        Ok(Some(Self { offset, entries }))
     }
 
-    pub(crate) fn into_entries(self) -> impl Iterator<Item = (usize, StateTableEntry<'a>)> {
+    pub(crate) fn into_entries<'ctx, 'policy>(self, ctx: &'ctx DecodeContext<'policy>) -> impl Iterator<Item = Result<(usize, StateTableEntry<'a>), CodecError>> + 'ctx + use<'a, 'ctx, 'policy> where 'a: 'ctx {
         let mut offset = self.offset;
         self.entries.into_iter().map(move |entry| {
             let start = offset;
-            offset += entry.byte_len();
-            (start, entry)
+            offset = offset.checked_add(entry.byte_len(ctx)?)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX status table extent", u64::MAX, u64::MAX))?;
+            Ok((start, entry))
         })
     }
 
@@ -50,7 +59,7 @@ impl<'a> OperationStateStatusTable<'a> {
     fn end_offset(&self) -> usize {
         self.entries
             .iter()
-            .fold(self.offset, |end, entry| end + entry.byte_len())
+            .fold(self.offset, |end, entry| end + crate::test_support::with_decode_context(|ctx| entry.byte_len(ctx)).unwrap())
     }
     #[cfg(test)]
     fn rows(&self) -> Vec<&StateStatus<&'a str, &'a [u8]>> {
@@ -95,7 +104,7 @@ fn operation_state_status_table(
             let mut entries = Vec::new();
             let mut at = start;
             while at < end {
-                if OperationStateMessage::read(bytes, at, base_offset).is_some() {
+                if OperationStateMessage::read(ctx, bytes, at, base_offset).unwrap().is_some() {
                     break;
                 }
                 if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
@@ -105,7 +114,7 @@ fn operation_state_status_table(
                     entries.push(StateTableEntry::Slots(lane.into_slots()));
                     continue;
                 }
-                let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None)
+                let Some(row) = operation_state_status_row_at(ctx, bytes, at, end, base_offset, None).unwrap()
                 else {
                     break;
                 };
@@ -118,7 +127,7 @@ fn operation_state_status_table(
             {
                 return None;
             }
-            OperationStateStatusTable::new(base_offset.checked_add(start)?, NonEmpty::new(entries)?)
+            OperationStateStatusTable::new(ctx, base_offset.checked_add(start)?, NonEmpty::new(entries)?).unwrap()
         },
     )
 }

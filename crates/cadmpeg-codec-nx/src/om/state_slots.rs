@@ -27,7 +27,6 @@ impl<T> StateSlots<T> {
             .map(|(slot, ordinal)| (ordinal, slot))
     }
 
-    #[cfg(test)]
     pub(crate) fn as_slice(&self) -> &[T] {
         &self.0
     }

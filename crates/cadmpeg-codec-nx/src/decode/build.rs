@@ -100,7 +100,8 @@ fn ordered_fixed_candidates<'a, T>(
     graph_value: impl Fn(&Node) -> Option<T>,
 ) -> Result<Vec<(T, &'a Node)>, CodecError> {
     let mut candidates = BTreeMap::new();
-    for node in kinds.into_iter().flat_map(|kind| graph.of_kind(kind)) {
+    for kind in kinds {
+    for node in graph.of_kind(ctx, kind)? {
         ctx.charge_work(1, "scan NX analytic candidates")?;
         if let Some(value) = graph_value(node) {
             ctx.insert_btree_map(
@@ -110,6 +111,7 @@ fn ordered_fixed_candidates<'a, T>(
                 "nx analytic candidate index",
             )?;
         }
+    }
     }
     let mut ordered = ctx.collection_vec(candidates.len(), "nx ordered analytic candidates")?;
     ordered.extend(candidates.into_values());
@@ -1942,6 +1944,7 @@ pub(super) fn topology_body_node_ids(
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut body_xmts = BTreeSet::new();
     for shell in graph.body_shape_shells(ctx)? {
+        let shell = shell?;
         if let Some(body_xmt) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
@@ -1952,7 +1955,7 @@ pub(super) fn topology_body_node_ids(
     let mut bodies = BTreeMap::new();
     'body: for body_xmt in body_xmts {
         let mut shells = BTreeSet::new();
-        for shell in graph.of_kind(NodeKind::Shell) {
+        for shell in graph.of_kind(ctx, NodeKind::Shell)? {
             if shell
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
@@ -1962,7 +1965,7 @@ pub(super) fn topology_body_node_ids(
         }
         let mut faces = Vec::new();
         let mut face_xmts = BTreeSet::new();
-        for face in graph.of_kind(NodeKind::Face) {
+        for face in graph.of_kind(ctx, NodeKind::Face)? {
             if face.face_fields().is_some_and(|fields| {
                 fields
                     .shell
@@ -1974,7 +1977,7 @@ pub(super) fn topology_body_node_ids(
             }
         }
         let mut loops = BTreeSet::new();
-        for loop_ in graph.of_kind(NodeKind::Loop) {
+        for loop_ in graph.of_kind(ctx, NodeKind::Loop)? {
             if loop_.loop_fields().is_some_and(|fields| {
                 fields
                     .face
@@ -1984,7 +1987,7 @@ pub(super) fn topology_body_node_ids(
             }
         }
         let mut fins = Vec::new();
-        for fin in graph.of_kind(NodeKind::Fin) {
+        for fin in graph.of_kind(ctx, NodeKind::Fin)? {
             if fin.fin_fields().is_some_and(|fields| {
                 fields
                     .loop_xmt
@@ -2022,7 +2025,7 @@ pub(super) fn topology_body_node_ids(
             ctx.insert_btree_set(&mut ids, id, "nx topology body identities")?;
         }
         let mut edge_count = 0;
-        for edge in graph.of_kind(NodeKind::Edge) {
+        for edge in graph.of_kind(ctx, NodeKind::Edge)? {
             if edge_xmts.contains(&edge.xmt()) {
                 edge_count += 1;
                 let Some(id) = edge.u32_at(4) else {
@@ -2035,7 +2038,7 @@ pub(super) fn topology_body_node_ids(
             continue;
         }
         let mut vertex_count = 0;
-        for vertex in graph.of_kind(NodeKind::Vertex) {
+        for vertex in graph.of_kind(ctx, NodeKind::Vertex)? {
             if vertex_xmts.contains(&vertex.xmt()) {
                 vertex_count += 1;
                 let Some(id) = vertex.u32_at(4) else {

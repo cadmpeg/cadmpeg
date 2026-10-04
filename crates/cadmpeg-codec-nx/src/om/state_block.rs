@@ -25,47 +25,50 @@ enum BlockBody<'a> {
 
 impl<'a> OperationStateBlock<'a> {
     fn new(
-        offset: usize,
-        entries: Vec<StateTableEntry<'a>>,
-        messages: Vec<StateMessage<&'a str>>,
-    ) -> Option<Self> {
-        let after_status = entries
-            .iter()
-            .try_fold(offset, |end, entry| end.checked_add(entry.byte_len()))?;
-        messages.iter().try_fold(after_status, |end, message| {
-            end.checked_add(message.byte_len())
-        })?;
+        ctx: &DecodeContext<'_>, offset: usize,
+        entries: Vec<StateTableEntry<'a>>, messages: Vec<StateMessage<&'a str>>,
+    ) -> Result<Option<Self>, CodecError> {
+        let mut end = offset;
+        for entry in ctx.admit_iter(&entries, "NX state block status widths")? {
+            let Some(next) = end.checked_add(entry.byte_len(ctx)?) else { return Ok(None); };
+            end = next;
+        }
+        for message in ctx.admit_iter(&messages, "NX state block message widths")? {
+            let Some(next) = end.checked_add(message.byte_len()) else { return Ok(None); };
+            end = next;
+        }
         let body = match NonEmpty::from_admitted_vec(entries) {
             Some(entries) => BlockBody::Statuses { entries, messages },
-            None => BlockBody::Messages(NonEmpty::from_admitted_vec(messages)?),
+            None => {
+                let Some(messages) = NonEmpty::from_admitted_vec(messages) else { return Ok(None); };
+                BlockBody::Messages(messages)
+            },
         };
-        Some(Self { offset, body })
+        Ok(Some(Self { offset, body }))
     }
-    pub(super) fn into_status_table(self) -> Option<OperationStateStatusTable<'a>> {
+    pub(super) fn into_status_table(self, ctx: &DecodeContext<'_>) -> Result<Option<OperationStateStatusTable<'a>>, CodecError> {
         match self.body {
-            BlockBody::Statuses { entries, .. } => {
-                OperationStateStatusTable::new(self.offset, entries)
-            }
-            BlockBody::Messages(_) => None,
+            BlockBody::Statuses { entries, .. } => OperationStateStatusTable::new(ctx, self.offset, entries),
+            BlockBody::Messages(_) => Ok(None),
         }
     }
-    fn status_end_offset(&self) -> usize {
-        match &self.body {
-            BlockBody::Statuses { entries, .. } => entries
-                .iter()
-                .fold(self.offset, |end, entry| end + entry.byte_len()),
-            BlockBody::Messages(_) => self.offset,
+    fn status_end_offset(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+        let mut end = self.offset;
+        if let BlockBody::Statuses { entries, .. } = &self.body {
+            for entry in ctx.admit_iter(entries.initial(), "NX state block status extent")?
+                .chain(ctx.admit_iter(std::slice::from_ref(entries.last()), "NX state block status extent")?) {
+                end = end.checked_add(entry.byte_len(ctx)?)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX state block status extent", u64::MAX, u64::MAX))?;
+            }
         }
+        Ok(end)
     }
     pub(super) fn into_messages(
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
-        let offset = self.status_end_offset();
-        match self.body {
-            BlockBody::Statuses { messages, .. } => locate_messages(ctx, offset, messages),
-            BlockBody::Messages(messages) => locate_messages(ctx, offset, messages),
-        }
+        let offset = self.status_end_offset(ctx)?;
+        locate_messages(ctx, offset, self.body)
     }
     #[cfg(test)]
     fn offset(&self) -> usize {
@@ -96,10 +99,15 @@ impl<'a> OperationStateBlock<'a> {
 fn locate_messages<'a>(
     ctx: &DecodeContext<'_>,
     mut offset: usize,
-    messages: impl IntoIterator<Item = StateMessage<&'a str>>,
+    body: BlockBody<'a>,
 ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
     let mut located = Vec::new();
-    for body in messages {
+    let (initial, last) = match &body {
+        BlockBody::Statuses { messages, .. } => (messages.as_slice(), &[][..]),
+        BlockBody::Messages(messages) => (messages.initial(), std::slice::from_ref(messages.last())),
+    };
+    for body in ctx.admit_iter(initial, "NX state message traversal")?
+        .chain(ctx.admit_iter(last, "NX state message traversal")?).copied() {
         let Some(message) = OperationStateMessage::new(offset, body) else {
             return Ok(None);
         };
@@ -111,19 +119,20 @@ fn locate_messages<'a>(
 }
 
 fn operation_state_status_end_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     base_offset: usize,
     opaque_lane_starts: Option<&[usize]>,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
         let precomputed_end = opaque_lane_starts
             .and_then(|starts| operation_state_opaque_lane_end_at(starts, at, end));
-        precomputed_end.or_else(|| StateSlotLane::end_at(bytes, at, end))
+        Ok(precomputed_end.or_else(|| StateSlotLane::end_at(bytes, at, end)))
     } else {
-        operation_state_status_row_at(bytes, at, end, base_offset, opaque_lane_starts)
-            .map(|row| row.end_offset() - base_offset)
+        Ok(operation_state_status_row_at(ctx, bytes, at, end, base_offset, opaque_lane_starts)?
+            .map(|row| row.end_offset() - base_offset))
     }
 }
 
@@ -187,7 +196,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     let mut status_paths = Vec::new();
     let mut message_paths = Vec::new();
     for at in (start..end).rev() {
-        if let Some(message) = OperationStateMessage::read(bytes, at, base_offset) {
+        if let Some(message) = OperationStateMessage::read(ctx, bytes, at, base_offset)? {
             let next = message.end_offset() - base_offset;
             if next > at && next <= end {
                 let continuation = (next < end)
@@ -211,7 +220,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         }
 
         let status_path =
-            operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts))
+            operation_state_status_end_at(ctx, bytes, at, end, base_offset, Some(&opaque_lane_starts))?
                 .filter(|next| *next > at && *next <= end)
                 .and_then(|next| {
                     let continuation = (next < end)
@@ -234,7 +243,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         }
     }
 
-    let has_exact_boundary_path = status_paths.iter().any(|(_, path)| path.end == end);
+    let has_exact_boundary_path = ctx.admit_iter(&status_paths, "NX exact state boundary search")?.any(|(_, path)| path.end == end);
     let selected = status_paths
         .iter()
         .filter(|(at, path)| {
@@ -258,7 +267,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     let mut at = offset;
     while at < path_end {
         let status_candidate =
-            operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts))
+            operation_state_status_end_at(ctx, bytes, at, end, base_offset, Some(&opaque_lane_starts))?
                 .filter(|next| {
                     *next > at
                         && *next <= path_end
@@ -279,10 +288,10 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 });
         let message_candidate = operation_state_path_at(&message_paths, at)
             .filter(|path| path.end == path_end)
-            .and_then(|path| {
-                OperationStateMessage::read(bytes, at, base_offset)
-                    .map(|message| (message, path.length))
-            });
+            .map(|path| {
+                OperationStateMessage::read(ctx, bytes, at, base_offset)
+                    .map(|message| message.map(|message| (message, path.length)))
+            }).transpose()?.flatten();
 
         if let Some((next, _)) = status_candidate.filter(|(_, length)| {
             message_candidate
@@ -302,12 +311,13 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 at = next;
             } else {
                 let Some(row) = operation_state_status_row_at(
+                    ctx,
                     bytes,
                     at,
                     end,
                     base_offset,
                     Some(&opaque_lane_starts),
-                ) else {
+                )? else {
                     return Ok(None);
                 };
                 let row_end = row.end_offset() - base_offset;
@@ -333,7 +343,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         }
     }
     while at < path_end {
-        let Some(message) = OperationStateMessage::read(bytes, at, base_offset) else {
+        let Some(message) = OperationStateMessage::read(ctx, bytes, at, base_offset)? else {
             return Ok(None);
         };
         let next = message.end_offset() - base_offset;
@@ -347,7 +357,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     let Some(offset) = base_offset.checked_add(offset) else {
         return Ok(None);
     };
-    Ok(OperationStateBlock::new(offset, entries, messages))
+    OperationStateBlock::new(ctx, offset, entries, messages)
 }
 
 #[cfg(test)]
@@ -362,7 +372,7 @@ mod tests {
 
     #[test]
     fn table_entries_and_messages_follow_one_block_origin() {
-        let row = operation_state_status_row_at(&[0x41, 1, 0x3f], 0, 3, 0, None)
+        let row = crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &[0x41, 1, 0x3f], 0, 3, 0, None)).unwrap()
             .unwrap()
             .body();
 
@@ -372,7 +382,7 @@ mod tests {
                 .unwrap()
                 .into_slots();
             let message =
-                OperationStateMessage::read(&[3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0], 0, 0)
+                crate::test_support::with_decode_context(|ctx| OperationStateMessage::read(ctx, &[3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0], 0, 0)).unwrap()
                     .unwrap()
                     .body();
             let entries = vec![
@@ -380,10 +390,10 @@ mod tests {
                 StateTableEntry::Slots(slots),
                 StateTableEntry::Status(row),
             ];
-            let block = OperationStateBlock::new(100, entries.clone(), vec![message]).unwrap();
-            assert_eq!(block.status_end_offset(), 112);
-            let table = block.into_status_table().unwrap();
-            let positioned: Vec<_> = table.into_entries().collect();
+            let block = crate::test_support::with_decode_context(|ctx| OperationStateBlock::new(ctx, 100, entries.clone(), vec![message])).unwrap().unwrap();
+            assert_eq!(crate::test_support::with_decode_context(|ctx| block.status_end_offset(ctx)).unwrap(), 112);
+            let table = crate::test_support::with_decode_context(|ctx| block.into_status_table(ctx)).unwrap().unwrap();
+            let positioned: Vec<_> = table.into_entries(ctx).collect::<Result<_, _>>().unwrap();
             assert_eq!(
                 positioned
                     .iter()
@@ -394,7 +404,7 @@ mod tests {
             assert!(matches!(positioned[1].1, StateTableEntry::Slots(_)));
 
             crate::test_support::with_decode_context(|ctx| {
-                let messages = OperationStateBlock::new(100, entries, vec![message])
+                let messages = crate::test_support::with_decode_context(|ctx| OperationStateBlock::new(ctx, 100, entries, vec![message])).unwrap()
                     .unwrap()
                     .into_messages(ctx)
                     .unwrap()
@@ -407,21 +417,21 @@ mod tests {
     #[test]
     fn message_only_blocks_are_nonempty_and_bound_their_derived_end() {
         let message =
-            OperationStateMessage::read(&[3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0], 0, 0)
+            crate::test_support::with_decode_context(|ctx| OperationStateMessage::read(ctx, &[3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0], 0, 0)).unwrap()
                 .unwrap()
                 .body();
-        assert!(OperationStateBlock::new(100, Vec::new(), Vec::new()).is_none());
-        let block = OperationStateBlock::new(100, Vec::new(), vec![message]).unwrap();
-        assert_eq!(block.status_end_offset(), 100);
-        assert!(block.into_status_table().is_none());
-        let block = OperationStateBlock::new(usize::MAX - 13, Vec::new(), vec![message]).unwrap();
+        assert!(crate::test_support::with_decode_context(|ctx| OperationStateBlock::new(ctx, 100, Vec::new(), Vec::new())).unwrap().is_none());
+        let block = crate::test_support::with_decode_context(|ctx| OperationStateBlock::new(ctx, 100, Vec::new(), vec![message])).unwrap().unwrap();
+        assert_eq!(crate::test_support::with_decode_context(|ctx| block.status_end_offset(ctx)).unwrap(), 100);
+        assert!(crate::test_support::with_decode_context(|ctx| block.into_status_table(ctx)).unwrap().is_none());
+        let block = crate::test_support::with_decode_context(|ctx| OperationStateBlock::new(ctx, usize::MAX - 13, Vec::new(), vec![message])).unwrap().unwrap();
 
         crate::test_support::with_decode_context(|ctx| {
             assert_eq!(
                 block.into_messages(ctx).unwrap().unwrap()[0].end_offset(),
                 usize::MAX
             );
-            assert!(OperationStateBlock::new(usize::MAX - 12, Vec::new(), vec![message]).is_none());
+            assert!(OperationStateBlock::new(ctx, usize::MAX - 12, Vec::new(), vec![message]).unwrap().is_none());
         });
     }
 
@@ -446,7 +456,7 @@ mod tests {
                 ));
                 assert_eq!(block.messages().len(), 1);
                 assert_eq!(block.messages()[0].text.as_str(), "standalone");
-                assert_eq!(block.status_end_offset(), 500 + 3 + diagnostic.len());
+                assert_eq!(crate::test_support::with_decode_context(|ctx| block.status_end_offset(ctx)).unwrap(), 500 + 3 + diagnostic.len());
             },
         );
     }
@@ -472,7 +482,7 @@ mod tests {
                 assert_eq!(block.rows().len(), 2);
                 assert_eq!(Some(block.rows()[0].object_index.value()), Some(0x20));
                 assert_eq!(block.rows()[1].status_code.value(), 0x44);
-                assert_eq!(block.status_end_offset(), 500 + boundary);
+                assert_eq!(crate::test_support::with_decode_context(|ctx| block.status_end_offset(ctx)).unwrap(), 500 + boundary);
             },
         );
     }
@@ -495,7 +505,7 @@ mod tests {
                 assert_eq!(block.offset(), 500);
                 assert_eq!(block.rows().len(), 2);
                 assert!(block.messages().is_empty());
-                assert_eq!(block.status_end_offset(), 500 + status_end);
+                assert_eq!(crate::test_support::with_decode_context(|ctx| block.status_end_offset(ctx)).unwrap(), 500 + status_end);
             },
         );
     }
@@ -520,7 +530,7 @@ mod tests {
                 assert_eq!(block.offset(), 500 + status_start);
                 assert_eq!(block.rows().len(), 2);
                 assert!(block.messages().is_empty());
-                assert_eq!(block.status_end_offset(), 500 + boundary);
+                assert_eq!(crate::test_support::with_decode_context(|ctx| block.status_end_offset(ctx)).unwrap(), 500 + boundary);
             },
         );
     }
@@ -668,4 +678,30 @@ mod tests {
             },
         );
     }
+    #[test]
+    fn state_block_width_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let row = crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(ctx, &[0x41, 1, 0x3f], 0, 3, 0, None)).unwrap().unwrap().body();
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX state block status widths",
+            |ctx| OperationStateBlock::new(ctx, 100, vec![StateTableEntry::Status(row)], Vec::new()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX state block status widths"));
+    }
+
+    #[test]
+    fn state_message_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let message = crate::test_support::with_decode_context(|ctx| OperationStateMessage::read(ctx, &[3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0], 0, 0)).unwrap().unwrap().body();
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, "NX state message traversal",
+            |ctx| super::locate_messages(ctx, 100, super::BlockBody::Messages(super::NonEmpty::new([message]).unwrap())),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX state message traversal"));
+    }
+
 }

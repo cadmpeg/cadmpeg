@@ -21,14 +21,15 @@ impl<O> DatumIndexLane<O> {
     pub(crate) fn trailer(&self) -> u32 {
         self.trailer
     }
-    fn byte_len(&self) -> u16 {
-        7 + self
-            .indices
-            .as_slice()
-            .iter()
-            .map(|atom| u16::from(atom.byte_len()))
-            .sum::<u16>()
+    fn extent<'a, E, I: Iterator<Item = &'a CompactIndexAtom>>(
+        indices: &'a [CompactIndexAtom],
+        admit: impl FnOnce(&'a [CompactIndexAtom]) -> Result<I, E>,
+    ) -> Result<Option<u16>, E> {
+        Ok(admit(indices)?.try_fold(7_u16, |length, atom| {
+            length.checked_add(u16::from(atom.byte_len()))
+        }))
     }
+
 }
 
 impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
@@ -48,27 +49,27 @@ impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
     }
 }
 
-macro_rules! checked_origin {
-    ($offset:ty) => {
-        impl DatumIndexLane<$offset> {
-            pub(crate) fn new(
-                indices: CountedIndexMembers<CompactIndexAtom, 1>,
-                trailer: u32,
-                offset: $offset,
-            ) -> Option<Self> {
-                let lane = Self {
-                    offset,
-                    indices,
-                    trailer,
-                };
-                offset.checked_add(<$offset>::from(lane.byte_len()))?;
-                Some(lane)
-            }
-        }
-    };
+impl DatumIndexLane<usize> {
+    fn from_wire(ctx: &DecodeContext<'_>, indices: CountedIndexMembers<CompactIndexAtom, 1>, trailer: u32, offset: usize) -> Result<Option<Self>, CodecError> {
+        let width = Self::extent(indices.as_slice(), |indices| ctx.admit_iter(indices, "NX datum index token widths"))?
+            .ok_or_else(|| ctx.refuse_codec_limit("NX datum index extent", u64::MAX, u64::MAX))?;
+        if offset.checked_add(usize::from(width)).is_none() { return Ok(None); }
+        Ok(Some(Self { offset, indices, trailer }))
+    }
 }
-checked_origin!(usize);
-checked_origin!(u64);
+
+impl DatumIndexLane<u64> {
+    pub(crate) fn new(indices: CountedIndexMembers<CompactIndexAtom, 1>, trailer: u32, offset: u64) -> Option<Self> {
+        let width = match Self::extent(indices.as_slice(), |indices| {
+            Ok::<_, std::convert::Infallible>(indices.iter())
+        }) {
+            Ok(width) => width?,
+            Err(error) => match error {},
+        };
+        offset.checked_add(u64::from(width))?;
+        Some(Self { offset, indices, trailer })
+    }
+}
 
 impl DatumIndexLane<usize> {
     pub(crate) fn into_u64(self) -> DatumIndexLane<u64> {
@@ -135,7 +136,7 @@ pub(crate) fn scan(
         let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
             continue;
         };
-        if let Some(lane) = DatumIndexLane::<usize>::new(indices, trailer, start) {
+        if let Some(lane) = DatumIndexLane::<usize>::from_wire(ctx, indices, trailer, start)? {
             ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
             lanes.push(lane);
         }

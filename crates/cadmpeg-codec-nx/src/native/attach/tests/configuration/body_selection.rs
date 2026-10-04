@@ -753,11 +753,11 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
             .expect("admitted writer history");
 
         assert_eq!(
-            boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
+            boolean_participant_writer(ctx, target, 401, Some(&blocks), &BTreeMap::new(), &history,).unwrap(),
             Some(&offset_prior)
         );
         assert_eq!(
-            boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
+            boolean_participant_writer(ctx, tools, 402, Some(&blocks), &BTreeMap::new(), &history,).unwrap(),
             Some(&offset_prior)
         );
         assert_eq!(

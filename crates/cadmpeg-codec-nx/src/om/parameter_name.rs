@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact parameter spelling with its parsed index and qualifier boundary.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use std::convert::Infallible;
+
 /// A name parsed once at construction. `u32` requires canonical parameter syntax;
 /// `Option<u32>` also admits ordinary expression names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,7 +16,10 @@ pub(crate) struct ParameterName<S, I = Option<u32>> {
 
 impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
     pub(crate) fn new(spelling: S) -> Self {
-        let (index, qualifier_start) = canonical_parts(spelling.as_ref())
+        let (index, qualifier_start) = match canonical_parts(spelling.as_ref(), |text| Ok::<_, Infallible>(text.chars())) {
+                Ok(parts) => parts,
+                Err(error) => match error {},
+            }
             .map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
         Self {
             spelling,
@@ -20,17 +27,34 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
             qualifier_start,
         }
     }
+    pub(crate) fn from_wire(ctx: &DecodeContext<'_>, spelling: S) -> Result<Self, CodecError> {
+        let (index, qualifier_start) = canonical_parts(spelling.as_ref(), |text| {
+            ctx.admit_iter(text, "NX parameter name syntax")
+        })?.map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
+        Ok(Self { spelling, index, qualifier_start })
+    }
+
 }
 
 impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
     pub(crate) fn parse(spelling: S) -> Option<Self> {
-        let (index, qualifier_start) = canonical_parts(spelling.as_ref())?;
+        let (index, qualifier_start) = match canonical_parts(spelling.as_ref(), |text| Ok::<_, Infallible>(text.chars())) {
+            Ok(parts) => parts?,
+            Err(error) => match error {},
+        };
         Some(Self {
             spelling,
             index,
             qualifier_start,
         })
     }
+    pub(crate) fn parse_wire(ctx: &DecodeContext<'_>, spelling: S) -> Result<Option<Self>, CodecError> {
+        let Some((index, qualifier_start)) = canonical_parts(spelling.as_ref(), |text| {
+            ctx.admit_iter(text, "NX canonical parameter name syntax")
+        })? else { return Ok(None); };
+        Ok(Some(Self { spelling, index, qualifier_start }))
+    }
+
 }
 
 impl<S: crate::immutable_text::ImmutableText, I: Copy> ParameterName<S, I> {
@@ -53,23 +77,22 @@ impl<S: crate::immutable_text::ImmutableText, I: Copy> ParameterName<S, I> {
     }
 }
 
-fn canonical_parts(name: &str) -> Option<(u32, Option<usize>)> {
-    let tail = name.strip_prefix('p')?;
-    let digit_count = tail.bytes().take_while(u8::is_ascii_digit).count();
-    if digit_count == 0 {
-        return None;
-    }
-    let index = tail[..digit_count].parse().ok()?;
+fn canonical_parts<'a, E, I: Iterator<Item = char>>(
+    name: &'a str,
+    mut admit: impl FnMut(&'a str) -> Result<I, E>,
+) -> Result<Option<(u32, Option<usize>)>, E> {
+    let Some(tail) = name.strip_prefix('p') else { return Ok(None); };
+    let digit_count = admit(tail)?.take_while(char::is_ascii_digit).count();
+    if digit_count == 0 { return Ok(None); }
+    let Ok(index) = tail[..digit_count].parse() else { return Ok(None); };
     match &tail[digit_count..] {
-        "" => Some((index, None)),
+        "" => Ok(Some((index, None))),
         suffix => {
-            let qualifier = suffix.strip_prefix('_').filter(|qualifier| {
-                !qualifier.is_empty()
-                    && qualifier
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-            })?;
-            Some((index, Some(name.len() - qualifier.len())))
+            let Some(qualifier) = suffix.strip_prefix('_') else { return Ok(None); };
+            if qualifier.is_empty() || !admit(qualifier)?.all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+                return Ok(None);
+            }
+            Ok(Some((index, Some(name.len() - qualifier.len()))))
         }
     }
 }
@@ -93,4 +116,29 @@ mod tests {
             assert_eq!((owned.index(), owned.qualifier()), (12, Some("face_A")));
         }
     }
+    #[test]
+    fn parameter_name_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        for name in ["p12_face_A", "p12_bad-"] {
+            for canonical in [false, true] {
+                let operation = if canonical {
+                    "NX canonical parameter name syntax"
+                } else {
+                    "NX parameter name syntax"
+                };
+                let error = crate::test_support::resource_refusal_at(
+                    &[], ResourceDimension::WorkUnits, operation,
+                    |ctx| if canonical {
+                        ParameterName::<_, u32>::parse_wire(ctx, name).map(|value| value.is_some())
+                    } else {
+                        ParameterName::from_wire(ctx, name).map(|value| value.index().is_some())
+                    },
+                );
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
+            }
+        }
+    }
+
 }

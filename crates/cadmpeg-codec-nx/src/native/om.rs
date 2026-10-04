@@ -185,7 +185,7 @@ pub(super) fn om_record_areas(
         }) else {
             continue;
         };
-        let Some(header) = section.record_area_header() else {
+        let Some(header) = section.record_area_header(ctx)? else {
             continue;
         };
         let Some(area) = section.record_area else {
@@ -583,14 +583,16 @@ pub(super) fn operation_state_statuses(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, (offset, row)) in table
-            .into_entries()
-            .filter_map(|(offset, entry)| match entry {
-                StateTableEntry::Status(row) => Some((offset, row)),
-                StateTableEntry::Slots(_) => None,
+        for (ordinal, table_entry) in table
+            .into_entries(ctx)
+            .filter_map(|entry| match entry {
+                Ok((offset, StateTableEntry::Status(row))) => Some(Ok((offset, row))),
+                Ok((_, StateTableEntry::Slots(_))) => None,
+                Err(error) => Some(Err(error)),
             })
             .enumerate()
         {
+            let (offset, row) = table_entry?;
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -659,14 +661,16 @@ pub(super) fn operation_state_slot_lanes(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, (offset, slots)) in table
-            .into_entries()
-            .filter_map(|(offset, entry)| match entry {
-                StateTableEntry::Status(_) => None,
-                StateTableEntry::Slots(slots) => Some((offset, slots)),
+        for (ordinal, table_entry) in table
+            .into_entries(ctx)
+            .filter_map(|entry| match entry {
+                Ok((_, StateTableEntry::Status(_))) => None,
+                Ok((offset, StateTableEntry::Slots(slots))) => Some(Ok((offset, slots))),
+                Err(error) => Some(Err(error)),
             })
             .enumerate()
         {
+            let (offset, slots) = table_entry?;
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -675,7 +679,7 @@ pub(super) fn operation_state_slot_lanes(
             else {
                 continue;
             };
-            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::new(source_offset, slots)
+            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, source_offset, slots)?
             else {
                 continue;
             };
@@ -1057,18 +1061,19 @@ impl TryFrom<ExpressionWire> for ParameterFormula {
 }
 
 /// Iterate exact `p<decimal>[_qualifier]` references in formula occurrence order.
-pub(crate) fn expression_parameter_names(expression: &str) -> impl Iterator<Item = &str> + '_ {
+pub(crate) fn expression_parameter_names<'a, 'ctx, 'policy>(ctx: &'ctx DecodeContext<'policy>, expression: &'a str) -> impl Iterator<Item = Result<&'a str, CodecError>> + 'ctx + use<'a, 'ctx, 'policy> where 'a: 'ctx {
     let bytes = expression.as_bytes();
     let mut at = 0usize;
     std::iter::from_fn(move || {
         while at < bytes.len() {
-            let Some(end) = expression_parameter_reference_end(bytes, at) else {
-                at += 1;
-                continue;
+            let end = match expression_parameter_reference_end(ctx, bytes, at) {
+                Ok(Some(end)) => end,
+                Ok(None) => { at += 1; continue; }
+                Err(error) => { at = bytes.len(); return Some(Err(error)); }
             };
             let name = &expression[at..end];
             at = end;
-            return Some(name);
+            return Some(Ok(name));
         }
         None
     })
@@ -1103,7 +1108,7 @@ pub(crate) fn evaluate_parameterized_expression(
     let mut substituted = String::new();
     let mut at = 0usize;
     while at < bytes.len() {
-        if let Some(end) = expression_parameter_reference_end(bytes, at) {
+        if let Some(end) = expression_parameter_reference_end(ctx, bytes, at)? {
             let Some(value) = parameter_value(&expression[at..end]) else {
                 return Ok(None);
             };
@@ -1148,14 +1153,14 @@ pub(crate) fn evaluate_parameterized_expression(
     crate::om::evaluate_constant_expression(ctx, &substituted)
 }
 
-fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
+fn expression_parameter_reference_end(ctx: &DecodeContext<'_>, bytes: &[u8], at: usize) -> Result<Option<usize>, CodecError> {
     if bytes.get(at) != Some(&b'p')
         || at
             .checked_sub(1)
             .and_then(|before| bytes.get(before))
             .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
     {
-        return None;
+        return Ok(None);
     }
     let mut end = at + 1;
     while bytes
@@ -1164,8 +1169,9 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
     {
         end += 1;
     }
-    let name = std::str::from_utf8(bytes.get(at..end)?).ok()?;
-    ParameterName::<_, u32>::parse(name).map(|_| end)
+    let Some(raw) = bytes.get(at..end) else { return Ok(None); };
+    let Ok(name) = std::str::from_utf8(raw) else { return Ok(None); };
+    Ok(ParameterName::<_, u32>::parse_wire(ctx, name)?.map(|_| end))
 }
 
 /// Length-framed class definition from an NX OM type registry.
@@ -5690,19 +5696,19 @@ pub(super) fn store_headers(
     {
         let candidate = match &section.store {
             IndexedStore::Fixed { records } => records.iter().find_map(|record| {
-                crate::om::store_version(record.bytes, record.offset)
-                    .map(|version| (Some(record.object_id.0), version))
+                crate::om::store_version(ctx, record.bytes, record.offset)
+                    .map(|version| version.map(|version| (Some(record.object_id.0), version))).transpose()
             }),
             IndexedStore::OffsetOnly {
                 control, records, ..
             } => std::iter::once(control)
                 .chain(records.iter())
                 .find_map(|record| {
-                    crate::om::store_version(record.bytes, record.offset)
-                        .map(|version| (None, version))
+                    crate::om::store_version(ctx, record.bytes, record.offset)
+                        .map(|version| version.map(|version| (None, version))).transpose()
                 }),
         };
-        let Some((object_id, version)) = candidate else {
+        let Some((object_id, version)) = candidate.transpose()? else {
             continue;
         };
         let section_ordinal_u32 = u32::try_from(section_ordinal)
@@ -5761,7 +5767,7 @@ pub(super) fn string_values(
                     .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
                 let text = ctx.copy_retained_text(value.value.as_str(), "NX string value text")?;
-                let text = PrintableString::new(text)
+                let text = PrintableString::from_wire(ctx, text)?
                     .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
                 ctx.reserve_vec(&mut output, 1, "NX native string values")?;
                 output.push(StringValue {
@@ -6130,7 +6136,7 @@ pub(super) fn expression_declarations(
                 })
                 .ok_or_else(|| ctx.refuse_codec_limit("NX declaration source offset", 0, 1))?;
             let name = ctx.copy_retained_text(declaration.name.as_str(), "NX declaration name")?;
-            let name = ParameterName::<String, u32>::parse(name)
+            let name = ParameterName::<String, u32>::parse_wire(ctx, name)?
                 .ok_or_else(|| ctx.refuse_codec_limit("validate NX declaration name", 0, 1))?;
             let literal = declaration
                 .literal
@@ -6294,9 +6300,10 @@ pub(super) fn expressions(
                         ctx.copy_retained_text(&declaration.id, "NX expression declaration id")
                     })
                     .transpose()?,
-                name: ParameterName::new(
+                name: ParameterName::from_wire(
+                    ctx,
                     ctx.copy_retained_text(expression.name.as_str(), "NX expression name")?,
-                ),
+                )?,
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,

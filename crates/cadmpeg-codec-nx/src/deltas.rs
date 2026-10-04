@@ -493,12 +493,10 @@ fn transmit_header(
     let description =
         String::from_utf8(ctx.copy_retained(description_bytes, "NX deltas description")?).ok();
     let schema = String::from_utf8(ctx.copy_retained(schema_bytes, "NX deltas schema")?).ok();
-    Ok(description.zip(schema).and_then(|(description, schema)| {
-        Some(TransmitHeader {
-            state: TransmitState::new(description, schema, references).ok()?,
-            end,
-        })
-    }))
+    let Some((description, schema)) = description.zip(schema) else {
+        return Ok(None);
+    };
+    Ok(TransmitState::from_wire(ctx, description, schema, references)?.ok().map(|state| TransmitHeader { state, end }))
 }
 
 fn term_use_numeric_tails(
@@ -542,7 +540,7 @@ fn term_use_numeric_tails(
     event_starts.dedup();
 
     let mut tails = Vec::new();
-    for record in &census.records {
+    for record in ctx.admit_iter(&census.records, "NX deltas record traversal")? {
         if !matches!(record.family, RecordFamily::TermUse) {
             continue;
         }
@@ -573,7 +571,7 @@ fn tagged_reference_lanes(
     census: &Census,
 ) -> Result<Vec<TaggedReferenceLane>, CodecError> {
     let mut lanes = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
         let mut at = offset;
         let mut references = Vec::new();
         let mut complete = true;
@@ -614,20 +612,16 @@ fn reference_type_maps(
     census: &Census,
 ) -> Result<Vec<ReferenceTypeMap>, CodecError> {
     let mut maps = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
         let map = if let Some(map) =
             reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(end))?
         {
             Some(map)
         } else {
-            let following_kind = census
-                .records
-                .iter()
+            let following_kind = ctx.admit_iter(&census.records, "NX following deltas record traversal")?
                 .map(|record| (record.offset, record.kind()))
                 .chain(
-                    census
-                        .tombstones
-                        .iter()
+                    ctx.admit_iter(&census.tombstones, "NX following deltas tombstone traversal")?
                         .map(|tombstone| (tombstone.offset, u16::from(tombstone.kind.code()))),
                 )
                 .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind));
@@ -770,7 +764,7 @@ fn reference_state_packets(
     census: &Census,
 ) -> Result<Vec<ReferenceStatePacket>, CodecError> {
     let mut packets = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, gap_end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
         let mut at = offset;
         while let Some(packet) = reference_state_packet(ctx, stream, at, gap_end)? {
             at = packet.end;
@@ -864,7 +858,7 @@ fn schema_reference_preambles(
     census: &Census,
 ) -> Result<Vec<SchemaReferencePreamble>, CodecError> {
     let mut preambles = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, gap_end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
         let mut at = offset;
         while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
             at = preamble.end;
@@ -949,7 +943,8 @@ fn schema_reference_preamble(
             if end > gap_end {
                 return Ok(None);
             }
-            return Ok(PreambleState::new(
+            return Ok(PreambleState::from_wire(
+                ctx,
                 identity,
                 references,
                 state_references,
@@ -957,7 +952,7 @@ fn schema_reference_preamble(
                 count,
                 entries,
                 terminal_value,
-            )
+            )?
             .ok()
             .map(|state| SchemaReferencePreamble { state, offset, end }));
         }
@@ -975,7 +970,7 @@ fn reference_marker_packets(
     census: &Census,
 ) -> Result<Vec<ReferenceMarkerPacket>, CodecError> {
     let mut packets = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
         if let Some(packet) = reference_marker_packet(stream, offset, end) {
             ctx.push_vec(&mut packets, packet, "NX reference marker packets")?;
         }
@@ -1017,9 +1012,8 @@ fn inline_schema_declarations(
 ) -> Result<Vec<InlineSchemaDeclaration>, CodecError> {
     let covered = merged_event_spans(ctx, census, true)?;
     let mut declarations = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
-        let parse_end = covered
-            .iter()
+    for (offset, gap_end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
+        let parse_end = ctx.admit_iter(&covered, "NX deltas parse-end span traversal")?
             .position(|(start, end)| *start <= gap_end && gap_end < *end)
             .map_or(gap_end, |index| {
                 covered
@@ -1134,16 +1128,16 @@ fn inline_schema_declaration(
         {
             let end = offset.checked_add(BODY_SCHEMA_HEADER.len())?;
             (end <= gap_end).then_some(())?;
-            return Some(InlineSchemaDeclaration {
+            return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::BodyHeader,
                 offset,
                 end,
-            });
+            }));
         }
         if stream.get(offset..offset.checked_add(REGION_SCHEMA_HEADER.len())?)
             == Some(REGION_SCHEMA_HEADER)
         {
-            return region_schema_declaration(stream, offset, gap_end);
+            return region_schema_declaration(stream, offset, gap_end).map(Ok);
         }
         if stream.get(offset..offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?)
             == Some(TYPE_70_SCHEMA_HEADER)
@@ -1156,11 +1150,11 @@ fn inline_schema_declaration(
                         *end <= gap_end && (*end == gap_end || plausible_next(stream, *end))
                     })
                 })?;
-            return Some(InlineSchemaDeclaration {
+            return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type70 { state },
                 offset,
                 end,
-            });
+            }));
         }
         if stream.get(offset..offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?)
             == Some(TYPE_100_SCHEMA_HEADER)
@@ -1187,13 +1181,13 @@ fn inline_schema_declaration(
             }
             (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
             (at <= gap_end).then_some(())?;
-            return Some(InlineSchemaDeclaration {
+            return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type100 {
                     state: PrecisionState::new(xmt, references, transform).ok()?,
                 },
                 offset,
                 end: at,
-            });
+            }));
         }
         if stream.get(offset..offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?)
             == Some(crate::topology::TYPE_38_SCHEMA_HEADER)
@@ -1230,7 +1224,7 @@ fn inline_schema_declaration(
                     (state_end <= gap_end).then_some(())?;
                     (None, state_end)
                 };
-                return Some(InlineSchemaDeclaration {
+                return Some(Ok(InlineSchemaDeclaration {
                     fields: InlineSchemaFields::Type38 {
                         state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
                             xmt,
@@ -1246,12 +1240,12 @@ fn inline_schema_declaration(
                     },
                     offset,
                     end,
-                });
+                }));
             }
             let (linked_references, state_references, end) =
                 type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
             (end <= gap_end).then_some(())?;
-            return Some(InlineSchemaDeclaration {
+            return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
                     state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
                         xmt,
@@ -1267,20 +1261,20 @@ fn inline_schema_declaration(
                 },
                 offset,
                 end,
-            });
+            }));
         }
         if stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
             == Some(TYPE_41_SCHEMA_HEADER)
         {
             let (reference, numeric_values, end) = type_41_schema_state(stream, offset, gap_end)?;
-            return Some(InlineSchemaDeclaration {
+            return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type41 {
                     reference,
                     numeric_values,
                 },
                 offset,
                 end,
-            });
+            }));
         }
         if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
             == Some(TYPE_101_SCHEMA_HEADER)
@@ -1294,26 +1288,25 @@ fn inline_schema_declaration(
                 == TYPE_101_SCHEMA_STATE_PREFIX.get(..TYPE_101_COMPACT_STATE_LEN);
             let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?);
             let prefix_state = prefix.map(|prefix| [prefix[7], prefix[10], prefix[30]]);
-            let full_prefix = prefix_state.is_some_and(|state| {
-                matches!(state, [3, 4, 1] | [1, 1, 0])
-                    && prefix.is_some_and(|prefix| {
-                        prefix
-                            .iter()
-                            .zip(TYPE_101_SCHEMA_STATE_PREFIX)
-                            .enumerate()
-                            .all(|(index, (actual, expected))| {
-                                matches!(index, 7 | 10 | 30) || actual == expected
-                            })
-                    })
-            });
+            let full_prefix = match (prefix_state, prefix) {
+                (Some(state), Some(prefix)) if matches!(state, [3, 4, 1] | [1, 1, 0]) => {
+                    propagate_resource!(ctx.admit_iter(prefix, "NX type-101 prefix traversal").map_err(CodecError::from))
+                        .zip(TYPE_101_SCHEMA_STATE_PREFIX)
+                        .enumerate()
+                        .all(|(index, (actual, expected))| {
+                            matches!(index, 7 | 10 | 30) || actual == expected
+                        })
+                }
+                _ => false,
+            };
             if !full_prefix {
                 (compact && compact_end <= gap_end && plausible_next(stream, compact_end))
                     .then_some(())?;
-                return Some(InlineSchemaDeclaration {
+                return Some(Ok(InlineSchemaDeclaration {
                     fields: InlineSchemaFields::Type101Compact,
                     offset,
                     end: compact_end,
-                });
+                }));
             }
             let prefix_state = prefix_state?;
             at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
@@ -1342,8 +1335,7 @@ fn inline_schema_declaration(
                 at = at.checked_add(4)?;
             }
             let terminal = stream.get(at..at.checked_add(5)?)?;
-            let terminal_value = terminal
-                .iter()
+            let terminal_value = propagate_resource!(ctx.admit_iter(terminal, "NX type-101 terminal traversal").map_err(CodecError::from))
                 .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
             at = at.checked_add(5)?;
             (at <= gap_end).then_some(())?;
@@ -1355,14 +1347,14 @@ fn inline_schema_declaration(
             )
             .ok()?;
             (state.prefix_state() == prefix_state).then_some(())?;
-            return Some(InlineSchemaDeclaration {
+            return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type101 { state },
                 offset,
                 end: at,
-            });
+            }));
         }
         None
-    })();
+    })().transpose()?;
     Ok(parsed)
 }
 
@@ -1423,8 +1415,8 @@ fn inline_body_states(
     census: &Census,
 ) -> Result<Vec<InlineBodyState>, CodecError> {
     let mut states = Vec::new();
-    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
-        if !census.inline_schema_declarations.iter().any(|declaration| {
+    for (offset, gap_end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
+        if !ctx.admit_iter(&census.inline_schema_declarations, "NX deltas body header traversal")?.any(|declaration| {
             declaration.end == offset && declaration.fields == InlineSchemaFields::BodyHeader
         }) {
             continue;
@@ -1585,7 +1577,7 @@ fn type_150_state_packets(
     census: &Census,
 ) -> Result<Vec<Type150StatePacket>, CodecError> {
     let mut packets = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+    for (offset, end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
         if let Some(packet) = type_150_state_packet(stream, offset, end) {
             ctx.push_vec(&mut packets, packet, "NX type 150 state packets")?;
         }
@@ -1627,11 +1619,11 @@ fn uncovered_spans(
     stream_len: usize,
     census: &Census,
     include_derived_events: bool,
-) -> Result<impl Iterator<Item = (usize, usize)>, CodecError> {
+) -> Result<Vec<(usize, usize)>, CodecError> {
     let covered = merged_event_spans(ctx, census, include_derived_events)?;
     let mut gaps = Vec::new();
     let mut at = 0;
-    for (start, end) in covered {
+    for (start, end) in ctx.admit_iter(&covered, "NX deltas covered span traversal")?.copied() {
         if at < start {
             ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
             gaps.push((at, start));
@@ -1642,7 +1634,7 @@ fn uncovered_spans(
         ctx.reserve_vec(&mut gaps, 1, "NX deltas uncovered spans")?;
         gaps.push((at, stream_len));
     }
-    Ok(gaps.into_iter())
+    Ok(gaps)
 }
 
 fn merged_event_spans(
@@ -1668,22 +1660,15 @@ fn merged_event_spans(
         census.inline_schema_declarations.len(),
         census.inline_body_states.len(),
     ];
-    let count = base_count
-        .into_iter()
-        .chain(
-            include_derived_events
-                .then_some(derived_count)
-                .into_iter()
-                .flatten(),
-        )
-        .try_fold(0usize, usize::checked_add)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX deltas event spans",
-                0,
-                u64_from_index(census.records.len()),
-            )
-        })?;
+    let mut count = 0usize;
+    for value in ctx.admit_iter(&base_count, "NX deltas event count traversal")? {
+        count = count.checked_add(*value).ok_or_else(|| ctx.refuse_codec_limit("NX deltas event spans", u64::MAX, u64::MAX))?;
+    }
+    if include_derived_events {
+        for value in ctx.admit_iter(&derived_count, "NX deltas derived event count traversal")? {
+            count = count.checked_add(*value).ok_or_else(|| ctx.refuse_codec_limit("NX deltas event spans", u64::MAX, u64::MAX))?;
+        }
+    }
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
     let (mut covered, _covered_reservation) =
         ctx.scoped_vector_storage(count, "NX deltas event span allocation")?;
@@ -1780,7 +1765,7 @@ fn merged_event_spans(
         "sort NX deltas covered spans",
     )?;
     let mut merged = Vec::<(usize, usize)>::new();
-    for (start, end) in covered {
+    for (start, end) in ctx.admit_iter(&covered, "NX deltas covered span traversal")?.copied() {
         if let Some((_, merged_end)) = merged.last_mut().filter(|(_, end)| start <= *end) {
             *merged_end = (*merged_end).max(end);
         } else {
@@ -2026,11 +2011,10 @@ fn merge_records(
     let mut replacement_reservation = ctx.reserve_scoped(0, "NX deltas replacement keys")?;
     let mut unmatched_events = unmatched_tombstones.map(|totals| (totals, BTreeMap::new()));
     let mut event_reservation = ctx.reserve_scoped(0, "NX deltas merge events")?;
-    for record in census
-        .records
-        .iter()
-        .filter(|record| current_scope_contains(&current_scopes, record.offset))
-    {
+    for record in ctx.admit_iter(&census.records, "NX current deltas record traversal")? {
+        if !current_scope_contains(ctx, &current_scopes, record.offset)? {
+            continue;
+        }
         let Ok(kind) = u8::try_from(record.kind()) else {
             continue;
         };
@@ -2057,11 +2041,10 @@ fn merge_records(
 
     let mut tombstones = BTreeMap::new();
     let mut tombstone_reservation = ctx.reserve_scoped(0, "NX deltas tombstone keys")?;
-    for tombstone in census
-        .tombstones
-        .iter()
-        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
-    {
+    for tombstone in ctx.admit_iter(&census.tombstones, "NX current deltas tombstone traversal")? {
+        if !current_scope_contains(ctx, &current_scopes, tombstone.offset)? {
+            continue;
+        }
         let kind = tombstone.kind.code();
         if !tombstones.contains_key(&(kind, tombstone.xmt)) {
             ctx.charge_collection_items(1, "NX deltas tombstone keys")?;
@@ -2097,7 +2080,7 @@ fn merge_records(
     });
     let mut deletions = BTreeMap::new();
     let mut deletion_reservation = ctx.reserve_scoped(0, "NX deltas deletion keys")?;
-    for (key, tombstone) in tombstones {
+    for (key, tombstone) in ctx.admit_iter(&tombstones, "NX deltas tombstone key traversal")?.map(|(key, tombstone)| (*key, *tombstone)) {
         if NodeKind::try_from(key.0)
             .ok()
             .and_then(|kind| graph.get(kind, key.1))
@@ -2132,7 +2115,8 @@ fn merge_records(
         let (mut merged, reservation) =
             ctx.scoped_vector_storage(total_len, "NX merged partition bytes")?;
         merged.extend_from_slice(partition);
-        for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
+        for &(kind, xmt) in ctx.admit_iter(&replacements, "NX replacement key traversal")?.map(|(key, _)| key)
+            .chain(ctx.admit_iter(&deletions, "NX deletion key traversal")?.map(|(key, _)| key)) {
             if included(kind) {
                 if let Some(node) = NodeKind::try_from(kind)
                     .ok()
@@ -2142,14 +2126,14 @@ fn merge_records(
                 }
             }
         }
-        for (&(kind, _), record) in &replacements {
+        for (&(kind, _), record) in ctx.admit_iter(&replacements, "NX replacement record traversal")? {
             if included(kind) {
                 merged.extend_from_slice(&record.canonical_bytes);
             }
         }
         Ok((merged, reservation))
     };
-    if graph.body_shape_shells(ctx)?.next().is_some() {
+    if graph.body_shape_shells(ctx)?.next().transpose()?.is_some() {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);
@@ -2158,8 +2142,8 @@ fn merge_records(
     let merged_graph = crate::topology::Graph::parse(ctx, &merged)?;
     let base_complete = graph.has_complete_body_topology(ctx)?;
     let merged_complete = merged_graph.has_complete_body_topology(ctx)?;
-    let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
-    let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
+    let deletes_owner = ctx.admit_iter(&deletions, "NX deleted owner traversal")?.any(|((kind, _), _)| matches!(kind, 12 | 13));
+    let deleted_faces = ctx.admit_iter(&deletions, "NX deleted face traversal")?.filter(|((kind, _), _)| *kind == 14).count();
     let accounted_faces = merged_graph
         .body_shape_face_count(ctx)?
         .checked_add(deleted_faces)
@@ -2219,11 +2203,10 @@ fn collect_unmatched_events<'ctx>(
     let current_scopes = current_revision_scopes(ctx, census, stream_len)?;
     let mut events = BTreeMap::<(u8, u32), Vec<MergeEvent>>::new();
     let mut reservation = ctx.reserve_scoped(0, "NX unmatched deltas events")?;
-    for record in census
-        .records
-        .iter()
-        .filter(|record| current_scope_contains(&current_scopes, record.offset))
-    {
+    for record in ctx.admit_iter(&census.records, "NX current deltas record traversal")? {
+        if !current_scope_contains(ctx, &current_scopes, record.offset)? {
+            continue;
+        }
         let Ok(kind) = u8::try_from(record.kind()) else {
             continue;
         };
@@ -2240,11 +2223,10 @@ fn collect_unmatched_events<'ctx>(
             },
         )?;
     }
-    for tombstone in census
-        .tombstones
-        .iter()
-        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
-    {
+    for tombstone in ctx.admit_iter(&census.tombstones, "NX current deltas tombstone traversal")? {
+        if !current_scope_contains(ctx, &current_scopes, tombstone.offset)? {
+            continue;
+        }
         let kind = tombstone.kind.code();
         push_merge_event(
             ctx,
@@ -2286,7 +2268,7 @@ fn count_unmatched_events(
             continue;
         };
         if NodeKind::try_from(kind).ok().and_then(|kind| graph.get(kind, xmt)).is_none()
-            && !events.iter().any(|event| {
+            && !ctx.admit_iter(&events, "NX preceding full event traversal")?.any(|event| {
                 matches!(event, MergeEvent::Full { offset: full_offset } if *full_offset < offset)
             })
         {
@@ -2330,18 +2312,12 @@ fn current_revision_scopes(
 ) -> Result<Vec<RevisionScope>, CodecError> {
     // Only xmt 3 BODY envelopes delimit snapshots. Other validated type-12
     // envelopes remain available to the byte ledger without changing scope.
-    ctx.charge_work(
-        u64_from_index(census.body_revisions.len()),
-        "scan NX BODY revisions",
-    )?;
-    let count = census
-        .body_revisions
-        .iter()
+    let count = ctx.admit_iter(&census.body_revisions, "scan NX BODY revisions")?
         .filter(|revision| u32::from(revision.xmt) == 3)
         .count();
     let (mut snapshot_revisions, _snapshot_reservation) =
         ctx.temporary_vec(count, "NX snapshot revision indices")?;
-    for (index, revision) in census.body_revisions.iter().enumerate() {
+    for (index, revision) in ctx.admit_iter(&census.body_revisions, "NX snapshot revision traversal")?.enumerate() {
         if u32::from(revision.xmt) == 3 {
             snapshot_revisions.push(index);
         }
@@ -2358,16 +2334,16 @@ fn current_revision_scopes(
         }]);
     }
 
-    let direction = revision_direction(census, &snapshot_revisions);
+    let direction = revision_direction(ctx, census, &snapshot_revisions)?;
     ctx.charge_collection_items(1, "NX revision run starts")?;
     let mut run_reservation = ctx.reserve_scoped(
         u64_from_index(std::mem::size_of::<usize>()),
         "NX revision run starts",
     )?;
     let mut run_starts = vec![0];
-    for (position, pair) in snapshot_revisions.windows(2).enumerate() {
-        let previous = census.body_revisions[pair[0]].node_id;
-        let current = census.body_revisions[pair[1]].node_id;
+    for (position, index) in ctx.admit_iter(&snapshot_revisions, "NX revision transition traversal")?.enumerate().skip(1) {
+        let previous = census.body_revisions[snapshot_revisions[position - 1]].node_id;
+        let current = census.body_revisions[*index].node_id;
         if !revision_follows_direction(previous, current, direction) {
             ctx.reserve_scoped_vec(
                 &mut run_reservation,
@@ -2375,7 +2351,7 @@ fn current_revision_scopes(
                 1,
                 "NX revision run starts",
             )?;
-            run_starts.push(position + 1);
+            run_starts.push(position);
         }
     }
 
@@ -2408,27 +2384,31 @@ fn current_revision_scopes(
     Ok(scopes)
 }
 
-fn revision_direction(census: &Census, revision_indices: &[usize]) -> RevisionDirection {
+fn revision_direction(
+    ctx: &DecodeContext<'_>,
+    census: &Census,
+    revision_indices: &[usize],
+) -> Result<RevisionDirection, CodecError> {
     // A stream can serialize one revision sequence in either direction. The
     // direction with fewer violations is the sequence direction; the opposite
     // transitions are the resets that begin another sequence.
-    let ascending_violations = revision_indices
-        .windows(2)
-        .filter(|pair| {
-            census.body_revisions[pair[1]].node_id < census.body_revisions[pair[0]].node_id
+    let ascending_violations = ctx.admit_iter(revision_indices, "NX ascending revision transition traversal")?
+        .enumerate().skip(1)
+        .filter(|(position, index)| {
+            census.body_revisions[**index].node_id < census.body_revisions[revision_indices[*position - 1]].node_id
         })
         .count();
-    let descending_violations = revision_indices
-        .windows(2)
-        .filter(|pair| {
-            census.body_revisions[pair[1]].node_id > census.body_revisions[pair[0]].node_id
+    let descending_violations = ctx.admit_iter(revision_indices, "NX descending revision transition traversal")?
+        .enumerate().skip(1)
+        .filter(|(position, index)| {
+            census.body_revisions[**index].node_id > census.body_revisions[revision_indices[*position - 1]].node_id
         })
         .count();
-    if ascending_violations <= descending_violations {
+    Ok(if ascending_violations <= descending_violations {
         RevisionDirection::Ascending
     } else {
         RevisionDirection::Descending
-    }
+    })
 }
 
 fn revision_follows_direction(previous: u32, current: u32, direction: RevisionDirection) -> bool {
@@ -2438,10 +2418,13 @@ fn revision_follows_direction(previous: u32, current: u32, direction: RevisionDi
     }
 }
 
-fn current_scope_contains(scopes: &[RevisionScope], offset: usize) -> bool {
-    scopes
-        .iter()
-        .any(|scope| scope.start <= offset && offset < scope.end)
+fn current_scope_contains(
+    ctx: &DecodeContext<'_>,
+    scopes: &[RevisionScope],
+    offset: usize,
+) -> Result<bool, CodecError> {
+    Ok(ctx.admit_iter(scopes, "NX current revision scope traversal")?
+        .any(|scope| scope.start <= offset && offset < scope.end))
 }
 
 /// Return raw deltas bytes with decoded records and compact tombstones masked.
@@ -2472,27 +2455,19 @@ pub(crate) fn semantic_residual_with_census(
     // the kept spans, rather than filling the gaps between them, needs no
     // ordering or disjointness relation between the scopes: every byte outside
     // every scope reads 0xff whatever order the scopes arrive in.
-    let scan_work = u64_from_index(census.records.len())
-        .checked_mul(u64_from_index(current_scopes.len()))
-        .and_then(|value| value.checked_add(u64_from_index(census.tombstones.len())))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX semantic residual scan",
-                0,
-                u64_from_index(census.records.len()),
-            )
-        })?;
-    ctx.charge_work(scan_work, "NX semantic residual scan")?;
-    let is_semantic = |record: &Record| {
-        let is_current = current_scope_contains(&current_scopes, record.offset);
+    let is_semantic = |record: &Record| -> Result<bool, CodecError> {
+        let is_current = current_scope_contains(ctx, &current_scopes, record.offset)?;
         let is_semantic = matches!(
             record.kind(),
             40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
         ) || record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a);
-        is_current && is_semantic
+        Ok(is_current && is_semantic)
     };
     let mut total_len = stream.len();
-    for record in census.records.iter().filter(|record| is_semantic(record)) {
+    for record in ctx.admit_iter(&census.records, "NX semantic residual record traversal")? {
+        if !is_semantic(record)? {
+            continue;
+        }
         let prefix_len = if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
             crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1
         } else {
@@ -2513,16 +2488,19 @@ pub(crate) fn semantic_residual_with_census(
     ctx.reserve_capacity(&mut residual, total_len, "NX semantic residual bytes")?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
-    for scope in &current_scopes {
+    for scope in ctx.admit_iter(&current_scopes, "NX semantic residual scope traversal")? {
         residual[scope.start..scope.end].copy_from_slice(&stream[scope.start..scope.end]);
     }
-    for record in &census.records {
+    for record in ctx.admit_iter(&census.records, "NX deltas record traversal")? {
         residual[record.offset..record.end].fill(0xff);
     }
-    for tombstone in &census.tombstones {
+    for tombstone in ctx.admit_iter(&census.tombstones, "NX deltas tombstone traversal")? {
         residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
     }
-    for record in census.records.iter().filter(|record| is_semantic(record)) {
+    for record in ctx.admit_iter(&census.records, "NX semantic residual record traversal")? {
+        if !is_semantic(record)? {
+            continue;
+        }
         if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
             let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
             residual.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
@@ -2539,10 +2517,10 @@ fn consume_fixed(
     kind: u16,
     signature: &[Token],
 ) -> Result<Option<Record>, CodecError> {
-    let direct = fixed_layout(stream, offset, kind, signature, 0);
+    let direct = fixed_layout(ctx, stream, offset, kind, signature, 0)?;
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
     let escaped = if escaped_marker {
-        fixed_layout(stream, offset, kind, signature, 1)
+        fixed_layout(ctx, stream, offset, kind, signature, 1)?
     } else {
         None
     };
@@ -2586,7 +2564,7 @@ impl FixedCandidate {
         )?;
         canonical_bytes.extend_from_slice(&stream[self.offset..self.prefix_end]);
         let mut at = self.prefix_end;
-        for token in signature {
+        for token in ctx.admit_iter(signature, "NX fixed record token traversal")? {
             let (len, skip) = match token {
                 Token::Ref => {
                     let (_, consumed) = read_xmt(stream, at).ok_or_else(|| {
@@ -2615,12 +2593,14 @@ impl FixedCandidate {
 }
 
 fn fixed_layout(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     kind: u16,
     signature: &[Token],
     envelope_len: usize,
-) -> Option<FixedCandidate> {
+) -> Result<Option<FixedCandidate>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
     let xmt_at = offset.checked_add(2 + envelope_len)?;
     let (xmt, consumed) = read_xmt(stream, xmt_at)?;
     if xmt <= 1 {
@@ -2639,7 +2619,7 @@ fn fixed_layout(
     let mut canonical_len = at.checked_sub(offset)?;
     let mut references = Vec::new();
     let mut position = None;
-    for token in signature {
+    for token in propagate_resource!(ctx.admit_iter(signature, "NX fixed layout token traversal").map_err(CodecError::from)) {
         match token {
             Token::Ref => {
                 let start = at;
@@ -2705,14 +2685,16 @@ fn fixed_layout(
             }
         }
     }
-    Some(FixedCandidate {
+    Some(Ok(FixedCandidate {
         family: RecordFamily::from_fixed_admitted(kind, node_id, position, references)?,
         xmt,
         offset,
         end: at,
         prefix_end,
         canonical_len,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 fn consume_variable(
@@ -3062,7 +3044,7 @@ fn materialize_attdef_list(
         at = next;
         references.push(reference);
     }
-    Ok(AttdefState::new(shape.xmt, shape.slot_count, shape.active_count, references).ok())
+    Ok(AttdefState::from_wire(ctx, shape.xmt, shape.slot_count, shape.active_count, references)?.ok())
 }
 
 fn group_layout(
@@ -3274,35 +3256,39 @@ fn consume_type_67(
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
-    let parsed = (|| {
+    let parsed: Option<Result<_, CodecError>> = (|| {
         (View::u16_be_at(stream, offset) == Some(67)).then_some(())?;
-        let direct = type_67_layout(stream, offset, 0);
+        let direct = propagate_resource!(type_67_layout(ctx, stream, offset, 0));
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-        let escaped = escaped_marker
-            .then(|| type_67_layout(stream, offset, 1))
-            .flatten();
+        let escaped = if escaped_marker {
+            propagate_resource!(type_67_layout(ctx, stream, offset, 1))
+        } else {
+            None
+        };
         let (xmt, node_id, references, end) =
             select_enveloped_layout(escaped_marker, direct, escaped)?;
-        Some((
+        Some(Ok((
             RecordFamily::Type67 {
                 node_id,
                 references: references.try_into().ok()?,
             },
             xmt,
             end,
-        ))
+        )))
     })();
-    let Some((family, xmt, end)) = parsed else {
+    let Some((family, xmt, end)) = parsed.transpose()? else {
         return Ok(None);
     };
     admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
 fn type_67_layout(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, usize)> {
+) -> Result<Option<(u32, u32, Vec<u32>, usize)>, CodecError> {
+    let parsed: Option<Result<_, CodecError>> = (|| {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -3318,7 +3304,7 @@ fn type_67_layout(
     }
     (references[0] == 1
         && references[1] == 3
-        && references[2..].iter().all(|reference| *reference > 1))
+        && propagate_resource!(ctx.admit_iter(&references[2..], "NX type-67 reference validation").map_err(CodecError::from)).all(|reference| *reference > 1))
     .then_some(())?;
     (stream.get(at) == Some(&0x2b)).then_some(())?;
     at += 1;
@@ -3333,7 +3319,9 @@ fn type_67_layout(
         (value == 0.0 || value.is_normal()).then_some(())?;
         at += 8;
     }
-    Some((xmt, node_id, references, at))
+    Some(Ok((xmt, node_id, references, at)))
+    })();
+    parsed.transpose()
 }
 
 fn type_45_layout(
@@ -3427,10 +3415,10 @@ fn consume_intersection_data(
     intersection_schema_anchor_seen: bool,
 ) -> Result<Option<Record>, CodecError> {
     let Some((curve, end)) = crate::topology::intersection_data_curve_at(
-        stream,
+        ctx, stream,
         offset,
         intersection_schema_anchor_seen,
-    ) else {
+    )? else {
         return Ok(None);
     };
     let mut references = curve

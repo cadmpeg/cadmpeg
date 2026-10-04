@@ -2,6 +2,7 @@
 //! Decode bounded Parasolid surface-intersection constructions.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -39,30 +40,30 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    fn present_with_storage(
-        values: Vec<[f64; 2]>,
+    fn present_with_storage<'values, E, I: Iterator<Item = &'values [f64; 2]>>(
+        values: &'values [[f64; 2]],
         mut checked: Vec<FiniteVector<2>>,
-    ) -> Option<Self> {
-        (checked.is_empty() && checked.capacity() >= values.len()).then_some(())?;
-        for pair in values {
-            if pair.contains(&MISSING_PARAMETER) {
-                return None;
-            }
-            checked.push(FiniteVector::new(pair)?);
+        admit: impl FnOnce(&'values [[f64; 2]]) -> Result<I, E>,
+    ) -> Result<Option<Self>, E> {
+        if !checked.is_empty() || checked.capacity() < values.len() {
+            return Ok(None);
         }
-        Some(Self(checked))
+        for pair in admit(values)? {
+            if pair.contains(&MISSING_PARAMETER) {
+                return Ok(None);
+            }
+            let Some(pair) = FiniteVector::new(*pair) else { return Ok(None); };
+            checked.push(pair);
+        }
+        Ok(Some(Self(checked)))
     }
 
     pub(crate) fn from_present_values_scoped<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         values: Vec<[f64; 2]>,
     ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(values.len()),
-            "admit NX chart support-UV lane",
-        )?;
         let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
-        let lane = Self::present_with_storage(values, checked);
+        let lane = Self::present_with_storage(&values, checked, |values| ctx.admit_iter(values, "admit NX chart support-UV lane"))?;
         Ok(lane.map(|lane| (lane, reservation)))
     }
     /// Construct one parameter pair per chart sample.
@@ -88,7 +89,10 @@ impl SupportUvLane {
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
         .ok()?;
-        Self::present_with_storage(values, checked)
+        match Self::present_with_storage(&values, checked, |values| Ok::<_, Infallible>(values.iter())) {
+            Ok(lane) => lane,
+            Err(never) => match never {},
+        }
     }
 
     /// Ordered support parameter pairs.
@@ -526,7 +530,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     let mut terms = term_records(ctx, base_stream)?;
     let mut uv = uv_records(ctx, base_stream)?;
     let mut bridges = blend_bound_records(ctx, base_stream)?;
-    for replacement_stream in replacement_streams {
+    for replacement_stream in ctx.admit_iter(replacement_streams, "NX auxiliary replacement traversal")? {
         extend_replacement_map(
             ctx,
             &mut charts,
@@ -610,7 +614,7 @@ fn scan_with_auxiliaries(
     let referenced_curves = graph.referenced_curve_xmts(ctx)?;
     let mut result = CurveScan::default();
     let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
-    for construction in &constructions {
+    for construction in ctx.admit_iter(&constructions, "NX intersection form traversal")? {
         ctx.admit_btree_entry(
             &forms_by_xmt,
             &construction.xmt,
@@ -624,11 +628,11 @@ fn scan_with_auxiliaries(
         )?;
     }
     let mut cross_form_xmts = BTreeSet::new();
-    for (xmt, forms) in forms_by_xmt {
+    for (xmt, forms) in ctx.admit_iter(&forms_by_xmt, "NX intersection form identity traversal")? {
         if forms.len() > 1 {
             ctx.insert_btree_set(
                 &mut cross_form_xmts,
-                xmt,
+                *xmt,
                 "NX intersection cross-form identities",
             )?;
         }
@@ -646,7 +650,7 @@ fn scan_with_auxiliaries(
             CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
         }
     });
-    for construction in constructions.iter().copied() {
+    for construction in ctx.admit_iter(&constructions, "NX intersection construction traversal")?.copied() {
         match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
                 ctx.push_vec(
@@ -659,7 +663,7 @@ fn scan_with_auxiliaries(
             Err(EnrichError::Rejected(rejection))
                 if referenced_curves.contains(&construction.xmt)
                     && construction_supports(construction, uv, bridges, graph).is_some()
-                    && construction_has_endpoint_witnesses(construction, terms, graph) =>
+                    && construction_has_endpoint_witnesses(ctx, construction, terms, graph)? =>
             {
                 ctx.push_vec(
                     &mut result.constructions,
@@ -672,7 +676,7 @@ fn scan_with_auxiliaries(
                             |(primary, secondary)| DistinctSupports::new(primary, secondary?),
                         ),
                         graph
-                            .unique_curve_edge_witness(construction.xmt)
+                            .unique_curve_edge_witness(ctx, construction.xmt)?
                             .and_then(|witness| {
                                 Some((
                                     witness.endpoints,
@@ -739,7 +743,7 @@ fn enrich(
     }
     if serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
-            .unique_curve_edge_witness(construction.xmt)
+            .unique_curve_edge_witness(ctx, construction.xmt)?
             .map(|witness| witness.endpoints)
             .ok_or_else(|| {
                 if serialized_terms[0].is_none() {
@@ -748,8 +752,7 @@ fn enrich(
                     Rejection::MissingEndTerm
                 }
             })?;
-        let matching_permutations = [[0usize, 1usize], [1usize, 0usize]]
-            .into_iter()
+        let matching_permutations = ctx.admit_iter(&[[0usize, 1usize], [1usize, 0usize]], "NX endpoint permutation traversal").map_err(CodecError::from)?
             .filter(|permutation| {
                 permutation.iter().enumerate().all(|(ordinal, topology)| {
                     Point3::distance(
@@ -850,15 +853,15 @@ fn construction_supports(
 }
 
 fn construction_has_endpoint_witnesses(
+    ctx: &DecodeContext<'_>,
     construction: CompositeCurve,
     terms: &BTreeMap<u32, Point3>,
     graph: &topology::Graph,
-) -> bool {
-    construction.references[2..=4].iter().all(Option::is_none)
-        || construction.references[3..=4]
-            .iter()
+) -> Result<bool, CodecError> {
+    Ok(ctx.admit_iter(&construction.references[2..=4], "NX construction endpoint absence")?.all(Option::is_none)
+        || ctx.admit_iter(&construction.references[3..=4], "NX construction endpoint witnesses")?
             .all(|reference| reference.is_some_and(|target| terms.contains_key(&u32::from(target))))
-        || graph.unique_curve_edge_witness(construction.xmt).is_some()
+        || graph.unique_curve_edge_witness(ctx, construction.xmt)?.is_some())
 }
 
 fn blend_bound_records(
@@ -866,7 +869,7 @@ fn blend_bound_records(
     stream: &[u8],
 ) -> Result<BTreeMap<u32, u32>, CodecError> {
     let mut records = BTreeMap::new();
-    for bound in blend_bounds(ctx, stream)? {
+    for bound in ctx.admit_iter(&blend_bounds(ctx, stream)?, "NX blend bound traversal")? {
         ctx.insert_btree_map(
             &mut records,
             bound.state.xmt(),
@@ -885,11 +888,7 @@ pub(crate) fn blend_bounds(
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     let mut reservation = ctx.reserve_scoped(0, "NX blend-bound record index")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(stream.len()),
-        "scan NX blend bounds",
-    )?;
-    for tag in find_tags(stream, [0, 59]) {
+    for tag in find_tags(ctx, stream, [0, 59])? {
         if let Some((bound, _)) = blend_bound_at(stream, tag) {
             insert_unique_charged(
                 ctx,
@@ -1064,8 +1063,8 @@ fn chart_records(
                     && entry
                         .get()
                         .samples
-                        .iter_points()
-                        .zip(candidate.samples.iter_points())
+                        .iter_points(ctx)?
+                        .zip(candidate.samples.iter_points(ctx)?)
                         .all(|(first, second)| {
                             Point3::distance(first, second)
                                 <= entry
@@ -1297,7 +1296,7 @@ fn term_records(
     stream: &[u8],
 ) -> Result<BTreeMap<u32, Point3>, CodecError> {
     let mut records = BTreeMap::new();
-    for term in term_use_records(ctx, stream)? {
+    for term in ctx.admit_iter(&term_use_records(ctx, stream)?, "NX term record traversal")? {
         ctx.insert_btree_map(
             &mut records,
             u32::from(term.xmt),
@@ -1316,11 +1315,7 @@ pub(crate) fn term_use_records(
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     let mut reservation = ctx.reserve_scoped(0, "NX term-use record index")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(stream.len()),
-        "scan NX term-use records",
-    )?;
-    for tag in find_tags(stream, [0, 41]) {
+    for tag in find_tags(ctx, stream, [0, 41])? {
         if let Some((term, _)) = term_use_at(stream, tag) {
             insert_unique_charged(
                 ctx,
@@ -1576,11 +1571,11 @@ fn uv_at(
     )))
 }
 
-fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
-    stream
-        .windows(tag.len())
+fn find_tags<'stream>(ctx: &DecodeContext<'_>, stream: &'stream [u8], tag: [u8; 2]) -> Result<impl Iterator<Item = usize> + 'stream, CodecError> {
+    Ok(ctx.admit_iter(stream, "NX intersection tag traversal")?
         .enumerate()
-        .filter_map(move |(offset, window)| (window == tag).then_some(offset))
+        .skip(1)
+        .filter_map(move |(end, _)| (stream[end - 1..=end] == tag).then_some(end - 1)))
 }
 
 fn point_m(stream: &[u8], at: usize) -> Option<FiniteVector<3>> {

@@ -29,7 +29,7 @@ pub(super) fn summarize(
         .then(|| native::substrate::topology_streams(ctx, scan))
         .transpose()?;
 
-    for entry in &scan.container.entries {
+    for entry in ctx.admit_iter(&scan.container.entries, "NX summary directory traversal")? {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -74,7 +74,7 @@ pub(super) fn summarize(
 
     let mut storage_notes_storage = ctx.reserve_scoped(0, "nx temporary storage notes")?;
     let mut storage_notes: Vec<String> = Vec::new();
-    for (si, stream) in scan.streams.iter().enumerate() {
+    for (si, stream) in ctx.admit_iter(&scan.streams, "NX summary stream traversal")?.enumerate() {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -249,7 +249,7 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                for (family, count) in census.full_counts(ctx)? {
+                for (&family, &count) in ctx.admit_iter(&census.full_counts(ctx)?, "NX summary full record counts")? {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
@@ -259,7 +259,7 @@ pub(super) fn summarize(
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
                     )?;
                 }
-                for (family, count) in census.tombstone_counts(ctx)? {
+                for (&family, &count) in ctx.admit_iter(&census.tombstone_counts(ctx)?, "NX summary tombstone counts")? {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
@@ -363,7 +363,7 @@ fn insert_summary_attribute(
     ctx.try_reserve_retained_text(&mut key, key_len, "nx summary attribute text")?;
     ctx.append_retained(&mut key, prefix, "NX admitted text append")?;
     if lowercase_suffix {
-        for character in suffix.chars() {
+        for character in ctx.admit_iter(suffix, "NX summary attribute suffix traversal")? {
             key.push(character.to_ascii_lowercase());
         }
     } else {

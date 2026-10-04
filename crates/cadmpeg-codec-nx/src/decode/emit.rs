@@ -112,6 +112,7 @@ pub(super) fn emit_topology(
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut valid_face_xmts = BTreeSet::new();
     for shell in graph.body_shape_shells(ctx)? {
+        let shell = shell?;
         if let Some(faces) = graph.shell_face_xmts(ctx, shell)? {
             for face in faces {
                 ctx.insert_btree_set(&mut valid_face_xmts, face, "nx valid topology faces")?;
@@ -189,6 +190,7 @@ pub(super) fn emit_topology(
     }
     let mut body_xmts = BTreeSet::new();
     for shell in graph.body_shape_shells(ctx)? {
+        let shell = shell?;
         if let Some(body) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
@@ -203,10 +205,11 @@ pub(super) fn emit_topology(
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(ctx, annotations, id.as_str(), source_stream, node, "BODY")?;
         } else if let Some(shell) = graph.body_shape_shells(ctx)?.find(|shell| {
+            let shell = match shell { Ok(shell) => shell, Err(_) => return true };
             shell
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
-        }) {
+        }).transpose()? {
             annotations.note(
                 ctx,
                 id.as_str(),
@@ -237,6 +240,7 @@ pub(super) fn emit_topology(
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
     let mut shells: BTreeMap<u32, ShellId> = BTreeMap::new();
     for node in graph.body_shape_shells(ctx)? {
+        let node = node?;
         let Some(fields) = node.shell_fields() else {
             continue;
         };
@@ -318,7 +322,7 @@ pub(super) fn emit_topology(
         )?;
         let mut shell_faces = Vec::new();
         for face in graph
-            .of_kind(NodeKind::Face)
+            .of_kind(ctx, NodeKind::Face)?
             .filter(|face| valid_face_xmts.contains(&face.xmt()))
         {
             let Some(face_fields) = face.face_fields() else {
@@ -378,7 +382,7 @@ pub(super) fn emit_topology(
     let mut vertices: BTreeMap<u32, VertexId> = BTreeMap::new();
     let mut vertex_positions: BTreeMap<VertexId, (Point3, Option<f64>)> = BTreeMap::new();
     for node in graph
-        .of_kind(NodeKind::Vertex)
+        .of_kind(ctx, NodeKind::Vertex)?
         .filter(|node| valid_vertex_xmts.contains(&node.xmt()))
     {
         let Some(fields) = node.vertex_fields() else {
@@ -468,7 +472,7 @@ pub(super) fn emit_topology(
     let mut curve_point_cache = CurvePointCache::default();
     let mut edges: BTreeMap<u32, EdgeId> = BTreeMap::new();
     for node in graph
-        .of_kind(NodeKind::Edge)
+        .of_kind(ctx, NodeKind::Edge)?
         .filter(|node| valid_edge_xmts.contains(&node.xmt()))
     {
         let Some(fields) = node.edge_fields() else {
@@ -734,7 +738,7 @@ pub(super) fn emit_topology(
     let mut faces: BTreeMap<u32, FaceId> = BTreeMap::new();
     let mut pending_faces: Vec<PendingFace> = Vec::new();
     for node in graph
-        .of_kind(NodeKind::Face)
+        .of_kind(ctx, NodeKind::Face)?
         .filter(|node| valid_face_xmts.contains(&node.xmt()))
     {
         let Some(fields) = node.face_fields() else {
@@ -1364,7 +1368,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         &cadmpeg_ir::identity_component!("parasolid"),
         stream_index,
     )?;
-    for face in graph.of_kind(NodeKind::Face) {
+    for face in graph.of_kind(ctx, NodeKind::Face)? {
         let Some(surface_xmt) = face
             .face_fields()
             .and_then(|fields| fields.surface.map(u32::from))
@@ -1398,7 +1402,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         ctx.insert_btree_map(surfaces, surface_xmt, id, "nx unresolved surface index")?;
     }
 
-    for edge in graph.of_kind(NodeKind::Edge) {
+    for edge in graph.of_kind(ctx, NodeKind::Edge)? {
         let Some(curve_xmt) = edge
             .edge_fields()
             .and_then(|fields| fields.curve.map(u32::from))

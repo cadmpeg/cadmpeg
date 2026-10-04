@@ -5,13 +5,16 @@ use std::collections::BTreeMap;
 
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
+crate::test_support::with_decode_context(|ctx| {
     assert_eq!(
         crate::native::om::expression_parameter_names(
+            ctx,
             "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius + p4bad + p5_"
         )
-        .collect::<Vec<_>>(),
+        .collect::<Result<Vec<_>, _>>().unwrap(),
         vec!["p12", "p3", "p12", "p7_radius", "p7_radius"]
     );
+});
 }
 
 #[test]

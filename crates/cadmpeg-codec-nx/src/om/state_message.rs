@@ -106,14 +106,15 @@ pub(crate) struct OperationStateMessage<'a> {
 }
 
 impl<'a> OperationStateMessage<'a> {
-    pub(super) fn read(bytes: &'a [u8], at: usize, base: usize) -> Option<Self> {
+    pub(super) fn read(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &'a [u8], at: usize, base: usize) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        (|| {
         if bytes.get(at) != Some(&0x03) {
             return None;
         }
         let declared_length = *bytes.get(at.checked_add(1)?)?;
         let text_end = at.checked_add(usize::from(declared_length))?;
         let text = bytes.get(at.checked_add(2)?..text_end)?;
-        let text = StateMessageText::new(std::str::from_utf8(text).ok()?).ok()?;
+        let text = propagate_resource!(StateMessageText::from_wire(ctx, std::str::from_utf8(text).ok()?)).ok()?;
         let zeros_end = text_end.checked_add(5)?;
         if bytes.get(text_end..zeros_end) != Some(&[0, 0, 0, 0, 0]) {
             return None;
@@ -128,7 +129,8 @@ impl<'a> OperationStateMessage<'a> {
                 value,
                 count_or_severity,
             },
-        )
+        ).map(Ok)
+        })().transpose()
     }
     pub(super) fn new(offset: usize, body: StateMessage<&'a str>) -> Option<Self> {
         offset.checked_add(body.byte_len())?;
@@ -150,15 +152,26 @@ mod tests {
     use super::{OperationStateMessage, StateMessage};
 
     #[test]
+    fn state_message_text_iteration_refusal_propagates() {
+        let bytes = [3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0];
+        let error = crate::test_support::resource_refusal_at(
+            &bytes, cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX printable string syntax", |ctx| OperationStateMessage::read(ctx, &bytes, 0, 0),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "NX printable string syntax"));
+    }
+
+    #[test]
     fn source_extent_follows_text_and_each_tagged_width() {
         for token in [&[0xa0, 0, 0][..], &[0xc0, 0, 0, 0], &[0xe0, 0, 0, 0, 0]] {
             let mut bytes = vec![3, 3, b'A', 0, 0, 0, 0, 0];
             bytes.extend_from_slice(token);
             bytes.extend([0, 0]);
-            let row = OperationStateMessage::read(&bytes, 0, 100).unwrap();
+            let row = crate::test_support::with_decode_context(|ctx| OperationStateMessage::read(ctx, &bytes, 0, 100)).unwrap().unwrap();
             assert_eq!(row.end_offset(), 110 + token.len());
-            assert!(OperationStateMessage::read(&bytes, 0, usize::MAX - bytes.len()).is_some());
-            assert!(OperationStateMessage::read(&bytes, 0, usize::MAX - bytes.len() + 1).is_none());
+            assert!(crate::test_support::with_decode_context(|ctx| OperationStateMessage::read(ctx, &bytes, 0, usize::MAX - bytes.len())).unwrap().is_some());
+            assert!(crate::test_support::with_decode_context(|ctx| OperationStateMessage::read(ctx, &bytes, 0, usize::MAX - bytes.len() + 1)).unwrap().is_none());
         }
     }
 

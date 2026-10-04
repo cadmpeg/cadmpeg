@@ -4,6 +4,7 @@
 use super::{EntityRecord, FixedEntityRecord};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
+use std::num::NonZeroUsize;
 
 /// Source-affine positions where adjacent little-endian words decrease.
 #[derive(Debug)]
@@ -90,18 +91,16 @@ struct IndexRecords<'a> {
 }
 
 impl<'a> IndexRecords<'a> {
-    fn records(self) -> impl Iterator<Item = EntityRecord<'a>> {
-        let mut words = self.words;
+    fn records(self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = EntityRecord<'a>>, CodecError> {
+        let width = NonZeroUsize::new(4).ok_or_else(|| CodecError::Malformed("zero OM index word width".into()))?;
         let mut start = self.first;
-        std::iter::from_fn(move || {
-            let end = self.base + cadmpeg_core::decode::index_from_u32(words.u32_le()?);
-            let record = EntityRecord {
-                offset: start,
-                bytes: &self.source[start..end],
-            };
-            start = end;
-            Some(record)
-        })
+        Ok(ctx.admit_iter(self.words.unread(), "NX OM record bounds traversal")?
+            .chunks(width).map_while(move |word| {
+                let end = self.base + cadmpeg_core::decode::index_from_u32(View::u32_le_at(word, 0)?);
+                let record = EntityRecord { offset: start, bytes: &self.source[start..end] };
+                start = end;
+                Some(record)
+            }))
     }
 }
 
@@ -154,22 +153,16 @@ impl<'a> FixedIndex<'a> {
         self.object_id_table_offset
     }
 
-    pub(super) fn records(self) -> impl Iterator<Item = FixedEntityRecord<'a>> {
-        let mut ids = self.object_ids;
+    pub(super) fn records(self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = FixedEntityRecord<'a>>, CodecError> {
+        let width = NonZeroUsize::new(4).ok_or_else(|| CodecError::Malformed("zero OM identity word width".into()))?;
         let ids_start = self.object_id_table_offset + 8;
-        let ids = std::iter::from_fn(move || {
-            let offset = ids_start + ids.position();
-            ids.u32_le()
-                .map(|value| (value, cadmpeg_core::decode::u64_from_index(offset)))
-        });
-        self.records
-            .records()
-            .zip(ids)
-            .map(|(record, object_id)| FixedEntityRecord {
-                object_id,
-                offset: record.offset,
-                bytes: record.bytes,
-            })
+        let ids = ctx.admit_iter(self.object_ids.unread(), "NX OM object identity traversal")?
+            .chunks(width).enumerate().map_while(move |(ordinal, word)| {
+                View::u32_le_at(word, 0).map(|value| (value, cadmpeg_core::decode::u64_from_index(ids_start + ordinal * 4)))
+            });
+        Ok(self.records.records(ctx)?.zip(ids).map(|(record, object_id)| FixedEntityRecord {
+            object_id, offset: record.offset, bytes: record.bytes,
+        }))
     }
 }
 
@@ -220,8 +213,8 @@ impl<'a> OffsetIndex<'a> {
     pub(super) fn column_storage(&self) -> &'a [u8] {
         &self.records.source[self.records.first..]
     }
-    pub(super) fn records(&self) -> impl Iterator<Item = EntityRecord<'a>> {
-        self.records.records()
+    pub(super) fn records(&self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = EntityRecord<'a>>, CodecError> {
+        self.records.records(ctx)
     }
 }
 
@@ -240,7 +233,7 @@ mod tests {
             bytes.extend_from_slice(&[0xaa, 0xbb]);
             let edges = DescendingU32Edges::new(ctx, &mut reservation, &bytes).unwrap();
             let index = FixedIndex::new(&edges, 0, 3, 0, 16).unwrap();
-            let records = index.records().collect::<Vec<_>>();
+            let records = index.records(ctx).unwrap().collect::<Vec<_>>();
             assert_eq!(records.len(), 2);
             assert_eq!(records[0].object_id, (7, 24));
             assert_eq!(records[0].bytes, &[0xaa, 0xbb]);
@@ -266,7 +259,7 @@ mod tests {
             assert_eq!(index.control().offset, 20);
             assert_eq!(index.control().bytes, &[1, 2]);
             assert_eq!(index.column_storage(), &[3, 4]);
-            let records = index.records().collect::<Vec<_>>();
+            let records = index.records(ctx).unwrap().collect::<Vec<_>>();
             assert_eq!(records.len(), 2);
             assert_eq!(records[0].bytes, &[3, 4]);
             assert!(records[1].bytes.is_empty());

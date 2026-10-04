@@ -235,7 +235,7 @@ pub(crate) fn sketch_pairs(
     bytes: &[u8],
 ) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
     let mut pairs = Vec::new();
-    for pair in object_pairs(ctx, bytes)? {
+    for pair in ctx.admit_iter(&object_pairs(ctx, bytes)?, "NX sketch object pair projection")? {
         ctx.push_vec(
             &mut pairs,
             Binary64Pair {
