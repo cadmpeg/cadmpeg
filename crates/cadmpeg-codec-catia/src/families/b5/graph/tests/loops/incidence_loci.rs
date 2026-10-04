@@ -14,9 +14,18 @@ use super::{
 fn canonical_point_uses_the_on_carrier_tolerance() {
     let points = [[0.0, 0.0, 0.0]].map(crate::test_support::test_b5::point);
     let index = point_index(&points);
-    assert_eq!(canonical_point(&points, &index, [1e-3, 0.0, 0.0]), Some(0));
     assert_eq!(
-        canonical_point(&points, &index, [1.0001e-3, 0.0, 0.0]),
+        crate::test_support::with_service_context(|ctx| {
+            canonical_point(ctx, &points, &index, [1e-3, 0.0, 0.0])
+        })
+        .expect("service budget"),
+        Some(0)
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            canonical_point(ctx, &points, &index, [1.0001e-3, 0.0, 0.0])
+        })
+        .expect("service budget"),
         None
     );
 }

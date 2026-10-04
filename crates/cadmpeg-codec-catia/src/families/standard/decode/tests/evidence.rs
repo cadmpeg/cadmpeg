@@ -114,7 +114,7 @@ fn standard_population_object_copy_refuses_retained_limit() {
         let refusal = crate::test_support::with_retained_limit(cap, |ctx| {
             standard_object_evidence_from_streams(
                 ctx,
-                [stream.clone()],
+                std::slice::from_ref(&stream),
                 &HashSet::new(),
                 &HashSet::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -146,7 +146,7 @@ fn standard_object_record_scan_refuses_caller_collection_limit() {
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream],
+            &[stream],
             &HashSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -206,13 +206,17 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
     ];
     let mut allowed_faces = vec![vec![1, 2]];
 
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut allowed_faces,
-        Some(&face_bounds),
-        None,
-        &[],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut allowed_faces,
+            Some(&face_bounds),
+            None,
+            &[],
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(allowed_faces, vec![vec![1]]);
 
     let face_bounds = [
@@ -221,13 +225,17 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
         Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
     ];
     let mut tied = vec![vec![1, 2]];
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut tied,
-        Some(&face_bounds),
-        None,
-        &[],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut tied,
+            Some(&face_bounds),
+            None,
+            &[],
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(tied, vec![vec![1, 2]]);
 
     let face_bounds = [
@@ -236,13 +244,17 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
         None,
     ];
     let mut incomplete = vec![vec![1, 2]];
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut incomplete,
-        Some(&face_bounds),
-        None,
-        &[],
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut incomplete,
+            Some(&face_bounds),
+            None,
+            &[],
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(incomplete, vec![vec![1, 2]]);
 }
 
@@ -278,13 +290,17 @@ fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
     let edge_geometries = [super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0)];
     let mut allowed_faces = vec![vec![1, 2]];
 
-    refine_repeated_face_domains_by_geometry_and_bounds(
-        &edge_faces,
-        &mut allowed_faces,
-        Some(&face_bounds),
-        Some(&face_geometries.iter().collect::<Vec<_>>()),
-        &edge_geometries.iter().collect::<Vec<_>>(),
-    );
+    crate::test_support::with_service_context(|ctx| {
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            ctx,
+            &edge_faces,
+            &mut allowed_faces,
+            Some(&face_bounds),
+            Some(&face_geometries.iter().collect::<Vec<_>>()),
+            &edge_geometries.iter().collect::<Vec<_>>(),
+        )
+    })
+    .expect("service resource budget");
     assert_eq!(allowed_faces, vec![vec![1]]);
 }
 
@@ -333,7 +349,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream.clone(), stream.clone()],
+            &[stream.clone(), stream.clone()],
             &HashSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -354,7 +370,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream, conflicting],
+            &[stream, conflicting],
             &HashSet::from([10]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -476,7 +492,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_object_evidence_from_streams(
             ctx,
-            [stream],
+            &[stream],
             &HashSet::from([120]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
@@ -691,24 +707,30 @@ fn non_collinear_circle_endpoints_determine_the_carrier_plane() {
 #[test]
 fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
     let tau = std::f64::consts::TAU;
-    assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
-        [0.0, 1.0],
-        [1.0, 3.0],
-        [3.0, tau],
-    ]));
-    assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
-        [0.0, std::f64::consts::PI],
-        [0.0, std::f64::consts::PI],
-        [std::f64::consts::PI, tau],
-    ]));
-    assert!(!circular_ranges_are_nonoverlapping_or_coincident(&[
-        [0.0, 4.0],
-        [2.0, 5.0],
-    ]));
-    assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
-        [5.0, 7.0],
-        [7.0 - tau, 5.0],
-    ]));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[
+            [0.0, 1.0],
+            [1.0, 3.0],
+            [3.0, tau],
+        ])
+    })
+    .expect("service resource budget"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[
+            [0.0, std::f64::consts::PI],
+            [0.0, std::f64::consts::PI],
+            [std::f64::consts::PI, tau],
+        ])
+    })
+    .expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[[0.0, 4.0], [2.0, 5.0]])
+    })
+    .expect("service resource budget"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_ranges_are_nonoverlapping_or_coincident(ctx, &[[5.0, 7.0], [7.0 - tau, 5.0]])
+    })
+    .expect("service resource budget"));
 }
 
 #[test]
@@ -729,15 +751,24 @@ fn circular_face_interval_choices_select_disjoint_arc_branches() {
         vec![[0.0, 3.0], [3.0, tau]],
     ];
 
-    assert!(circular_range_choices_have_simple_selection(&simple));
-    assert!(!circular_range_choices_have_simple_selection(&crossing));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &simple)
+    })
+    .expect("service resource budget"));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &crossing)
+    })
+    .expect("service resource budget"));
 }
 
 #[test]
 fn circular_face_interval_budget_cannot_admit_an_unproved_selection() {
     let mut choices = vec![vec![[0.0, 1.0], [2.0, 3.0]]; 12];
     choices.push(vec![[0.5, 2.5]]);
-    assert!(!circular_range_choices_have_simple_selection(&choices));
+    assert!(!crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &choices)
+    })
+    .expect("service resource budget"));
 }
 
 #[test]

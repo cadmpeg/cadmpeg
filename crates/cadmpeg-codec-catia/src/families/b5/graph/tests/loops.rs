@@ -82,8 +82,17 @@ fn pcurve_knot_expansion_and_evaluation_refuse_the_caller_limit() {
         if error.operation == "catia_b5_expanded_pcurve_knots")
     );
     assert_eq!(evaluate_pcurve(&pcurve, 0.5), Some([0.5, 0.0]));
+    let domain_limited = crate::test_support::with_work_limit(0, |ctx| {
+        pcurve_parameter_domain(ctx, &pcurve)
+    });
+    assert!(matches!(
+        domain_limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_b5_pcurve_domain_knot_count"
+    ));
     assert_eq!(
-        pcurve_parameter_domain(&pcurve),
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service budget"),
         Some([
             crate::test_support::test_b5::finite(0.0),
             crate::test_support::test_b5::finite(1.0),
@@ -524,15 +533,36 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
         },
     )]);
 
-    assert!(parse_loop(
-        &loop_,
-        &records,
-        &pcurves,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &surfaces,
-    )
-    .is_none());
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        parse_loop(
+            ctx,
+            &loop_,
+            &records,
+            &pcurves,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &surfaces,
+        )
+    })
+    .expect("service budget");
+    assert!(parsed.is_none());
+
+    let limited = crate::test_support::with_work_limit(0, |ctx| {
+        parse_loop(
+            ctx,
+            &loop_,
+            &records,
+            &pcurves,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &surfaces,
+        )
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_b5_parse_loop_member_scan"
+    ));
 }
 
 #[test]
@@ -758,6 +788,78 @@ fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
 }
 
 #[test]
+fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(
+            1,
+            [0.0, 0.0],
+            [1.0, 0.0],
+        ),
+    };
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::parse_pcurve(ctx, &record)
+    })
+    .expect("service pcurve budget");
+    let pcurve = service.expect("service fixture produces a pcurve");
+    assert_eq!(pcurve.multiplicities, [2, 2]);
+
+    let refused = crate::test_support::with_work_refusal(
+        "catia_b5_class21_multiplicities",
+        |ctx| {
+            let result = super::super::parse_pcurve(ctx, &record);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "catia_b5_class21_multiplicities"
+    ));
+}
+
+#[test]
+fn class21_pcurve_fixed_byte_lanes_refuse_work_before_scan() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(
+            1,
+            [0.0, 0.0],
+            [1.0, 0.0],
+        ),
+    };
+
+    let limited = crate::test_support::with_work_limit(0, |ctx| {
+        super::super::parse_pcurve(ctx, &record)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_b5_class21_knot_scalar_bytes"
+    ));
+
+    // Sixteen knot bytes, two order visits and three multiplicity source steps cost 21 units.
+    let limited = crate::test_support::with_work_limit(21, |ctx| {
+        super::super::parse_pcurve(ctx, &record)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_b5_class21_control_point_bytes"
+    ));
+}
+
+#[test]
 fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
     let parse_pcurve = |record: &B5Record| {
         crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
@@ -793,7 +895,8 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
         Some(crate::test_support::test_b5::positive(10.0))
     );
     assert_eq!(
-        pcurve_parameter_domain(&pcurve),
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service budget"),
         Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
     );
     assert_eq!(
@@ -938,12 +1041,26 @@ fn canonical_surface_identity_follows_unbounded_aliases_and_rejects_cycles() {
         .map(|object_id| (object_id, object_id + 1))
         .chain([(40, 41), (41, 40)])
         .collect();
+    let identities = crate::test_support::with_service_context(|ctx| {
+        Ok::<_, cadmpeg_core::CodecError>([
+            canonical_surface_id(ctx, &aliases, 1)?,
+            canonical_surface_id(ctx, &aliases, 29)?,
+            canonical_surface_id(ctx, &aliases, 30)?,
+            canonical_surface_id(ctx, &aliases, 40)?,
+            canonical_surface_id(ctx, &aliases, 41)?,
+        ])
+    })
+    .expect("service alias traversal budget");
 
-    assert_eq!(canonical_surface_id(&aliases, 1), Some(30));
-    assert_eq!(canonical_surface_id(&aliases, 29), Some(30));
-    assert_eq!(canonical_surface_id(&aliases, 30), Some(30));
-    assert_eq!(canonical_surface_id(&aliases, 40), None);
-    assert_eq!(canonical_surface_id(&aliases, 41), None);
+    assert_eq!(identities, [Some(30), Some(30), Some(30), None, None]);
+    let limited = crate::test_support::with_work_limit(0, |ctx| {
+        canonical_surface_id(ctx, &aliases, 1)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_b5_surface_alias_traversal"
+    ));
 }
 
 #[test]

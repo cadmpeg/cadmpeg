@@ -100,7 +100,7 @@ pub(in crate::families) fn try_decode_e5(
             ($value:expr) => {
                 match $value {
                     Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
+                    Err(error) => return Some(Err(error.into())),
                 }
             };
         }
@@ -116,7 +116,7 @@ pub(in crate::families) fn try_decode_e5(
                 Err(error) => return Some(Err(error)),
             };
             let mut vertices = HashSet::new();
-            for edge in edges {
+            for edge in admitted!(ctx.admit_iter(&edges, "catia_e5_edge_vertex_scan")) {
                 for vertex in [edge.start_vertex_id, edge.end_vertex_id] {
                     if let Err(error) = ctx.insert_hash_set(&mut vertices, vertex, "catia_e5_edge_vertex_ids") {
                         return Some(Err(error));
@@ -137,7 +137,7 @@ pub(in crate::families) fn try_decode_e5(
                     Some(topology) => match derive_e5_vertices(ctx, topology, &surfaces, refusal) {
                         Ok(Some(derived)) => {
                             let mut points = Vec::new();
-                            for point in derived {
+                            for point in admitted!(ctx.admit_iter(&derived, "catia_e5_derived_vertex_scan")).copied() {
                                 // A derived vertex that is not finite states no point,
                                 // so the decode refuses it where the vertex list is admitted.
                                 let point = FinitePoint3::new(point)?;
@@ -180,7 +180,7 @@ pub(in crate::families) fn try_decode_e5(
             Ok(index) => index,
             Err(error) => return Some(Err(error)),
         };
-        for (index, point) in points.iter().enumerate() {
+        for (index, point) in admitted!(ctx.admit_iter(&points, "catia_e5_emitted_point_scan")).enumerate() {
             let point_id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index,
                 PointId::mint, "catia_e5_point_id"));
@@ -219,7 +219,7 @@ pub(in crate::families) fn try_decode_e5(
                 tolerance: None,
             });
         }
-        for (index, circle) in circles.iter().enumerate() {
+        for (index, circle) in admitted!(ctx.admit_iter(&circles, "catia_e5_emitted_circle_scan")).enumerate() {
             let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
                 index, CurveId::mint, "catia_e5_curve_id"));
@@ -240,7 +240,7 @@ pub(in crate::families) fn try_decode_e5(
                 source_object: None,
             });
         }
-        for (index, surface) in surfaces.iter().enumerate() {
+        for (index, surface) in admitted!(ctx.admit_iter(&surfaces, "catia_e5_emitted_surface_scan")).enumerate() {
             let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
                 index, SurfaceId::mint, "catia_e5_surface_id"));
@@ -268,7 +268,7 @@ pub(in crate::families) fn try_decode_e5(
                 source_object: None,
             });
         }
-        for (index, jet) in rolling_ball_jets.iter().enumerate() {
+        for (index, jet) in admitted!(ctx.admit_iter(&rolling_ball_jets, "catia_e5_emitted_rolling_ball_jet_scan")).enumerate() {
             let surface_index = surfaces.len() + index;
             let surface_id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
@@ -326,7 +326,7 @@ pub(in crate::families) fn try_decode_e5(
         let mut unused_surfaces = Vec::new();
         let topology_transferred = if let Some(topology) = topology.as_ref() {
             original_curves = std::mem::take(&mut topology_ir.model.curves);
-            for curve in &original_curves {
+            for curve in admitted!(ctx.admit_iter(&original_curves, "catia_e5_original_curve_scan")) {
                 admitted!(topology_annotations.remove_entity(ctx, curve.id.as_str()));
             }
             let transferred = match transfer_e5_topology(ctx,
@@ -444,7 +444,7 @@ fn derive_e5_vertices(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
     let mut surface_for_ref = HashMap::new();
-    for surface in surfaces {
+    for surface in ctx.admit_iter(surfaces, "catia_e5_derived_surface_scan")? {
         ctx.insert_hash_map(
             &mut surface_for_ref,
             surface.record_id,
@@ -453,9 +453,9 @@ fn derive_e5_vertices(
         )?;
     }
     let mut candidates = HashMap::<u32, Vec<Point3>>::new();
-    for face in &topology.faces {
-        for loop_ in &face.loops {
-            for member in &loop_.members {
+    for face in ctx.admit_iter(&topology.faces, "catia_e5_derived_face_scan")? {
+        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_derived_loop_scan")? {
+            for member in ctx.admit_iter(&loop_.members, "catia_e5_derived_member_scan")? {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
                 let Some(edge) = topology.edges.get(&edge_ref) else {
@@ -507,15 +507,15 @@ fn derive_e5_vertices(
         }
     }
     let mut points = Vec::new();
-    for vertex in &topology.vertex_refs {
+    for vertex in ctx.admit_iter(&topology.vertex_refs, "catia_e5_derived_vertex_ref_scan")? {
         let Some(values) = candidates.get(vertex) else {
             return Ok(None);
         };
         let Some(point) = values.first().copied() else {
             return Ok(None);
         };
-        if values
-            .iter()
+        if ctx
+            .admit_iter(values, "catia_e5_derived_candidate_agreement_scan")?
             .any(|candidate| candidate.distance(point) > E5_ENDPOINT_MATCH_TOLERANCE)
         {
             return Ok(None);
@@ -533,7 +533,7 @@ fn append_e5_planes(
     surfaces: &mut Vec<crate::families::e5::records::E5Surface>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut carrier_axes = HashMap::new();
-    for surface in surfaces.iter() {
+    for surface in ctx.admit_iter(&*surfaces, "catia_e5_carrier_surface_scan")? {
         let (axis,) = match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let axis = *cylinder_surface.frame().axis().as_raw();
@@ -558,16 +558,16 @@ fn append_e5_planes(
             "catia_e5_carrier_axes",
         )?;
     }
-    for plane in crate::families::e5::records::e5_planes(ctx, stream)? {
+    let planes = crate::families::e5::records::e5_planes(ctx, stream)?;
+    for plane in ctx.admit_iter(&planes, "catia_e5_plane_record_scan")? {
         let mut normal: Option<Vector3> = None;
         let mut consistent = true;
-        for face in topology
-            .faces
-            .iter()
+        for face in ctx
+            .admit_iter(&topology.faces, "catia_e5_plane_face_scan")?
             .filter(|face| face.surface == plane.record_id)
         {
-            for loop_ in &face.loops {
-                for member in &loop_.members {
+            for loop_ in ctx.admit_iter(&face.loops, "catia_e5_plane_loop_scan")? {
+                for member in ctx.admit_iter(&loop_.members, "catia_e5_plane_member_scan")? {
                     let Some(edge) = topology.edges.get(&member.edge_use) else {
                         consistent = false;
                         continue;
@@ -576,7 +576,7 @@ fn append_e5_planes(
                         consistent = false;
                         continue;
                     };
-                    for pcurve_ref in support.pcurves() {
+                    for pcurve_ref in ctx.admit_iter(support.pcurves(), "catia_e5_plane_support_pcurve_scan")? {
                         let Some(crate::families::e5::graph::E5Pcurve::Line {
                             surface,
                             direction,
@@ -669,11 +669,10 @@ fn solve_e5_plane_frame(
         return Ok(None);
     }
     let mut point_by_ref = HashMap::new();
-    for (reference, point) in topology
-        .vertex_refs
-        .iter()
+    for (reference, point) in ctx
+        .admit_iter(&topology.vertex_refs, "catia_e5_plane_vertex_ref_scan")?
         .copied()
-        .zip(points.iter().copied())
+        .zip(ctx.admit_iter(points, "catia_e5_plane_point_scan")?.copied())
     {
         ctx.insert_hash_map(
             &mut point_by_ref,
@@ -683,13 +682,12 @@ fn solve_e5_plane_frame(
         )?;
     }
     let mut segments = Vec::new();
-    for face in topology
-        .faces
-        .iter()
+    for face in ctx
+        .admit_iter(&topology.faces, "catia_e5_plane_face_scan")?
         .filter(|face| face.surface == surface_ref)
     {
-        for loop_ in &face.loops {
-            for member in &loop_.members {
+        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_plane_loop_scan")? {
+            for member in ctx.admit_iter(&loop_.members, "catia_e5_plane_member_scan")? {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
                 let Some(edge) = topology.edges.get(&edge_ref) else {
@@ -721,7 +719,7 @@ fn solve_e5_plane_frame(
 
     let anchors = 'find_anchors: {
         let mut basis = None;
-        for (index, (uv, _)) in segments.iter().enumerate() {
+        for (index, (uv, _)) in ctx.admit_iter(&segments, "catia_e5_plane_anchor_segment_scan")?.enumerate() {
             for endpoint in uv {
                 if let Some((basis_index, basis_uv)) = basis {
                     if e5_uv_vectors_are_independent(basis_uv, *endpoint) {
@@ -747,8 +745,9 @@ fn solve_e5_plane_frame(
     };
     let endpoint_error = |axes: (Vector3, Vector3),
                           segment: &([FiniteVector<2>; 2], [FinitePoint3; 2]),
-                          reversed: bool| {
+                          reversed: bool| -> Result<f64, cadmpeg_core::CodecError> {
         plane_frame_residual(
+            ctx,
             origin.get().into(),
             &endpoint_pairs(segment, reversed),
             axes.0,
@@ -762,7 +761,7 @@ fn solve_e5_plane_frame(
         for mask in 0usize..(1usize << anchors.len()) {
             let mut orientations =
                 ctx.alloc_filled(segments.len(), false, "catia_e5_plane_orientations")?;
-            for (bit, &index) in anchors.iter().enumerate() {
+            for (bit, &index) in ctx.admit_iter(anchors, "catia_e5_plane_anchor_index_scan")?.enumerate() {
                 orientations[index] = mask & (1 << bit) != 0;
             }
             let mut seed_pairs = Vec::new();
@@ -770,28 +769,28 @@ fn solve_e5_plane_frame(
                 return Ok(None);
             };
             ctx.reserve_vec(&mut seed_pairs, seed_count, "catia_e5_plane_seed_pairs")?;
-            for &index in anchors {
+            for &index in ctx.admit_iter(anchors, "catia_e5_plane_anchor_pair_scan")? {
                 seed_pairs.extend(endpoint_pairs(&segments[index], orientations[index]));
             }
-            let Some((seed_u, seed_v, _)) = fit_e5_plane_axes(origin, &seed_pairs) else {
+            let Some((seed_u, seed_v, _)) = fit_e5_plane_axes(ctx, origin, &seed_pairs)? else {
                 continue;
             };
-            for (index, segment) in segments.iter().enumerate() {
+            for (index, segment) in ctx.admit_iter(&segments, "catia_e5_plane_orientation_segment_scan")?.enumerate() {
                 if anchors.contains(&index) {
                     continue;
                 }
-                orientations[index] = endpoint_error((seed_u, seed_v), segment, true)
-                    < endpoint_error((seed_u, seed_v), segment, false);
+                orientations[index] = endpoint_error((seed_u, seed_v), segment, true)?
+                    < endpoint_error((seed_u, seed_v), segment, false)?;
             }
             let mut pairs = Vec::new();
             let Some(pair_count) = segments.len().checked_mul(2) else {
                 return Ok(None);
             };
             ctx.reserve_vec(&mut pairs, pair_count, "catia_e5_plane_pairs")?;
-            for (segment, &reversed) in segments.iter().zip(&orientations) {
+            for (segment, &reversed) in ctx.admit_iter(&segments, "catia_e5_plane_pair_segment_scan")?.zip(ctx.admit_iter(&orientations, "catia_e5_plane_orientation_scan")?) {
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
-            if let Some(fit) = fit_e5_plane_axes(origin, &pairs) {
+            if let Some(fit) = fit_e5_plane_axes(ctx, origin, &pairs)? {
                 ctx.push_vec(&mut fitted_axes, (fit, pairs), "catia_e5_plane_fits")?;
             }
         }
@@ -799,7 +798,7 @@ fn solve_e5_plane_frame(
         let Some(normal) = expected_normal else {
             return Ok(None);
         };
-        let Some(seed_index) = segments.iter().enumerate().find_map(|(index, (uv, _))| {
+        let Some(seed_index) = ctx.admit_iter(&segments, "catia_e5_plane_rank_one_seed_scan")?.enumerate().find_map(|(index, (uv, _))| {
             uv.iter()
                 .any(|point| point[0] != 0.0 || point[1] != 0.0)
                 .then_some(index)
@@ -808,46 +807,47 @@ fn solve_e5_plane_frame(
         };
         for seed_reversed in [false, true] {
             let seed_pairs = endpoint_pairs(&segments[seed_index], seed_reversed);
-            let Some((seed_u, seed_v, _)) = fit_rank_one_e5_plane_axes(origin, &seed_pairs, normal)
+            let Some((seed_u, seed_v, _)) =
+                fit_rank_one_e5_plane_axes(ctx, origin, &seed_pairs, normal)?
             else {
                 continue;
             };
             let mut orientations =
                 ctx.alloc_filled(segments.len(), false, "catia_e5_plane_orientations")?;
             orientations[seed_index] = seed_reversed;
-            for (index, segment) in segments.iter().enumerate() {
+            for (index, segment) in ctx.admit_iter(&segments, "catia_e5_plane_orientation_segment_scan")?.enumerate() {
                 if index == seed_index {
                     continue;
                 }
-                orientations[index] = endpoint_error((seed_u, seed_v), segment, true)
-                    < endpoint_error((seed_u, seed_v), segment, false);
+                orientations[index] = endpoint_error((seed_u, seed_v), segment, true)?
+                    < endpoint_error((seed_u, seed_v), segment, false)?;
             }
             let mut pairs = Vec::new();
             let Some(pair_count) = segments.len().checked_mul(2) else {
                 return Ok(None);
             };
             ctx.reserve_vec(&mut pairs, pair_count, "catia_e5_plane_pairs")?;
-            for (segment, &reversed) in segments.iter().zip(&orientations) {
+            for (segment, &reversed) in ctx.admit_iter(&segments, "catia_e5_plane_pair_segment_scan")?.zip(ctx.admit_iter(&orientations, "catia_e5_plane_orientation_scan")?) {
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
-            if let Some(fit) = fit_rank_one_e5_plane_axes(origin, &pairs, normal) {
+            if let Some(fit) = fit_rank_one_e5_plane_axes(ctx, origin, &pairs, normal)? {
                 ctx.push_vec(&mut fitted_axes, (fit, pairs), "catia_e5_plane_fits")?;
             }
         }
     }
 
     let mut candidates: Vec<(UnitVector3, UnitVector3)> = Vec::new();
-    for ((u_axis, v_axis, residual), pairs) in fitted_axes {
-        let Some(u_axis) = unit_vector(u_axis) else {
+    for ((u_axis, v_axis, residual), pairs) in ctx.admit_iter(&fitted_axes, "catia_e5_plane_fit_scan")? {
+        let Some(u_axis) = unit_vector(*u_axis) else {
             continue;
         };
-        let Some(v_axis) = unit_vector(v_axis) else {
+        let Some(v_axis) = unit_vector(*v_axis) else {
             continue;
         };
         let orthogonality = u_axis.as_raw().dot(*v_axis.as_raw());
         if !residual.is_finite()
             || !orthogonality.is_finite()
-            || residual > 2e-3
+            || *residual > 2e-3
             || orthogonality.abs() > EPS_E5_DECODE_COARSE_GEOMETRY
         {
             continue;
@@ -863,11 +863,12 @@ fn solve_e5_plane_frame(
         // The returned chart uses unit axes and derives v from normal x u.
         // Validate that chart, not the unrestricted least-squares fit.
         let residual = plane_frame_residual(
+            ctx,
             origin.get().into(),
-            &pairs,
+            pairs,
             *u_axis.as_raw(),
             normal.as_raw().cross(*u_axis.as_raw()),
-        );
+        )?;
         if !residual.is_finite() || residual > E5_ENDPOINT_MATCH_TOLERANCE {
             continue;
         }
@@ -877,7 +878,7 @@ fn solve_e5_plane_frame(
         }) {
             continue;
         }
-        if !candidates.iter().any(|(existing_normal, existing_u)| {
+        if !ctx.admit_iter(&candidates, "catia_e5_plane_candidate_duplicate_scan")?.any(|(existing_normal, existing_u)| {
             existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
                 && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
         }) {
@@ -889,7 +890,7 @@ fn solve_e5_plane_frame(
         }
     }
     let mut canonical: Vec<(UnitVector3, UnitVector3, [FiniteReal; 2])> = Vec::new();
-    for (normal, mut u_axis) in candidates {
+    for (normal, mut u_axis) in ctx.admit_iter(&candidates, "catia_e5_plane_candidate_canonical_scan")?.copied() {
         let Some(first) = [u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z]
             .into_iter()
             .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)
@@ -1004,32 +1005,32 @@ fn e5_native_uv_endpoints(
 }
 
 fn fit_e5_plane_axes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     origin: FinitePoint3,
     pairs: &[(FiniteVector<2>, FinitePoint3)],
-) -> Option<(Vector3, Vector3, f64)> {
+) -> Result<Option<(Vector3, Vector3, f64)>, cadmpeg_core::CodecError> {
     let origin: [f64; 3] = origin.get().into();
-    let uv_scale = pairs
-        .iter()
-        .flat_map(|(uv, _)| uv.iter())
-        .map(|value| value.abs())
+    let uv_scale = ctx
+        .admit_iter(pairs, "catia_e5_plane_uv_scale_scan")?
+        .map(|(uv, _)| uv[0].abs().max(uv[1].abs()))
         .fold(0.0_f64, f64::max);
     if !uv_scale.is_finite() || uv_scale == 0.0 {
-        return None;
+        return Ok(None);
     }
     let normalized_uv = |uv: FiniteVector<2>| [uv[0] / uv_scale, uv[1] / uv_scale];
-    let suu = pairs
-        .iter()
+    let suu = ctx
+        .admit_iter(pairs, "catia_e5_plane_uu_covariance_scan")?
         .map(|(uv, _)| normalized_uv(*uv)[0].powi(2))
         .sum::<f64>();
-    let suv = pairs
-        .iter()
+    let suv = ctx
+        .admit_iter(pairs, "catia_e5_plane_uv_covariance_scan")?
         .map(|(uv, _)| {
             let uv = normalized_uv(*uv);
             uv[0] * uv[1]
         })
         .sum::<f64>();
-    let svv = pairs
-        .iter()
+    let svv = ctx
+        .admit_iter(pairs, "catia_e5_plane_vv_covariance_scan")?
         .map(|(uv, _)| normalized_uv(*uv)[1].powi(2))
         .sum::<f64>();
     let determinant = suu * svv - suv * suv;
@@ -1040,19 +1041,19 @@ fn fit_e5_plane_axes(
         || covariance_scale == 0.0
         || determinant <= rank_tolerance
     {
-        return None;
+        return Ok(None);
     }
     let mut u = [0.0; 3];
     let mut v = [0.0; 3];
     for axis in 0..3 {
-        let bu = pairs
-            .iter()
+        let bu = ctx
+            .admit_iter(pairs, "catia_e5_plane_u_regression_scan")?
             .map(|(uv, point)| {
                 normalized_uv(*uv)[0] * ([point.x, point.y, point.z][axis] - origin[axis])
             })
             .sum::<f64>();
-        let bv = pairs
-            .iter()
+        let bv = ctx
+            .admit_iter(pairs, "catia_e5_plane_v_regression_scan")?
             .map(|(uv, point)| {
                 normalized_uv(*uv)[1] * ([point.x, point.y, point.z][axis] - origin[axis])
             })
@@ -1061,24 +1062,27 @@ fn fit_e5_plane_axes(
         v[axis] = (suu * bv - suv * bu) / determinant / uv_scale;
     }
     if u.into_iter().chain(v).any(|value| !value.is_finite()) {
-        return None;
+        return Ok(None);
     }
     let u_axis = Vector3::from(u);
     let v_axis = Vector3::from(v);
-    let residual = plane_frame_residual(origin, pairs, u_axis, v_axis);
-    residual.is_finite().then_some((u_axis, v_axis, residual))
+    let residual = plane_frame_residual(ctx, origin, pairs, u_axis, v_axis)?;
+    Ok(residual.is_finite().then_some((u_axis, v_axis, residual)))
 }
 
 fn fit_rank_one_e5_plane_axes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     origin: FinitePoint3,
     pairs: &[(FiniteVector<2>, FinitePoint3)],
     normal: Vector3,
-) -> Option<(Vector3, Vector3, f64)> {
+) -> Result<Option<(Vector3, Vector3, f64)>, cadmpeg_core::CodecError> {
     let origin: [f64; 3] = origin.get().into();
-    let (uv, point) = pairs.iter().find(|(uv, _)| {
+    let Some((uv, point)) = ctx.admit_iter(pairs, "catia_e5_rank_one_seed_scan")?.find(|(uv, _)| {
         let norm = uv[0].hypot(uv[1]);
         norm.is_finite() && norm != 0.0
-    })?;
+    }) else {
+        return Ok(None);
+    };
     let uv_norm = uv[0].hypot(uv[1]);
     let q = [uv[0] / uv_norm, uv[1] / uv_norm];
     let displacement = Vector3::new(
@@ -1088,15 +1092,19 @@ fn fit_rank_one_e5_plane_axes(
     );
     let displacement_norm = displacement.x.hypot(displacement.y).hypot(displacement.z);
     if (displacement_norm - uv_norm).abs() > 2e-3 {
-        return None;
+        return Ok(None);
     }
-    let mapped_q = unit_vector(displacement)?;
+    let Some(mapped_q) = unit_vector(displacement) else {
+        return Ok(None);
+    };
     let q_direction = mapped_q.as_raw();
-    let mapped_r = unit_vector(Vector3::new(
+    let Some(mapped_r) = unit_vector(Vector3::new(
         normal.y * q_direction.z - normal.z * q_direction.y,
         normal.z * q_direction.x - normal.x * q_direction.z,
         normal.x * q_direction.y - normal.y * q_direction.x,
-    ))?;
+    )) else {
+        return Ok(None);
+    };
     let r_direction = mapped_r.as_raw();
     let u_axis = Vector3::new(
         q[0] * q_direction.x - q[1] * r_direction.x,
@@ -1108,17 +1116,18 @@ fn fit_rank_one_e5_plane_axes(
         q[1] * q_direction.y + q[0] * r_direction.y,
         q[1] * q_direction.z + q[0] * r_direction.z,
     );
-    let residual = plane_frame_residual(origin, pairs, u_axis, v_axis);
-    residual.is_finite().then_some((u_axis, v_axis, residual))
+    let residual = plane_frame_residual(ctx, origin, pairs, u_axis, v_axis)?;
+    Ok(residual.is_finite().then_some((u_axis, v_axis, residual)))
 }
 
 fn plane_frame_residual(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     origin: [f64; 3],
     pairs: &[(FiniteVector<2>, FinitePoint3)],
     u_axis: Vector3,
     v_axis: Vector3,
-) -> f64 {
-    pairs.iter().fold(0.0f64, |residual, (uv, point)| {
+) -> Result<f64, cadmpeg_core::CodecError> {
+    Ok(ctx.admit_iter(pairs, "catia_e5_plane_frame_residual_scan")?.fold(0.0f64, |residual, (uv, point)| {
         let predicted = [
             origin[0] + uv[0] * u_axis.x + uv[1] * v_axis.x,
             origin[1] + uv[0] * u_axis.y + uv[1] * v_axis.y,
@@ -1130,7 +1139,7 @@ fn plane_frame_residual(
         } else {
             f64::INFINITY
         }
-    })
+    }))
 }
 
 fn canonical_direction(mut direction: Vector3) -> Vector3 {
@@ -1334,7 +1343,7 @@ fn transfer_e5_topology(
     }
 
     let mut surface_for_ref = HashMap::new();
-    for (index, surface) in decoded_surfaces.iter().enumerate() {
+    for (index, surface) in ctx.admit_iter(decoded_surfaces, "catia_e5_transfer_surface_scan")?.enumerate() {
         ctx.insert_hash_map(
             &mut surface_for_ref,
             surface.record_id,
@@ -1352,7 +1361,7 @@ fn transfer_e5_topology(
         )?;
     }
     let mut vertex_for_ref = HashMap::new();
-    for (index, reference) in topology.vertex_refs.iter().copied().enumerate() {
+    for (index, reference) in ctx.admit_iter(&topology.vertex_refs, "catia_e5_transfer_vertex_ref_scan")?.copied().enumerate() {
         ctx.insert_hash_map(
             &mut vertex_for_ref,
             reference,
@@ -1367,7 +1376,7 @@ fn transfer_e5_topology(
         )?;
     }
     let mut point_for_ref = HashMap::new();
-    for (reference, point) in topology.vertex_refs.iter().copied().zip(&ir.model.points) {
+    for (reference, point) in ctx.admit_iter(&topology.vertex_refs, "catia_e5_transfer_point_ref_scan")?.copied().zip(ctx.admit_iter(&ir.model.points, "catia_e5_transfer_point_scan")?) {
         ctx.insert_hash_map(
             &mut point_for_ref,
             reference,
@@ -1397,7 +1406,7 @@ fn transfer_e5_topology(
     let E5Ownership { bodies, face_shell } = e5_ownership;
 
     let mut edge_ids = HashMap::new();
-    for record_id in topology.edges.keys().copied() {
+    for record_id in ctx.admit_iter(&topology.edges, "catia_e5_transfer_edge_key_scan")?.map(|(record_id, _)| *record_id) {
         ctx.insert_hash_map(
             &mut edge_ids,
             record_id,
@@ -1471,9 +1480,9 @@ fn plan_e5_boundary<'a>(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<E5BoundaryPlan<'a>>, cadmpeg_core::CodecError> {
     let mut faces = Vec::new();
-    for face in &topology.faces {
+    for face in ctx.admit_iter(&topology.faces, "catia_e5_boundary_face_plan_scan")? {
         let mut loops = Vec::new();
-        for source in &face.loops {
+        for source in ctx.admit_iter(&face.loops, "catia_e5_boundary_loop_plan_scan")? {
             let Some(loop_plan) = E5LoopPlan::admit(ctx, source)? else {
                 return Ok(None);
             };
@@ -1494,12 +1503,12 @@ fn plan_e5_boundary<'a>(
     let mut surface_curves = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
     let mut occurrence_intersection_sides =
         BTreeMap::<u32, Vec<E5OccurrenceIntersectionSide>>::new();
-    for face in &topology.faces {
+    for face in ctx.admit_iter(&topology.faces, "catia_e5_boundary_face_member_scan")? {
         let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
             return Ok(None);
         };
-        for loop_ in &face.loops {
-            for (member_index, member) in loop_.members.iter().enumerate() {
+        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_boundary_loop_member_scan")? {
+            for (member_index, member) in ctx.admit_iter(&loop_.members, "catia_e5_boundary_member_scan")?.enumerate() {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
                 let Some(edge) = topology.edges.get(&edge_ref) else {
@@ -1629,7 +1638,7 @@ fn plan_e5_boundary<'a>(
                         "catia_e5_occurrence_side_keys",
                     )?;
                     let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
-                    if !sides.iter().any(|existing| {
+                    if !ctx.admit_iter(sides.as_slice(), "catia_e5_occurrence_side_duplicate_scan")?.any(|existing| {
                         existing.surface == side.surface
                             && existing.pcurve == side.pcurve
                             && existing.pcurve_range == side.pcurve_range
@@ -1679,7 +1688,7 @@ fn plan_e5_boundary<'a>(
         }
     }
     let mut intersection_sides = BTreeMap::<u32, BTreeMap<u32, E5IntersectionSidePlan>>::new();
-    for (&edge_ref, edge) in &topology.edges {
+    for (&edge_ref, edge) in ctx.admit_iter(&topology.edges, "catia_e5_intersection_edge_scan")? {
         let Some(support) = topology.curve_supports.get(&edge.support) else {
             return Ok(None);
         };
@@ -1692,7 +1701,7 @@ fn plan_e5_boundary<'a>(
         ) else {
             return Ok(None);
         };
-        for pcurve_ref in support.pcurves() {
+        for pcurve_ref in ctx.admit_iter(support.pcurves(), "catia_e5_intersection_support_pcurve_scan")? {
             let Some(pcurve) = topology.pcurves.get(pcurve_ref) else {
                 continue;
             };
@@ -1792,7 +1801,7 @@ fn plan_e5_boundary<'a>(
     }
 
     let mut intersections = BTreeMap::<u32, IntcurveSupportContext>::new();
-    for (&edge_ref, sides) in &intersection_sides {
+    for (&edge_ref, sides) in ctx.admit_iter(&intersection_sides, "catia_e5_intersection_side_edge_scan")? {
         let Some(edge) = topology.edges.get(&edge_ref) else {
             return Ok(None);
         };
@@ -1856,7 +1865,7 @@ fn plan_e5_boundary<'a>(
             "catia_e5_intersection_plan",
         )?;
     }
-    for (&edge_ref, sides) in &occurrence_intersection_sides {
+    for (&edge_ref, sides) in ctx.admit_iter(&occurrence_intersection_sides, "catia_e5_occurrence_intersection_scan")? {
         if intersections.contains_key(&edge_ref) {
             continue;
         }
@@ -1915,7 +1924,7 @@ fn plan_e5_boundary<'a>(
         )?;
     }
 
-    for (&edge_ref, (_, _, range)) in &surface_curves {
+    for (&edge_ref, (_, _, range)) in ctx.admit_iter(&surface_curves, "catia_e5_missing_edge_curve_scan")? {
         ctx.admit_btree_entry(&edge_curves, &edge_ref, "catia_e5_edge_curve_plan")?;
         edge_curves.entry(edge_ref).or_insert((
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1943,24 +1952,20 @@ fn prune_e5_unused_surfaces(
     unused_surfaces: &mut Vec<Surface>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut used_surfaces = HashSet::new();
-    for id in topology
-        .faces
-        .iter()
-        .filter_map(|face| surface_for_ref.get(&face.surface))
-        .map(|(id, _)| id.as_str())
-        .chain(intersections.values().flat_map(|context| {
-            context
-                .sides()
-                .iter()
-                .filter_map(|side| side.surface.as_ref().map(SurfaceId::as_str))
-        }))
-        .chain(
-            surface_curves
-                .values()
-                .map(|(surface, _, _)| surface.as_str()),
-        )
-    {
-        ctx.insert_hash_set(&mut used_surfaces, id, "catia_e5_used_surfaces")?;
+    for face in ctx.admit_iter(&topology.faces, "catia_e5_used_face_surface_scan")? {
+        if let Some((id, _)) = surface_for_ref.get(&face.surface) {
+            ctx.insert_hash_set(&mut used_surfaces, id.as_str(), "catia_e5_used_surfaces")?;
+        }
+    }
+    for (_, context) in ctx.admit_iter(intersections, "catia_e5_used_intersection_scan")? {
+        for side in ctx.admit_iter(context.sides(), "catia_e5_used_intersection_side_scan")? {
+            if let Some(surface) = side.surface.as_ref() {
+                ctx.insert_hash_set(&mut used_surfaces, surface.as_str(), "catia_e5_used_surfaces")?;
+            }
+        }
+    }
+    for (_, (surface, _, _)) in ctx.admit_iter(surface_curves, "catia_e5_used_surface_curve_scan")? {
+        ctx.insert_hash_set(&mut used_surfaces, surface.as_str(), "catia_e5_used_surfaces")?;
     }
     for surface in ir
         .model
@@ -1981,12 +1986,12 @@ fn resolve_e5_ownership(
     let mut body_faces = Vec::new();
     if topology.bodies.is_empty() {
         let mut faces = Vec::new();
-        for face in &topology.faces {
+        for face in ctx.admit_iter(&topology.faces, "catia_e5_ownership_face_record_scan")? {
             ctx.push_vec(&mut faces, face.record_id, "catia_e5_ownership_faces")?;
         }
         ctx.push_vec(&mut body_faces, (None, faces), "catia_e5_ownership_bodies")?;
     } else {
-        for body in &topology.bodies {
+        for body in ctx.admit_iter(&topology.bodies, "catia_e5_ownership_body_record_scan")? {
             let faces = ctx.copy_slice(&body.faces, "catia_e5_ownership_faces")?;
             ctx.push_vec(
                 &mut body_faces,
@@ -1999,14 +2004,14 @@ fn resolve_e5_ownership(
         return Ok(None);
     };
     let mut face_shell = HashMap::new();
-    for (body, plan) in bodies.iter().enumerate() {
-        for (component, faces) in plan.components.iter().enumerate() {
+    for (body, plan) in ctx.admit_iter(&bodies, "catia_e5_ownership_body_plan_scan")?.enumerate() {
+        for (component, faces) in ctx.admit_iter(&plan.components, "catia_e5_ownership_component_scan")?.enumerate() {
             let shell = ShellId::mint(ctx.format_retained(
                 format_args!("catia:e5:shell#{body}-{component}"),
                 "catia_e5_ownership_shell_id",
             )?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-            for face in faces {
+            for face in ctx.admit_iter(faces, "catia_e5_ownership_face_shell_scan")? {
                 ctx.insert_hash_map(
                     &mut face_shell,
                     *face,
@@ -2075,7 +2080,7 @@ fn emit_e5_curves_and_edges(
     } = inputs;
 
     let mut edge_curve_ids = HashMap::new();
-    for record_id in edge_curves.keys().copied() {
+    for record_id in ctx.admit_iter(edge_curves, "catia_e5_emitted_edge_curve_key_scan")?.map(|(record_id, _)| *record_id) {
         ctx.insert_hash_map(
             &mut edge_curve_ids,
             record_id,
@@ -2089,7 +2094,7 @@ fn emit_e5_curves_and_edges(
             "catia_e5_emitted_curve_ids",
         )?;
     }
-    for (&record_id, (geometry, _)) in edge_curves {
+    for (&record_id, (geometry, _)) in ctx.admit_iter(edge_curves, "catia_e5_emitted_edge_curve_scan")? {
         let id =
             edge_curve_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_curve_record_id")?;
         annotate(
@@ -2115,7 +2120,7 @@ fn emit_e5_curves_and_edges(
             source_object: None,
         });
     }
-    for (&record_id, context) in intersections {
+    for (&record_id, context) in ctx.admit_iter(intersections, "catia_e5_emitted_intersection_scan")? {
         let curve = edge_curve_ids[&record_id]
             .try_clone_for_decode(ctx, "catia_e5_intersection_curve_id")?;
         let id = crate::resource::compose_u32_id(
@@ -2166,7 +2171,7 @@ fn emit_e5_curves_and_edges(
             ),
         )?;
     }
-    for (&record_id, (surface, pcurve, range)) in surface_curves {
+    for (&record_id, (surface, pcurve, range)) in ctx.admit_iter(surface_curves, "catia_e5_emitted_surface_curve_scan")? {
         if intersections.contains_key(&record_id) {
             continue;
         }
@@ -2240,7 +2245,7 @@ fn emit_e5_curves_and_edges(
             ),
         )?;
     }
-    for (&record_id, edge) in &topology.edges {
+    for (&record_id, edge) in ctx.admit_iter(&topology.edges, "catia_e5_emitted_edge_scan")? {
         let id = edge_ids[&record_id].try_clone_for_decode(ctx, "catia_e5_edge_record_id")?;
         annotate(
             ctx,
@@ -2305,7 +2310,7 @@ fn emit_e5_pcurves(
     pcurves: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (&record_id, (geometry, range)) in pcurves {
+    for (&record_id, (geometry, range)) in ctx.admit_iter(pcurves, "catia_e5_emitted_pcurve_scan")? {
         let id = crate::resource::compose_u32_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "e5", "pcurve"),
@@ -2357,7 +2362,7 @@ fn emit_e5_bodies(
     bodies: &[E5BodyPlan],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (body_index, plan) in bodies.iter().enumerate() {
+    for (body_index, plan) in ctx.admit_iter(bodies, "catia_e5_emitted_body_plan_scan")?.enumerate() {
         let body_id = BodyId::mint(match plan.record_id {
             Some(record_id) => ctx.format_retained(
                 format_args!("catia:e5:body#{record_id}"),
@@ -2375,7 +2380,7 @@ fn emit_e5_bodies(
             plan.components.len(),
             "catia_e5_region_ids",
         )?;
-        for component in 0..plan.components.len() {
+        for (component, _) in ctx.admit_iter(&plan.components, "catia_e5_emitted_region_component_scan")?.enumerate() {
             region_ids.push(
                 RegionId::mint(ctx.format_retained(
                     format_args!("catia:e5:region#{body_index}-{component}"),
@@ -2426,7 +2431,7 @@ fn emit_e5_bodies(
             color: None,
             visible: None,
         });
-        for (component, component_faces) in plan.components.iter().enumerate() {
+        for (component, component_faces) in ctx.admit_iter(&plan.components, "catia_e5_emitted_shell_component_scan")?.enumerate() {
             let region_id =
                 region_ids[component].try_clone_for_decode(ctx, "catia_e5_region_record_id")?;
             let shell_id = ShellId::mint(ctx.format_retained(
@@ -2499,7 +2504,7 @@ fn emit_e5_bodies(
                 component_faces.len(),
                 "catia_e5_shell_face_ids",
             )?;
-            for face in component_faces {
+            for face in ctx.admit_iter(component_faces, "catia_e5_emitted_shell_face_scan")? {
                 face_ids.push(crate::resource::compose_u32_id(
                     ctx,
                     &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
@@ -2587,7 +2592,7 @@ fn emit_e5_faces_loops_coedges(
     } = inputs;
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
-    for face_plan in &boundary.faces {
+    for face_plan in ctx.admit_iter(&boundary.faces, "catia_e5_emitted_face_plan_scan")? {
         let face = face_plan.source;
         let face_id = crate::resource::compose_u32_id(
             ctx,
@@ -2598,7 +2603,7 @@ fn emit_e5_faces_loops_coedges(
         )?;
         let mut loop_ids = Vec::new();
         ctx.reserve_vec(&mut loop_ids, face.loops.len(), "catia_e5_face_loop_ids")?;
-        for loop_ in &face.loops {
+        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_emitted_face_loop_id_scan")? {
             loop_ids.push(crate::resource::compose_u32_id(
                 ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
@@ -2656,7 +2661,7 @@ fn emit_e5_faces_loops_coedges(
             tolerance: None,
         });
 
-        for loop_plan in &face_plan.loops {
+        for loop_plan in ctx.admit_iter(&face_plan.loops, "catia_e5_emitted_loop_plan_scan")? {
             let loop_ = loop_plan.source;
             let loop_id = crate::resource::compose_u32_id(
                 ctx,
@@ -2668,7 +2673,7 @@ fn emit_e5_faces_loops_coedges(
             let members = &loop_plan.members;
             let mut coedge_ids = Vec::new();
             let mut vertex_uses = Vec::new();
-            for member in members {
+            for member in ctx.admit_iter(members, "catia_e5_emitted_loop_member_scan")? {
                 ctx.push_vec(
                     &mut coedge_ids,
                     member
@@ -2726,7 +2731,7 @@ fn emit_e5_faces_loops_coedges(
                 face: face_id.try_clone_for_decode(ctx, "catia_e5_loop_face_id")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
-            for member in members {
+            for member in ctx.admit_iter(members, "catia_e5_emitted_coedge_member_scan")? {
                 let index = member.orientation.serialized_index;
                 let edge_ref = member.source.edge_use;
                 let pcurve_ref = member.source.pcurve;
@@ -2810,8 +2815,8 @@ fn emit_e5_faces_loops_coedges(
             }
         }
     }
-    for occurrences in coedges_by_edge.values() {
-        for (position, &arena_index) in occurrences.iter().enumerate() {
+    for (_, occurrences) in ctx.admit_iter(&coedges_by_edge, "catia_e5_radial_occurrence_group_scan")? {
+        for (position, &arena_index) in ctx.admit_iter(occurrences, "catia_e5_radial_occurrence_scan")?.enumerate() {
             let radial = occurrences[(position + 1) % occurrences.len()];
             let next = ir.model.coedges[radial]
                 .id
@@ -2994,23 +2999,18 @@ fn e5_pcurve_on_surface(
                 ctx.temporary_vec(sites.len(), "catia E5 pcurve second jets")?;
             let scaled =
                 |values: [FiniteReal; 2]| [values[0].get() * scale[0], values[1].get() * scale[1]];
-            for site in sites {
+            for site in ctx.admit_iter(sites, "catia_e5_jet_site_scan")? {
                 knots.push(site.knot.get());
                 points.push(scaled(site.point));
                 first_derivatives.push(scaled(site.first_derivatives));
                 second_derivatives.push(scaled(site.second_derivatives));
             }
-            if !points.iter().flatten().copied().all(f64::is_finite)
-                || !first_derivatives
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .all(f64::is_finite)
-                || !second_derivatives
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .all(f64::is_finite)
+            if !ctx.admit_iter(&points, "catia_e5_jet_point_finiteness_scan")?
+                    .all(|values| values[0].is_finite() && values[1].is_finite())
+                || !ctx.admit_iter(&first_derivatives, "catia_e5_jet_first_derivative_finiteness_scan")?
+                    .all(|values| values[0].is_finite() && values[1].is_finite())
+                || !ctx.admit_iter(&second_derivatives, "catia_e5_jet_second_derivative_finiteness_scan")?
+                    .all(|values| values[0].is_finite() && values[1].is_finite())
             {
                 return Ok(None);
             }
@@ -3075,7 +3075,7 @@ fn e5_pcurve_on_surface(
                     .map(|[u, v]| Point2::new(u.get() * scale[0], v.get() * scale[1])),
             );
             if !scale.into_iter().all(|value| value != 0.0)
-                || !scaled_points.iter().copied().all(|point| point.is_finite())
+                || !ctx.admit_iter(&scaled_points, "catia_e5_nurbs_scaled_point_finiteness_scan")?.copied().all(|point| point.is_finite())
             {
                 return Ok(None);
             }
@@ -3756,12 +3756,16 @@ fn e5_ownership_plan(
     topology: &crate::families::e5::graph::E5Topology,
     body_faces: &[(Option<u32>, Vec<u32>)],
 ) -> Result<Option<Vec<E5BodyPlan>>, cadmpeg_core::CodecError> {
-    if body_faces.is_empty() || body_faces.iter().any(|(_, faces)| faces.is_empty()) {
+    if body_faces.is_empty()
+        || ctx
+            .admit_iter(body_faces, "catia_e5_body_face_group_validation_scan")?
+            .any(|(_, faces)| faces.is_empty())
+    {
         return Ok(None);
     }
     let mut body_by_face = HashMap::new();
-    for (body, (_, faces)) in body_faces.iter().enumerate() {
-        for face in faces {
+    for (body, (_, faces)) in ctx.admit_iter(body_faces, "catia_e5_body_face_group_scan")?.enumerate() {
+        for face in ctx.admit_iter(faces, "catia_e5_body_face_scan")? {
             if body_by_face.contains_key(face) {
                 return Ok(None);
             }
@@ -3772,23 +3776,21 @@ fn e5_ownership_plan(
         Ok(HashMap::<u32, usize>::new())
     })?;
     let mut bodies_by_edge = HashMap::new();
-    for &edge in topology.edges.keys() {
+    for (edge, _) in ctx.admit_iter(&topology.edges, "catia_e5_edge_body_key_scan")? {
         ctx.insert_hash_map(
             &mut bodies_by_edge,
-            edge,
+            *edge,
             HashSet::new(),
             "catia_e5_edge_bodies",
         )?;
     }
-    for face in &topology.faces {
+    for face in ctx.admit_iter(&topology.faces, "catia_e5_body_connectivity_face_scan")? {
         let Some(&body) = body_by_face.get(&face.record_id) else {
             return Ok(None);
         };
-        for edge in face
-            .loops
-            .iter()
-            .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
-        {
+        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_body_connectivity_loop_scan")? {
+            for member in ctx.admit_iter(&loop_.members, "catia_e5_body_connectivity_member_scan")? {
+                let edge = member.edge_use;
             let Some(edge_bodies) = bodies_by_edge.get_mut(&edge) else {
                 return Ok(None);
             };
@@ -3798,17 +3800,18 @@ fn e5_ownership_plan(
             } else {
                 ctx.insert_hash_map(&mut uses[body], edge, 1usize, "catia_e5_body_edge_uses")?;
             }
+            }
         }
     }
     if body_by_face.len() != topology.faces.len()
-        || bodies_by_edge.values().any(|bodies| bodies.len() != 1)
+        || ctx.admit_iter(&bodies_by_edge, "catia_e5_body_edge_group_validation_scan")?.any(|(_, bodies)| bodies.len() != 1)
     {
         return Ok(None);
     }
     let mut plans = Vec::new();
-    for (body, (record_id, faces)) in body_faces.iter().enumerate() {
+    for (body, (record_id, faces)) in ctx.admit_iter(body_faces, "catia_e5_body_component_source_scan")?.enumerate() {
         let mut face_indices = HashMap::new();
-        for (index, &face) in faces.iter().enumerate() {
+        for (index, &face) in ctx.admit_iter(faces, "catia_e5_body_component_face_index_scan")?.enumerate() {
             ctx.insert_hash_map(&mut face_indices, face, index, "catia_e5_face_indices")?;
         }
         if face_indices.len() != faces.len() {
@@ -3816,17 +3819,14 @@ fn e5_ownership_plan(
         }
         let mut parents = UnionFind::charged(ctx, faces.len(), "catia_e5_face_union")?;
         let mut first_face_by_edge = HashMap::<u32, usize>::new();
-        for face in topology
-            .faces
-            .iter()
+        for face in ctx
+            .admit_iter(&topology.faces, "catia_e5_body_component_topology_face_scan")?
             .filter(|face| body_by_face[&face.record_id] == body)
         {
             let face_index = face_indices[&face.record_id];
-            for edge in face
-                .loops
-                .iter()
-                .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
-            {
+            for loop_ in ctx.admit_iter(&face.loops, "catia_e5_body_component_loop_scan")? {
+                for member in ctx.admit_iter(&loop_.members, "catia_e5_body_component_member_scan")? {
+                    let edge = member.edge_use;
                 if let Some(other) = first_face_by_edge.get_mut(&edge) {
                     parents.union(ctx, face_index, *other)?;
                     *other = face_index;
@@ -3838,12 +3838,13 @@ fn e5_ownership_plan(
                         "catia_e5_first_edge_face",
                     )?;
                 }
+                }
             }
         }
         let mut labels = HashMap::<usize, usize>::new();
         let mut components = Vec::<Vec<u32>>::new();
         let mut face_components = Vec::new();
-        for (face_index, face) in faces.iter().copied().enumerate() {
+        for (face_index, face) in ctx.admit_iter(faces, "catia_e5_body_component_face_scan")?.copied().enumerate() {
             let root = parents.find(ctx, face_index)?;
             let component = if let Some(&existing) = labels.get(&root) {
                 existing
@@ -3863,17 +3864,17 @@ fn e5_ownership_plan(
             ctx.alloc_filled(components.len(), true, "catia_e5_closed_components")?;
         let mut component_has_edges =
             ctx.alloc_filled(components.len(), false, "catia_e5_component_edges")?;
-        for (&edge, &count) in body_uses {
+        for (&edge, &count) in ctx.admit_iter(body_uses, "catia_e5_body_edge_use_scan")? {
             let component = face_components[first_face_by_edge[&edge]];
             component_has_edges[component] = true;
             closed_components[component] &= count == 2;
         }
-        let closed_component_count = closed_components
-            .iter()
-            .zip(component_has_edges)
-            .filter(|(closed, has_edges)| **closed && *has_edges)
+        let closed_component_count = ctx
+            .admit_iter(&closed_components, "catia_e5_closed_component_scan")?
+            .zip(ctx.admit_iter(&component_has_edges, "catia_e5_component_edge_scan")?)
+            .filter(|(closed, has_edges)| **closed && **has_edges)
             .count();
-        let kind = if body_uses.values().any(|count| *count > 2)
+        let kind = if ctx.admit_iter(body_uses, "catia_e5_nonmanifold_edge_scan")?.any(|(_, count)| *count > 2)
             || (closed_component_count != 0 && closed_component_count != components.len())
         {
             BodyKind::General

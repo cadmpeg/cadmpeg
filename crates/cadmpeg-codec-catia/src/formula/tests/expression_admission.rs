@@ -88,3 +88,100 @@ fn formula_bound_string_operations_admit_operand_work() {
         );
     }
 }
+
+#[test]
+fn formula_literal_scan_propagates_caller_work_refusal() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            super::super::string_literal_expression(ctx, "text")
+        else {
+            panic!("literal scan must refuse")
+        };
+        assert_eq!(limit.operation, "catia_formula_string_literal_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn legacy_symbol_ordinal_scan_propagates_caller_work_refusal() {
+    crate::test_support::with_work_limit(1, |ctx| {
+        let Err(limit) = super::super::legacy_symbol_matches_input(ctx, "#1_/12", "#1_") else {
+            panic!("ordinal scan must refuse")
+        };
+        assert_eq!(limit.operation, "catia_legacy_symbol_ordinal_visits");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn legacy_symbol_ordinal_scan_preserves_matching_rules() {
+    crate::test_support::with_service_context(|ctx| {
+        for symbol in ["#1_", "#1_ /12"] {
+            assert!(super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
+                .expect("service work budget"));
+        }
+        for symbol in ["#1_/", "#1_/x", "#2_"] {
+            assert!(!super::super::legacy_symbol_matches_input(ctx, symbol, "#1_")
+                .expect("service work budget"));
+        }
+    });
+}
+
+#[test]
+fn formula_string_boundary_admission_preserves_unicode_indices() {
+    crate::test_support::with_service_context(|ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let mut parser = super::super::FormulaExpressionParser {
+            source: "",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            evaluate: false,
+            static_check: false,
+        };
+        for (index, expected) in [(0, Some(0)), (1, Some(1)), (2, Some(3)), (3, Some(7)), (4, None)] {
+            assert_eq!(parser.string_boundary("aé😀", index).expect("service work budget"), expected);
+        }
+    });
+}
+
+#[test]
+fn formula_string_boundary_scan_propagates_resource_refusal() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let mut parser = super::super::FormulaExpressionParser {
+            source: "",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            evaluate: false,
+            static_check: false,
+        };
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = parser.string_boundary("é", 0) else {
+            panic!("boundary scan must refuse")
+        };
+        assert_eq!(limit.operation, "catia_formula_string_boundary");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn formula_string_length_scan_propagates_resource_refusal() {
+    // One work unit copies the one-byte literal before the character-count scan.
+    crate::test_support::with_work_limit(1, |ctx| {
+        let bindings = std::collections::BTreeMap::new();
+        let mut parser = super::super::FormulaExpressionParser {
+            source: "\"a\".Length()",
+            at: 0,
+            bindings: &bindings,
+            ctx,
+            evaluate: true,
+            static_check: false,
+        };
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = parser.postfix(0) else {
+            panic!("length scan must refuse")
+        };
+        assert_eq!(limit.operation, "catia_formula_string_length");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}

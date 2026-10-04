@@ -866,12 +866,13 @@ fn standard_helpers_share_the_source_closed_face_population() {
 
 fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
     TrimRecord {
-        packet: crate::families::standard::trim_packet::TrimPacket::try_from((
-            0,
-            vec![handles.len()],
-            Vec::new(),
-            handles.to_vec(),
-        ))
+        packet: crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::trim_packet::TrimPacket::try_from(
+                ctx,
+                (0, vec![handles.len()], Vec::new(), handles.to_vec()),
+            )
+        })
+        .expect("service resource budget")
         .expect("complete trim handle partition"),
         frame_vector: None,
         kind,

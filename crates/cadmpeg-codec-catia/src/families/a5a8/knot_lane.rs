@@ -73,7 +73,10 @@ impl A8KnotLane {
         )?;
         let mut expanded = Vec::new();
         ctx.reserve_vec(&mut expanded, count, "catia_a8_expanded_knots")?;
-        for (knot, &multiplicity) in self.distinct.iter().zip(&self.multiplicities) {
+        for (knot, &multiplicity) in ctx
+            .admit_iter(&self.distinct, "catia_a8_distinct_knot_visits")?
+            .zip(ctx.admit_iter(&self.multiplicities, "catia_a8_multiplicity_visits")?)
+        {
             let repeats = usize::try_from(multiplicity).map_err(|_| {
                 ctx.refuse_codec_limit("catia_a8_expanded_knots", u64::MAX - 1, u64::MAX)
             })?;
@@ -217,10 +220,32 @@ mod tests {
                     && limit.operation == "catia_a8_knot_expansion_emit"
         ));
         assert_eq!(
-            crate::test_support::with_work_limit(6, |ctx| lane.expanded(ctx))
+            // Two count visits, four knot writes, and two visits to each zipped source.
+            crate::test_support::with_work_limit(10, |ctx| lane.expanded(ctx))
                 .expect("scan and emission fit the work limit"),
             vec![0.0, 0.0, 1.0, 1.0]
         );
+    }
+
+    #[test]
+    fn knot_expansion_zip_sources_propagate_caller_work_refusals() {
+        let lane = crate::test_support::with_service_context(|ctx| {
+            A8KnotLane::try_new(ctx, finite_lane(&[0.0, 1.0]), vec![2, 2])
+        })
+        .expect("service admission")
+        .expect("valid knot lane");
+        for (budget, operation) in [
+            (7, "catia_a8_distinct_knot_visits"),
+            (9, "catia_a8_multiplicity_visits"),
+        ] {
+            crate::test_support::with_work_limit(budget, |ctx| {
+                let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = lane.expanded(ctx) else {
+                    panic!("zip source admission must refuse")
+                };
+                assert_eq!(limit.operation, operation);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            });
+        }
     }
 
     #[test]

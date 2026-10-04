@@ -105,7 +105,13 @@ pub(crate) fn family_pcurves_from_records(
     family: ConsolidatedFamily,
 ) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
     let mut pcurves = Vec::new();
-    for frame in family_frames_from_records(records, family, 0x20) {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        family,
+        0x20,
+        "catia_consolidated_pcurve_scan",
+    )? {
         if let Some(pcurve) =
             parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
         {
@@ -1018,13 +1024,15 @@ fn parse_consolidated_record(
     })
 }
 
-pub(crate) fn family_frames_from_records(
-    records: &[ConsolidatedRecord],
+pub(crate) fn family_frames_from_records<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [ConsolidatedRecord],
     family: ConsolidatedFamily,
     class: u8,
-) -> impl Iterator<Item = ConsolidatedFrame> + '_ {
-    records
-        .iter()
+    operation: &'static str,
+) -> Result<impl Iterator<Item = ConsolidatedFrame> + 'a, CodecError> {
+    Ok(ctx
+        .admit_iter(records, operation)?
         .filter(move |record| record.family == family && record.class == class)
         .filter_map(|record| {
             Some(ConsolidatedFrame {
@@ -1033,13 +1041,25 @@ pub(crate) fn family_frames_from_records(
                 end: record.range()?.end,
                 header_token: record.header_token(),
             })
-        })
+        }))
 }
 
 #[cfg(test)]
 pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
     let records = consolidated_records(data);
-    family_frames_from_records(&records, ConsolidatedFamily::B, class).collect()
+    crate::test_support::with_service_context(|ctx| {
+        Ok::<_, CodecError>(
+            family_frames_from_records(
+                ctx,
+                &records,
+                ConsolidatedFamily::B,
+                class,
+                "catia_b_family_frame_scan",
+            )?
+            .collect(),
+        )
+    })
+    .expect("service frame scan budget")
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
@@ -1065,26 +1085,26 @@ fn scan_vertex_rows<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
 ) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), "catia_vertex_row_scan")?;
-    let mut p = 0usize;
-    Ok(std::iter::from_fn(move || loop {
-        if p + 15 > bytes.len() {
+    let last_complete_start = bytes.len().checked_sub(15);
+let mut skip_until = 0usize;
+Ok(ctx.admit_iter(bytes, "catia_vertex_row_scan")?
+    .enumerate()
+    .filter_map(move |(start, byte)| {
+        if last_complete_start.is_none_or(|last| start > last)
+            || start < skip_until
+            || *byte != 0x05
+            || bytes[start + 1] != 0x08
+            || bytes[start + 2] != 0x01
+        {
             return None;
         }
-        if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
-            let x = f32_le(bytes, p + 3);
-            let y = f32_le(bytes, p + 7);
-            let z = f32_le(bytes, p + 11);
-            let start = p;
-            p += 15;
-            if let Some(point) =
-                FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
-            {
-                return Some((start..p, point));
-            }
-        } else {
-            p += 1;
-        }
+        let end = start + 15;
+        skip_until = end;
+        let x = f32_le(bytes, start + 3);
+        let y = f32_le(bytes, start + 7);
+        let z = f32_le(bytes, start + 11);
+        FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
+            .map(|point| (start..end, point))
     }))
 }
 
@@ -1174,6 +1194,37 @@ mod tests {
             sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>(),
             [0.0, 1.0]
         );
+    }
+
+    #[test]
+    fn vertex_scanner_preserves_row_skips_and_truncated_tail() {
+        let mut bytes = vec![0x42, 0x05, 0x08, 0x01];
+        for value in [f32::NAN, f32::from_bits(0x3f01_0805), 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [1.0_f32, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        let work = u64::try_from(bytes.len()).expect("fixture extent");
+        // The complete source bytes are admitted once before row parsing.
+        crate::test_support::with_work_limit(work, |ctx| {
+            let rows = super::scan_vertex_rows(ctx, &bytes)
+                .expect("source bytes fit work limit").collect::<Vec<_>>();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, 16..31);
+            assert_eq!(rows[0].1.get(), cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+        });
+        crate::test_support::with_work_limit(work - 1, |ctx| {
+            let error = match super::scan_vertex_rows(ctx, &bytes) {
+                Ok(_) => panic!("whole source must be admitted"),
+                Err(error) => error,
+            };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            assert_eq!(limit.operation, "catia_vertex_row_scan");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
     }
 
     #[test]
@@ -1483,9 +1534,20 @@ mod tests {
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
         assert!(records[1].range().is_none());
         assert!(
-            family_frames_from_records(&records, ConsolidatedFamily::A, 0x34)
-                .next()
-                .is_none()
+            crate::test_support::with_service_context(|ctx| {
+                Ok::<_, cadmpeg_core::CodecError>(
+                    family_frames_from_records(
+                        ctx,
+                        &records,
+                        ConsolidatedFamily::A,
+                        0x34,
+                        "catia_test_family_frame_scan",
+                    )?
+                    .next()
+                    .is_none(),
+                )
+            })
+            .expect("service frame scan budget")
         );
     }
 

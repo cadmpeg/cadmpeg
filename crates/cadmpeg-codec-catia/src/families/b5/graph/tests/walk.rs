@@ -77,7 +77,10 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
     let admitted =
         crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes))
             .expect("service collection budget");
-    let scanned = object_stream_frames(&bytes).collect::<Vec<_>>();
+    let scanned = crate::test_support::with_service_context(|ctx| {
+        ctx.try_collect_vec(object_stream_frames(ctx, &bytes)?, "catia_b5_object_frames")
+    })
+    .expect("service frame scan budget");
     assert_eq!(admitted.len(), scanned.len());
     assert!(admitted.iter().zip(scanned).all(|(left, right)| {
         (
@@ -94,6 +97,17 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
             right.object_id,
         )
     }));
+}
+
+#[test]
+fn streaming_object_frame_scan_refuses_work_before_iteration() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    crate::test_support::with_work_limit(0, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = object_stream_frames(ctx, &bytes)
+        else { panic!("frame source admission must refuse"); };
+        assert_eq!(limit.operation, "catia_b5_object_frame_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }
 
 #[test]
@@ -272,6 +286,15 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
 #[test]
 fn a8_class21_jet_refuses_before_each_admitted_lane() {
     let payload = a8_class21_test_payload();
+    let limited = crate::test_support::with_work_limit(0, |ctx| {
+        parse_a8_class21_pcurve(ctx, 7, &payload)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_b5_a8_class21_scalar_lane_bytes"
+    ));
+
     let mut refused = std::collections::HashSet::new();
     for cap in 0..64 {
         match crate::test_support::with_collection_limit(cap, |ctx| {
@@ -388,7 +411,7 @@ fn object_stream_frame_walk_descends_only_into_a8_b5_children() {
     let peer_b5 = b5(0x5e, 9, &nested_a8);
     wrapper.extend_from_slice(&peer_b5);
 
-    let frames = object_stream_frames(&wrapper).collect::<Vec<_>>();
+    let frames = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &wrapper)).expect("service frame scan budget");
     assert_eq!(
         frames
             .iter()
@@ -416,7 +439,8 @@ fn object_stream_frame_walk_ignores_marker_shaped_a8_payload_bytes() {
     wrapper.extend_from_slice(&payload);
 
     assert_eq!(
-        object_stream_frames(&wrapper)
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &wrapper)).expect("service frame scan budget")
+            .into_iter()
             .map(|frame| (frame.family, frame.class, frame.object_id))
             .collect::<Vec<_>>(),
         vec![(0xa8, 0x34, 8)]
@@ -440,7 +464,8 @@ fn object_stream_frame_walk_requires_a_length_closed_a8_child_run() {
     wrapper.push(0x00);
 
     assert_eq!(
-        object_stream_frames(&wrapper)
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &wrapper)).expect("service frame scan budget")
+            .into_iter()
             .map(|frame| (frame.family, frame.class, frame.object_id))
             .collect::<Vec<_>>(),
         vec![(0xa8, 0x34, 8)]
@@ -456,7 +481,8 @@ fn object_stream_frame_walk_ignores_marker_shaped_inline_surface_poles() {
     bytes[11 + 100..11 + 100 + nested_b5.len()].copy_from_slice(&nested_b5);
 
     assert_eq!(
-        object_stream_frames(&bytes)
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes)).expect("service frame scan budget")
+            .into_iter()
             .map(|frame| (frame.family, frame.class, frame.object_id))
             .collect::<Vec<_>>(),
         vec![(0xa8, 0x34, 0xdeca_fbad)]
@@ -474,7 +500,8 @@ fn object_stream_frame_walk_descends_after_inline_surface_poles() {
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     assert_eq!(
-        object_stream_frames(&bytes)
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes)).expect("service frame scan budget")
+            .into_iter()
             .map(|frame| (frame.family, frame.class, frame.object_id))
             .collect::<Vec<_>>(),
         vec![(0xa8, 0x34, 0xdeca_fbad), (0xb5, 0x5e, 7)]
@@ -492,7 +519,8 @@ fn object_stream_frame_walk_descends_after_inline_surface_tail() {
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     assert_eq!(
-        object_stream_frames(&bytes)
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes)).expect("service frame scan budget")
+            .into_iter()
             .map(|frame| (frame.family, frame.class, frame.object_id))
             .collect::<Vec<_>>(),
         vec![(0xa8, 0x34, 0xdeca_fbad), (0xb5, 0x5e, 7)]
@@ -546,7 +574,7 @@ fn object_stream_runs_cross_support_bound_external_pole_allocations() {
 #[test]
 fn topology_parse_does_not_join_records_across_object_stream_runs() {
     let original = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let frames = object_stream_frames(&original).collect::<Vec<_>>();
+    let frames = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &original)).expect("service frame scan budget");
     let split = frames[frames.len() / 2].start;
     let mut separated = original.clone();
     separated.insert(split, 0xff);
@@ -593,7 +621,7 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     })
     .expect("service resource budget")
     .expect("closed source graph");
-    let isolated = object_stream_frames(&original)
+    let isolated = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &original)).expect("service frame scan budget")
         .into_iter()
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
         .expect("referenced geometry frame");
@@ -628,7 +656,7 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
     })
     .expect("service resource budget")
     .expect("closed source graph");
-    let geometry = object_stream_frames(&original)
+    let geometry = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &original)).expect("service frame scan budget")
         .into_iter()
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
         .expect("referenced geometry frame");
@@ -674,7 +702,7 @@ fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
     bytes.extend_from_slice(&9u32.to_le_bytes());
     bytes.push(0x00);
 
-    let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
+    let frames = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes)).expect("service frame scan budget");
     let records = framed_records(&bytes, &frames);
     assert_eq!(
         records
@@ -707,7 +735,7 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 #[test]
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
+    let frames = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes)).expect("service frame scan budget");
     let records =
         crate::test_support::with_service_context(|ctx| records_from_frames(ctx, &bytes, &frames))
             .expect("service budget");
@@ -838,7 +866,7 @@ fn typed_vertex_incidence_link_index_refuses_collection_limit() {
 #[test]
 fn budgeted_dependency_admission_matches_one_shot_records() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
+    let frames = crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes)).expect("service frame scan budget");
     let expected =
         crate::test_support::with_service_context(|ctx| records_from_frames(ctx, &bytes, &frames))
             .expect("service budget");
@@ -1236,6 +1264,33 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
         parse_extrusion_surface(&translated_control, &translated_records, &nonuniform_pcurve,),
         None,
         "05 11 requires four uniform source spans"
+    );
+}
+
+#[test]
+fn invalid_extrusion_span_controls_remain_malformed_candidates() {
+    let interval = crate::test_support::test_b5::increasing([0.0, 1.0]);
+    let directrix = B5ExtrusionDirectrix::SurfaceCurve {
+        object_id: 2,
+        support: (7, 3, crate::test_support::test_b5::finite_pair([0.0, 1.0])),
+        parameter_range: interval,
+    };
+    assert_eq!(
+        super::super::terminal_span_directrix(3, interval, [0x00, 0x15], &BTreeMap::new()),
+        None
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::translated_directrix_span_count(
+                ctx,
+                &directrix,
+                [0.0, 1.0],
+                [0x00, 0x11],
+                &BTreeMap::new(),
+            )
+        })
+        .expect("service budget"),
+        None
     );
 }
 

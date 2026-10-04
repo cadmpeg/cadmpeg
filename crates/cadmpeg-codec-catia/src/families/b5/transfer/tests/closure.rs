@@ -213,14 +213,14 @@ fn transfer_vertex_tolerances(
 }
 
 fn referenced_surface_ids(
-    roots: impl IntoIterator<Item = u32>,
+    roots: [u32; 1],
     offsets: &BTreeMap<u32, B5OffsetSurface>,
     supported: &BTreeMap<u32, B5SupportedSurface>,
     extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
     aliases: &BTreeMap<u32, u32>,
 ) -> HashSet<u32> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::referenced_surface_ids(ctx, roots, offsets, supported, extrusions, aliases)
+        super::super::referenced_surface_ids(ctx, &roots, |id| *id, offsets, supported, extrusions, aliases)
     })
     .expect("service budget")
 }
@@ -426,16 +426,19 @@ fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
         lifted_endpoints: None,
     };
     assert_eq!(
-        pcurve_parameter_domain(&pcurve),
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service pcurve domain budget"),
         Some(crate::test_support::test_b5::finite_pair([2.0, 8.0]))
     );
     pcurve.parameter_range = None;
     assert_eq!(
-        pcurve_parameter_domain(&pcurve),
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service pcurve domain budget"),
         Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
     );
     pcurve.parameter_range = Some(crate::test_support::test_b5::finite_pair([-1.0, 8.0]));
-    assert_eq!(pcurve_parameter_domain(&pcurve), None);
+    assert_eq!(crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service pcurve domain budget"), None);
 }
 
 #[test]
@@ -523,7 +526,8 @@ fn surface_closure_follows_aliases_to_native_constructions() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::referenced_surface_ids(
             ctx,
-            [10],
+            &[10],
+            |id| *id,
             &offsets,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -657,12 +661,14 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
     };
 
     assert_eq!(
-        edge_pcurve_parameters(&graph, 30, 20),
+        crate::test_support::with_service_context(|ctx| edge_pcurve_parameters(ctx, &graph, 30, 20))
+            .expect("service edge-parameter work budget"),
         Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
     );
     graph.edge_parameter_incidences.insert(30, [41, 40]);
     assert_eq!(
-        edge_pcurve_parameters(&graph, 30, 20),
+        crate::test_support::with_service_context(|ctx| edge_pcurve_parameters(ctx, &graph, 30, 20))
+            .expect("service edge-parameter work budget"),
         Some(crate::test_support::test_b5::finite_pair([1.0, 0.0]))
     );
 }
@@ -1627,9 +1633,18 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     )
     .expect("service decode")
     .expect("required invariant");
-    assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
     assert_eq!(
-        orientation[&2].member_order().collect::<Vec<_>>(),
+        orientation[&1]
+            .member_order(&ctx)
+            .expect("service member-order budget")
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+    assert_eq!(
+        orientation[&2]
+            .member_order(&ctx)
+            .expect("service member-order budget")
+            .collect::<Vec<_>>(),
         vec![2, 1, 0]
     );
     assert_eq!(
@@ -1914,4 +1929,30 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
         ))
         .expect("evaluator allocation succeeds")
     );
+}
+
+#[test]
+fn b5_oriented_member_order_propagates_caller_work_refusal() {
+    let orientation = super::super::OrientedLoop {
+        flipped: true,
+        members: vec![super::super::OrientedLoopMember {
+            reversed: false,
+            pcurve_reversed: false,
+        }; 2],
+    };
+    crate::test_support::with_work_limit(1, |ctx| {
+        let error = match orientation.member_order(ctx) {
+            Ok(_) => panic!("two member visits exceed the caller work limit"),
+            Err(error) => error,
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_b5_oriented_loop_member_order");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    crate::test_support::with_work_limit(2, |ctx| {
+        assert_eq!(orientation.member_order(ctx).expect("two member visits")
+            .rev().collect::<Vec<_>>(), vec![0, 1]);
+    });
 }

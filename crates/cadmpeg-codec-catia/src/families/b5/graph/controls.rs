@@ -1,3 +1,6 @@
+use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext};
+use cadmpeg_core::CodecError;
+
 /// Counted face and loop framing controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -6,6 +9,20 @@ pub(in crate::families) enum B5FramingControl {
     Control03 = 0x03,
     /// Control byte `05`.
     Control05 = 0x05,
+}
+
+impl DecodeCost for B5FramingControl {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Control03 | Self::Control05 => Ok(1),
+        }
+    }
 }
 
 impl B5FramingControl {

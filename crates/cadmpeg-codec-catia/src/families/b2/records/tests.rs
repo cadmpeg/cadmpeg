@@ -370,7 +370,7 @@ fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         ctx.collect_vec(
-            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
+            crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?,
             "catia_a5_owner_packets",
         )
     });
@@ -380,7 +380,7 @@ fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
     ));
     let packets = crate::test_support::with_service_context(|ctx| {
         ctx.collect_vec(
-            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
+            crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?,
             "catia_a5_owner_packets",
         )
     })
@@ -441,8 +441,13 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
             std::iter::once(owner_pos..bytes.len()),
         ],
     );
-    let packets = crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
-        .collect::<Vec<_>>();
+    let packets = crate::test_support::with_service_context(|ctx| {
+        ctx.collect_vec(
+            crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)?,
+            "catia_test_owner_packets",
+        )
+    })
+    .expect("service context admits the owner packet");
     let [packet] = packets.as_slice() else {
         panic!("one source-scoped owner packet")
     };

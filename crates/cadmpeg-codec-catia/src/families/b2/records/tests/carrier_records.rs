@@ -83,6 +83,35 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
 }
 
 #[test]
+fn b2_circle_frame_scan_propagates_work_refusal() {
+    let bytes = b2_circle_stream();
+    assert_eq!(crate::families::b2::records::b2_circles(&bytes).len(), 1);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let operation = "catia_b2_family_record_scan";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = (|| {
+            ctx.collect_vec(
+                ctx.admit_iter(&records, operation)?
+                    .filter_map(|record| {
+                        crate::families::b2::records::b2_circle_from_record(&bytes, record)
+                    }),
+                "catia_b2_circles_test",
+            )
+            .map(|_| ())
+        })();
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation
+    ));
+}
+
+#[test]
 fn b2_cylinder_parser_reads_arc_length_carrier() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream());
     assert_eq!(cylinders.len(), 1);

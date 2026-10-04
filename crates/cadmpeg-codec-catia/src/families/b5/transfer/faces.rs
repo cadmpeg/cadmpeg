@@ -34,11 +34,14 @@ pub(super) fn ownership_plan(
         "catia b5 face ownership ids",
     )?;
     let mut loop_owners = HashMap::<u32, usize>::new();
-    for (face_index, face) in graph.faces.iter().enumerate() {
+    for (face_index, face) in ctx
+        .admit_iter(&graph.faces, "catia_b5_ownership_face_scan")?
+        .enumerate()
+    {
         if !face_ids.insert(face.object_id) || face.loops.is_empty() {
             return Ok(None);
         }
-        for loop_id in &face.loops {
+        for loop_id in ctx.admit_iter(&face.loops, "catia_b5_ownership_face_loops")? {
             if ctx
                 .insert_hash_map(
                     &mut loop_owners,
@@ -53,7 +56,9 @@ pub(super) fn ownership_plan(
         }
     }
     if loop_owners.len() != graph.loops.len()
-        || graph.loops.iter().any(|(loop_id, loop_)| {
+        || ctx
+            .admit_iter(&graph.loops, "catia_b5_ownership_loop_validation")?
+            .any(|(loop_id, loop_)| {
             loop_id != &loop_.object_id || !loop_owners.contains_key(loop_id)
         })
     {
@@ -64,9 +69,9 @@ pub(super) fn ownership_plan(
         UnionFind::charged(ctx, graph.faces.len(), "catia b5 ownership union parents")?;
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
-    for (loop_id, loop_) in &graph.loops {
+    for (loop_id, loop_) in ctx.admit_iter(&graph.loops, "catia_b5_ownership_loop_scan")? {
         let face = loop_owners[loop_id];
-        for member in &loop_.members {
+        for member in ctx.admit_iter(&loop_.members, "catia_b5_ownership_loop_members")? {
             let edge = member.edge;
             if !graph.vertices.edges().contains_key(&edge) {
                 return Ok(None);
@@ -99,7 +104,7 @@ pub(super) fn ownership_plan(
         graph.faces.len(),
         "catia b5 face components",
     )?;
-    for face in 0..graph.faces.len() {
+    for (face, _) in ctx.admit_iter(&graph.faces, "catia_b5_ownership_face_indices")?.enumerate() {
         let root = parents.find(ctx, face)?;
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
@@ -109,17 +114,22 @@ pub(super) fn ownership_plan(
         ctx.alloc_filled(component_count, true, "catia b5 closed components")?;
     let mut component_has_edges =
         ctx.alloc_filled(component_count, false, "catia b5 component edge marks")?;
-    for (&edge, &uses) in &edge_uses {
+    for (&edge, &uses) in ctx.admit_iter(&edge_uses, "catia_b5_ownership_edge_uses")? {
         let component = face_components[first_face_by_edge[&edge]];
         component_has_edges[component] = true;
         closed_components[component] &= uses == 2;
     }
-    let closed_component_count = closed_components
-        .iter()
-        .zip(component_has_edges)
-        .filter(|(closed, has_edges)| **closed && *has_edges)
+    let closed_component_count = ctx
+        .admit_iter(&closed_components, "catia_b5_closed_component_scan")?
+        .zip(ctx.admit_iter(
+            &component_has_edges,
+            "catia_b5_component_edge_scan",
+        )?)
+        .filter(|(closed, has_edges)| **closed && **has_edges)
         .count();
-    let body_kind = if edge_uses.values().any(|uses| *uses > 2)
+    let body_kind = if ctx
+        .admit_iter(&edge_uses, "catia_b5_nonmanifold_edge_scan")?
+        .any(|(_, uses)| *uses > 2)
         || (closed_component_count != 0 && closed_component_count != component_count)
     {
         BodyKind::General
@@ -153,11 +163,16 @@ pub(super) fn orient_loop_members(
         loop_ids.len(),
         "catia b5 orientation loop index",
     )?;
-    for (node, loop_id) in loop_ids.iter().enumerate() {
+    for (node, loop_id) in ctx
+        .admit_iter(&loop_ids, "catia_b5_orientation_loop_index")?
+        .enumerate()
+    {
         node_by_loop.insert(*loop_id, node);
     }
     if reversed.len() != loop_ids.len()
-        || loop_ids.iter().any(|loop_id| {
+        || ctx
+            .admit_iter(&loop_ids, "catia_b5_orientation_loop_validation")?
+            .any(|loop_id| {
             reversed
                 .get(loop_id)
                 .is_none_or(|senses| senses.len() != graph.loops[loop_id].members.len())
@@ -167,9 +182,15 @@ pub(super) fn orient_loop_members(
     }
 
     let mut uses = HashMap::<u32, Vec<(usize, bool)>>::new();
-    for loop_id in &loop_ids {
+    for loop_id in ctx.admit_iter(&loop_ids, "catia_b5_orientation_edge_groups")? {
         let node = node_by_loop[loop_id];
-        for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
+        for (member, &sense) in ctx
+            .admit_iter(&graph.loops[loop_id].members, "catia_b5_orientation_members")?
+            .zip(ctx.admit_iter(
+                &reversed[loop_id],
+                "catia_b5_orientation_member_senses",
+            )?)
+        {
             if !uses.contains_key(&member.edge) {
                 ctx.insert_hash_map(
                     &mut uses,
@@ -189,8 +210,9 @@ pub(super) fn orient_loop_members(
         "catia b5 loop orientation constraints",
         |_| Ok(Vec::<(usize, bool)>::new()),
     )?;
-    for [(left, left_reversed), (right, right_reversed)] in uses
-        .values()
+    for [(left, left_reversed), (right, right_reversed)] in ctx
+        .admit_iter(&uses, "catia_b5_orientation_occurrence_pairs")?
+        .map(|(_, occurrences)| occurrences)
         .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
     {
         let parity = left_reversed == right_reversed;
@@ -217,7 +239,7 @@ pub(super) fn orient_loop_members(
         None,
         "catia b5 loop orientation assignments",
     )?;
-    for root in 0..loop_ids.len() {
+    for (root, _) in ctx.admit_iter(&loop_ids, "catia_b5_orientation_root_indices")?.enumerate() {
         if flips[root].is_some() {
             continue;
         }
@@ -229,7 +251,9 @@ pub(super) fn orient_loop_members(
             "catia b5 orientation pending loops",
         )?;
         while let Some((node, flip)) = pending.pop() {
-            for &(neighbor, parity) in &constraints[node] {
+            for &(neighbor, parity) in ctx
+                .admit_iter(&constraints[node], "catia_b5_orientation_constraints")?
+            {
                 let required = flip ^ parity;
                 match flips[neighbor] {
                     Some(existing) if existing != required => return Ok(None),
@@ -248,7 +272,11 @@ pub(super) fn orient_loop_members(
     }
 
     let mut oriented = BTreeMap::new();
-    for (node, loop_id) in loop_ids.into_iter().enumerate() {
+    for (node, loop_id) in ctx
+        .admit_iter(&loop_ids, "catia_b5_oriented_loop_materialization")?
+        .copied()
+        .enumerate()
+    {
         let Some(flipped) = flips[node] else {
             return Ok(None);
         };
@@ -257,9 +285,12 @@ pub(super) fn orient_loop_members(
         };
         let pcurve_senses = graph.loops[&loop_id].pcurve_senses(ctx)?;
         let members = ctx.collect_vec(
-            senses
-                .into_iter()
-                .zip(pcurve_senses)
+            ctx.admit_iter(&senses, "catia_b5_oriented_loop_senses")?
+                .copied()
+                .zip(ctx.admit_iter(
+                    &pcurve_senses,
+                    "catia_b5_oriented_pcurve_senses",
+                )?)
                 .map(|(reversed, pcurve_reversed)| OrientedLoopMember {
                     reversed: reversed ^ flipped,
                     pcurve_reversed: pcurve_reversed ^ flipped,
@@ -298,10 +329,8 @@ fn b5_planar_loop_points(
     surface_id: &SurfaceId,
     pcurve_uses: &PcurveUses,
 ) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
-    let Some(surface) = ir
-        .model
-        .surfaces
-        .iter()
+    let Some(surface) = ctx
+        .admit_iter(&ir.model.surfaces, "catia_b5_planar_surface_lookup")?
         .find(|surface| surface.id == *surface_id)
     else {
         return Ok(None);
@@ -321,7 +350,7 @@ fn b5_planar_loop_points(
         loop_.members.len(),
         "catia_b5_planar_loop_points",
     )?;
-    for member in loop_orientation.member_order() {
+    for member in loop_orientation.member_order(ctx)? {
         let edge = loop_.members[member].edge;
         let Some(mut endpoints) = graph.vertices.edge_points(edge) else {
             return Ok(None);
@@ -336,10 +365,8 @@ fn b5_planar_loop_points(
         if parameter_range[0] == parameter_range[1] {
             return Ok(None);
         }
-        let Some(pcurve) = ir
-            .model
-            .pcurves
-            .iter()
+        let Some(pcurve) = ctx
+            .admit_iter(&ir.model.pcurves, "catia_b5_planar_pcurve_lookup")?
             .find(|pcurve| pcurve.id == *pcurve_id)
         else {
             return Ok(None);
@@ -380,7 +407,7 @@ fn b5_face_loops(
 ) -> Result<cadmpeg_ir::topology::FaceLoops, cadmpeg_core::CodecError> {
     let mut ids = Vec::new();
     ctx.reserve_vec(&mut ids, face.loops.len(), "catia_b5_face_loop_ids")?;
-    for loop_id in &face.loops {
+    for loop_id in ctx.admit_iter(&face.loops, "catia_b5_face_loop_ids")? {
         let id = crate::resource::compose_index_id(
             ctx,
             &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
@@ -393,7 +420,7 @@ fn b5_face_loops(
     }
     let unspecified = || -> Result<_, cadmpeg_core::CodecError> {
         let mut copy = Vec::new();
-        for id in &ids {
+        for id in ctx.admit_iter(&ids, "catia_b5_unspecified_loop_ids")? {
             let id = id.try_clone_for_decode(ctx, "catia_b5_unspecified_loop_id_copy")?;
             ctx.push_vec(&mut copy, id, "catia_b5_unspecified_loop_ids")?;
         }
@@ -409,7 +436,10 @@ fn b5_face_loops(
         return unspecified();
     };
     let mut rows = Vec::new();
-    for (loop_id, id) in face.loops.iter().zip(&ids) {
+    for (loop_id, id) in ctx
+        .admit_iter(&face.loops, "catia_b5_face_loop_pairs")?
+        .zip(ctx.admit_iter(&ids, "catia_b5_face_loop_ids")?)
+    {
         let Some(orientation) = loop_orientation.get(loop_id) else {
             return unspecified();
         };
@@ -428,10 +458,8 @@ fn b5_face_loops(
         let id = id.try_clone_for_decode(ctx, "catia_b5_planar_loop_id_copy")?;
         ctx.push_vec(&mut rows, (id, points), "catia_b5_planar_loop_rows")?;
     }
-    let Some(surface) = ir
-        .model
-        .surfaces
-        .iter()
+    let Some(surface) = ctx
+        .admit_iter(&ir.model.surfaces, "catia_b5_classified_surface_lookup")?
         .find(|surface| surface.id == *surface_id)
     else {
         return unspecified();
@@ -443,7 +471,7 @@ fn copy_face_loops(ctx: &DecodeContext<'_>, loops: &FaceLoops) -> Result<FaceLoo
     match loops {
         FaceLoops::Unspecified { loops } => {
             let mut copy = Vec::new();
-            for id in loops {
+            for id in ctx.admit_iter(loops, "catia_b5_unspecified_loop_copy")? {
                 let id = id.try_clone_for_decode(ctx, "catia_b5_face_loop_copy_id")?;
                 ctx.push_vec(&mut copy, id, "catia_b5_face_loop_copy")?;
             }
@@ -452,7 +480,7 @@ fn copy_face_loops(ctx: &DecodeContext<'_>, loops: &FaceLoops) -> Result<FaceLoo
         FaceLoops::Classified { outer, inner } => {
             let outer = outer.try_clone_for_decode(ctx, "catia_b5_outer_loop_copy_id")?;
             let mut copy = Vec::new();
-            for id in inner {
+            for id in ctx.admit_iter(inner, "catia_b5_inner_loop_copy")? {
                 let id = id.try_clone_for_decode(ctx, "catia_b5_inner_loop_copy_id")?;
                 ctx.push_vec(&mut copy, id, "catia_b5_inner_loop_copy")?;
             }
@@ -493,7 +521,11 @@ pub(super) fn emit_faces(
         "catia_b5_body_id",
     )?;
     let mut region_ids = BTreeMap::new();
-    for &component in components.keys() {
+    for &component in admission
+        .context()
+        .admit_iter(&components, "catia_b5_region_id_components")?
+        .map(|(component, _)| component)
+    {
         let id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "region"),
@@ -526,7 +558,11 @@ pub(super) fn emit_faces(
         )?;
     }
     let mut body_regions = Vec::new();
-    for id in region_ids.values() {
+    for id in admission
+        .context()
+        .admit_iter(&region_ids, "catia_b5_body_region_scan")?
+        .map(|(_, id)| id)
+    {
         let id = id.try_clone_for_decode(admission.context(), "catia_b5_body_region_id")?;
         admission
             .context()
@@ -544,7 +580,10 @@ pub(super) fn emit_faces(
         color: None,
         visible: None,
     });
-    for (component_index, component_faces) in &components {
+    for (component_index, component_faces) in admission
+        .context()
+        .admit_iter(&components, "catia_b5_region_component_scan")?
+    {
         let region_id = region_ids[component_index]
             .try_clone_for_decode(admission.context(), "catia_b5_region_ref_id")?;
         let shell_id = crate::resource::compose_index_id(
@@ -607,7 +646,10 @@ pub(super) fn emit_faces(
             )?;
         }
         let mut shell_faces = Vec::new();
-        for face in component_faces {
+        for face in admission
+            .context()
+            .admit_iter(component_faces, "catia_b5_region_face_scan")?
+        {
             let face_id = crate::resource::compose_index_id(
                 admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
@@ -637,7 +679,11 @@ pub(super) fn emit_faces(
     }
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
-    for (face_index, face) in graph.faces.iter().enumerate() {
+    for (face_index, face) in admission
+        .context()
+        .admit_iter(&graph.faces, "catia_b5_emit_face_scan")?
+        .enumerate()
+    {
         let face_id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
@@ -700,7 +746,10 @@ pub(super) fn emit_faces(
             color: None,
             tolerance: None,
         });
-        for loop_id_value in &face.loops {
+        for loop_id_value in admission
+            .context()
+            .admit_iter(&face.loops, "catia_b5_emit_face_loop_scan")?
+        {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
             let loop_id = crate::resource::compose_index_id(
@@ -717,7 +766,7 @@ pub(super) fn emit_faces(
                 "catia_b5_emitted_loop_id",
             )?;
             let mut coedge_ids_by_member = Vec::new();
-            for index in 0..loop_.members.len() {
+            for (index, _) in admission.context().admit_iter(&loop_.members, "catia_b5_coedge_member_indices")?.enumerate() {
                 let text = admission.context().format_retained(
                     format_args!("catia:b5:coedge#{loop_id_value}-{index}"),
                     "catia_b5_coedge_id",
@@ -730,7 +779,7 @@ pub(super) fn emit_faces(
                 )?;
             }
             let mut coedge_ids = Vec::new();
-            for member in orientation.member_order() {
+            for member in orientation.member_order(admission.context())? {
                 let id = coedge_ids_by_member[member]
                     .try_clone_for_decode(admission.context(), "catia_b5_oriented_coedge_id")?;
                 admission.context().push_vec(
@@ -740,7 +789,7 @@ pub(super) fn emit_faces(
                 )?;
             }
             let mut vertex_uses = Vec::new();
-            for member in orientation.member_order() {
+            for member in orientation.member_order(admission.context())? {
                 let edge = loop_.members[member].edge;
                 let endpoints = graph.vertices.edges()[&edge];
                 let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)]
@@ -804,7 +853,7 @@ pub(super) fn emit_faces(
                 face: loop_face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
-            for member in orientation.member_order() {
+            for member in orientation.member_order(admission.context())? {
                 let edge = loop_.members[member].edge;
                 let reversed = orientation.members[member].reversed;
                 let id = coedge_ids_by_member[member]
@@ -886,8 +935,16 @@ pub(super) fn emit_faces(
             }
         }
     }
-    for occurrences in coedges_by_edge.values() {
-        for (position, &arena_index) in occurrences.iter().enumerate() {
+    for occurrences in admission
+        .context()
+        .admit_iter(&coedges_by_edge, "catia_b5_radial_coedge_groups")?
+        .map(|(_, occurrences)| occurrences)
+    {
+        for (position, &arena_index) in admission
+            .context()
+            .admit_iter(occurrences, "catia_b5_radial_occurrence_scan")?
+            .enumerate()
+        {
             let radial = occurrences[(position + 1) % occurrences.len()];
             let next = ir.model.coedges[radial]
                 .id

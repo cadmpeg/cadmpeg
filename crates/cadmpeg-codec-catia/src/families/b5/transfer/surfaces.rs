@@ -585,7 +585,14 @@ pub(super) fn revolve_nurbs(
         ) {
             return Some(Err(error));
         }
-        for (index, profile_weight) in profile_weights.into_iter().enumerate() {
+        let profile_weights = match ctx.admit_iter(
+            &profile_weights,
+            "catia_b5_revolution_profile_weight_scan",
+        ) {
+            Ok(weights) => weights,
+            Err(error) => return Some(Err(error.into())),
+        };
+        for (index, profile_weight) in profile_weights.copied().enumerate() {
             let profile_point = profile.pole_rows().point_at(index)?;
             let relative = [
                 profile_point.x - axis_origin[0],
@@ -594,8 +601,18 @@ pub(super) fn revolve_nurbs(
             ];
             let axial = scale(axis_direction, dot(relative, axis_direction));
             let radial = subtract(relative, axial);
+            let angles = match ctx.admit_iter(&angles, "catia_b5_revolution_angle_scan") {
+                Ok(angles) => angles,
+                Err(error) => return Some(Err(error.into())),
+            };
+            let angular_weights = match ctx
+                .admit_iter(&angular_weights, "catia_b5_revolution_angular_weight_scan")
+            {
+                Ok(weights) => weights,
+                Err(error) => return Some(Err(error.into())),
+            };
             for ((angle, radial_scale), angular_weight) in
-                angles.iter().copied().zip(angular_weights.iter().copied())
+                angles.copied().zip(angular_weights.copied())
             {
                 let rotated = rotate_vector(radial, axis_direction, angle);
                 control_points.push(point3(add(
@@ -730,7 +747,11 @@ pub(super) fn emit_surfaces(
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
     let mut surface_ids = HashMap::new();
-    for object_id in surface_plan.keys().copied() {
+    for object_id in admission
+        .context()
+        .admit_iter(&surface_plan, "catia_b5_emitted_surface_id_scan")?
+        .map(|(object_id, _)| *object_id)
+    {
         let index = usize::try_from(object_id).map_err(|_| {
             admission.context().refuse_codec_limit(
                 "catia_b5_emitted_surface_id",
@@ -753,7 +774,10 @@ pub(super) fn emit_surfaces(
         )?;
     }
     let mut face_surfaces = HashSet::new();
-    for face in &graph.faces {
+    for face in admission
+        .context()
+        .admit_iter(&graph.faces, "catia_b5_face_surface_scan")?
+    {
         admission.context().insert_hash_set(
             &mut face_surfaces,
             face.surface,
@@ -903,7 +927,7 @@ pub(super) fn emit_surfaces(
                 carrier_object_id,
                 definition,
             }) if graph
-                .canonical_surface_id(object_id)
+                .canonical_surface_id(admission.context(), object_id)?
                 .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
             {
                 let procedural_id = crate::resource::compose_u32_id(
@@ -935,8 +959,12 @@ pub(super) fn emit_surfaces(
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
     }
-    for &object_id in surface_ids.keys() {
-        let Some(construction_id) = graph.canonical_surface_id(object_id) else {
+    for object_id in admission
+        .context()
+        .admit_iter(&surface_ids, "catia_b5_offset_surface_scan")?
+        .map(|(object_id, _)| *object_id)
+    {
+        let Some(construction_id) = graph.canonical_surface_id(admission.context(), object_id)? else {
             continue;
         };
         let Some(offset) = graph.offset_surfaces.get(&construction_id) else {

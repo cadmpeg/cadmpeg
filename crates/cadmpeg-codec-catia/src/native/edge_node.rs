@@ -294,7 +294,7 @@ fn identity_index_charged<'a>(
     identities: &'a [CatiaConsolidatedVertexIdentity],
 ) -> Result<HashMap<IdentityKey<'a>, &'a str>, cadmpeg_core::CodecError> {
     let mut index = HashMap::new();
-    for identity in identities {
+    for identity in ctx.admit_iter(identities, "catia_native_edge_wire_identity_visits")? {
         let work = identity
             .allocation_owner
             .as_deref()
@@ -343,8 +343,8 @@ pub(super) fn edge_node_wires_charged(
 ) -> Result<Vec<CatiaConsolidatedEdgeNodeWire>, cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "CATIA edge wire identity lookup")?;
     let index = index_storage.with_storage(|| identity_index_charged(ctx, identities))?;
-    let mut wires = Vec::new();
-    for node in nodes {
+    ctx.try_collect_vec(
+        nodes.into_iter().map(|node| -> Result<_, cadmpeg_core::CodecError> {
         let vertices = [
             ctx.copy_retained_text(
                 joined_vertex_charged(ctx, &node, 0, &index)?,
@@ -355,13 +355,12 @@ pub(super) fn edge_node_wires_charged(
                 "catia_native_edge_wire_vertex_id",
             )?,
         ];
-        ctx.push_vec(
-            &mut wires,
+        Ok(
             CatiaConsolidatedEdgeNodeWire::from_node(node, vertices),
-            "catia_native_edge_wires",
-        )?;
-    }
-    Ok(wires)
+        )
+        }),
+        "catia_native_edge_wires",
+    )
 }
 
 pub(super) fn load_edge_nodes(
@@ -399,7 +398,7 @@ pub(super) fn consolidated_vertex_identities(
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_storage = ctx.reserve_scoped(0, "CATIA vertex identity lookup")?;
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
-    for node in nodes {
+    for node in ctx.admit_iter(nodes, "catia_native_vertex_identity_nodes")? {
         if node.endpoint_records.is_none() && node.uses.is_none() {
             continue;
         }

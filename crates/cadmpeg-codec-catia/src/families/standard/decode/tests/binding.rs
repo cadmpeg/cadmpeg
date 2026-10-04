@@ -487,11 +487,12 @@ fn a5_owner_binding_refuses_before_carrier_row_growth() {
         .expect("service decode")
     })
     .is_empty());
-    assert!(
-        !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
-            .collect::<Vec<_>>()
-            .is_empty()
-    );
+    let owner_packets = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_owner_packets_from_records(ctx, &bytes, &records)
+            .map(|packets| packets.collect::<Vec<_>>())
+    })
+    .expect("service context admits owner packet scan");
+    assert!(!owner_packets.is_empty());
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -714,15 +715,18 @@ fn standard_native_binding_arrays_refuse_before_each_collection() {
 #[test]
 fn standard_object_journal_merges_matching_edge_dialects_and_rejects_conflicts() {
     let mut edges = BTreeMap::from([(70, [500, 300])]);
-    assert!(merge_standard_edge_vertex_references(
-        &mut edges,
-        [(70, [500, 300]), (90, [100, 500])],
-    ));
-    assert_eq!(edges, BTreeMap::from([(70, [500, 300]), (90, [100, 500])]));
-    assert!(!merge_standard_edge_vertex_references(
-        &mut edges,
-        [(70, [300, 500])],
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(merge_standard_edge_vertex_references(
+            ctx, &mut edges,
+            &BTreeMap::from([(70, [500, 300]), (90, [100, 500])]),
+            |vertices| *vertices,
+        ).expect("edge sources fit service limits"));
+        assert_eq!(edges, BTreeMap::from([(70, [500, 300]), (90, [100, 500])]));
+        assert!(!merge_standard_edge_vertex_references(
+            ctx, &mut edges, &BTreeMap::from([(70, [300, 500])]),
+            |vertices| *vertices,
+        ).expect("edge sources fit service limits"));
+    });
 }
 
 #[test]
@@ -788,10 +792,10 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
         vec![[10, 11]],
     ];
 
-    corroborate_successor_endpoint_points(
-        &mut options,
+    crate::test_support::with_service_context(|ctx| corroborate_successor_endpoint_points(
+        ctx, &mut options,
         &[[None, Some(5)], [Some(6), None], [None, None]],
-    );
+    )).expect("endpoint evidence fits service limits");
 
     assert_eq!(
         options,
@@ -799,7 +803,7 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
     );
 
     let mut joint_options = vec![vec![[2, 4], [2, 5], [3, 5]]];
-    corroborate_successor_endpoint_points(&mut joint_options, &[[Some(2), Some(5)]]);
+    crate::test_support::with_service_context(|ctx| corroborate_successor_endpoint_points(ctx, &mut joint_options, &[[Some(2), Some(5)]])).expect("endpoint evidence fits service limits");
     assert_eq!(joint_options, [vec![[2, 5]]]);
 }
 

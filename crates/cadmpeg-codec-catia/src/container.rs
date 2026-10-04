@@ -701,31 +701,6 @@ fn coherent_e5_record_count(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<usiz
     Ok(best)
 }
 
-/// Return every valid `E5 0D 03` frame in a bounded stream region.
-///
-/// The complete E5 carrier stream may interleave these frames with other
-/// framed E5 records. Route selection still uses [`coherent_e5_record_count`] because
-/// it needs a contiguous declared-stride walk; carrier decoders need the
-/// complete frame inventory instead.
-pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
-    let mut search = 0;
-    std::iter::from_fn(move || loop {
-        if search >= data.len() {
-            return None;
-        }
-        let relative = data[search..]
-            .windows(E5_MARKER.len())
-            .position(|bytes| bytes == E5_MARKER)?;
-        let start = search + relative;
-        let Some(end) = e5_record_end(data, start) else {
-            search = start + 1;
-            continue;
-        };
-        search = end;
-        return Some(start..end);
-    })
-}
-
 fn e5_record_walk_count(
     ctx: &DecodeContext<'_>,
     data: &[u8],

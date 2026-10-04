@@ -357,7 +357,7 @@ impl CatiaEntityRecord {
 
     pub(super) fn parse_suffix(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         let suffix = self.record_suffix();
-        let value = entity_suffix_value(suffix);
+        let value = entity_suffix_value(ctx, suffix)?;
         let framing = entity_suffix_framing(ctx, suffix)?;
         self.suffix = match (value, framing) {
             (Some(value), _) => Some(CatiaEntityRecordSuffix::Value(value)),

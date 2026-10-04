@@ -67,3 +67,25 @@ fn native_zero_entity_pair_ids_refuse_retained_limit() {
     );
     assert_eq!(admitted[0].face_records[0], "catia:zero-entity:record#1");
 }
+
+#[test]
+fn native_zero_entity_edge_stride_scan_propagates_work_refusal() {
+    let bytes = crate::test_support::test_zero_entity::zero_entity_topology_stream();
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::zero_entity_edge_strides(ctx, &bytes, 0..bytes.len())
+    })
+    .expect("service profile admits edge strides");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].allocations, [5, 7, 8, 4, 3]);
+
+    let operation = "catia_native_zero_edge_stride_visits";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = super::super::zero_entity_edge_strides(ctx, &bytes, 0..bytes.len());
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == operation));
+}

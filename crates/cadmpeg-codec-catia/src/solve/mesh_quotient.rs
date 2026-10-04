@@ -5345,7 +5345,8 @@ type MeshFaceDirectionOptions = Vec<Vec<Vec<bool>>>;
 pub(super) type MeshEndpointPair = (usize, [usize; 2]);
 pub(super) type MeshEndpointSolutionFilter<'a> =
     &'a dyn Fn(&[MeshEndpointPair]) -> Result<bool, CodecError>;
-type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -> bool;
+type MeshPartialEndpointSolutionFilter<'a> =
+    &'a dyn Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>;
 
 /// Evaluation-order constraints on mesh endpoint assignment.
 ///
@@ -7094,7 +7095,8 @@ pub(super) type MeshEndpointRelationStateSignature = (
     Vec<Option<[usize; 2]>>,
     Vec<Vec<MeshEndpointRelationSelection>>,
 );
-type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
+type MeshEndpointSolutionPredicate<'a> =
+    dyn Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError> + 'a;
 type MeshFixedDirectionOption<'storage> =
     (Vec<Vec<bool>>, MeshQuotient<'storage>, Vec<Option<bool>>);
 
@@ -7793,7 +7795,7 @@ where
     // assignments that no completion can repair. Apply it as soon as
     // propagation fixes endpoint pairs, before branching over domains.
     if let Some(valid) = partial_solution_valid {
-        if !valid(&assigned) {
+        if !valid(&assigned)? {
             return Ok(false);
         }
     }
@@ -8345,7 +8347,7 @@ fn resolve_endpoint_configuration_relation_streaming(
                     "catia_relation_partial_pairs",
                 )?;
             }
-            if !valid(&candidate_pairs) {
+            if !valid(&candidate_pairs)? {
                 return Ok(false);
             }
         }
@@ -8459,7 +8461,7 @@ fn resolve_endpoint_configuration_relation_streaming(
                     else {
                         return Ok(false);
                     };
-                    if !valid(&candidate_pairs) {
+                    if !valid(&candidate_pairs)? {
                         return Ok(false);
                     }
                 }
@@ -10132,6 +10134,7 @@ fn resolve_standard_mesh_endpoint_candidates<'storage>(
 /// `complete_solution_valid` is evaluated only after every endpoint pair has
 /// been assigned. Use it for global preferences whose result cannot be known
 /// from a partial assignment.
+/// Errors from either predicate propagate unchanged.
 pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     'input0,
     'input1,
@@ -10149,8 +10152,8 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     FP,
     FC,
 > where
-    FP: Fn(&[Option<[usize; 2]>]) -> bool,
-    FC: Fn(&[Option<[usize; 2]>]) -> bool,
+    FP: Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>,
+    FC: Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>,
 {
     pub(crate) bytes: &'input0 [u8],
     pub(crate) edge_faces: &'input1 [[usize; 2]],
@@ -10190,8 +10193,8 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     >,
 ) -> Result<MeshCandidateSolve, CodecError>
 where
-    FP: Fn(&[Option<[usize; 2]>]) -> bool,
-    FC: Fn(&[Option<[usize; 2]>]) -> bool,
+    FP: Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>,
+    FC: Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>,
 {
     let budget = inputs.budget;
     let outcome = (|| -> Result<MeshCandidateSolve, CodecError> {
@@ -10405,17 +10408,26 @@ where
             );
         }
         let constrained_partial_solution_valid = |pairs: &[Option<[usize; 2]>]| {
-            endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
-                && partial_solution_valid(pairs)
+            if endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates) {
+                partial_solution_valid(pairs)
+            } else {
+                Ok(false)
+            }
         };
         let complete_preference_rejected = Cell::new(false);
         let constrained_complete_solution_valid = |pairs: &[Option<[usize; 2]>]| {
-            let valid = endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
-                && complete_solution_valid(pairs);
+            let valid = if endpoint_pairs_respect_candidate_domains(
+                pairs,
+                &completed_edge_candidates,
+            ) {
+                complete_solution_valid(pairs)?
+            } else {
+                false
+            };
             if !valid {
                 complete_preference_rejected.set(true);
             }
-            valid
+            Ok(valid)
         };
         let mut incidence_solution = None;
         let mut incidence_ambiguity = None;
@@ -10437,7 +10449,7 @@ where
                 "catia_mesh_completed_predicate_pairs",
             )?;
             completed.extend(pairs.iter().copied().map(Some));
-            Ok(constrained_complete_solution_valid(&completed))
+            constrained_complete_solution_valid(&completed)
         }, visitor: &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
             let endpoint_resolution = if let Some(cached) = endpoint_resolution_memo.get(pairs) {
                 copy_mesh_endpoint_resolution(ctx, cached)?
@@ -10968,8 +10980,8 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
                 priority_edges: None,
                 assignment_dependencies: None,
                 budget: &budget,
-                partial_solution_valid: |_| true,
-                complete_solution_valid: |_| true,
+                partial_solution_valid: |_| Ok(true),
+                complete_solution_valid: |_| Ok(true),
             }
         )
         .expect("service resource budget"),

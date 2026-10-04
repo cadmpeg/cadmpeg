@@ -60,7 +60,6 @@ fn inactive_string_index(value: f64) -> Option<usize> {
             at: 0,
             bindings: &bindings,
             ctx,
-            refusal: None,
             evaluate: false,
             static_check: false,
         };

@@ -2,6 +2,19 @@ use super::super::{a5_knots, a5_nurbs_curves};
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+#[test]
+fn surface_tail_continuation_refusal_propagates_unchanged() {
+    let bytes = crate::test_support::test_a5a8::a5_surface_tail();
+    crate::test_support::with_work_limit(0, |ctx| {
+        let result = super::super::parse_surface_tail(ctx, &bytes, 0, bytes.len());
+        let Err(CodecError::ResourceLimit(limit)) = result else {
+            panic!("surface-tail continuation work refusal required")
+        };
+        assert_eq!(limit.operation, "catia_a5_surface_tail_continuation_scan");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
 fn work_refusals<T>(
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> std::collections::HashSet<&'static str> {
@@ -102,6 +115,8 @@ fn a5_nurbs_preflight_and_materialization_refuse_caller_work() {
         &[
             "catia_a5_nurbs_record_scan",
             "catia_a5_nurbs_preflight",
+            "catia_a5_nurbs_knot_preflight_scan",
+            "catia_a5_nurbs_control_preflight_scan",
             "catia_a5_nurbs_knot_materialization",
             "catia_a5_nurbs_pole_materialization",
         ],
@@ -135,6 +150,7 @@ fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
         &[
             "catia_a5_jet_record_scan",
             "catia_a5_jet_preflight",
+            "catia_a5_jet_knot_preflight_scan",
             "catia_a5_jet_materialization",
         ],
     );
@@ -169,6 +185,7 @@ fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
         &[
             "catia_a8_frame_scan",
             "catia_a8_jet_preflight",
+            "catia_a8_jet_knot_preflight_scan",
             "catia_a8_jet_materialization",
         ],
     );
@@ -196,6 +213,7 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
         &[
             "catia_object_stream_frame_scan",
             "catia_object_stream_pcurve_preflight",
+            "catia_object_stream_pcurve_lane_scan",
             "catia_object_stream_pcurve_materialization",
         ],
     );
@@ -223,6 +241,7 @@ fn a8_lane_preflight_and_inline_grid_materialization_refuse_caller_work() {
         &[
             "catia_a8_frame_scan",
             "catia_a8_lane_preflight",
+            "catia_a8_distinct_knot_preflight_scan",
             "catia_a8_distinct_materialization",
             "catia_a8_multiplicity_materialization",
             "catia_a8_pole_count_scan",
@@ -245,6 +264,7 @@ fn a5_surface_knot_and_grid_materialization_refuse_caller_work() {
             "catia_a5_distinct_materialization",
             "catia_a5_surface_knot_order_scan",
             "catia_a5_surface_pole_materialization",
+            "catia_a5_surface_tail_continuation_scan",
             "catia_a5_surface_pole_rows",
             "catia_a5_surface_weight_rows",
         ],
@@ -254,9 +274,11 @@ fn a5_surface_knot_and_grid_materialization_refuse_caller_work() {
 #[test]
 fn external_grid_inspection_and_materialization_preserve_work_refusals() {
     let bytes = crate::test_support::test_a5a8::a8_elided_surface_stream();
-    let frame = super::super::a8_frames(&bytes, 0x34)
-        .next()
-        .expect("one A8 surface frame");
+    let frame = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_frames(ctx, &bytes, 0x34).map(|mut frames| frames.next())
+    })
+    .expect("service context admits A8 frames")
+    .expect("one A8 surface frame");
     let header = crate::test_support::with_service_context(|ctx| {
         super::super::parse_a8_surface_header(ctx, &bytes, frame)
     })
@@ -353,9 +375,11 @@ fn external_rational_grid_inspection_and_weight_copy_refuse_caller_work() {
     let next_frame = bytes.len() - 10;
     let weights = std::iter::repeat_n(2.0_f64, 9).flat_map(f64::to_le_bytes);
     bytes.splice(next_frame..next_frame, weights);
-    let frame = super::super::a8_frames(&bytes, 0x34)
-        .next()
-        .expect("one surface frame");
+    let frame = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_frames(ctx, &bytes, 0x34).map(|mut frames| frames.next())
+    })
+    .expect("service context admits A8 frames")
+    .expect("one surface frame");
     let header = crate::test_support::with_service_context(|ctx| {
         super::super::parse_a8_surface_header(ctx, &bytes, frame)
     })

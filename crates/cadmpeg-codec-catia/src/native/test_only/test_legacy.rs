@@ -34,7 +34,12 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         })
         .expect("service reference signature budget")
         .as_ref()
-        && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
+        && record.suffix_value()
+            == crate::test_support::with_service_context(|ctx| {
+                entity_suffix_value(ctx, record.record_suffix())
+            })
+            .expect("service profile admits suffix validation")
+            .as_ref()
 }
 
 fn legacy_schema_identifiers(

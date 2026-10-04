@@ -17,15 +17,19 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 fn parallel_table() -> crate::native::CatiaDesignParallelReferenceTable {
-    crate::native::CatiaDesignParallelReferenceTable::new(
-        vec![crate::native::CatiaDesignReferenceColumn {
-            field: "catia:test:field#0".to_owned(),
-            field_class: None,
-            list_payload_offset: 0,
-        }],
-        Vec::new(),
-    )
-    .expect("empty rows satisfy cardinality")
+    crate::test_support::with_service_context(|ctx| {
+        crate::native::CatiaDesignParallelReferenceTable::new(
+            ctx,
+            vec![crate::native::CatiaDesignReferenceColumn {
+                field: "catia:test:field#0".to_owned(),
+                field_class: None,
+                list_payload_offset: 0,
+            }],
+            Vec::new(),
+        )
+        .expect("service limits cover the empty row source")
+        .expect("empty rows satisfy cardinality")
+    })
 }
 
 #[test]
@@ -961,4 +965,21 @@ fn decode_links_design_objects_through_their_owner_record_group() {
         ),
         1
     );
+}
+
+#[test]
+fn parallel_reference_table_rows_propagate_caller_work_refusal() {
+    crate::test_support::with_work_limit(1, |ctx| {
+        let rows = (0..2).map(|_| crate::native::CatiaDesignReferenceRow {
+            cells: Vec::new(),
+            matching_design_object: None,
+        }).collect();
+        let error = crate::native::CatiaDesignParallelReferenceTable::new(ctx, Vec::new(), rows)
+            .expect_err("two rows exceed the caller work limit");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal required")
+        };
+        assert_eq!(limit.operation, "catia_design_reference_table_row_visits");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }

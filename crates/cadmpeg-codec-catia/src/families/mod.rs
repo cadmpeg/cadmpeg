@@ -37,7 +37,7 @@ impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
         Self { ctx, admitted: 0 }
     }
 
-    pub(crate) fn context(&self) -> &DecodeContext<'b> {
+    pub(crate) fn context(&self) -> &'a DecodeContext<'b> {
         self.ctx
     }
 

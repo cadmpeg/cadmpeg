@@ -111,25 +111,37 @@ pub(super) fn b5_edge_support_definition(
     let ([first] | [first, _]) = supports else {
         return Ok(None);
     };
-    if supports.iter().any(|(_, pcurve, range)| {
+    if ctx
+        .admit_iter(supports, "catia_b5_edge_support_domain_scan")?
+        .any(|(_, pcurve, range)| {
         pcurves
             .get(pcurve)
             .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none())
-    }) {
+        })
+    {
         return Ok(None);
     }
-    let parameter_range = solved_parameter_range.unwrap_or_else(|| {
-        if first.2[0] < first.2[1] && supports.iter().skip(1).all(|support| support.2 == first.2) {
-            first.2.map(FiniteReal::get)
-        } else {
-            [0.0, 1.0]
-        }
-    });
+    let parameter_range = if let Some(parameter_range) = solved_parameter_range {
+        parameter_range
+    } else if first.2[0] < first.2[1]
+        && ctx
+            .admit_iter(supports, "catia_b5_edge_support_range_scan")?
+            .skip(1)
+            .all(|support| support.2 == first.2)
+    {
+        first.2.map(FiniteReal::get)
+    } else {
+        [0.0, 1.0]
+    };
     let mut sides = std::array::from_fn(|_| IntcurveSupportSide {
         surface: None,
         pcurve: None,
     });
-    for (side, (surface, pcurve, support_range)) in sides.iter_mut().zip(supports) {
+    for (support, side) in ctx
+        .admit_iter(supports, "catia_b5_edge_support_definition_scan")?
+        .zip(sides.iter_mut())
+    {
+        let (surface, pcurve, support_range) = support;
         let Some(surface_id) = surface_ids.get(surface) else {
             return Ok(None);
         };
@@ -188,7 +200,7 @@ pub(super) fn b5_supports_follow_edge(
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    for support in supports {
+    for support in ctx.admit_iter(supports, "catia_b5_edge_support_follow_edge_scan")? {
         let Some([start, end]) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             return Ok(false);
         };
@@ -238,7 +250,7 @@ pub(super) fn b5_supports_agree(
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut supports = supports.iter();
+    let mut supports = ctx.admit_iter(supports, "catia_b5_edge_support_agreement_scan")?;
     let Some(first) = supports.next() else {
         return Ok(false);
     };
@@ -330,7 +342,7 @@ pub(super) fn b5_supports_follow_curve(
     let [Some(solved_start), Some(solved_end)] = [start?, end?] else {
         return Ok(false);
     };
-    for support in supports {
+    for support in ctx.admit_iter(supports, "catia_b5_edge_support_curve_scan")? {
         let Some([start, end]) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             return Ok(false);
         };
@@ -359,7 +371,10 @@ pub(super) fn emit_edges(
 ) -> Result<HashMap<u32, EdgeId>, cadmpeg_core::CodecError> {
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
-    for edge_id in edge_ids {
+    for &edge_id in admission
+        .context()
+        .admit_iter(&edge_ids, "catia_b5_emit_edge_ids")?
+    {
         let index = usize::try_from(edge_id).map_err(|_| {
             admission
                 .context()

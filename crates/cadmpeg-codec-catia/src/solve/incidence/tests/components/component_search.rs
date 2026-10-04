@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! component search tests.
 
+use cadmpeg_core::CodecError;
+
 use super::{
     Arc, HashSet, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
     MeshPartialEndpointConstraint, MeshQuotient, WorkBudget,
@@ -260,8 +262,8 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
     ];
     let edge_faces = [[0, 0], [1, 1]];
     let partial = |assignment: &[Option<[usize; 2]>]| {
-        assignment[0].is_none_or(|pair| pair == [0, 0])
-            && assignment[1].is_none_or(|pair| pair == [300, 300])
+        Ok(assignment[0].is_none_or(|pair| pair == [0, 0])
+            && assignment[1].is_none_or(|pair| pair == [300, 300]))
     };
     let active_edges = [true, true];
 
@@ -285,6 +287,44 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
     .expect("partially constrained component solutions");
 
     assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
+}
+
+#[test]
+fn partial_constraint_refusal_propagates_from_component_search() {
+    catia_test_context!(ctx);
+    let choices = vec![
+        vec![[0, 1]],
+        vec![[1, 2], [2, 3]],
+        vec![[2, 3], [1, 2]],
+        vec![[3, 0]],
+    ];
+    let edge_faces = [[0, 0]; 4];
+    let active_edges = [true; 4];
+    let refusal = |_: &[Option<[usize; 2]>]| {
+        Err(ctx.refuse_codec_limit("catia test partial constraint", 0, 1))
+    };
+    let result = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
+        &choices,
+        &edge_faces,
+        1,
+        4,
+        None,
+        None,
+        Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_order: None,
+            valid: &refusal,
+        }),
+        &|_| Ok(true),
+    );
+
+    let Err(CodecError::ResourceLimit(returned)) = result else {
+        panic!("partial constraint refusal must reach the component search caller");
+    };
+    assert_eq!(returned.operation, "catia test partial constraint");
+    assert_eq!(ctx.resource_refusal(), Some(returned));
 }
 
 #[test]
@@ -409,7 +449,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
     let active_edges = (0..choices.len())
         .map(|edge| edge == constrained_edge)
         .collect::<Vec<_>>();
-    let partial = |assignment: &[Option<[usize; 2]>]| assignment[constrained_edge].is_none();
+    let partial = |assignment: &[Option<[usize; 2]>]| Ok(assignment[constrained_edge].is_none());
     let mut visited = false;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
