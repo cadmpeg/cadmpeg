@@ -190,16 +190,35 @@ pub(crate) struct ScannedSection<'a> {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for Section {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(&self.raw_name, &self.offset, &self.length, &self.expanded_length), ctx, operation,
+            &(
+                &self.raw_name,
+                &self.offset,
+                &self.length,
+                &self.expanded_length,
+            ),
+            ctx,
+            operation,
         )
     }
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ScannedSection<'_> {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.section, &self.region), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.section, &self.region),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -266,7 +285,10 @@ impl Section {
     }
 
     /// Normalized section name.
-    pub(crate) fn name<'section>(&'section self, ctx: &DecodeContext<'_>) -> Result<&'section str, CodecError> {
+    pub(crate) fn name<'section>(
+        &'section self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&'section str, CodecError> {
         normalize_name(ctx, &self.raw_name)
     }
 
@@ -648,9 +670,13 @@ fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String,
 
 /// Normalize a decorated section name to its base ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)): strip a
 /// `ModelView#N` suffix and an `ND:0:<Name>:N` decoration.
-fn normalize_name<'text>(ctx: &DecodeContext<'_>, raw: &'text str) -> Result<&'text str, CodecError> {
+fn normalize_name<'text>(
+    ctx: &DecodeContext<'_>,
+    raw: &'text str,
+) -> Result<&'text str, CodecError> {
     let base = raw.split('#').next().unwrap_or(raw);
-    Ok(ctx.strip_prefix(base, "ND:", "creo section decoration prefix")?
+    Ok(ctx
+        .strip_prefix(base, "ND:", "creo section decoration prefix")?
         .and_then(|rest| rest.split(':').nth(1))
         .unwrap_or(base))
 }
@@ -721,7 +747,8 @@ fn scan_sections<'a>(
         {
             continue;
         }
-        let name = ctx.validate_utf8(name_bytes, "creo UTF-8 validation")?
+        let name = ctx
+            .validate_utf8(name_bytes, "creo UTF-8 validation")?
             .map_err(|_| CodecError::malformed("non-ASCII Creo section name"))?;
         if FRAMING_NAMES.contains(&name) {
             continue;
@@ -777,17 +804,22 @@ fn toc_sections<'a>(
         else {
             continue;
         };
-        let Ok(header) = ctx.validate_utf8(&data[toc_offset..line_end], "creo UTF-8 validation")? else {
+        let Ok(header) = ctx.validate_utf8(&data[toc_offset..line_end], "creo UTF-8 validation")?
+        else {
             continue;
         };
         let header = header.trim_end_matches('#');
         let mut fields = header.split_whitespace();
         let count = match fields.nth(2) {
-            Some(value) => ctx.parse_text::<usize>(value, "creo scalar text parsing")?.ok(),
+            Some(value) => ctx
+                .parse_text::<usize>(value, "creo scalar text parsing")?
+                .ok(),
             None => None,
         };
         let row_width = match fields.next() {
-            Some(value) => ctx.parse_text::<usize>(value, "creo scalar text parsing")?.ok(),
+            Some(value) => ctx
+                .parse_text::<usize>(value, "creo scalar text parsing")?
+                .ok(),
             None => None,
         };
         let (Some(count), Some(row_width)) = (count, row_width) else {
@@ -860,7 +892,11 @@ fn toc_sections<'a>(
             let (Ok(relative_offset), Ok(length), Ok(expanded_length)) = (
                 ctx.parse_radix::<usize>(offset_field, 16, "creo TOC offset hexadecimal parsing")?,
                 ctx.parse_radix::<usize>(length_field, 16, "creo TOC length hexadecimal parsing")?,
-                ctx.parse_radix::<usize>(expanded_field, 16, "creo TOC expanded length hexadecimal parsing")?,
+                ctx.parse_radix::<usize>(
+                    expanded_field,
+                    16,
+                    "creo TOC expanded length hexadecimal parsing",
+                )?,
             ) else {
                 continue;
             };
@@ -902,7 +938,11 @@ fn toc_sections<'a>(
         Ord::cmp,
         "creo toc sections sections ordering",
     )?;
-    ctx.dedup_by_key(&mut sections, |section| Ok(section.section.offset()), "creo toc sections sections deduplication")?;
+    ctx.dedup_by_key(
+        &mut sections,
+        |section| Ok(section.section.offset()),
+        "creo toc sections sections deduplication",
+    )?;
     Ok(sections)
 }
 
@@ -946,7 +986,10 @@ fn legacy_toc_sections<'a>(
     };
     let mut toc_fields = toc_value.split_ascii_whitespace();
     if toc_fields.next() != Some("0")
-        || match toc_fields.next() { Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(), None => None } != Some(toc_id)
+        || match toc_fields.next() {
+            Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(),
+            None => None,
+        } != Some(toc_id)
         || toc_fields.next() != Some("->")
         || toc_fields.next().is_some()
     {
@@ -972,14 +1015,18 @@ fn legacy_toc_sections<'a>(
     };
     let mut array_fields = entry_array.split_ascii_whitespace();
     if array_fields.next() != Some("1")
-        || match array_fields.next() { Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(), None => None } != Some(entry_id)
+        || match array_fields.next() {
+            Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(),
+            None => None,
+        } != Some(entry_id)
     {
         return Ok(Vec::new());
     }
     let Some(count_field) = array_fields.next() else {
         return Ok(Vec::new());
     };
-    let Some(count) = ctx.strip_prefix(count_field, "[", "creo legacy TOC count prefix")?
+    let Some(count) = ctx
+        .strip_prefix(count_field, "[", "creo legacy TOC count prefix")?
         .and_then(|count| count.strip_suffix(']'))
     else {
         return Ok(Vec::new());
@@ -1091,7 +1138,11 @@ fn legacy_toc_sections<'a>(
         Ord::cmp,
         "creo legacy toc sections sections ordering",
     )?;
-    ctx.dedup_by_key(&mut sections, |section| Ok(section.section.offset()), "creo legacy toc sections sections deduplication")?;
+    ctx.dedup_by_key(
+        &mut sections,
+        |section| Ok(section.section.offset()),
+        "creo legacy toc sections sections deduplication",
+    )?;
     Ok(sections)
 }
 
@@ -1128,7 +1179,8 @@ fn expanded_sections(
         let Some(expanded) = crate::compress::decode(ctx, payload, expected_length)? else {
             continue;
         };
-        let name = ctx.copy_retained_text(section.section.name(ctx)?, "creo expanded section names")?;
+        let name =
+            ctx.copy_retained_text(section.section.name(ctx)?, "creo expanded section names")?;
         ctx.reserve_vec(&mut expanded_sections, 1, "creo expanded sections")?;
         expanded_sections.push(ExpandedSection {
             name,
@@ -1146,13 +1198,17 @@ pub(crate) fn expanded_section_for<'a>(
     scan: &'a ContainerScan<'_>,
     section: &Section,
 ) -> Result<Option<&'a ExpandedSection>, CodecError> {
-    ctx.find_by(&scan.framing.expanded_sections, |expanded| {
-        // An expanded payload begins after its section's `#<name>\n` header, so
-        // its source offset is inside the section but never its first byte.
-        Ok(expanded.name == section.name(ctx)?
-            && section.contains(expanded.source_offset)
-            && expanded.source_offset != section.offset())
-    }, "creo expanded section selection")
+    ctx.find_by(
+        &scan.framing.expanded_sections,
+        |expanded| {
+            // An expanded payload begins after its section's `#<name>\n` header, so
+            // its source offset is inside the section but never its first byte.
+            Ok(expanded.name == section.name(ctx)?
+                && section.contains(expanded.source_offset)
+                && expanded.source_offset != section.offset())
+        },
+        "creo expanded section selection",
+    )
 }
 
 /// The payload bytes of one declared section, in the file the scan read it
@@ -1197,7 +1253,8 @@ fn legacy_product_release(
                 return Ok(None);
             };
             if release.iter().all(u8::is_ascii_graphic) {
-                let release = ctx.validate_utf8(release, "creo UTF-8 validation")?
+                let release = ctx
+                    .validate_utf8(release, "creo UTF-8 validation")?
                     .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
                 return ctx
                     .copy_retained_text(release, "creo legacy product release")
@@ -1207,7 +1264,8 @@ fn legacy_product_release(
         }
         if let Some(release) = word.strip_prefix(b"Release") {
             if !release.is_empty() && release.iter().all(u8::is_ascii_graphic) {
-                let release = ctx.validate_utf8(release, "creo UTF-8 validation")?
+                let release = ctx
+                    .validate_utf8(release, "creo UTF-8 validation")?
                     .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
                 return ctx
                     .copy_retained_text(release, "creo legacy product release")
@@ -1250,8 +1308,9 @@ fn legacy_ascii_framing(
     if schema.is_empty() || !schema.iter().all(u8::is_ascii_digit) {
         return Ok(None);
     }
-    let schema =
-        ctx.validate_utf8(schema, "creo UTF-8 validation")?.map_err(|_| CodecError::malformed("non-ASCII Creo schema"))?;
+    let schema = ctx
+        .validate_utf8(schema, "creo UTF-8 validation")?
+        .map_err(|_| CodecError::malformed("non-ASCII Creo schema"))?;
     let schema = ctx.copy_retained_text(schema, "creo legacy schema")?;
     let mut from = object_header_end + 1;
     while let Some(object_end) =
@@ -1324,23 +1383,30 @@ fn identify_layout(
     sections: &[ScannedSection<'_>],
     legacy_ascii: Option<LegacyAsciiFraming>,
 ) -> Result<Layout, CodecError> {
-    let has_depdb_root = ctx.any_by(sections, |section| {
-        if section.section.name(ctx)? != "DEPDB_DATA" {
-            return Ok(false);
-        }
-        let Some(header_end) = section
-            .section
-            .offset()
-            .checked_add(section.section.raw_name.len() + 2)
-        else {
-            return Ok(false);
-        };
-        Ok(data.get(header_end..section.section.end())
-            .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD)))
-    }, "creo DEPDB root section selection")?;
-    let has_depdb_section = ctx.any_by(sections,
+    let has_depdb_root = ctx.any_by(
+        sections,
+        |section| {
+            if section.section.name(ctx)? != "DEPDB_DATA" {
+                return Ok(false);
+            }
+            let Some(header_end) = section
+                .section
+                .offset()
+                .checked_add(section.section.raw_name.len() + 2)
+            else {
+                return Ok(false);
+            };
+            Ok(data
+                .get(header_end..section.section.end())
+                .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD)))
+        },
+        "creo DEPDB root section selection",
+    )?;
+    let has_depdb_section = ctx.any_by(
+        sections,
         |section| Ok(section.section.name(ctx)? == "DEPDB_DATA"),
-        "creo DEPDB section selection")?;
+        "creo DEPDB section selection",
+    )?;
     let has_nd_decoration = sections
         .iter()
         .any(|s| s.section.raw_name.starts_with("ND:"));
@@ -1416,11 +1482,18 @@ fn geom_census(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
 ) -> Result<GeomCensus, CodecError> {
-    let Some(vg) = (match ctx.find_by(sections, |section| Ok(section.section.name(ctx)? == VISIBGEOM), "creo geometry section selection")? {
+    let Some(vg) = (match ctx.find_by(
+        sections,
+        |section| Ok(section.section.name(ctx)? == VISIBGEOM),
+        "creo geometry section selection",
+    )? {
         Some(section) => Some(section),
-        None => ctx.find_by(sections, |section| Ok(section.section.name(ctx)? == "DEPDB_DATA"), "creo geometry section fallback")?,
-    })
-    else {
+        None => ctx.find_by(
+            sections,
+            |section| Ok(section.section.name(ctx)? == "DEPDB_DATA"),
+            "creo geometry section fallback",
+        )?,
+    }) else {
         return Ok(GeomCensus::default());
     };
     let region = vg.region;
@@ -1505,17 +1578,26 @@ fn cmnm_model_name(
         let Ok(length_text) = ctx.validate_utf8(length_bytes, "creo UTF-8 validation")? else {
             return Ok(None);
         };
-        let Ok(length) = ctx.parse_radix::<usize>(length_text, 16, "creo CMNM hexadecimal parsing")? else {
+        let Ok(length) =
+            ctx.parse_radix::<usize>(length_text, 16, "creo CMNM hexadecimal parsing")?
+        else {
             return Ok(None);
         };
         let Some(name) = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length) else {
             return Ok(None);
         };
-        if name.is_empty() || name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')) {
+        if name.is_empty()
+            || ctx.any_by(
+                name,
+                |byte| Ok(matches!(byte, 0 | b'\n' | b'\r')),
+                "creo CMNM forbidden name byte traversal",
+            )?
+        {
             return Ok(None);
         }
         Ok(ctx.validate_utf8(name, "creo UTF-8 validation")?.ok())
-    })()? else {
+    })()?
+    else {
         return Ok(None);
     };
     Ok(Some((
@@ -1581,7 +1663,9 @@ fn relation_model_name<'a>(
     let filename = filename.trim_end_matches(' ');
     let part_suffix = if filename.len() >= 4 {
         match filename.get(filename.len() - 4..) {
-            Some(suffix) => ctx.eq_ignore_ascii_case(suffix, ".prt", "creo relation model suffix")?,
+            Some(suffix) => {
+                ctx.eq_ignore_ascii_case(suffix, ".prt", "creo relation model suffix")?
+            }
             None => false,
         }
     } else {
@@ -1602,7 +1686,11 @@ fn family_table(
     data: &[u8],
     sections: &[ScannedSection<'_>],
 ) -> Result<Option<FamilyTableRecord>, CodecError> {
-    let Some(section) = ctx.find_by(sections, |section| Ok(section.section.name(ctx)? == "FamilyInf"), "creo named section selection")?
+    let Some(section) = ctx.find_by(
+        sections,
+        |section| Ok(section.section.name(ctx)? == "FamilyInf"),
+        "creo named section selection",
+    )?
     else {
         return Ok(None);
     };
@@ -1731,7 +1819,11 @@ fn loop_array_sections<'a>(
         Ord::cmp,
         "creo loop array sections selected ordering",
     )?;
-    ctx.dedup_by_key(&mut selected, |section| Ok(section.section.offset()), "creo loop array sections selected deduplication")?;
+    ctx.dedup_by_key(
+        &mut selected,
+        |section| Ok(section.section.offset()),
+        "creo loop array sections selected deduplication",
+    )?;
     Ok(selected)
 }
 
@@ -2068,7 +2160,11 @@ fn two_chart_pcurves(
         };
         *count += 1;
     }
-    ctx.retain_vec(&mut records, |record| Ok(counts.get(&record.curve_id) == Some(&1)), "creo aggregate pcurve retain")?;
+    ctx.retain_vec(
+        &mut records,
+        |record| Ok(counts.get(&record.curve_id) == Some(&1)),
+        "creo aggregate pcurve retain",
+    )?;
     Ok(records)
 }
 
@@ -2146,7 +2242,12 @@ fn datum_planes(
         ctx,
         sections
             .iter()
-            .map(|section| section.section.name(ctx).map(|name| (name == "ActDatums").then_some(section)))
+            .map(|section| {
+                section
+                    .section
+                    .name(ctx)
+                    .map(|name| (name == "ActDatums").then_some(section))
+            })
             .filter_map(Result::transpose),
         |bytes| {
             let mut planes = datum::planes(ctx, bytes)?;
@@ -2169,7 +2270,12 @@ fn datum_cylinders(
         ctx,
         sections
             .iter()
-            .map(|section| section.section.name(ctx).map(|name| (name == "ActDatums").then_some(section)))
+            .map(|section| {
+                section
+                    .section
+                    .name(ctx)
+                    .map(|name| (name == "ActDatums").then_some(section))
+            })
             .filter_map(Result::transpose),
         |bytes| datum::cylinders(ctx, bytes),
         |cylinder, base| cylinder.offset_in_payload += base,
@@ -2331,7 +2437,8 @@ fn registered_feature_schema_class(schema_class: crate::feature::schema::SchemaC
     )
 }
 
-fn feature_row_has_model_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn feature_row_has_model_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     row: &FeatureRow,
     structural_ids: &std::collections::BTreeSet<u32>,
     operations: &[FeatureOperation],
@@ -2350,35 +2457,56 @@ fn feature_row_has_model_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     {
         return Ok(true);
     }
-    ctx.any_by(reference_names, |reference| {
-        let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")? else {
-            return Ok(false);
-        };
-        let numbered_family = |family: &str| {
-            ctx.any_by(&[" id ", " ID "], |separator| {
-                let digits = match ctx.strip_prefix(name, family, "creo feature identity family prefix")? {
-                    Some(suffix) => ctx.strip_prefix(suffix, separator, "creo feature identity ordinal prefix")?,
-                    None => None,
-                };
-                let ordinal = match digits {
-                    Some(digits) => ctx.parse_text::<u32>(digits, "creo scalar text parsing")?.ok(),
-                    None => None,
-                };
-                Ok(ordinal == Some(reference.feature_id))
-            }, "creo feature identity numbered family scan")
-        };
-        let named_datum = matches!(name, "Datum Plane" | "Bezugsebene")
-            || numbered_family("Datum Plane")?
-            || numbered_family("Bezugsebene")?
-            || ctx.strip_prefix(name, "DTM", "creo feature identity datum prefix")?.is_some_and(|ordinal| {
-                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-            });
-        Ok(reference.feature_id == row.feature_id
-            && (row.root_schema_class == Some(SchemaClass::Section)
-                || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
-                || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
-                    && name == "PRT_CSYS_DEF")))
-    }, "creo feature identity reference scan")
+    ctx.any_by(
+        reference_names,
+        |reference| {
+            let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")?
+            else {
+                return Ok(false);
+            };
+            let numbered_family = |family: &str| {
+                ctx.any_by(
+                    &[" id ", " ID "],
+                    |separator| {
+                        let digits = match ctx.strip_prefix(
+                            name,
+                            family,
+                            "creo feature identity family prefix",
+                        )? {
+                            Some(suffix) => ctx.strip_prefix(
+                                suffix,
+                                separator,
+                                "creo feature identity ordinal prefix",
+                            )?,
+                            None => None,
+                        };
+                        let ordinal = match digits {
+                            Some(digits) => ctx
+                                .parse_text::<u32>(digits, "creo scalar text parsing")?
+                                .ok(),
+                            None => None,
+                        };
+                        Ok(ordinal == Some(reference.feature_id))
+                    },
+                    "creo feature identity numbered family scan",
+                )
+            };
+            let named_datum = matches!(name, "Datum Plane" | "Bezugsebene")
+                || numbered_family("Datum Plane")?
+                || numbered_family("Bezugsebene")?
+                || ctx
+                    .strip_prefix(name, "DTM", "creo feature identity datum prefix")?
+                    .is_some_and(|ordinal| {
+                        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                    });
+            Ok(reference.feature_id == row.feature_id
+                && (row.root_schema_class == Some(SchemaClass::Section)
+                    || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
+                    || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
+                        && name == "PRT_CSYS_DEF")))
+        },
+        "creo feature identity reference scan",
+    )
 }
 
 fn feature_entity_tables(
@@ -2403,7 +2531,12 @@ fn feature_entity_tables(
         ctx,
         sections
             .iter()
-            .map(|section| section.section.name(ctx).map(|name| (name == "AllFeatur").then_some(section)))
+            .map(|section| {
+                section
+                    .section
+                    .name(ctx)
+                    .map(|name| (name == "AllFeatur").then_some(section))
+            })
             .filter_map(Result::transpose),
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
@@ -2446,7 +2579,11 @@ fn feature_entity_graph(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
 ) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
-    let Some(section) = ctx.find_by(sections, |section| Ok(section.section.name(ctx)? == "AllFeatur"), "creo named section selection")?
+    let Some(section) = ctx.find_by(
+        sections,
+        |section| Ok(section.section.name(ctx)? == "AllFeatur"),
+        "creo named section selection",
+    )?
     else {
         return Ok((Vec::new(), Vec::new()));
     };
@@ -2562,7 +2699,8 @@ fn feature_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "FeatDefs" || section.section.name(ctx)? == "DEPDB_DATA") {
+        if !(section.section.name(ctx)? == "FeatDefs" || section.section.name(ctx)? == "DEPDB_DATA")
+        {
             continue;
         }
         let payload = section.region;
@@ -2738,7 +2876,9 @@ fn section_owner_ranges(
         .admit_iter(sections, "creo section owner count")?
         .try_fold(0usize, |count, section| -> Result<usize, CodecError> {
             if section.section.name(ctx)? == "DEPDB_DATA" {
-                count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX))
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX)
+                })
             } else {
                 Ok(count)
             }
@@ -2770,7 +2910,12 @@ fn positional_replay_definitions(
         ctx,
         sections
             .iter()
-            .map(|section| section.section.name(ctx).map(|name| (name == "FeatDefs").then_some(section)))
+            .map(|section| {
+                section
+                    .section
+                    .name(ctx)
+                    .map(|name| (name == "FeatDefs").then_some(section))
+            })
             .filter_map(Result::transpose),
         |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
         offset_feature_definition,
@@ -2786,7 +2931,14 @@ fn feature_operations(
         ctx,
         sections
             .iter()
-            .map(|section| section.section.name(ctx).and_then(|name| Ok((name == "MdlStatus" || section.section.name(ctx)? == "DEPDB_DATA").then_some(section))))
+            .map(|section| {
+                section.section.name(ctx).and_then(|name| {
+                    Ok(
+                        (name == "MdlStatus" || section.section.name(ctx)? == "DEPDB_DATA")
+                            .then_some(section),
+                    )
+                })
+            })
             .filter_map(Result::transpose),
         |bytes| feature::operations::operations(ctx, bytes),
         |record, base| {
@@ -2848,7 +3000,14 @@ fn feature_operation_states(
         ctx,
         sections
             .iter()
-            .map(|section| section.section.name(ctx).and_then(|name| Ok((name == "MdlStatus" || section.section.name(ctx)? == "DEPDB_DATA").then_some(section))))
+            .map(|section| {
+                section.section.name(ctx).and_then(|name| {
+                    Ok(
+                        (name == "MdlStatus" || section.section.name(ctx)? == "DEPDB_DATA")
+                            .then_some(section),
+                    )
+                })
+            })
             .filter_map(Result::transpose),
         |bytes| feature::operations::operation_states(ctx, bytes),
         |record, base| {
@@ -2929,7 +3088,11 @@ fn geomlists_value(
     sections: &[ScannedSection<'_>],
     label: &[u8],
 ) -> Result<Option<u32>, CodecError> {
-    let Some(section) = ctx.find_by(sections, |section| Ok(section.section.name(ctx)? == "Geomlists"), "creo named section selection")?
+    let Some(section) = ctx.find_by(
+        sections,
+        |section| Ok(section.section.name(ctx)? == "Geomlists"),
+        "creo named section selection",
+    )?
     else {
         return Ok(None);
     };
@@ -3052,7 +3215,11 @@ fn append_topology_rows(
         Ord::cmp,
         "creo append topology rows rows ordering",
     )?;
-    ctx.dedup_by_key(rows, |row| Ok(row.offset), "creo append topology rows rows deduplication")?;
+    ctx.dedup_by_key(
+        rows,
+        |row| Ok(row.offset),
+        "creo append topology rows rows deduplication",
+    )?;
     Ok(())
 }
 
@@ -3081,7 +3248,11 @@ fn append_legacy_curve_witnesses(
         Ord::cmp,
         "creo append legacy curve witnesses pcurves ordering",
     )?;
-    ctx.dedup_by_key(pcurves, |pcurve| Ok(pcurve.offset), "creo append legacy curve witnesses pcurves deduplication")?;
+    ctx.dedup_by_key(
+        pcurves,
+        |pcurve| Ok(pcurve.offset),
+        "creo append legacy curve witnesses pcurves deduplication",
+    )?;
     Ok(())
 }
 
@@ -3349,15 +3520,19 @@ pub(crate) fn scan_bytes<'a>(
             ),
     )?;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
-    ctx.retain_vec(&mut feature_rows, |row| {
-        feature_row_has_model_identity(
-            ctx,
-            row,
-            &structural_feature_ids,
-            &feature_operations,
-            &feature_reference_names,
-        )
-    }, "creo feature identity row retention")?;
+    ctx.retain_vec(
+        &mut feature_rows,
+        |row| {
+            feature_row_has_model_identity(
+                ctx,
+                row,
+                &structural_feature_ids,
+                &feature_operations,
+                &feature_reference_names,
+            )
+        },
+        "creo feature identity row retention",
+    )?;
     let feature_ids = complete_feature_ids(
         ctx,
         structural_feature_ids,
@@ -3664,7 +3839,7 @@ fn cross_sections<'a, 'data, 'ctx>(
 ) -> impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx> {
     sections.iter().filter_map(move |section| {
         match section.section.name(ctx) {
-            Ok("Xsections") => {},
+            Ok("Xsections") => {}
             Ok(_) => return None,
             Err(error) => return Some(Err(error)),
         }
@@ -4031,12 +4206,16 @@ mod feature_row_definition_tests {
     fn cmnm_length_radix_parse_refuses_before_name_selection() {
         use cadmpeg_core::decode::ResourceDimension;
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::WorkUnits, "creo CMNM hexadecimal parsing",
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo CMNM hexadecimal parsing",
             |ctx| super::cmnm_model_name(ctx, b"#- CMNM 001x"),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo CMNM hexadecimal parsing"));
+                && resource.operation == "creo CMNM hexadecimal parsing")
+        );
     }
 
     #[test]
@@ -4045,12 +4224,16 @@ mod feature_row_definition_tests {
         let row = "VisibGeom 0 0 0\n";
         let data = format!("#UGC_TOC 2 1 {}#\n{row}", row.len());
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::WorkUnits, "creo TOC offset hexadecimal parsing",
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo TOC offset hexadecimal parsing",
             |ctx| toc_sections(ctx, data.as_bytes(), 0),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo TOC offset hexadecimal parsing"));
+                && resource.operation == "creo TOC offset hexadecimal parsing")
+        );
     }
 
     #[test]
@@ -4059,12 +4242,16 @@ mod feature_row_definition_tests {
         let row = "VisibGeom 0 0 0\n";
         let data = format!("#UGC_TOC 2 1 {}#\n{row}", row.len());
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::WorkUnits, "creo TOC length hexadecimal parsing",
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo TOC length hexadecimal parsing",
             |ctx| toc_sections(ctx, data.as_bytes(), 0),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo TOC length hexadecimal parsing"));
+                && resource.operation == "creo TOC length hexadecimal parsing")
+        );
     }
 
     #[test]
@@ -4073,12 +4260,16 @@ mod feature_row_definition_tests {
         let row = "VisibGeom 0 0 0\n";
         let data = format!("#UGC_TOC 2 1 {}#\n{row}", row.len());
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::WorkUnits, "creo TOC expanded length hexadecimal parsing",
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo TOC expanded length hexadecimal parsing",
             |ctx| toc_sections(ctx, data.as_bytes(), 0),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo TOC expanded length hexadecimal parsing"));
+                && resource.operation == "creo TOC expanded length hexadecimal parsing")
+        );
     }
 
     #[test]
@@ -4133,36 +4324,56 @@ mod feature_row_definition_tests {
         };
         let structural = std::collections::BTreeSet::new();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
-            &row(42, 913),
-            &structural,
-            std::slice::from_ref(&operation),
-            std::slice::from_ref(&reference),
-        )).expect("service profile admits scalar parsing"));
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
-            &row(42, 923),
-            &structural,
-            std::slice::from_ref(&operation),
-            std::slice::from_ref(&reference),
-        )).expect("service profile admits scalar parsing"));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
-            &row(73, 926),
-            &structural,
-            &[operation],
-            &[reference],
-        )).expect("service profile admits scalar parsing"));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
-            &row(87, 923),
-            &structural,
-            &[],
-            std::slice::from_ref(&datum_reference),
-        )).expect("service profile admits scalar parsing"));
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
-            &row(87, 911),
-            &structural,
-            &[],
-            &[datum_reference],
-        )).expect("service profile admits scalar parsing"));
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(
+                ctx,
+                &row(42, 913),
+                &structural,
+                std::slice::from_ref(&operation),
+                std::slice::from_ref(&reference),
+            ))
+            .expect("service profile admits scalar parsing")
+        );
+        assert!(
+            !crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(
+                ctx,
+                &row(42, 923),
+                &structural,
+                std::slice::from_ref(&operation),
+                std::slice::from_ref(&reference),
+            ))
+            .expect("service profile admits scalar parsing")
+        );
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(
+                ctx,
+                &row(73, 926),
+                &structural,
+                &[operation],
+                &[reference],
+            ))
+            .expect("service profile admits scalar parsing")
+        );
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(
+                ctx,
+                &row(87, 923),
+                &structural,
+                &[],
+                std::slice::from_ref(&datum_reference),
+            ))
+            .expect("service profile admits scalar parsing")
+        );
+        assert!(
+            !crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(
+                ctx,
+                &row(87, 911),
+                &structural,
+                &[],
+                &[datum_reference],
+            ))
+            .expect("service profile admits scalar parsing")
+        );
     }
 
     #[test]
