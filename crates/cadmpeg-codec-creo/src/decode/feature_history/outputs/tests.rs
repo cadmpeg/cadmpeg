@@ -1330,6 +1330,23 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         ]
     );
 
+    let mut existing_surface_output = ir.clone();
+    let sweep_body = BodyId::mint("creo:feature:extrusion#10:body")
+        .expect("identity grammar");
+    existing_surface_output.model.bodies[1].id = sweep_body.clone();
+    existing_surface_output.model.regions[0].body = sweep_body.clone();
+    let output_bodies = crate::test_support::assert_work_boundaries(
+        &["creo feature output body lookup"],
+        |ctx| feature_output_bodies(ctx, &scan, &existing_surface_output, 10),
+    );
+    assert_eq!(
+        output_bodies,
+        vec![
+            sweep_body,
+            BodyId::mint("creo:feature:extrusion#50:body").expect("identity grammar"),
+        ]
+    );
+
     let mut duplicate_shell = ir.clone();
     duplicate_shell.model.shells.push(
         Shell::new(
@@ -1382,6 +1399,79 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         .expect("service profile admits output bodies"),
         vec![BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar")]
     );
+}
+
+#[test]
+fn generated_input_chain_membership_refuses_work_without_surface_route() {
+    let scan = crate::test_support::empty_container_scan();
+    let mut ir = CadIr::empty();
+    // A preexisting evaluated output makes the generated-input chain search nonempty.
+    let initial_output =
+        BodyId::mint("creo:feature:extrusion#10:body").expect("identity grammar");
+    ir.model.bodies.push(Body {
+        id: initial_output.clone(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let body = BodyId::mint("creo:feature:extrusion#50:body").expect("identity grammar");
+    ir.model.bodies.push(Body {
+        id: body.clone(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let producer = GeneratedFaceRef::new(
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+            .expect("identity grammar"),
+        "surface#7".to_string(),
+        &fixture_ctx,
+    )
+    .expect("selection reference admission")
+    .expect("valid generated reference");
+    let faces = FaceSelection::generated(
+        vec![producer],
+        "creo:generated-face#7".to_string(),
+        &fixture_ctx,
+    )
+    .expect("selection reference admission")
+    .expect("valid generated face selection");
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
+            .expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces,
+                thickness: None,
+                side: None,
+            }),
+        ),
+        native_ref: None,
+    });
+
+    assert!(scan.surfaces.rows.is_empty());
+    assert!(ir.model.faces.is_empty());
+    let outputs = crate::test_support::assert_work_boundaries(
+        &["creo feature output body lookup"],
+        |ctx| feature_output_bodies(ctx, &scan, &ir, 10),
+    );
+    assert_eq!(outputs, vec![initial_output, body]);
 }
 
 #[test]

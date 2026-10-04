@@ -1032,6 +1032,40 @@ fn feature_result_identity_validation_refuses_at_work_boundaries() {
 }
 
 #[test]
+fn generated_surface_result_id_membership_refuses_work_and_preserves_face() {
+    let row = crate::surface::SurfaceRow {
+        id: 201,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 17,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let available = std::collections::BTreeSet::from([
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#17")
+            .expect("fixture feature ID"),
+    ]);
+    let results = std::collections::BTreeMap::from([(17, vec![201])]);
+    let generated = crate::test_support::assert_work_boundaries(
+        &["creo generated surface result ID lookup"],
+        |ctx| {
+            generated_surface_face_refs(
+                ctx,
+                &[201],
+                std::slice::from_ref(&row),
+                &results,
+                &available,
+            )
+        },
+    )
+    .expect("the result roster contains the generated surface");
+    assert_eq!(generated.len(), 1);
+    assert_eq!(generated[0].feature.as_str(), "creo:model:feature#17");
+    assert_eq!(generated[0].local_id.as_str(), "surface#201");
+}
+
+#[test]
 fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
     let row = crate::surface::SurfaceRow {
         id: 201,

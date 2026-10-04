@@ -208,7 +208,7 @@ impl FaceAdmissionDetail {
                 }
                 if let Some(end_vertex_id) = binding.end_vertex_id {
                     if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
-                        && !detail.vertex_ids.contains(&end_vertex_id.get())
+                        && !ctx.contains(&detail.vertex_ids, &end_vertex_id.get(), "creo B-rep rejection vertex lookup")?
                     {
                         ctx.reserve_vec(
                             &mut detail.vertex_ids,
@@ -914,7 +914,7 @@ fn component_is_closed(
         else {
             return Ok(false);
         };
-        if !faces.contains(&first.get()) || !faces.contains(&second.get()) { return Ok(false); }
+        if !ctx.contains(faces, &first.get(), "creo closed component first face lookup")? || !ctx.contains(faces, &second.get(), "creo closed component second face lookup")? { return Ok(false); }
     }
     Ok(true)
 }

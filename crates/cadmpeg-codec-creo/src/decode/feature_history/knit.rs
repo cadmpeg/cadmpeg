@@ -725,11 +725,17 @@ pub(in super::super) fn generated_surface_face_refs(
             available_features,
             &feature,
             "creo generated surface feature lookup",
-        )?
-            || !result_surface_ids
-                .get(&row.feature_id)
-                .is_some_and(|ids| ids.contains(surface_id))
-        {
+        )? {
+            return Ok(None);
+        }
+        let Some(ids) = result_surface_ids.get(&row.feature_id) else {
+            return Ok(None);
+        };
+        if !ctx.contains(
+            ids,
+            surface_id,
+            "creo generated surface result ID lookup",
+        )? {
             return Ok(None);
         }
         let local_id = ctx.format_retained(

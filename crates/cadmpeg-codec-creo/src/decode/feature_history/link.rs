@@ -236,7 +236,11 @@ pub(in super::super) fn section_entity_is_generated_profile(
     if rowless_matches == 1 {
         return Ok(true);
     }
-    if !expected_kinds.contains(&crate::surface::SurfaceKind::Cylinder) {
+    if !ctx.contains(
+        expected_kinds,
+        &crate::surface::SurfaceKind::Cylinder,
+        "creo blind generated profile surface kind lookup",
+    )? {
         return Ok(false);
     }
     let mut found_cylinder = false;

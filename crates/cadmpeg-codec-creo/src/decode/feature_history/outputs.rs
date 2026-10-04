@@ -140,7 +140,11 @@ fn feature_output_bodies_with_history(
             let Some(region) = matching_region else {
                 continue;
             };
-            if !outputs.contains(&region.body) {
+            if !ctx.contains(
+                &outputs,
+                &region.body,
+                "creo feature output body lookup",
+            )? {
                 let body = copy_body_id(ctx, &region.body)?;
                 ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
                 outputs.push(body);
@@ -171,7 +175,7 @@ fn feature_output_bodies_with_history(
         }
     }
     for body in edge_outputs.into_iter().chain(generated_input_outputs) {
-        if !outputs.contains(&body) {
+        if !ctx.contains(&outputs, &body, "creo feature output body lookup")? {
             ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
             outputs.push(body);
         }
