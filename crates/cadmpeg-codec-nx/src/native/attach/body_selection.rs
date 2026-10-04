@@ -181,8 +181,15 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
         .and_then(|block| offset_store_identity(block));
     if !offset_blocks.is_empty()
         && (offset_store.is_none()
-            || ctx.admit_iter(&offset_blocks, "NX body selection offset store consistency")?
-                .any(|block| offset_store_identity(block) != offset_store))
+            || ctx.any_by(
+                &offset_blocks,
+                |block| Ok(!ctx.equal(
+                    &offset_store_identity(block),
+                    &offset_store,
+                    "NX body selection offset store identity",
+                )?),
+                "NX body selection offset store consistency",
+            )?)
     {
         return Ok(FeatureBodySelection::Native(native));
     }
