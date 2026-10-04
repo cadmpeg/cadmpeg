@@ -66,8 +66,8 @@ fn push_feature_source_parameter(
         cadmpeg_core::decode::u64_from_index(content.len()),
         "creo feature source content",
     )?;
-    if content
-        .iter()
+    if ctx
+        .admit_iter(&**content, "creo feature source content uniqueness")?
         .any(|entry| matches!(entry, FeatureSourceContent::Parameter(existing) if existing == &id))
     {
         return Err(cadmpeg_core::CodecError::Malformed(
@@ -185,9 +185,8 @@ pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
     let Some(dimension) = table.rows.get(ordinal) else {
         return Ok(None);
     };
-    let unique = table
-        .rows
-        .iter()
+    let unique = ctx
+        .admit_iter(&table.rows, "creo admitted dimension uniqueness")?
         .filter(|candidate| candidate.external_id == dimension.external_id)
         .count()
         == 1;
@@ -205,7 +204,7 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
     scan: &ContainerScan,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
-    for definition in &scan.features.definitions {
+    for definition in ctx.admit_iter(&scan.features.definitions, "creo planned dimension definitions")? {
         let Some(table) = &definition.dimensions else {
             continue;
         };
@@ -215,14 +214,9 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
         if !feature_dimension_table_complete(table) {
             continue;
         }
-        for dimension in &table.rows {
-            let rows = u64::try_from(table.rows.len()).map_err(|_| {
-                cadmpeg_core::CodecError::malformed("Creo dimension row count exceeds u64")
-            })?;
-            ctx.charge_work(rows, "creo planned dimension identity uniqueness")?;
-            if table
-                .rows
-                .iter()
+        for dimension in ctx.admit_iter(&table.rows, "creo planned dimension rows")? {
+            if ctx
+                .admit_iter(&table.rows, "creo planned dimension ID uniqueness")?
                 .filter(|candidate| candidate.external_id == dimension.external_id)
                 .count()
                 != 1
@@ -308,7 +302,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     cadmpeg_core::CodecError,
 > {
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
-    for (sketch, external_id) in keys {
+    for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout keys")? {
         let key = (sketch, *external_id);
         ctx.admit_btree_entry(&local_counts, &key, "creo dimension layout count nodes")?;
         *local_counts.entry(key).or_insert(0) += 1;
@@ -317,7 +311,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
-    for (sketch, external_id) in keys {
+    for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout entries")? {
         ctx.admit_btree_entry(
             &next_ordinals,
             &sketch,
@@ -377,7 +371,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
     let mut feature_ids = BTreeSet::new();
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "creo dimension owner features")? {
         if !feature_ids.contains(&feature.id) {
             ctx.insert_btree_set(
                 &mut feature_ids,
@@ -389,7 +383,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
     }
     let mut candidates = Vec::new();
-    for definition in &scan.features.definitions {
+    for definition in ctx.admit_iter(&scan.features.definitions, "creo dimension source definitions")? {
         let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
@@ -403,7 +397,9 @@ pub(in super::super) fn transfer_feature_dimensions(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        for (source_ordinal, dimension) in table.rows.iter().enumerate() {
+        for (source_ordinal, dimension) in
+            ctx.admit_iter(&table.rows, "creo source dimension rows")?.enumerate()
+        {
             ctx.reserve_vec(&mut candidates, 1, "creo dimension candidates")?;
             candidates.push((
                 sketch.try_clone_for_decode(ctx, "creo dimension candidate sketch IDs")?,
@@ -421,7 +417,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     )?;
     let mut keys = Vec::new();
     ctx.reserve_vec(&mut keys, candidates.len(), "creo dimension layout keys")?;
-    for (sketch, _, _, dimension) in &candidates {
+    for (sketch, _, _, dimension) in ctx.admit_iter(&candidates, "creo dimension layout candidates")? {
         keys.push((
             sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")?,
             dimension.external_id,
@@ -431,7 +427,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         return Ok((0, BTreeMap::new()));
     };
     let mut unique_external_ids = BTreeMap::new();
-    for (_, external_id) in &keys {
+    for (_, external_id) in ctx.admit_iter(&keys, "creo unique dimension external IDs")? {
         ctx.admit_btree_entry(
             &unique_external_ids,
             external_id,
@@ -555,13 +551,14 @@ pub(in super::super) fn transfer_feature_dimensions(
                 native_ref: Some(feature_sketch_record_id_in_scan(ctx, scan, definition)?),
             },
         )?;
-        if let Some(feature) = exactly_one(
-            ir.model
-                .features
-                .iter_mut()
-                .filter(|feature| feature.id == owner_id),
-        ) {
-            push_feature_source_parameter(ctx, &mut feature.source_content, id)?;
+        let owner_index = exactly_one(
+            ctx.admit_iter(&ir.model.features, "creo dimension owner feature lookup")?
+                .enumerate()
+                .filter(|(_, feature)| feature.id == owner_id),
+        )
+        .map(|(index, _)| index);
+        if let Some(index) = owner_index {
+            push_feature_source_parameter(ctx, &mut ir.model.features[index].source_content, id)?;
         }
     }
     Ok((transferred, relation_parameters))

@@ -1262,28 +1262,34 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let mut horizontal = SketchConstraintDefinitionInput::Horizontal {
         entity: first.clone(),
     };
-    assert!(reconcile_constraint_entity_references(
-        &mut horizontal,
-        &emitted
-    ));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            reconcile_constraint_entity_references(ctx, &mut horizontal, &emitted)
+        })
+        .expect("test constraint reconciliation resources")
+    );
     let mut parallel = SketchConstraintDefinitionInput::Parallel {
         first: first.clone(),
         second: second.clone(),
     };
-    assert!(!reconcile_constraint_entity_references(
-        &mut parallel,
-        &emitted
-    ));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| {
+            reconcile_constraint_entity_references(ctx, &mut parallel, &emitted)
+        })
+        .expect("test constraint reconciliation resources")
+    );
     let mut distance = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
         parameter: ParameterId::mint("synthetic:test:id#distance".to_string())
             .expect("identity grammar"),
     };
-    assert!(!reconcile_constraint_entity_references(
-        &mut distance,
-        &emitted
-    ));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| {
+            reconcile_constraint_entity_references(ctx, &mut distance, &emitted)
+        })
+        .expect("test constraint reconciliation resources")
+    );
     let mut native = SketchConstraintDefinitionInput::Native {
         native_kind: cadmpeg_core::text::NonBlankString::try_from("creo:test")
             .expect("nonempty native kind"),
@@ -1294,10 +1300,12 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         native_flags: None,
         native_properties: std::collections::BTreeMap::new(),
     };
-    assert!(reconcile_constraint_entity_references(
-        &mut native,
-        &emitted
-    ));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            reconcile_constraint_entity_references(ctx, &mut native, &emitted)
+        })
+        .expect("test constraint reconciliation resources")
+    );
     assert!(matches!(
         native,
         SketchConstraintDefinitionInput::Native { entities, .. }
@@ -1572,35 +1580,49 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             crate::decode::with_test_decode_ctx(|ctx| row_feature_schema_classes(ctx, rows, 6))
                 .expect("schema classes fit service limits")
         };
+        let resolve_classes =
+            |operations: &[crate::feature::operations::FeatureOperation],
+             rows: &[crate::feature::rows::FeatureRow]| {
+                let classes = checked_classes(rows);
+                crate::decode::with_test_decode_ctx(|ctx| {
+                    resolved_feature_schema_class_from_classes(
+                        operations,
+                        6,
+                        |visit_class| {
+                            for class in ctx.admit_iter(&classes, "test feature schema classes")? {
+                                if matches!(
+                                    visit_class(*class)?,
+                                    std::ops::ControlFlow::Break(())
+                                ) {
+                                    break;
+                                }
+                            }
+                            Ok(())
+                        },
+                        || Ok(false),
+                    )
+                })
+                .expect("feature schema class rows fit service limits")
+            };
         assert_eq!(
-            resolved_feature_schema_class_from_classes(
-                &[],
-                checked_classes(&[row(917, 20), row(917, 30)]),
-                6,
-            ),
+            resolve_classes(&[], &[row(917, 20), row(917, 30)]),
             Some(crate::feature::schema::SchemaClass::Protrusion)
         );
         assert_eq!(
-            resolved_feature_schema_class_from_classes(
-                &[],
-                checked_classes(&[row(913, 20), row(914, 30)]),
-                6,
-            ),
+            resolve_classes(&[], &[row(913, 20), row(914, 30)]),
             None
         );
         assert_eq!(
-            resolved_feature_schema_class_from_classes(
+            resolve_classes(
                 std::slice::from_ref(&operation),
-                checked_classes(&[row(913, 20), row(914, 30)]),
-                6,
+                &[row(913, 20), row(914, 30)],
             ),
             Some(crate::feature::schema::SchemaClass::Protrusion)
         );
         assert_eq!(
-            resolved_feature_schema_class_from_classes(
+            resolve_classes(
                 std::slice::from_ref(&operation),
-                checked_classes(&[row(913, 20), row(913, 30)]),
-                6,
+                &[row(913, 20), row(913, 30)],
             ),
             Some(crate::feature::schema::SchemaClass::Protrusion)
         );
@@ -1615,15 +1637,19 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             feature_id,
             offset,
         };
+        let extent_feature_id = |records: &[crate::feature::rows::FeatureRevolutionExtent],
+                                 feature_id| {
+            crate::decode::with_test_decode_ctx(|ctx| {
+                unique_feature_revolution_extent(ctx, records, feature_id)
+                    .map(|extent| extent.map(|record| record.feature_id))
+            })
+            .expect("revolution extent rows fit service limits")
+        };
         assert_eq!(
-            unique_feature_revolution_extent(&[extent(6, 40), extent(6, 50)], 6)
-                .map(|e| e.feature_id),
+            extent_feature_id(&[extent(6, 40), extent(6, 50)], 6),
             Some(6)
         );
-        assert_eq!(
-            unique_feature_revolution_extent(&[extent(7, 40)], 6).map(|e| e.feature_id),
-            None
-        );
+        assert_eq!(extent_feature_id(&[extent(7, 40)], 6), None);
         let transform = crate::placement::FeatureSectionTransform::new(
             5,
             Some(6),
@@ -1716,36 +1742,44 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         };
         let replay_geometry = replay(&[9], &[7], 80);
         assert_eq!(
-            agreed_feature_geometry_ids(&[], std::slice::from_ref(&replay_geometry), 6),
+            agreed_feature_geometry_ids(ctx, &[], std::slice::from_ref(&replay_geometry), 6)
+                .expect("admitted feature geometry ID agreement"),
             Some(&[9][..])
         );
         let named_empty = geometry(&[], 60);
         assert_eq!(
             agreed_feature_geometry_ids(
+                ctx,
                 std::slice::from_ref(&named_empty),
                 std::slice::from_ref(&replay_geometry),
                 6,
-            ),
+            )
+            .expect("admitted feature geometry ID agreement"),
             Some(&[][..])
         );
         let conflicting_named = [geometry(&[7], 60), geometry(&[8], 70)];
         assert_eq!(
             agreed_feature_geometry_ids(
+                ctx,
                 &conflicting_named,
                 std::slice::from_ref(&replay_geometry),
                 6,
-            ),
+            )
+            .expect("admitted feature geometry ID agreement"),
             None
         );
         assert_eq!(
             agreed_feature_replay_geometry_ids(
+                ctx,
                 &[replay(&[1, 2], &[7], 80), replay(&[1, 2], &[7], 90)],
                 6,
-            ),
+            )
+            .expect("admitted replay geometry ID agreement"),
             Some(&[1, 2][..])
         );
         assert_eq!(
-            agreed_feature_replay_edge_ids(&[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,),
+            agreed_feature_replay_edge_ids(ctx, &[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,)
+                .expect("admitted replay edge ID agreement"),
             None
         );
     });

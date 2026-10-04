@@ -23,7 +23,7 @@ use super::nurbs::{
     translated_nurbs_curve,
 };
 use crate::container::ContainerScan;
-use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
+use crate::decode::sketch_transfer::identity::visit_semantic_saved_section_entities;
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::vecmath::normalize;
@@ -284,12 +284,11 @@ pub(in super::super) fn transfer_saved_spline_curves(
         else {
             continue;
         };
-        for spline in
-            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
-                _ => None,
-            })
-        {
+        // discarded-value: The visitor continues through every semantic saved entity.
+        let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+            let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;
@@ -313,7 +312,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                         ),
                     )?;
                 }
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
                 ctx.format_scoped(
@@ -333,10 +332,10 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 "creo saved spline curve identity",
             )?;
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             }
             let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             annotate(
                 ctx,
@@ -370,7 +369,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 },
             )?;
             transferred += 1;
-        }
+            Ok(std::ops::ControlFlow::Continue(()))
+        })?;
     }
     Ok(transferred)
 }
@@ -604,7 +604,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_linear_extrusion(scan, feature_id) {
+        if !feature_allows_linear_extrusion(ctx, scan, feature_id)? {
             continue;
         }
         let Some(order_table) = &definition.order_table else {
@@ -625,12 +625,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let Some(surface_id) = analytic_surface_id_for_feature(
+                ctx,
                 &scan.surfaces.rows,
                 &scan.features.entity_tables,
                 feature_id,
                 segment.external_id,
                 &geometry,
-            ) else {
+            )? else {
                 continue;
             };
             let id = crate::identity::compose_checked::<SurfaceId>(
@@ -676,24 +677,29 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        for (internal_id, section_geometry, offset) in
-            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
-        {
+        // discarded-value: The visitor continues through every semantic saved entity.
+        let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+            let Some((internal_id, section_geometry, offset)) =
+                saved_section_entity_geometry(ctx, entity)?
+            else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
             let Some(external_id) = order_table.external_id(internal_id) else {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(
+                ctx,
                 &scan.features.entity_tables,
                 feature_id,
                 external_id,
-            ) else {
-                continue;
+            )? else {
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let Some(expected_kind) = surface_kind_for_geometry(&geometry) else {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             if !unique_feature_surface_row(
                 &scan.surfaces.rows,
@@ -701,7 +707,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 feature_id,
                 expected_kind,
             ) {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             }
             let id = crate::identity::compose_checked::<SurfaceId>(
                 ctx,
@@ -710,7 +716,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             }
             annotate(
                 ctx,
@@ -744,31 +750,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 },
             )?;
             transferred += 1;
-        }
-
-        let splines = semantic_saved_section_entities(definition)
-            .filter_map(|entity| match entity {
-                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
-                _ => None,
-            })
-            .filter_map(|spline| {
-                let internal_id = spline.entity_id?;
-                let external_id = order_table.external_id(internal_id)?;
-                let surface_id = generated_surface_id_for_feature(
-                    &scan.features.entity_tables,
-                    feature_id,
-                    external_id,
-                )?;
-                unique_feature_surface_row(
-                    &scan.surfaces.rows,
-                    surface_id,
-                    feature_id,
-                    crate::surface::SurfaceKind::Extrusion(
-                        crate::surface::ExtrusionVariant::Linear,
-                    ),
-                )
-                .then_some((surface_id, internal_id, spline))
-            });
+            Ok(std::ops::ControlFlow::Continue(()))
+        })?;
         let Some(span) =
             resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
@@ -778,7 +761,33 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        for (native_surface_id, internal_id, spline) in splines {
+        // discarded-value: The visitor continues through every semantic saved entity.
+        let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+            let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let Some(internal_id) = spline.entity_id else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let Some(external_id) = order_table.external_id(internal_id) else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            let Some(native_surface_id) = generated_surface_id_for_feature(
+                ctx,
+                &scan.features.entity_tables,
+                feature_id,
+                external_id,
+            )? else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
+            if !unique_feature_surface_row(
+                &scan.surfaces.rows,
+                native_surface_id,
+                feature_id,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+            ) {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            }
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;
@@ -802,13 +811,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         ),
                     )?;
                 }
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let Some(placed) = placed_section_nurbs(ctx, transform, &section_curve)? else {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let Some(directrix) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(surface) = extruded_nurbs_surface(
@@ -828,7 +837,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         spline.offset
                     ))?;
                 }
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             let directrix_range = directrix
                 .knots()
@@ -882,7 +891,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             }
             let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
                 ctx,
@@ -940,7 +949,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     spline.offset
                 ),
                 )?;
-                continue;
+                return Ok(std::ops::ControlFlow::Continue(()));
             };
             source_carriers.admit_procedural_surface(
                 ctx,
@@ -963,7 +972,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             )?;
             transferred += 1;
-        }
+            Ok(std::ops::ControlFlow::Continue(()))
+        })?;
     }
     Ok(transferred)
 }
@@ -973,13 +983,13 @@ fn extrusion_solved_segment_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut solved = BTreeSet::new();
-    for id in definition
-        .trim_entities
-        .iter()
-        .flat_map(|trim_entities| &trim_entities.rows)
-        .filter_map(|row| trim_segment_id(definition, row))
-    {
-        ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
+    let Some(trim_entities) = definition.trim_entities.as_ref() else {
+        return Ok(solved);
+    };
+    for row in ctx.admit_iter(&trim_entities.rows, "creo extrusion trim entity rows")? {
+        if let Some(id) = trim_segment_id(ctx, definition, row)? {
+            ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
+        }
     }
     Ok(solved)
 }

@@ -66,7 +66,7 @@ fn resolve_carrier_intersection_curve(
     points: Option<[[f64; 3]; 2]>,
     allow_unresolved_endpoint_witness: bool,
 ) -> Result<Option<(CurveGeometry, &'static str)>, CodecError> {
-    let Some((geometry, tag)) = carrier_intersection_curve(first, second) else {
+    let Some((geometry, tag)) = carrier_intersection_curve(ctx, first, second)? else {
         return Ok(None);
     };
     let candidates = analytic_curve_branches(ctx, &geometry, tag)?;
@@ -113,11 +113,8 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
     let edge_vertices =
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
-    for row in
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?
-    {
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)?;
+    for row in ctx.admit_iter(&unique_rows, "creo boundary unique topology row traversal")?.copied() {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -145,27 +142,30 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             .get(&row.id)
             .is_some_and(|evidence| !evidence.complete)
             && !nurbs_endpoint_witnesses.contains(&curve_id);
-        let resolved = resolve_carrier_intersection_curve(
+        let resolved = if let Some(resolved) = resolve_carrier_intersection_curve(
             ctx,
             first,
             second,
             points,
             allow_unresolved_endpoint_witness,
-        )?
-        .or_else(|| {
-            let candidates = multi_component_intersection_candidates(first, second);
+        )? {
+            Some(resolved)
+        } else {
+            let candidates = multi_component_intersection_candidates(ctx, first, second)?;
             if points.is_some() {
                 resolve_curve_candidates(candidates, points)
             } else {
-                let held = fc14_held_coordinate(&scan.curves.fc_coordinates, row.id)?;
-                select_fc14_axis_coordinate_candidate(candidates, held)
+                match fc14_held_coordinate(ctx, &scan.curves.fc_coordinates, row.id)? {
+                    Some(held) => select_fc14_axis_coordinate_candidate(candidates, held),
+                    None => None,
+                }
             }
-        });
+        };
         let Some((geometry, tag)) = resolved else {
             continue;
         };
         let id = curve_id;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")?.any(|curve| curve.id == id) {
             continue;
         }
         annotate(
@@ -293,7 +293,7 @@ fn note_boundary_lane_records(
     records: &[String],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    for record in records {
+    for record in ctx.admit_iter(records, "creo boundary loss record traversal")? {
         let message = ctx.format_retained(
             format_args!(
                 "VisibGeom curve-topology row {curve_row_id} states no NURBS boundary carrier: \
@@ -322,11 +322,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    for row in
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?
-    {
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| row.id)?;
+    for row in ctx.admit_iter(&unique_rows, "creo boundary unique topology row traversal")?.copied() {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;
         };
@@ -416,7 +413,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             row.id,
             "creo NURBS boundary curve identity",
         )?;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")?.any(|curve| curve.id == id) {
             continue;
         }
         annotate(

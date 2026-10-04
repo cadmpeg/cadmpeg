@@ -30,23 +30,24 @@ const EPS_AXIS_COMPONENT: f64 = 1.0e-10;
 const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 
 pub(super) fn multi_component_intersection_candidates(
+    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> impl Iterator<Item = (CurveGeometry, &'static str)> {
-    parallel_plane_cylinder_generator_candidates(first, second)
+) -> Result<impl Iterator<Item = (CurveGeometry, &'static str)>, CodecError> {
+    Ok(parallel_plane_cylinder_generator_candidates(first, second)
         .into_iter()
         .chain(parallel_cylinder_generator_candidates(first, second))
         .chain(coaxial_cylinder_sphere_circle_candidates(first, second))
         .chain(coaxial_cone_cylinder_circle_candidates(first, second))
-        .chain(coaxial_cones_section_candidates(first, second))
-        .chain(apex_plane_cone_generator_candidates(first, second))
+        .chain(coaxial_cones_section_candidates(ctx, first, second)?)
+        .chain(apex_plane_cone_generator_candidates(ctx, first, second)?.into_iter())
         .chain(coaxial_cone_sphere_circle_candidates(first, second))
-        .chain(coaxial_cone_torus_circle_candidates(first, second))
+        .chain(coaxial_cone_torus_circle_candidates(ctx, first, second)?)
         .chain(coaxial_cylinder_torus_circle_candidates(first, second))
-        .chain(coaxial_sphere_torus_circle_candidates(first, second))
-        .chain(coaxial_tori_circle_candidates(first, second))
+        .chain(coaxial_sphere_torus_circle_candidates(ctx, first, second)?.into_iter())
+        .chain(coaxial_tori_circle_candidates(ctx, first, second)?.into_iter())
         .chain(axis_normal_plane_torus_circle_candidates(first, second))
-        .chain(axis_containing_plane_torus_circle_candidates(first, second))
+        .chain(axis_containing_plane_torus_circle_candidates(first, second)))
 }
 
 fn carrier_intersection_components(
@@ -55,9 +56,9 @@ fn carrier_intersection_components(
     second: CarrierEquation,
 ) -> Result<Vec<(CurveGeometry, &'static str)>, CodecError> {
     let mut components = Vec::new();
-    for component in carrier_intersection_curve(first, second)
+    for component in carrier_intersection_curve(ctx, first, second)?
         .into_iter()
-        .chain(multi_component_intersection_candidates(first, second))
+        .chain(multi_component_intersection_candidates(ctx, first, second)?)
     {
         ctx.reserve_vec(&mut components, 1, "creo carrier intersection components")?;
         components.push(component);
@@ -72,17 +73,19 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
     second: CarrierEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
     let mut intersections = Vec::new();
-    for (geometry, _) in carrier_intersection_components(ctx, first, second)? {
+    let components = carrier_intersection_components(ctx, first, second)?;
+    for (geometry, _) in ctx.admit_iter(&components, "creo carrier intersection components")? {
         let Some((center, axis, radius)) = circle_parameters(&geometry) else {
             continue;
         };
-        for point in intersect_plane_with_circle(ctx, plane, center, axis, radius)? {
+        let points = intersect_plane_with_circle(ctx, plane, center, axis, radius)?;
+        for point in ctx.admit_iter(&points, "creo plane-carrier circle intersections")? {
             ctx.reserve_vec(
                 &mut intersections,
                 1,
                 "creo plane-carrier component intersections",
             )?;
-            intersections.push(point);
+            intersections.push(*point);
         }
     }
     Ok(intersections)
@@ -161,26 +164,36 @@ pub(in super::super) fn resolve_curve_candidates(
 }
 
 pub(in super::super) fn fc14_held_coordinate(
+    ctx: &DecodeContext<'_>,
     coordinates: &[crate::curve::FcCurveCoordinates],
     curve_id: u32,
-) -> Option<f64> {
-    let mut records = coordinates
-        .iter()
+) -> Result<Option<f64>, CodecError> {
+    let mut records = ctx
+        .admit_iter(coordinates, "creo FC14 coordinate records")?
         .filter(|record| record.curve_id == curve_id && record.subtype == 0x14);
-    let record = records.next()?;
-    records.next().is_none().then_some(())?;
-    let mut tokens = record
-        .tokens
-        .iter()
-        .filter(|token| token.raw.first() == Some(&0x2d));
-    let first = tokens.next()?;
-    for _ in 0..3 {
-        let token = tokens.next()?;
-        (token.raw == first.raw && token.value_mm == first.value_mm).then_some(())?;
+    let Some(record) = records.next() else {
+        return Ok(None);
+    };
+    if records.next().is_some() {
+        return Ok(None);
     }
-    (first.value_mm.is_finite()
+    let mut tokens = ctx
+        .admit_iter(&record.tokens, "creo FC14 coordinate tokens")?
+        .filter(|token| token.raw.first() == Some(&0x2d));
+    let Some(first) = tokens.next() else {
+        return Ok(None);
+    };
+    for _ in 0..3 {
+        let Some(token) = tokens.next() else {
+            return Ok(None);
+        };
+        if token.raw != first.raw || token.value_mm != first.value_mm {
+            return Ok(None);
+        }
+    }
+    Ok((first.value_mm.is_finite()
         && tokens.all(|token| token.raw == first.raw && token.value_mm == first.value_mm))
-    .then_some(first.value_mm)
+    .then_some(first.value_mm))
 }
 
 pub(in super::super) fn select_fc14_axis_coordinate_candidate(

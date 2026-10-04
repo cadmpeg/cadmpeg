@@ -60,7 +60,9 @@ fn prototype_vector_array(
         return Ok(None);
     }
     let mut triples = Vec::new();
-    for coordinates in array.values().chunks_exact(3) {
+    for coordinates in ctx.admit_iter(array.values(), "creo prototype vector array traversal")?
+        .chunks(std::num::NonZeroUsize::new(3).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero prototype vector width"))?)
+        .filter(|coordinates| coordinates.len() == 3) {
         let [Some(x), Some(y), Some(z)] = coordinates else {
             return Ok(None);
         };
@@ -82,7 +84,7 @@ fn prototype_parameter_array(
         return Ok(None);
     };
     let mut parameters = Vec::new();
-    for value in array.values() {
+    for value in ctx.admit_iter(array.values(), "creo prototype parameter array traversal")? {
         let Some(value) = value else {
             return Ok(None);
         };
@@ -184,26 +186,26 @@ fn prototype_local_frame(
     Some((origin, axis, reference))
 }
 
-fn first_instance_surface_row(
-    rows: &[crate::surface::SurfaceRow],
+fn first_instance_surface_row<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &'a [crate::surface::SurfaceRow],
     frame_start: usize,
     frame_end: usize,
     prototype_offset: usize,
     row_kind: crate::surface::SurfaceKind,
-) -> Option<&crate::surface::SurfaceRow> {
-    let previous = rows
-        .iter()
+) -> Result<Option<&'a crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
+    let previous = ctx.admit_iter(rows, "creo preceding prototype row selection")?
         .filter(|row| {
             row.offset >= frame_start && row.offset < frame_end && row.offset < prototype_offset
         })
         .max_by_key(|row| row.offset);
     if previous.is_some_and(|row| row.kind == row_kind) {
-        return previous;
+        return Ok(previous);
     }
-    rows.iter()
+    Ok(ctx.admit_iter(rows, "creo following prototype row selection")?
         .filter(|row| row.offset >= frame_start && row.offset < frame_end)
         .filter(|row| row.offset > prototype_offset && row.kind == row_kind)
-        .min_by_key(|row| row.offset)
+        .min_by_key(|row| row.offset))
 }
 
 /// Bounds of the complete surface array that holds one prototype record.
@@ -309,7 +311,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     cadmpeg_core::CodecError,
 > {
     let mut associations = Vec::new();
-    for record in &scan.surfaces.prototype_records {
+    for record in ctx.admit_iter(&scan.surfaces.prototype_records, "creo unique surface prototype associations prototype records traversal")? {
         let (prototype, row_kind) = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => (
                 SupportedPrototype::Plane(record),
@@ -333,10 +335,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             ),
             _ => continue,
         };
-        let Some(section) = scan
-            .framing
-            .sections
-            .iter()
+        let Some(section) = ctx.admit_iter(&scan.framing.sections, "creo prototype section search")?
             .find(|section| section.contains(record.offset))
         else {
             continue;
@@ -347,12 +346,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             continue;
         };
         let Some(row) = first_instance_surface_row(
+            ctx,
             &scan.surfaces.rows,
             adjacent_start,
             adjacent_end,
             record.offset,
             row_kind,
-        ) else {
+        )? else {
             continue;
         };
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id)
@@ -364,7 +364,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
-    for (_, row, _) in &associations {
+    for (_, row, _) in ctx.admit_iter(&associations, "creo unique surface prototype associations associations traversal")? {
         ctx.admit_btree_entry(
             &association_counts,
             &row.offset,
@@ -397,7 +397,8 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         return Ok(0);
     }
     let mut transferred = 0;
-    for (prototype, row, section) in unique_surface_prototype_associations(ctx, scan)? {
+    let associations = unique_surface_prototype_associations(ctx, scan)?;
+    for (prototype, row, section) in ctx.admit_iter(&associations, "creo prototype association traversal")?.copied() {
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
@@ -520,7 +521,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             row.id,
             "creo decoded model identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ctx.admit_iter(&ir.model.surfaces, "creo prototype model surface search")?.any(|surface| surface.id == id) {
             continue;
         }
         annotate(
@@ -566,7 +567,7 @@ fn relative_surface_rows(
     section: &crate::container::Section,
 ) -> Result<Vec<crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
     let mut relative = Vec::new();
-    for candidate in rows.iter().filter(|row| section.contains(row.offset)) {
+    for candidate in ctx.admit_iter(rows, "creo relative surface row traversal")?.filter(|row| section.contains(row.offset)) {
         let Some(offset) = candidate.offset.checked_sub(section.offset()) else {
             continue;
         };
@@ -596,7 +597,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         return Ok(0);
     }
     let mut transferred = 0;
-    for parameter in &scan.surfaces.parameters {
+    for parameter in ctx.admit_iter(&scan.surfaces.parameters, "creo transfer positional spline replays parameters traversal")? {
         if parameter.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
             continue;
         }
@@ -684,7 +685,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             row.id,
             "creo decoded model identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ctx.admit_iter(&ir.model.surfaces, "creo prototype model surface search")?.any(|surface| surface.id == id) {
             continue;
         }
         annotate(
@@ -723,12 +724,18 @@ pub(in super::super) fn transfer_positional_spline_replays(
     Ok(transferred)
 }
 
-fn legacy_carrier_counts(
+fn legacy_carrier_counts<'a, S, T: 'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ids: impl IntoIterator<Item = u32>,
-) -> Result<BTreeMap<u32, usize>, cadmpeg_core::CodecError> {
+    source: &'a S,
+    id: impl Fn(&T) -> u32,
+) -> Result<BTreeMap<u32, usize>, cadmpeg_core::CodecError>
+where
+    S: cadmpeg_core::decode::iter_source::IterSource + ?Sized,
+    S::Iter<'a>: Iterator<Item = &'a T>,
+{
     let mut counts = BTreeMap::new();
-    for id in ids {
+    for item in ctx.admit_iter(source, "creo legacy carrier count traversal")? {
+        let id = id(item);
         if let Some(count) = counts.get_mut(&id) {
             *count += 1;
         } else {
@@ -759,14 +766,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     }
     let carrier_counts = legacy_carrier_counts(
         ctx,
-        scan.surfaces
-            .legacy_carriers
-            .iter()
-            .map(|carrier| carrier.surface_id),
+        &scan.surfaces.legacy_carriers,
+        |carrier| carrier.surface_id,
     )?;
 
     let mut transferred = 0;
-    for carrier in &scan.surfaces.legacy_carriers {
+    for carrier in ctx.admit_iter(&scan.surfaces.legacy_carriers, "creo transfer legacy ascii surface carriers legacy carriers traversal")? {
         if carrier_counts.get(&carrier.surface_id) != Some(&1) {
             continue;
         }
@@ -875,7 +880,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             carrier.surface_id,
             "creo decoded model identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ctx.admit_iter(&ir.model.surfaces, "creo prototype model surface search")?.any(|surface| surface.id == id) {
             continue;
         }
         annotate(

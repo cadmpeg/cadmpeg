@@ -11,7 +11,7 @@ use cadmpeg_ir::features::{
 
 use super::super::link::{
     link_feature_sketch_history, ordered_family_surface_bindings_for_feature, profile_segment_ids,
-    section_entity_is_generated_profile,
+    section_entity_is_generated_profile, unique_model_feature_index,
 };
 
 fn section_scan() -> crate::container::ContainerScan<'static> {
@@ -85,6 +85,27 @@ fn link_service(scan: &crate::container::ContainerScan<'_>, ir: &mut CadIr) {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     link_feature_sketch_history(&ctx, scan, ir).expect("service history link");
+}
+
+#[test]
+fn linked_feature_lookup_propagates_scan_refusal() {
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature("creo:model:feature#2"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
+    let target = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#2")
+        .expect("feature identity");
+    let error = unique_model_feature_index(&ctx, &ir, &target)
+        .expect_err("model feature lookup exceeds the work limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo linked model feature lookup"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -192,25 +213,51 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         offset: 0,
     };
     let rows = vec![row(29), row(30), row(32)];
-    assert!(section_entity_is_generated_profile(
+    let mut malformed = table.clone();
+    malformed.entries.pop();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &[crate::surface::SurfaceKind::Plane],
+            std::slice::from_ref(&table),
+            &rows,
+        )?);
+        assert!(!section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &[crate::surface::SurfaceKind::Plane],
+            std::slice::from_ref(&malformed),
+            &rows,
+        )?);
+        Ok::<(), CodecError>(())
+    })
+    .expect("service limits admit section profile scans");
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = section_entity_is_generated_profile(
+        &ctx,
         true,
         Some(7),
         11,
         &[crate::surface::SurfaceKind::Plane],
         std::slice::from_ref(&table),
         &rows,
-    ));
-
-    let mut malformed = table;
-    malformed.entries.pop();
-    assert!(!section_entity_is_generated_profile(
-        true,
-        Some(7),
-        11,
-        &[crate::surface::SurfaceKind::Plane],
-        std::slice::from_ref(&malformed),
-        &rows,
-    ));
+    )
+    .expect_err("feature table lookup exceeds the work limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo generated surface feature tables"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -246,24 +293,30 @@ fn rowless_generated_profile_rejects_duplicate_entity_ids() {
         offset: 0,
     };
     let rows = [row(29), row(30), row(32)];
-    assert!(section_entity_is_generated_profile(
-        true,
-        Some(7),
-        11,
-        &[crate::surface::SurfaceKind::Plane],
-        std::slice::from_ref(&table),
-        &rows,
-    ));
-    table.entries[0].entity_id = 30;
-    let table = table.with_surface_ids([30, 32]);
-    assert!(!section_entity_is_generated_profile(
-        true,
-        Some(7),
-        11,
-        &[crate::surface::SurfaceKind::Plane],
-        &[table],
-        &rows,
-    ));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &[crate::surface::SurfaceKind::Plane],
+            std::slice::from_ref(&table),
+            &rows,
+        )?);
+        table.entries[0].entity_id = 30;
+        let table = table.with_surface_ids([30, 32]);
+        assert!(!section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &[crate::surface::SurfaceKind::Plane],
+            &[table],
+            &rows,
+        )?);
+        Ok::<(), CodecError>(())
+    })
+    .expect("service limits admit section profile scans");
 }
 
 fn ordered_binding_fixture() -> (

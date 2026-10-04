@@ -311,7 +311,10 @@ fn existing_plane_carrier_accepts_reversed_normal() {
     ));
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         Some(true)
     );
 }
@@ -328,7 +331,10 @@ fn existing_plane_carrier_rejects_offset_conflict() {
     ));
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         Some(false)
     );
 }
@@ -338,7 +344,10 @@ fn existing_unknown_carrier_does_not_compete_with_topology() {
     let existing = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         None
     );
 }
@@ -356,7 +365,10 @@ fn existing_non_plane_carrier_conflicts_with_topology() {
     ));
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         Some(false)
     );
 }

@@ -75,6 +75,27 @@ fn round_sample_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
+#[test]
+fn surface_parameter_record_lookup_propagates_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = round_sample_scan();
+    let row = &scan.surfaces.rows[0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
+    let error = super::unique_surface_parameter_record(&ctx, &scan, row)
+        .expect_err("parameter lookup exceeds the work limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo surface parameter records"),
+        "{error:?}"
+    );
+}
+
 fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
@@ -638,6 +659,64 @@ fn slot_fillet_midplanes_refuse_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo slot fillet midplanes"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn slot_fillet_support_plane_pair_scan_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let plane =
+        |origin, normal| crate::decode::analytic::equations::PlaneEquation { origin, normal };
+    let caps = [
+        plane([0.0, -2.0, 0.0], [0.0, 1.0, 0.0]),
+        plane([0.0, 3.0, 0.0], [0.0, 1.0, 0.0]),
+    ];
+    let supports = [
+        plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+        plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+    ];
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo slot fillet support plane pairs",
+        |ctx| super::slot_fillet_cylinder(ctx, caps, &supports),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo slot fillet support plane pairs"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn slot_fillet_midplane_pair_scan_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let plane =
+        |origin, normal| crate::decode::analytic::equations::PlaneEquation { origin, normal };
+    let caps = [
+        plane([0.0, -2.0, 0.0], [0.0, 1.0, 0.0]),
+        plane([0.0, 3.0, 0.0], [0.0, 1.0, 0.0]),
+    ];
+    let supports = [
+        plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+        plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+    ];
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo slot fillet midplane pairs",
+        |ctx| super::slot_fillet_cylinder(ctx, caps, &supports),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo slot fillet midplane pairs"),
         "{error:?}"
     );
 }

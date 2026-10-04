@@ -123,7 +123,10 @@ fn saved_line_joins_through_order_table() {
     };
 
     assert_eq!(
-        saved_section_line_geometry(&definition, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &definition, &segment)
+        })
+        .expect("test saved-line resources"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
@@ -221,13 +224,17 @@ fn saved_line_joins_through_order_table() {
         panic!("saved line");
     };
     incomplete_line.endpoints[1][1] = None;
-    assert!(saved_section_entity_geometry(
-        &incomplete
-            .saved_section
-            .as_ref()
-            .expect("saved section")
-            .entities[0]
-    )
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        saved_section_entity_geometry(
+            ctx,
+            &incomplete
+                .saved_section
+                .as_ref()
+                .expect("saved section")
+                .entities[0],
+        )
+    })
+    .expect("test saved-entity resources")
     .is_none());
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &incomplete))
@@ -280,7 +287,10 @@ fn saved_line_joins_through_order_table() {
             offset: 11,
         });
     assert_eq!(
-        saved_section_line_geometry(&duplicate_order_row, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &duplicate_order_row, &segment)
+        })
+        .expect("test saved-line resources"),
         None
     );
     let mut duplicate_saved_line = definition.clone();
@@ -297,7 +307,10 @@ fn saved_line_joins_through_order_table() {
         .entities
         .push(duplicate);
     assert_eq!(
-        saved_section_line_geometry(&duplicate_saved_line, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &duplicate_saved_line, &segment)
+        })
+        .expect("test saved-line resources"),
         None
     );
     assert_eq!(
@@ -617,7 +630,7 @@ fn saved_line_joins_through_order_table() {
             offset: 32,
         }];
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     solver_families
@@ -648,7 +661,7 @@ fn saved_line_joins_through_order_table() {
         .rows_mut()[0]
         .status = 0;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     solver_families
@@ -662,7 +675,7 @@ fn saved_line_joins_through_order_table() {
         .items[0]
         .sense = 4;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Circular)
     );
     solver_families
@@ -685,7 +698,7 @@ fn saved_line_joins_through_order_table() {
         .rows_mut()[0]
         .status = 1;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
@@ -702,7 +715,7 @@ fn saved_line_joins_through_order_table() {
             offset: 32,
         }];
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Line)
     );
     let solver_geometry = BTreeMap::from([(
@@ -769,7 +782,7 @@ fn saved_line_joins_through_order_table() {
             offset: 32,
         }];
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     solver_families
@@ -782,7 +795,7 @@ fn saved_line_joins_through_order_table() {
         .rows_mut()[0]
         .status = 1;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     let solver_geometry = BTreeMap::from([
@@ -834,6 +847,7 @@ fn saved_line_joins_through_order_table() {
                 point_item,
             )
         })
+        .expect("test section point locus resources")
         .is_some()
     );
     assert!(
@@ -847,6 +861,7 @@ fn saved_line_joins_through_order_table() {
                 Some(&solver_geometry),
             )
         })
+        .expect("test section incidence locus resources")
         .is_some()
     );
     assert!(
@@ -884,7 +899,7 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let mut disabled_line_family = solver_families.clone();
@@ -911,7 +926,7 @@ fn saved_line_joins_through_order_table() {
         offset: 34,
     };
     assert_eq!(
-        solver_only_section_entity_family(&disabled_line_family, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &disabled_line_family, 99)).expect("admitted solver entity roles"),
         Some(SectionEntityIncidenceFamily::Line)
     );
     let mut disabled_circular_family = constrained.clone();
@@ -964,7 +979,7 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        unique_section_incidence_curve_family(&disabled_circular_family, 101),
+        crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &disabled_circular_family, 101)).expect("admitted incidence family rows"),
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
@@ -995,7 +1010,7 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted solver entity roles"),
         None
     );
     let mut duplicate_incidence = constrained.clone();
@@ -1115,7 +1130,10 @@ fn saved_line_joins_through_order_table() {
         offset: 5,
     });
     assert_eq!(
-        saved_section_line_geometry(&completed, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &completed, &segment)
+        })
+        .expect("test saved-line resources"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
@@ -1132,18 +1150,25 @@ fn saved_line_joins_through_order_table() {
         .rows[0]
         .external_id = 99;
     assert_eq!(
-        trim_segment_id(
-            &replay_mismatched,
-            &replay_mismatched
-                .trim_entities
-                .as_ref()
-                .expect("trim table")
-                .rows[0],
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            trim_segment_id(
+                ctx,
+                &replay_mismatched,
+                &replay_mismatched
+                    .trim_entities
+                    .as_ref()
+                    .expect("trim table")
+                    .rows[0],
+            )
+        })
+        .expect("test trim-segment resources"),
         Some(42)
     );
     assert_eq!(
-        saved_section_line_geometry(&replay_mismatched, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &replay_mismatched, &segment)
+        })
+        .expect("test saved-line resources"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
@@ -1159,7 +1184,10 @@ fn saved_line_joins_through_order_table() {
         .expect("test definition has an order table")
         .declared_count = 1;
     assert_eq!(
-        saved_section_line_geometry(&incomplete_order, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &incomplete_order, &segment)
+        })
+        .expect("test saved-line resources"),
         None
     );
     let mut incomplete_segments = completed.clone();
@@ -1169,11 +1197,18 @@ fn saved_line_joins_through_order_table() {
         .expect("segment table")
         .declared_count = 2;
     assert_eq!(
-        saved_section_line_geometry(&incomplete_segments, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_line_geometry(ctx, &incomplete_segments, &segment)
+        })
+        .expect("test saved-line resources"),
         None
     );
     let trim = completed.trim_entities.as_ref().expect("trim table").rows[0].clone();
-    assert_eq!(trim_segment_id(&completed, &trim), Some(42));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| { trim_segment_id(ctx, &completed, &trim) })
+            .expect("test trim-segment resources"),
+        Some(42)
+    );
 
     let mut missing_line = completed.clone();
     missing_line
@@ -1290,7 +1325,13 @@ fn saved_line_joins_through_order_table() {
         .expect("segment table")
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Ordinary(segment));
-    assert_eq!(trim_segment_id(&duplicate_segment, &trim), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            trim_segment_id(ctx, &duplicate_segment, &trim)
+        })
+        .expect("test trim-segment resources"),
+        None
+    );
     let mut duplicate_trim = completed;
     duplicate_trim
         .trim_entities
@@ -1298,7 +1339,11 @@ fn saved_line_joins_through_order_table() {
         .expect("trim table")
         .rows
         .push(trim.clone());
-    assert_eq!(trim_segment_id(&duplicate_trim, &trim), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| { trim_segment_id(ctx, &duplicate_trim, &trim) })
+            .expect("test trim-segment resources"),
+        None
+    );
 }
 
 #[test]
@@ -1314,7 +1359,8 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     );
 
     assert_eq!(
-        saved_section_entity_geometry(&entity),
+        crate::decode::with_test_decode_ctx(|ctx| { saved_section_entity_geometry(ctx, &entity) })
+            .expect("test saved-entity resources"),
         Some((
             7,
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -1325,7 +1371,10 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             19,
         ))
     );
-    let (_, geometry, _) = saved_section_entity_geometry(&entity).expect("complete saved circle");
+    let (_, geometry, _) =
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(ctx, &entity))
+            .expect("test saved-entity resources")
+            .expect("complete saved circle");
     assert!(is_full_circle_geometry(&geometry));
 
     let circle = crate::feature::definitions::FeatureCircleSegment {
@@ -1389,7 +1438,10 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         offset: 0,
     };
     assert_eq!(
-        saved_section_circle_values(&definition, &circle),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_circle_values(ctx, &definition, &circle)
+        })
+        .expect("test saved-circle resources"),
         Some(([2.0, -3.0], 4.5))
     );
     assert_eq!(

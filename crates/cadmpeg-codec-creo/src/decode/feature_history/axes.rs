@@ -38,9 +38,15 @@ pub(in super::super) fn resolved_revolution_axis(
         return Ok(None);
     };
     let points = resolved_section_points(ctx, definition)?;
-    let mut candidates = segments
-        .rows
-        .ordinary()
+    let mut candidates = ctx
+        .admit_iter(
+            segments.rows.as_slice(),
+            "creo revolution axis section segment rows",
+        )?
+        .filter_map(|row| match row {
+            crate::feature::segment_rows::SegmentRow::Ordinary(segment) => Some(segment),
+            _ => None,
+        })
         .filter(|segment| {
             matches!(
                 segment.kind,
@@ -91,10 +97,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         return Ok(None);
     }
 
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
+    let rows = ctx
+        .admit_iter(&scan.surfaces.rows, "creo full-turn revolution surface rows")?
         .filter(|row| row.feature_id == feature_id);
     let mut axes = Vec::new();
     let mut plane_normals = Vec::new();
@@ -105,7 +109,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let mut surfaces = ir.model.surfaces.iter().filter(|surface| {
+        let mut surfaces = ctx.admit_iter(&ir.model.surfaces, "creo full-turn model surfaces")?.filter(|surface| {
             crate::identity::matches_numbered_identity(
                 surface.id.as_str(),
                 "creo:visibgeom:surface#",
@@ -168,20 +172,22 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let first_origin = [first_origin.x, first_origin.y, first_origin.z];
     let axial = dot(first_origin, direction);
     let origin: [f64; 3] = std::array::from_fn(|axis| first_origin[axis] - axial * direction[axis]);
-    let scale = first_origin
-        .into_iter()
+    let scale = ctx
+        .admit_iter(&first_origin, "creo full-turn revolution axis scale origin")?
+        .copied()
         .chain(
-            rest.iter()
+            ctx.admit_iter(rest, "creo full-turn revolution axis scale rest")?
                 .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
         )
         .chain(
-            sphere_centers
-                .iter()
+            ctx.admit_iter(&sphere_centers, "creo full-turn revolution axis scale sphere centers")?
                 .flat_map(|center| [center.x, center.y, center.z]),
         )
         .map(f64::abs)
         .fold(1.0, f64::max);
-    for (candidate_origin, candidate_direction) in rest {
+    for (candidate_origin, candidate_direction) in
+        ctx.admit_iter(rest, "creo full-turn revolution remaining axes")?
+    {
         let candidate_direction = unit_length(*candidate_direction);
         if !matches!(
             ((dot(direction, candidate_direction).abs() - 1.0).abs())
@@ -203,8 +209,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return Ok(None);
         }
     }
-    for normal in plane_normals {
-        let normal = unit_length(normal);
+    for normal in ctx.admit_iter(&plane_normals, "creo full-turn revolution plane normals")? {
+        let normal = unit_length(*normal);
         if !matches!(
             ((dot(direction, normal).abs() - 1.0).abs()).partial_cmp(&(EPS_AXIS_ALIGNMENT)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
@@ -212,7 +218,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return Ok(None);
         }
     }
-    for center in sphere_centers {
+    for center in ctx.admit_iter(&sphere_centers, "creo full-turn revolution sphere centers")? {
         let displacement = [
             center.x - origin[0],
             center.y - origin[1],
@@ -508,7 +514,7 @@ pub(in super::super) fn geometry_generator_features(
 ) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "Creo generator exclusion lookup")?;
     let mut operation_feature_ids = BTreeSet::new();
-    for operation in &scan.features.operations {
+    for operation in ctx.admit_iter(&scan.features.operations, "creo generator operation rows")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut operation_feature_ids,
@@ -518,7 +524,7 @@ pub(in super::super) fn geometry_generator_features(
         })?;
     }
     let mut row_feature_ids = BTreeSet::new();
-    for row in &scan.features.rows {
+    for row in ctx.admit_iter(&scan.features.rows, "creo generator feature rows")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut row_feature_ids,
@@ -528,7 +534,7 @@ pub(in super::super) fn geometry_generator_features(
         })?;
     }
     let mut datum_feature_ids = BTreeSet::new();
-    for datum in &scan.planes.datums {
+    for datum in ctx.admit_iter(&scan.planes.datums, "creo generator datum rows")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut datum_feature_ids,
@@ -539,7 +545,7 @@ pub(in super::super) fn geometry_generator_features(
     }
     let mut map_storage = ctx.reserve_scoped(0, "Creo generator map storage")?;
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
-    for row in &scan.surfaces.rows {
+    for row in ctx.admit_iter(&scan.surfaces.rows, "creo generator surface rows")? {
         if row.feature_id == 0 {
             continue;
         }
@@ -565,7 +571,7 @@ pub(in super::super) fn geometry_generator_features(
         ctx.reserve_vec(&mut generator.surface_ids, 1, "creo generator surface IDs")?;
         generator.surface_ids.push(row.id);
     }
-    for row in &scan.curves.topology_rows {
+    for row in ctx.admit_iter(&scan.curves.topology_rows, "creo generator curve rows")? {
         if row.feature_id == 0 {
             continue;
         }
@@ -625,17 +631,21 @@ pub(in super::super) fn model_feature_ids(
     let mut ids = BTreeSet::new();
     let mut numeric_storage = ctx.reserve_scoped(0, "Creo model numeric identity lookup")?;
     let mut numeric_ids = BTreeSet::new();
-    for feature_id in scan
-        .features
-        .operations
-        .iter()
+    let geometry_generators = numeric_storage
+        .with_storage(|| geometry_generator_features(ctx, scan))?;
+    for feature_id in ctx
+        .admit_iter(&scan.features.operations, "creo emitted operation feature IDs")?
         .map(|operation| operation.feature_id)
-        .chain(scan.features.rows.iter().map(|row| row.feature_id))
-        .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
         .chain(
-            numeric_storage
-                .with_storage(|| geometry_generator_features(ctx, scan))?
-                .into_iter()
+            ctx.admit_iter(&scan.features.rows, "creo emitted feature row IDs")?
+                .map(|row| row.feature_id),
+        )
+        .chain(
+            ctx.admit_iter(&scan.planes.datums, "creo emitted datum feature IDs")?
+                .map(|datum| datum.feature_id),
+        )
+        .chain(
+            ctx.admit_iter(&geometry_generators, "creo emitted generator feature IDs")?
                 .map(|generator| generator.feature_id),
         )
     {

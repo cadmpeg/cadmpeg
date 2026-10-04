@@ -92,11 +92,67 @@ fn fixture() -> crate::feature::definitions::FeatureDefinition {
     }
 }
 
+fn multiple_mate_fixture() -> crate::feature::definitions::FeatureDefinition {
+    let mut definition = fixture();
+    let order = definition.order_table.as_mut().expect("order table");
+    order.declared_count = 3;
+    order.rows.extend([
+        crate::feature::definitions::FeatureOrderRow {
+            external_id: 44,
+            internal_id: 4,
+            bitmask: 0,
+            offset: 11,
+        },
+        crate::feature::definitions::FeatureOrderRow {
+            external_id: 45,
+            internal_id: 5,
+            bitmask: 0,
+            offset: 12,
+        },
+    ]);
+    let saved = definition.saved_section.as_mut().expect("saved section");
+    for (entity_id, endpoints, offset) in [
+        (
+            4,
+            [[Some(-8.0), Some(-0.85), Some(0.0)], [Some(10.0), Some(2.0), Some(0.0)]],
+            21,
+        ),
+        (
+            5,
+            [[Some(-8.0), Some(-0.85), Some(0.0)], [Some(20.0), Some(3.0), Some(0.0)]],
+            22,
+        ),
+    ] {
+        saved
+            .entities
+            .push(crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
+                    entity_id,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints,
+                    body: Vec::new(),
+                    offset,
+                },
+            ));
+    }
+    definition
+}
+
 fn run(policy: &DecodePolicy) -> Result<Option<(usize, SketchGeometry)>, CodecError> {
     let definition = fixture();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     saved_section_missing_line_geometry(&ctx, &definition)
+}
+
+fn run_definition(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    policy: &DecodePolicy,
+) -> Result<Option<(usize, SketchGeometry)>, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    saved_section_missing_line_geometry(&ctx, definition)
 }
 
 fn assert_item_refusal(limit: u64, operation: &'static str) {
@@ -151,6 +207,35 @@ fn missing_line_refuses_endpoint_pair_work() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo missing-line endpoint pairs"));
+}
+
+#[test]
+fn missing_line_admits_remaining_endpoint_pairs_after_ambiguous_mates() {
+    let definition = multiple_mate_fixture();
+    let mut policy = DecodePolicy::service();
+    let first_pair_refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo missing-line endpoint pairs",
+        |cap| {
+            policy.limits.max_work_units = cap;
+            run_definition(&definition, &policy)
+        },
+    );
+    let CodecError::ResourceLimit(first_pair_refusal) = first_pair_refusal else {
+        panic!("endpoint-pair admission refused with the named resource limit")
+    };
+    let after_four_pairs = first_pair_refusal
+        .used
+        .checked_add(4)
+        .expect("four endpoint-pair work units fit");
+    policy.limits.max_work_units = after_four_pairs;
+    let error = run_definition(&definition, &policy)
+        .expect_err("the scan admits four pairs then refuses the next pair");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo missing-line endpoint pairs"
+            && resource.used == after_four_pairs
+            && resource.additional == 1));
 }
 
 #[test]

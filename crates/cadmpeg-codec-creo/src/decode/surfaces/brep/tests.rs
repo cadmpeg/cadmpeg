@@ -32,6 +32,43 @@ mod shell_references;
 mod split_shells;
 
 #[test]
+fn closed_component_refuses_before_curve_traversal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = component_is_closed(
+        &ctx,
+        &BTreeSet::from([7]),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &[5],
+    )
+    .expect_err("curve traversal needs work");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo B-rep closed component curve traversal"));
+}
+
+#[test]
+fn rejection_evidence_refuses_before_diagnostic_count() {
+    let mut diagnostics = BrepTransferDiagnostics::default();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingLoops, 42)
+    }).expect("service rejection admitted");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(matches!(
+        diagnostics.evidence(&ctx, FaceAdmissionRejection::MissingLoops),
+        Err(CodecError::ResourceLimit(resource))
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo B-rep rejection evidence count"
+    ));
+}
+
+#[test]
 fn brep_coverage_refuses_before_first_report_node() {
     let diagnostics = BrepTransferDiagnostics::default();
     let arena = DecodeArena::new();
@@ -749,8 +786,10 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
         }
     });
 
-    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingLoops);
-    let samples = samples.collect::<Vec<_>>();
+    let (count, samples) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (count, samples) = diagnostics.evidence(ctx, FaceAdmissionRejection::MissingLoops)?;
+        Ok::<_, cadmpeg_core::CodecError>((count, samples.collect::<Vec<_>>()))
+    }).expect("service rejection evidence admitted");
     assert_eq!(count, 6);
     assert_eq!(
         samples
@@ -944,8 +983,10 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
     })
     .expect("service rejection admitted");
 
-    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingSurfaceCarrier);
-    let samples = samples.collect::<Vec<_>>();
+    let (count, samples) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (count, samples) = diagnostics.evidence(ctx, FaceAdmissionRejection::MissingSurfaceCarrier)?;
+        Ok::<_, cadmpeg_core::CodecError>((count, samples.collect::<Vec<_>>()))
+    }).expect("service rejection evidence admitted");
     assert_eq!(count, 1);
     assert_eq!(
         samples
@@ -1058,8 +1099,10 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
         )
     })
     .expect("service rejection admitted");
-    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::UnresolvedBoundaryVertices);
-    let samples = samples.collect::<Vec<_>>();
+    let (count, samples) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (count, samples) = diagnostics.evidence(ctx, FaceAdmissionRejection::UnresolvedBoundaryVertices)?;
+        Ok::<_, cadmpeg_core::CodecError>((count, samples.collect::<Vec<_>>()))
+    }).expect("service rejection evidence admitted");
     assert_eq!(count, 1);
     assert_eq!(
         samples
@@ -1193,11 +1236,11 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
             offset: 0,
         });
 
-    assert!(is_neutral_face_reference(&scan, 5));
-    assert!(!is_neutral_face_reference(&scan, 7));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 5)).expect("service face reference"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7)).expect("service face reference"));
 
     scan.framing.layout = crate::container::Layout::Nd;
-    assert!(is_neutral_face_reference(&scan, 7));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7)).expect("service face reference"));
 }
 
 #[test]
@@ -1320,7 +1363,7 @@ fn closed_component_counts_two_uses_of_one_face() {
         .map(|(id, edge)| (*id, edge))
         .collect::<BTreeMap<_, _>>();
 
-    assert!(component_is_closed(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| component_is_closed(ctx,
         &BTreeSet::from([7]),
         &BTreeSet::from([
             crate::topology::HalfEdgeId {
@@ -1334,8 +1377,8 @@ fn closed_component_counts_two_uses_of_one_face() {
         ]),
         &half_edges,
         &[5],
-    ));
-    assert!(!component_is_closed(
+    )).expect("closed component search"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| component_is_closed(ctx,
         &BTreeSet::from([7]),
         &BTreeSet::from([crate::topology::HalfEdgeId {
             curve_id: 7,
@@ -1343,7 +1386,7 @@ fn closed_component_counts_two_uses_of_one_face() {
         }]),
         &half_edges,
         &[5],
-    ));
+    )).expect("closed component search"));
 }
 
 #[test]
@@ -1853,4 +1896,32 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
     assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
+}
+
+#[test]
+fn legacy_neutral_face_search_refuses_work_and_preserves_nd_short_circuit() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.framing.layout = crate::test_support::legacy_layout();
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 5,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 0,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    });
+    assert!(crate::test_support::assert_work_boundaries(
+        &["creo neutral face reference surface search"],
+        |ctx| is_neutral_face_reference(ctx, &scan, 5),
+    ));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
+        .expect("service legacy search"));
+    scan.framing.layout = crate::container::Layout::Nd;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(is_neutral_face_reference(&ctx, &scan, 7).expect("ND has no surface search"));
+    assert!(ctx.resource_refusal().is_none());
 }

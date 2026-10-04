@@ -2,7 +2,10 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{feature_row_schema_classes, row_feature_schema_classes};
+use super::{
+    feature_row_schema_classes, feature_schema_class, row_feature_schema_classes,
+    unique_feature_revolution_extent,
+};
 
 fn row(schema_class: crate::feature::schema::SchemaClass) -> crate::feature::rows::FeatureRow {
     crate::feature::rows::FeatureRow {
@@ -68,4 +71,37 @@ fn feature_schema_classes_keep_distinct_sorted_values() {
     assert_eq!(classes.len(), 2);
     assert!(classes.contains(&crate::feature::schema::SchemaClass::Round));
     assert!(classes.contains(&crate::feature::schema::SchemaClass::Chamfer));
+}
+
+#[test]
+fn feature_schema_class_refuses_before_row_selection() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features
+        .rows
+        .push(row(crate::feature::schema::SchemaClass::Round));
+    let error = feature_schema_class(&ctx, &scan, 40).expect_err("row scan exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo feature schema rows"));
+}
+
+#[test]
+fn revolution_extent_lookup_refuses_before_search() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let records = [crate::feature::rows::FeatureRevolutionExtent {
+        feature_id: 40,
+        offset: 0,
+    }];
+    let error = unique_feature_revolution_extent(&ctx, &records, 40)
+        .expect_err("extent search exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo feature revolution extent rows"));
 }

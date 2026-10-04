@@ -50,6 +50,14 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
 
+fn admitted<T>(
+    run: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    crate::decode::with_test_decode_ctx(run).expect("service limits admit test lookup")
+}
+
 fn draft_neutral_plane_selection_with_service(
     scan: &crate::container::ContainerScan<'_>,
     feature_id: u32,
@@ -554,9 +562,9 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
             state_offset: 0,
         });
 
-    assert!(!feature_allows_linear_extrusion(&scan, 917));
+    assert!(!admitted(|ctx| feature_allows_linear_extrusion(ctx, &scan, 917)));
     scan.features.operations[0].kind = crate::feature::operations::OperationKind::Extrude;
-    assert!(feature_allows_linear_extrusion(&scan, 917));
+    assert!(admitted(|ctx| feature_allows_linear_extrusion(ctx, &scan, 917)));
 }
 
 #[test]
@@ -591,10 +599,10 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             offset: 0,
         });
 
-    assert!(feature_is_sheet_extrusion(&scan, 942));
-    assert!(feature_allows_linear_extrusion(&scan, 942));
+    assert!(admitted(|ctx| feature_is_sheet_extrusion(ctx, &scan, 942)));
+    assert!(admitted(|ctx| feature_allows_linear_extrusion(ctx, &scan, 942)));
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
+        admitted(|ctx| sweep_output_kind(ctx, &scan, &CadIr::empty(), "extrusion", 942)),
         Some(BodyKind::Sheet)
     );
     assert!(matches!(
@@ -617,10 +625,10 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     ));
 
     scan.features.reference_names[0].name_bytes = b"Boundary Blend 1".to_vec();
-    assert!(!feature_is_sheet_extrusion(&scan, 942));
-    assert!(!feature_allows_linear_extrusion(&scan, 942));
+    assert!(!admitted(|ctx| feature_is_sheet_extrusion(ctx, &scan, 942)));
+    assert!(!admitted(|ctx| feature_allows_linear_extrusion(ctx, &scan, 942)));
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
+        admitted(|ctx| sweep_output_kind(ctx, &scan, &CadIr::empty(), "extrusion", 942)),
         None
     );
     assert!(matches!(
@@ -783,13 +791,13 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
 
 #[test]
 fn numbered_reference_name_selects_only_its_exact_feature_family() {
-    assert!(numbered_feature_name_has_family("Thicken 1", "Thicken"));
-    assert!(numbered_feature_name_has_family("Thicken 12", "Thicken"));
-    assert!(!numbered_feature_name_has_family("Thicken", "Thicken"));
-    assert!(!numbered_feature_name_has_family("Thicken A", "Thicken"));
-    assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
+    assert!(admitted(|ctx| numbered_feature_name_has_family(ctx, "Thicken 1", "Thicken")));
+    assert!(admitted(|ctx| numbered_feature_name_has_family(ctx, "Thicken 12", "Thicken")));
+    assert!(!admitted(|ctx| numbered_feature_name_has_family(ctx, "Thicken", "Thicken")));
+    assert!(!admitted(|ctx| numbered_feature_name_has_family(ctx, "Thicken A", "Thicken")));
+    assert!(!admitted(|ctx| numbered_feature_name_has_family(ctx, "GThicken 1", "Thicken")));
     assert!(matches!(
-        reference_named_feature_definition("Boundary Blend 1"),
+        admitted(|ctx| reference_named_feature_definition(ctx, "Boundary Blend 1")),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::BoundarySurface
@@ -797,7 +805,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
         ))
     ));
     assert!(matches!(
-        reference_named_feature_definition("Thicken 1"),
+        admitted(|ctx| reference_named_feature_definition(ctx, "Thicken 1")),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Thicken {
                 faces: FaceSelection::Unresolved,
@@ -806,9 +814,9 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
             }
         ))
     ));
-    assert!(reference_named_feature_definition("Fill 1").is_none());
+    assert!(admitted(|ctx| reference_named_feature_definition(ctx, "Fill 1")).is_none());
     assert!(matches!(
-        reference_named_feature_definition("Merge 2"),
+        admitted(|ctx| reference_named_feature_definition(ctx, "Merge 2")),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::KnitSurface {
                 faces: FaceSelection::Unresolved,
@@ -818,7 +826,7 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
             }
         ))
     ));
-    assert!(reference_named_feature_definition("Extrude 2").is_none());
+    assert!(admitted(|ctx| reference_named_feature_definition(ctx, "Extrude 2")).is_none());
 }
 
 #[test]
@@ -1427,14 +1435,14 @@ fn new_sheet_output_requires_an_owned_output_surface() {
     };
 
     assert_eq!(
-        new_sheet_output_surface_id(144, &tables, std::slice::from_ref(&surface)),
+        admitted(|ctx| new_sheet_output_surface_id(ctx, 144, &tables, std::slice::from_ref(&surface))),
         Some(145)
     );
 
     let mut prior_surface = surface;
     prior_surface.feature_id = 97;
     assert_eq!(
-        new_sheet_output_surface_id(144, &tables, &[prior_surface]),
+        admitted(|ctx| new_sheet_output_surface_id(ctx, 144, &tables, &[prior_surface])),
         None
     );
 }
@@ -1902,7 +1910,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         }),
         Vec::new(),
     ));
-    assert!(!preceding_features_establish_body(&ir));
+    assert!(!admitted(|ctx| preceding_features_establish_body(ctx, &ir)));
 
     ir.model.features[0].evaluation.set_outputs(
         cadmpeg_ir::features::DistinctMembers::try_from(
@@ -1911,7 +1919,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         )
         .expect("distinct output fixture"),
     );
-    assert!(preceding_features_establish_body(&ir));
+    assert!(admitted(|ctx| preceding_features_establish_body(ctx, &ir)));
 
     ir.model.features[0] = feature(
         IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
@@ -1936,9 +1944,9 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         }),
         Vec::new(),
     );
-    assert!(preceding_features_establish_body(&ir));
+    assert!(admitted(|ctx| preceding_features_establish_body(ctx, &ir)));
     ir.model.features[0].suppressed = Some(true);
-    assert!(!preceding_features_establish_body(&ir));
+    assert!(!admitted(|ctx| preceding_features_establish_body(ctx, &ir)));
     ir.model.features[0].suppressed = Some(false);
     ir.model.features[0].evaluation.edit(|definition, _| {
         let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, .. }) = definition
@@ -1947,7 +1955,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         };
         *op = BooleanOp::Join;
     });
-    assert!(!preceding_features_establish_body(&ir));
+    assert!(!admitted(|ctx| preceding_features_establish_body(ctx, &ir)));
 }
 
 #[test]

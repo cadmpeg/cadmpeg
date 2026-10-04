@@ -71,7 +71,7 @@ fn legacy_carrier_count_node_refuses_before_first_insert() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error =
-        super::legacy_carrier_counts(&ctx, [42, 42]).expect_err("first count node exceeds limit");
+        super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id).expect_err("first count node exceeds limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo legacy carrier count nodes"));
@@ -79,9 +79,23 @@ fn legacy_carrier_count_node_refuses_before_first_insert() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let counts = super::legacy_carrier_counts(&ctx, [42, 42]).expect("service counts");
+    let counts = super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id).expect("service counts");
     assert_eq!(counts.get(&42), Some(&2));
     assert_eq!(counts.len(), 1);
+}
+
+#[test]
+fn legacy_carrier_count_refuses_before_source_traversal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id)
+        .expect_err("carrier traversal needs work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy carrier count traversal"));
 }
 
 #[test]

@@ -61,7 +61,8 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
                     sense: 3,
                 },
             )
-        }),
+        })
+        .expect("test saved endpoint locus resources"),
         Some(SketchLocus::End(
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string())
                 .expect("valid test fixture")

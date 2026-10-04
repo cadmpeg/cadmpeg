@@ -68,14 +68,14 @@ pub(super) fn section_equation_function_six_distance_values(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
-    ctx.collect_vec(
-        section_equation_function_six_distance_rows(
+    let source_rows = section_equation_function_six_distance_rows(
             ctx,
             definition,
             coordinates,
             ambiguous_point_ids,
-        )?
-        .into_iter()
+        )?;
+    ctx.collect_vec(
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
         .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?))),
         "creo section equation six distance values",
     )
@@ -116,7 +116,7 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     ctx.collect_vec(
-        equations.rows.iter().filter_map(|equation| {
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?.filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
             }
@@ -260,9 +260,9 @@ pub(super) fn section_equation_unsigned_coordinate_distances(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
+    let source_rows = section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?;
     ctx.collect_vec(
-        section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?
-            .into_iter()
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
             .filter(|constraint| constraint.active),
         "creo section unsigned coordinate distances",
     )
@@ -304,9 +304,7 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     ctx.collect_vec(
-        equations
-            .rows
-            .iter()
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?
             .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
             .filter_map(|equation| {
                 let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice()
@@ -390,9 +388,7 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     ctx.collect_vec(
-        equations
-            .rows
-            .iter()
+        ctx.admit_iter(&equations.rows, "creo section source equation rows")?
             .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
             .filter_map(|equation| {
                 let [Some(first), Some(second)] = equation.arguments.as_slice() else {
@@ -465,9 +461,9 @@ pub(super) fn section_equation_point_on_line_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<(u32, u32, u32)>, CodecError> {
+    let source_rows = section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?;
     ctx.collect_vec(
-        section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?
-            .into_iter()
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
             .filter(|constraint| constraint.active)
             .map(|constraint| (constraint.target, constraint.first, constraint.second)),
         "creo section point on line constraints",
@@ -502,9 +498,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    ctx.collect_vec(equations
-        .rows
-        .iter()
+    ctx.collect_vec(ctx.admit_iter(&equations.rows, "creo section source equation rows")?
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let [
@@ -589,9 +583,9 @@ pub(super) fn section_equation_equal_length_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
+    let source_rows = section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?;
     ctx.collect_vec(
-        section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?
-            .into_iter()
+        ctx.admit_iter(&source_rows, "creo section projected equation rows")?.copied()
             .filter(|constraint| constraint.active),
         "creo section equal length constraints",
     )
@@ -625,9 +619,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    ctx.collect_vec(equations
-        .rows
-        .iter()
+    ctx.collect_vec(ctx.admit_iter(&equations.rows, "creo section source equation rows")?
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let rows: [Option<&crate::feature::definitions::FeatureVariableRow>; 9] =
@@ -784,7 +776,8 @@ impl SectionCoordinateEquation {
 
 fn admitted_coordinate_variables(
     ctx: &DecodeContext<'_>,
-    candidates: impl IntoIterator<Item = SectionCoordinateVariable>,
+    equations: &[SectionCoordinateEquation],
+    distances: &[(u32, u32, SectionAxis, f64)],
 ) -> Result<
     (
         Vec<SectionCoordinateVariable>,
@@ -793,8 +786,16 @@ fn admitted_coordinate_variables(
     CodecError,
 > {
     let mut unique = BTreeSet::new();
-    for variable in candidates {
-        ctx.insert_btree_set(&mut unique, variable, "creo section unique variables")?;
+    for equation in ctx.admit_iter(equations, "creo coordinate variable equations")? {
+        for (variable, _) in ctx.admit_iter(&equation.terms, "creo coordinate equation variables")? {
+            ctx.insert_btree_set(&mut unique, *variable, "creo section unique variables")?;
+        }
+    }
+    for &(first, second, coordinate, _) in
+        ctx.admit_iter(distances, "creo coordinate variable distances")?
+    {
+        ctx.insert_btree_set(&mut unique, (first, coordinate), "creo section unique variables")?;
+        ctx.insert_btree_set(&mut unique, (second, coordinate), "creo section unique variables")?;
     }
     let mut variables = Vec::new();
     ctx.reserve_vec(
@@ -804,7 +805,7 @@ fn admitted_coordinate_variables(
     )?;
     variables.extend(unique);
     let mut indices = BTreeMap::new();
-    for (index, variable) in variables.iter().enumerate() {
+    for (index, variable) in ctx.admit_iter(&variables, "creo ordered section variables")?.enumerate() {
         ctx.insert_btree_map(
             &mut indices,
             *variable,
@@ -839,7 +840,7 @@ fn next_section_component(
     let mut pending = std::collections::VecDeque::new();
     ctx.push_back(&mut pending, seed, "creo section pending seed")?;
     while let Some(variable) = pending.pop_front() {
-        for &neighbor in &adjacency[variable] {
+        for &neighbor in ctx.admit_iter(&adjacency[variable], "creo component adjacency links")? {
             if ctx.insert_btree_set(&mut component, neighbor, "creo section component neighbors")? {
                 remaining.remove(&neighbor);
                 ctx.push_back(&mut pending, neighbor, "creo section pending neighbors")?;
@@ -870,27 +871,15 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         return Ok(BTreeMap::new());
     }
 
-    let (variables, indices) = admitted_coordinate_variables(
-        ctx,
-        equations
-            .iter()
-            .flat_map(|equation| equation.terms.keys().copied())
-            .chain(
-                distances
-                    .iter()
-                    .flat_map(|&(first, second, coordinate, _)| {
-                        [(first, coordinate), (second, coordinate)]
-                    }),
-            ),
-    )?;
+    let (variables, indices) = admitted_coordinate_variables(ctx, equations, distances)?;
     let mut adjacency =
         ctx.collect_indexed_vec(variables.len(), "creo section equation adjacency", |_| {
             Ok(BTreeSet::new())
         })?;
     let connect =
         |members: &[usize], adjacency: &mut [BTreeSet<usize>]| -> Result<(), CodecError> {
-            for &first in members {
-                for &second in members {
+            for &first in ctx.admit_iter(members, "creo coordinate equation members")? {
+                for &second in ctx.admit_iter(members, "creo coordinate equation member pairs")? {
                     if second != first {
                         ctx.insert_btree_set(
                             &mut adjacency[first],
@@ -902,9 +891,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             }
             Ok(())
         };
-    for equation in equations {
+    for equation in ctx.admit_iter(equations, "creo unsigned coordinate equations")? {
         let mut members = Vec::new();
-        for variable in equation.terms.keys() {
+        for (variable, _) in ctx.admit_iter(&equation.terms, "creo unsigned equation terms")? {
             if let Some(&index) = indices.get(variable) {
                 ctx.reserve_vec(&mut members, 1, "creo section equation members")?;
                 members.push(index);
@@ -912,7 +901,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         }
         connect(&members, &mut adjacency)?;
     }
-    for &(first, second, coordinate, _) in distances {
+    for &(first, second, coordinate, _) in ctx.admit_iter(distances, "creo unsigned distance rows")? {
         let members = [
             indices[&(first, coordinate)],
             indices[&(second, coordinate)],
@@ -924,7 +913,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     let mut resolved = BTreeMap::new();
     while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
         let mut component_distances = Vec::new();
-        for &(first, second, coordinate, magnitude) in distances {
+        for &(first, second, coordinate, magnitude) in
+            ctx.admit_iter(distances, "creo component distance rows")?
+        {
             if component.contains(&indices[&(first, coordinate)])
                 && component.contains(&indices[&(second, coordinate)])
             {
@@ -944,11 +935,10 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             continue;
         }
         let mut component_equations = Vec::new();
-        for equation in equations {
-            if equation
-                .terms
-                .keys()
-                .any(|variable| component.contains(&indices[variable]))
+        for equation in ctx.admit_iter(equations, "creo component source equations")? {
+            if ctx
+                .admit_iter(&equation.terms, "creo coordinate component source terms")?
+                .any(|(variable, _)| component.contains(&indices[variable]))
             {
                 ctx.reserve_vec(
                     &mut component_equations,
@@ -956,7 +946,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     "creo section component equation rows",
                 )?;
                 let mut terms = BTreeMap::new();
-                for (variable, coefficient) in &equation.terms {
+                for (variable, coefficient) in
+                    ctx.admit_iter(&equation.terms, "creo component source equation terms")?
+                {
                     ctx.insert_btree_map(
                         &mut terms,
                         *variable,
@@ -979,9 +971,11 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 component_equations.len(),
                 "creo section branch equation rows",
             )?;
-            for equation in &component_equations {
+            for equation in ctx.admit_iter(&component_equations, "creo component equations")? {
                 let mut terms = BTreeMap::new();
-                for (variable, coefficient) in &equation.terms {
+                for (variable, coefficient) in
+                    ctx.admit_iter(&equation.terms, "creo branch source equation terms")?
+                {
                     ctx.insert_btree_map(
                         &mut terms,
                         *variable,
@@ -994,8 +988,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     rhs: equation.rhs,
                 });
             }
-            for (index, &(first, second, coordinate, magnitude)) in
-                component_distances.iter().enumerate()
+            for (index, &(first, second, coordinate, magnitude)) in ctx
+                .admit_iter(&component_distances, "creo branch distance rows")?
+                .enumerate()
             {
                 let delta = if signs & (1usize << index) == 0 {
                     magnitude
@@ -1014,7 +1009,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             }
             let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
             let mut values = BTreeMap::new();
-            for (variable, value) in stored_coordinates {
+            for (variable, value) in
+                ctx.admit_iter(stored_coordinates, "creo stored coordinate rows")?
+            {
                 ctx.insert_btree_map(
                     &mut values,
                     *variable,
@@ -1022,7 +1019,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     "creo section stored coordinate copies",
                 )?;
             }
-            for (point, coordinates) in &candidate {
+            for (point, coordinates) in ctx.admit_iter(&candidate, "creo unsigned candidate points")? {
                 for (coordinate, value) in SectionAxis::ALL
                     .into_iter()
                     .zip(coordinates.iter().copied())
@@ -1037,19 +1034,23 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     }
                 }
             }
-            let valid = component_equations.iter().all(|equation| {
-                let Some(lhs) = equation
-                    .terms
-                    .iter()
+            let mut equations_valid = true;
+            for equation in ctx.admit_iter(&component_equations, "creo coordinate validation equations")? {
+                let Some(lhs) = ctx
+                    .admit_iter(&equation.terms, "creo coordinate validation terms")?
                     .try_fold(0.0, |lhs, (variable, coefficient)| {
                         Some(lhs + values.get(variable)? * coefficient)
                     })
                 else {
-                    return true;
+                    continue;
                 };
                 let scale = lhs.abs().max(equation.rhs.abs()).max(1.0);
-                (lhs - equation.rhs).abs() <= EPS_SOLUTION_AGREEMENT * scale
-            }) && component_distances.iter().all(
+                if !((lhs - equation.rhs).abs() <= EPS_SOLUTION_AGREEMENT * scale) {
+                    equations_valid = false;
+                    break;
+                }
+            }
+            let valid = equations_valid && ctx.admit_iter(&component_distances, "creo coordinate distance validations")?.all(
                 |&(first, second, coordinate, magnitude)| {
                     let Some(first) = values.get(&(first, coordinate)).copied() else {
                         return false;
@@ -1063,8 +1064,8 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             );
             if valid {
                 let mut candidate_values = BTreeMap::new();
-                for (point, coordinates) in candidate {
-                    for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates) {
+                for (&point, coordinates) in ctx.admit_iter(&candidate, "creo candidate solution points")? {
+                    for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates.iter().copied()) {
                         let variable = (point, coordinate);
                         if let (Some(global), Some(value)) = (indices.get(&variable), value) {
                             if component.contains(global)
@@ -1084,7 +1085,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 solutions.push(candidate_values);
             }
         }
-        for &global in &component {
+        for &global in ctx.admit_iter(&component, "creo resolved component variables")? {
             let variable = variables[global];
             let Some(value) = solutions
                 .first()
@@ -1094,7 +1095,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 continue;
             };
             let scale = value.abs().max(1.0);
-            if solutions.iter().all(|solution| {
+            if ctx.admit_iter(&solutions, "creo coordinate candidate solutions")?.all(|solution| {
                 solution.get(&variable).is_some_and(|candidate| {
                     (*candidate - value).abs() <= EPS_DISTANCE_AGREEMENT * scale
                 })
@@ -1117,7 +1118,7 @@ pub(super) fn section_equal_length_coordinate_values(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<BTreeMap<SectionCoordinateVariable, Option<f64>>, CodecError> {
     let mut candidates = BTreeMap::<SectionCoordinateVariable, Option<f64>>::new();
-    for constraint in constraints {
+    for constraint in ctx.admit_iter(constraints, "creo equal length coordinate constraints")? {
         let mut missing = None;
         let mut ambiguous = false;
         for variable in constraint
@@ -1284,12 +1285,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
-    let (variables, indices) = admitted_coordinate_variables(
-        ctx,
-        equations
-            .iter()
-            .flat_map(|equation| equation.terms.keys().copied()),
-    )?;
+    let (variables, indices) = admitted_coordinate_variables(ctx, equations, &[])?;
     let mut adjacency =
         ctx.collect_indexed_vec(variables.len(), "creo section coordinate adjacency", |_| {
             Ok(BTreeSet::new())
@@ -1299,16 +1295,19 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         "creo section coordinate equation membership",
         |_| Ok(BTreeSet::new()),
     )?;
-    for (equation_index, equation) in equations.iter().enumerate() {
+    for (equation_index, equation) in ctx
+        .admit_iter(equations, "creo section coordinate source equations")?
+        .enumerate()
+    {
         let mut members = Vec::new();
-        for variable in equation.terms.keys() {
+        for (variable, _) in ctx.admit_iter(&equation.terms, "creo section coordinate source terms")? {
             if let Some(&index) = indices.get(variable) {
                 ctx.reserve_vec(&mut members, 1, "creo section coordinate members")?;
                 members.push(index);
             }
         }
-        for &first in &members {
-            for &second in &members {
+        for &first in ctx.admit_iter(&members, "creo section coordinate equation members")? {
+            for &second in ctx.admit_iter(&members, "creo section coordinate member pairs")? {
                 if second != first {
                     ctx.insert_btree_set(
                         &mut adjacency[first],
@@ -1333,9 +1332,12 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             component.len(),
             "creo section component columns",
         )?;
-        columns.extend(component.iter().copied());
+        columns.extend(
+            ctx.admit_iter(&component, "creo section coordinate component columns")?
+                .copied(),
+        );
         let mut local_columns = BTreeMap::new();
-        for (local, global) in columns.iter().enumerate() {
+        for (local, global) in ctx.admit_iter(&columns, "creo section local coordinate columns")?.enumerate() {
             ctx.insert_btree_map(
                 &mut local_columns,
                 *global,
@@ -1344,8 +1346,8 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             )?;
         }
         let mut component_equations = BTreeSet::new();
-        for variable in &component {
-            for &equation_index in &variable_equations[*variable] {
+        for variable in ctx.admit_iter(&component, "creo section component variables")? {
+            for &equation_index in ctx.admit_iter(&variable_equations[*variable], "creo section variable equations")? {
                 ctx.insert_btree_set(
                     &mut component_equations,
                     equation_index,
@@ -1359,13 +1361,13 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             component_equations.len(),
             "creo section matrix rows",
         )?;
-        for equation_index in component_equations {
+        for &equation_index in ctx.admit_iter(&component_equations, "creo section component equations")? {
             let equation = &equations[equation_index];
             let mut row = SectionLinearRow {
                 coefficients: BTreeMap::new(),
                 rhs: equation.rhs,
             };
-            for (variable, coefficient) in &equation.terms {
+            for (variable, coefficient) in ctx.admit_iter(&equation.terms, "creo section equation coefficients")? {
                 let global = indices[variable];
                 if *coefficient != 0.0 {
                     ctx.insert_btree_map(
@@ -1381,7 +1383,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         let Some(component_solution) =
             uniquely_solved_linear_variables(ctx, &mut matrix, columns.len())?
         else {
-            for global in columns {
+            for &global in ctx.admit_iter(&columns, "creo section unresolved component columns")? {
                 let variable = variables[global];
                 if let Some(value) = stored_coordinates.get(&variable) {
                     insert_solved_coordinate(ctx, &mut solved, variable, *value)?;
@@ -1389,12 +1391,12 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             }
             continue;
         };
-        for (local, value) in component_solution {
+        for &(local, value) in ctx.admit_iter(&component_solution, "creo section solved component columns")? {
             insert_solved_coordinate(ctx, &mut solved, variables[columns[local]], value)?;
         }
     }
     let mut points = BTreeMap::<u32, [Option<f64>; 2]>::new();
-    for ((point, coordinate), value) in solved {
+    for (&(point, coordinate), &value) in ctx.admit_iter(&solved, "creo section solved coordinates")? {
         ctx.admit_btree_entry(&points, &point, "creo section solved points")?;
         let values = match points.entry(point) {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 2]),
@@ -1415,12 +1417,14 @@ fn uniquely_solved_linear_variables(
     matrix: &mut [SectionLinearRow],
     variable_count: usize,
 ) -> Result<Option<Vec<(usize, f64)>>, CodecError> {
-    let coefficient_scale = matrix
-        .iter()
-        .flat_map(|row| row.coefficients.values())
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
-    let rhs_scale = matrix.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    let mut coefficient_scale: f64 = 1.0;
+    for row in ctx.admit_iter(&*matrix, "creo linear solver matrix scale rows")? {
+        for (_, value) in ctx.admit_iter(&row.coefficients, "creo linear solver matrix scale coefficients")? {
+            coefficient_scale = coefficient_scale.max(value.abs());
+        }
+    }
+    let rhs_scale = ctx.admit_iter(&*matrix, "creo linear solver right-hand side scale rows")?
+        .map(|row| row.rhs.abs()).fold(1.0, f64::max);
     let coefficient_tolerance = EPS_SOLVER_SCALE * coefficient_scale;
     let residual_tolerance = EPS_SOLUTION_AGREEMENT * rhs_scale;
     let mut pivot_rows = BTreeMap::new();
@@ -1467,7 +1471,7 @@ fn uniquely_solved_linear_variables(
             if factor.abs() <= coefficient_tolerance {
                 continue;
             }
-            for (&index, &pivot_value) in &pivot.coefficients {
+            for (&index, &pivot_value) in ctx.admit_iter(&pivot.coefficients, "creo section pivot coefficients")? {
                 ctx.admit_btree_entry(
                     &target.coefficients,
                     &index,
@@ -1492,8 +1496,8 @@ fn uniquely_solved_linear_variables(
         )?;
         pivot_row += 1;
     }
-    if matrix
-        .iter()
+    if ctx
+        .admit_iter(&*matrix, "creo section residual matrix rows")?
         .any(|row| row.coefficients.is_empty() && row.rhs.abs() > residual_tolerance)
     {
         return Ok(None);
@@ -1506,9 +1510,9 @@ fn uniquely_solved_linear_variables(
         }
     }
     let mut solution = Vec::new();
-    for (column, row) in pivot_rows {
-        if free_columns
-            .iter()
+    for (&column, &row) in ctx.admit_iter(&pivot_rows, "creo section pivot rows")? {
+        if ctx
+            .admit_iter(&free_columns, "creo section free columns")?
             .all(|free| !matrix[row].coefficients.contains_key(free))
         {
             ctx.reserve_vec(&mut solution, 1, "creo section solved columns")?;

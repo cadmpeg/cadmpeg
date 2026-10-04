@@ -3846,7 +3846,7 @@ pub(super) fn surface_parameter_records<'a>(
                     offset: overrides.offset,
                 }
             }),
-            replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
+            replayed_torus_minor_radius: replayed_torus_minor_radius(ctx, scan, row, record)?,
             cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
                 CreoConeHalfAngleOverride {
                     radians: half_angle.radians.get().get(),

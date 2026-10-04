@@ -128,7 +128,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     );
 
     assert!(
-        matches!(carrier_intersection_curve(cap, cylinder), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_cylinder_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cap, cylinder)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_cylinder_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -140,7 +140,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [0.0, 1.0, 1.0],
     });
     assert!(
-        matches!(carrier_intersection_curve(oblique, cylinder), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cylinder_ellipse"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, oblique, cylinder)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cylinder_ellipse"))
                 if {
                     let major_radius = ellipse_curve.major_radius().get();
         let minor_radius = ellipse_curve.minor_radius().get();
@@ -148,14 +148,14 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 })
     );
     assert!(
-        matches!(carrier_intersection_curve(tangent, cylinder), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cylinder_tangent_line"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, tangent, cylinder)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cylinder_tangent_line"))
                 if {
                     let origin = line_curve.origin().get();
         let direction = *line_curve.direction().as_raw();
                     origin.x == 2.0 && direction.z == 1.0
                 })
     );
-    assert!(carrier_intersection_curve(secant, cylinder).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, secant, cylinder)).expect("service carrier intersection admitted").is_none());
     let generators = parallel_plane_cylinder_generator_candidates(secant, cylinder);
     assert_eq!(generators.len(), 2);
     assert!(matches!(select_unique_curve_candidate(
@@ -181,10 +181,10 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             radius,
         })
     };
-    assert!(matches!(carrier_intersection_curve(
+    assert!(matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx,
             parallel_cylinder([0.0, 0.0, 0.0], 2.0),
             parallel_cylinder([5.0, 0.0, 0.0], 3.0),
-        ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
+        )).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
                 if {
                     let origin = line_curve.origin().get();
     let direction = *line_curve.direction().as_raw();
@@ -202,18 +202,18 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("test carrier solve"),
         Some([2.0, 0.0, 3.0])
     );
-    assert!(matches!(carrier_intersection_curve(
+    assert!(matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx,
         parallel_cylinder([0.0, 0.0, 0.0], 5.0),
         parallel_cylinder([3.0, 0.0, 0.0], 2.0),
-    ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
+    )).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
             if {
                 let origin = line_curve.origin().get();
                 origin.x == 5.0
             }));
-    assert!(carrier_intersection_curve(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx,
         parallel_cylinder([0.0, 0.0, 0.0], 3.0),
         parallel_cylinder([4.0, 0.0, 0.0], 3.0),
-    )
+    )).expect("service carrier intersection admitted")
     .is_none());
     let secant_cylinders = [
         parallel_cylinder([0.0, 0.0, 0.0], 3.0),
@@ -251,7 +251,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [0.0, 0.0, 1.0],
     });
     assert!(
-        matches!(carrier_intersection_curve(equator, sphere), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_sphere_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, equator, sphere)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_sphere_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -279,7 +279,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         radius: 3.0,
     });
     assert!(
-        matches!(carrier_intersection_curve(first_sphere, second_sphere), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "sphere_intersection_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, first_sphere, second_sphere)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "sphere_intersection_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -344,7 +344,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         Some([5.0, 0.0, 0.0])
     );
     assert!(
-        matches!(carrier_intersection_curve(cylinder, sphere), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cylinder_sphere_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cylinder, sphere)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cylinder_sphere_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -369,7 +369,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("test carrier solve"),
         Some([2.0, 0.0, 0.0])
     );
-    assert!(carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 1.0), sphere,).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, parallel_cylinder([0.0, 0.0, 0.0], 1.0), sphere,)).expect("service carrier intersection admitted").is_none());
     let coaxial_secant = parallel_cylinder([0.0, 0.0, 0.0], 1.0);
     let sphere_offset = 3.0_f64.sqrt();
     assert_eq!(
@@ -434,7 +434,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("valid test cone"),
     );
     assert!(
-        matches!(carrier_intersection_curve(cap, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_cone_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cap, cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_cone_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -453,7 +453,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("valid test cone"),
     );
     assert!(
-        matches!(carrier_intersection_curve(cap, elliptical_cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cone_parallel_ellipse"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cap, elliptical_cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cone_parallel_ellipse"))
                 if {
                     let center = ellipse_curve.center().get();
         let major_radius = ellipse_curve.major_radius().get();
@@ -493,7 +493,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [inverse_sqrt_two, 0.0, inverse_sqrt_two],
     });
     assert!(
-        matches!(carrier_intersection_curve(cone_tangent_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cone_tangent_line"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_tangent_plane, cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cone_tangent_line"))
                 if {
                     let origin = line_curve.origin().get();
         let direction = *line_curve.direction().as_raw();
@@ -505,7 +505,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 })
     );
     let (elliptical_tangent_geometry, elliptical_tangent_tag) =
-        carrier_intersection_curve(cone_tangent_plane, elliptical_cone)
+        crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_tangent_plane, elliptical_cone)).expect("service carrier intersection admitted")
             .expect("elliptical cone tangent generator");
     assert_eq!(elliptical_tangent_tag, "plane_cone_tangent_line");
     for parameter in [-1.0, 0.0, 1.0] {
@@ -524,7 +524,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [-0.2, 0.0, 1.0],
     });
     assert!(
-        matches!(carrier_intersection_curve(cone_ellipse_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cone_ellipse"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_ellipse_plane, cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cone_ellipse"))
                 if {
                     let major_radius = ellipse_curve.major_radius().get();
         let minor_radius = ellipse_curve.minor_radius().get();
@@ -536,7 +536,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [inverse_sqrt_two, 0.0, inverse_sqrt_two],
     });
     assert!(
-        matches!(carrier_intersection_curve(cone_parabola_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)), "plane_cone_parabola"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_parabola_plane, cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)), "plane_cone_parabola"))
         if {
             let focal_distance = parabola_curve.focal_distance().get();
             focal_distance > 0.0
@@ -547,7 +547,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [1.0, 0.0, 0.2],
     });
     assert!(
-        matches!(carrier_intersection_curve(cone_hyperbola_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)), "plane_cone_hyperbola"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_hyperbola_plane, cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)), "plane_cone_hyperbola"))
                 if {
                     let major_radius = hyperbola_curve.major_radius().get();
         let minor_radius = hyperbola_curve.minor_radius().get();
@@ -564,7 +564,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         (cone_hyperbola_plane, "plane_cone_hyperbola"),
     ] {
         let (geometry, tag) =
-            carrier_intersection_curve(plane, elliptical_cone).expect("elliptical cone conic");
+            crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, plane, elliptical_cone)).expect("service carrier intersection admitted").expect("elliptical cone conic");
         assert_eq!(tag, expected_tag);
         for parameter in [-1.0, 0.0, 1.0] {
             let point = cadmpeg_ir::eval::decode::curve_point(
@@ -582,8 +582,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [0.0, 0.0, -2.0],
         normal: [1.0, 0.0, 0.0],
     });
-    assert!(carrier_intersection_curve(cone_degenerate_plane, cone).is_none());
-    let cone_generators = apex_plane_cone_generator_candidates(cone_degenerate_plane, cone);
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_degenerate_plane, cone)).expect("service carrier intersection admitted").is_none());
+    let cone_generators = crate::decode::with_test_decode_ctx(|ctx| apex_plane_cone_generator_candidates(ctx, cone_degenerate_plane, cone)).expect("service apex cone candidates admitted");
     assert_eq!(cone_generators.len(), 2);
     assert!(matches!(select_unique_curve_candidate(
         cone_generators,
@@ -594,7 +594,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 (origin.z + 2.0).abs() < EPS_CARRIER_INTERSECTION
             }));
     let elliptical_generators =
-        apex_plane_cone_generator_candidates(cone_degenerate_plane, elliptical_cone);
+        crate::decode::with_test_decode_ctx(|ctx| apex_plane_cone_generator_candidates(ctx, cone_degenerate_plane, elliptical_cone)).expect("service apex cone candidates admitted");
     assert_eq!(elliptical_generators.len(), 2);
     let (elliptical_generator, tag) =
         select_unique_curve_candidate(elliptical_generators, [[0.0, 1.0, 0.0], [0.0, 2.0, 2.0]])
@@ -631,7 +631,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         radius: 2.0_f64.sqrt(),
     });
     assert!(
-        matches!(carrier_intersection_curve(cone_tangent_sphere, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_sphere_tangent_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone_tangent_sphere, cone)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_sphere_tangent_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -660,7 +660,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!((cone_sphere_vertex[0] - 1.0).abs() < 1.0e-12);
     assert!(cone_sphere_vertex[1].abs() < 1.0e-12);
     assert!((cone_sphere_vertex[2] + 1.0).abs() < 1.0e-12);
-    assert!(carrier_intersection_curve(sphere, cone).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, sphere, cone)).expect("service carrier intersection admitted").is_none());
     let cone_secant_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [0.0, 0.0, 0.0],
         ref_direction: [1.0, 0.0, 0.0],
@@ -685,7 +685,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 }));
 
     let coaxial_cone_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 3.0);
-    assert!(carrier_intersection_curve(cone, coaxial_cone_cylinder).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, cone, coaxial_cone_cylinder)).expect("service carrier intersection admitted").is_none());
     let cone_cylinder_candidates =
         coaxial_cone_cylinder_circle_candidates(cone, coaxial_cone_cylinder);
     assert_eq!(cone_cylinder_candidates.len(), 2);
@@ -718,7 +718,10 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         offset: 0,
     };
     assert_eq!(
-        fc14_held_coordinate(std::slice::from_ref(&held_coordinates), 77),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            fc14_held_coordinate(ctx, std::slice::from_ref(&held_coordinates), 77)
+        })
+        .expect("admitted FC14 coordinate scan"),
         Some(1.0)
     );
     assert!(matches!(select_fc14_axis_coordinate_candidate(
@@ -733,7 +736,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     let mut mixed_coordinates = held_coordinates;
     mixed_coordinates.tokens[3].value_mm = -1.0;
     mixed_coordinates.tokens[3].raw[1] = 1;
-    assert_eq!(fc14_held_coordinate(&[mixed_coordinates], 77), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            fc14_held_coordinate(ctx, &[mixed_coordinates], 77)
+        })
+        .expect("admitted FC14 coordinate scan"),
+        None
+    );
     assert_eq!(
         select_fc14_axis_coordinate_candidate(
             coaxial_cone_cylinder_circle_candidates(cone, coaxial_cone_cylinder),
@@ -773,14 +782,14 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         normal: [0.0, 0.0, 1.0],
     });
     assert!(
-        matches!(carrier_intersection_curve(torus_tangent, torus), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_torus_tangent_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, torus_tangent, torus)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "plane_torus_tangent_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
                     center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
                 })
     );
-    assert!(carrier_intersection_curve(equator, torus).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, equator, torus)).expect("service carrier intersection admitted").is_none());
     let plane_torus_candidates = axis_normal_plane_torus_circle_candidates(equator, torus);
     assert_eq!(plane_torus_candidates.len(), 2);
     assert!(matches!(select_unique_curve_candidate(
@@ -804,7 +813,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     );
     let outer_tangent_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 7.0);
     assert!(
-        matches!(carrier_intersection_curve(outer_tangent_cylinder, torus), Some((
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, outer_tangent_cylinder, torus)).expect("service carrier intersection admitted"), Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     "coaxial_cylinder_torus_tangent_circle",
                 )) if {
@@ -849,14 +858,14 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         .expect("test carrier solve"),
         Some([7.0, 0.0, 0.0])
     );
-    assert!(carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 6.0), torus).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, parallel_cylinder([0.0, 0.0, 0.0], 6.0), torus)).expect("service carrier intersection admitted").is_none());
     let torus_tangent_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [0.0, 0.0, 0.0],
         ref_direction: [1.0, 0.0, 0.0],
         radius: 3.0,
     });
     assert!(
-        matches!(carrier_intersection_curve(torus_tangent_sphere, torus), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_sphere_torus_tangent_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, torus_tangent_sphere, torus)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_sphere_torus_tangent_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -864,7 +873,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
                 })
     );
     let sphere_torus_tangent_candidates =
-        coaxial_sphere_torus_circle_candidates(torus_tangent_sphere, torus);
+        crate::decode::with_test_decode_ctx(|ctx| coaxial_sphere_torus_circle_candidates(ctx, torus_tangent_sphere, torus)).expect("service sphere torus candidates admitted");
     assert!(
         matches!(sphere_torus_tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_sphere_torus_tangent_circle")]
                 if {
@@ -879,7 +888,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         radius: 5.0,
     });
     let sphere_torus_candidates =
-        coaxial_sphere_torus_circle_candidates(torus_secant_sphere, torus);
+        crate::decode::with_test_decode_ctx(|ctx| coaxial_sphere_torus_circle_candidates(ctx, torus_secant_sphere, torus)).expect("service sphere torus candidates admitted");
     assert_eq!(sphere_torus_candidates.len(), 2);
     let sphere_torus_height = 3.84_f64.sqrt();
     assert!(matches!(select_unique_curve_candidate(
@@ -952,7 +961,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             [7.0, 0.0, 0.0]
         ]
     );
-    assert!(carrier_intersection_curve(sphere, torus).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, sphere, torus)).expect("service carrier intersection admitted").is_none());
     let second_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],
         axis: [0.0, 0.0, 1.0],
@@ -961,14 +970,14 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         minor_radius: 2.0,
     });
     assert!(
-        matches!(carrier_intersection_curve(torus, second_torus), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_tori_tangent_circle"))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| carrier_intersection_curve(ctx, torus, second_torus)).expect("service carrier intersection admitted"), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_tori_tangent_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
                     center == Point3::new(0.0, 0.0, 0.0) && (radius - 7.0).abs() < EPS_CARRIER_INTERSECTION
                 })
     );
-    let tori_tangent_candidates = coaxial_tori_circle_candidates(torus, second_torus);
+    let tori_tangent_candidates = crate::decode::with_test_decode_ctx(|ctx| coaxial_tori_circle_candidates(ctx, torus, second_torus)).expect("service coaxial torus candidates admitted");
     assert!(
         matches!(tori_tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_tori_tangent_circle")]
                 if {
@@ -984,7 +993,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         major_radius: 6.0,
         minor_radius: 2.0,
     });
-    let tori_candidates = coaxial_tori_circle_candidates(torus, secant_torus);
+    let tori_candidates = crate::decode::with_test_decode_ctx(|ctx| coaxial_tori_circle_candidates(ctx, torus, secant_torus)).expect("service coaxial torus candidates admitted");
     assert_eq!(tori_candidates.len(), 2);
     let tori_height = 3.75_f64.sqrt();
     assert!(matches!(select_unique_curve_candidate(

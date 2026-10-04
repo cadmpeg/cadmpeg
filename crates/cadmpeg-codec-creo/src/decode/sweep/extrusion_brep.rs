@@ -209,12 +209,13 @@ fn sketch_profiles_cover_generated_extrusion_sides(
                 continue;
             };
             if !generated_profile_entry_is_admissible(
+                ctx,
                 feature_id,
                 table,
                 entry,
                 GENERATED_EXTRUSION_SIDE_KINDS,
                 &scan.surfaces.rows,
-            ) {
+            )? {
                 continue;
             }
             expected_count += 1;
@@ -254,7 +255,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_additive_linear_extrusion(scan, feature_id)
+        if !feature_allows_additive_linear_extrusion(ctx, scan, feature_id)?
             || !feature_is_first_material_operation(ctx, scan, feature_id)?
         {
             continue;

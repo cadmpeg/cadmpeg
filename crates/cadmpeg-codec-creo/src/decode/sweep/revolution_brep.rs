@@ -113,7 +113,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         if current_additive_feature_recipe(&scan.features.operations, feature_id)
             != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(ctx, scan, feature_id)?
-            || unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id)
+            || unique_feature_revolution_extent(ctx, &scan.features.revolution_extents, feature_id)?
                 .is_none()
         {
             continue;
@@ -123,7 +123,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         else {
             continue;
         };
-        let extent = feature_revolution_extent(scan, feature_id);
+        let extent = feature_revolution_extent(ctx, scan, feature_id)?;
         let Some(axis) = revolution_axis_for_transfer(
             ctx,
             scan,

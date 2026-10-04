@@ -36,19 +36,17 @@ pub(super) fn push_coverage_drop_losses(
     let untransferred_surface_rows =
         coverage_count(coverage, "untransferred_visible_surface_row_count");
     if untransferred_surface_rows != 0 {
-        let family_counts = SURFACE_KINDS.map(|kind| {
-            let family = surface_family(kind);
-            let count = coverage
-                .iter()
+        let mut family_counts = SURFACE_KINDS.map(|kind| (surface_family(kind), 0));
+        for (family, count) in &mut family_counts {
+            *count = ctx.admit_iter(&**coverage, "creo untransferred surface family coverage search")?
                 .find_map(|(key, count)| {
                     (key.strip_prefix("untransferred_visible_")
                         .and_then(|name| name.strip_suffix("_surface_row_count"))
-                        == Some(family))
+                        == Some(*family))
                     .then_some(*count)
                 })
                 .unwrap_or(0);
-            (family, count)
-        });
+        }
         let unresolved_families = CountBreakdown(&family_counts);
         push_report_loss(
             ctx,
