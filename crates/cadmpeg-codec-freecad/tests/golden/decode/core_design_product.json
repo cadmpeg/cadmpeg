@@ -7974,7 +7974,6 @@
           "logical_ledger": "78242dd24fc80aa8d88fc16439968484d6aa56dd5af03e09f14280e91fb8712a",
           "objects": "2087a0e1a7703d8ea05c9d64ab8ed855260befcb1486b8ef171f6dc23c811b22",
           "physical_ledger": "0187f02c4992c525b0921d616a96d19f804d69d08e99463cd07d13b1699fcc44",
-          "product_nodes": "ec28eba4bf915b5ebdb3f2dad71299fbae54ba416a37a04bd97f8165f0fc87b6",
           "properties": "c071824f4f919f7d219e411100fefabf6dc1b21f8d3d59253a7ba182bf240f0c",
           "shape_payloads": "c9c7e9b3a94127ca2e8f72dbccb97a3e4173c2793ca04cd87fc3cd531f4b5433",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
@@ -8943,10 +8942,120 @@
               ],
               "supports": []
             }
+          ],
+          "product_nodes": [
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#Occurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#Occurrence",
+              "placement_property": "fcstd:native:property#Occurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#DesignedFeature",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#Product",
+              "kind": "part",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [
+                "fcstd:native:object#Box",
+                "fcstd:native:object#Cylinder",
+                "fcstd:native:object#Cut",
+                "fcstd:native:object#Profile",
+                "fcstd:native:object#DesignedFeature"
+              ],
+              "object": "fcstd:native:object#Product",
+              "placement_property": "fcstd:native:property#Product:Placement",
+              "prototype": null,
+              "scale": null
+            }
           ]
         }
       },
-      "__elided": "attachment records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+      "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
     "source": {
       "attributes": {
