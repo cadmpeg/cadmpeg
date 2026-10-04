@@ -17,6 +17,7 @@ use crate::scalar::{
 };
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -6705,7 +6706,7 @@ impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
     }
 }
 
-impl<T: PartialEq> DistinctMembers<T> {
+impl<T: PartialEq + DecodeCost> DistinctMembers<T> {
     /// Insert a member after admitting comparisons and a retained collection slot.
     pub fn insert(
         &mut self,
@@ -6718,7 +6719,6 @@ impl<T: PartialEq> DistinctMembers<T> {
             &mut self.0,
             value,
         )
-        .map_err(Into::into)
     }
 
     /// Append distinct members in source order through the caller context.
