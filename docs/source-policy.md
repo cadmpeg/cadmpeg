@@ -639,6 +639,19 @@ a contained custom deserializer, or deserialization outside these operations
 retains an `unproven_decode_charge` finding at the calling site. Serde
 callbacks carry no hidden or thread-local context.
 
+Serde deserialization is context-free reconstruction. A `TryFrom<String>`
+callback selected by `#[serde(try_from = ...)]` keeps its signature and uses
+standard allocation. It is not a decode body. Decode reads the raw wire value
+and passes the caller's `DecodeContext` to its constructor. Validation has one
+implementation parameterised by a typed admission. Decode admission charges
+the caller and returns the original refusal. Context-free admission has the
+failure type `Infallible`.
+
+A shared `const fn` grammar validator has one implementation for constant
+construction and runtime decode. The runtime caller charges the scanned extent
+through its context immediately before calling the validator. Constant callers
+keep their existing signatures and perform no runtime admission.
+
 A checked context operation owns its work admission. Its call site carries
 no duplicate body finding. An unavailable or unresolved implementation
 uses the third rule. Arguments and callbacks remain checked. Custom

@@ -69,8 +69,19 @@ pub fn collection_growth(
 }
 
 impl DecodeContext {
+    pub fn retained_string(&self, _capacity: usize, _operation: &str) -> Result<String, ()> { Ok(String::new()) }
+    pub fn collect_text(&self, _values: impl IntoIterator<Item = char>, _operation: &str) -> Result<String, ()> { Ok(String::new()) }
     pub fn strip_prefix<'a>(&self, bytes: &'a [u8], _prefix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
     pub fn strip_suffix<'a>(&self, bytes: &'a [u8], _suffix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
+}
+pub fn string_collection(ctx: &DecodeContext, chars: &[char], capacity: usize) -> Result<(), ()> {
+    // replacement: retained_string
+    let _value = String::with_capacity(capacity); // finding: uncharged_decode_allocation
+    // replacement: collect_text
+    let _value: String = chars.iter().copied().collect(); // finding: uncharged_decode_allocation, uncharged_decode_work
+    let _value = ctx.retained_string(capacity, "capacity")?;
+    let _value = ctx.collect_text(chars.iter().copied(), "characters")?;
+    Ok(())
 }
 pub fn byte_queries(ctx: &DecodeContext, bytes: &[u8], pattern: &[u8]) -> Result<(), ()> {
     // replacement: strip_prefix

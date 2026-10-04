@@ -60,6 +60,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             match name.as_str() {
                 "push" | "write_char" => return method("push_retained_char"),
                 "push_str" | "write_str" => return method("append_retained"),
+                "with_capacity" => return method("retained_string"),
                 "insert" => {
                     return "DecodeContext::replace_text_range over index..index with value.encode_utf8(&mut [0; 4])".to_owned()
                 }
@@ -125,6 +126,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             "clone" | "clone_from" | "to_owned" | "into_owned" | "from" | "into" if kind == "text" || result == "text" => method("copy_retained_text"),
             "to_vec" | "to_owned" | "clone" if kind == "bytes" => method("copy_slice"),
             "to_vec" | "clone" | "to_owned" if matches!(kind, "slice" | "vector") => "DecodeContext::collect_vec with charged child construction; use DecodeContext::copy_slice for Copy elements".to_owned(),
+            "collect" | "from_iter" if result == "text" => method("collect_text"),
+            "with_capacity" if result == "text" => method("retained_string"),
             "collect" | "from_iter" if matches!(result, "hash_map" | "btree_map" | "hash_set" | "btree_set") => method(match result {
                 "hash_map" => "collect_hash_map", "hash_set" => "collect_hash_set", "btree_set" => "collect_btree_set", _ => "collect_scoped_btree_map",
             }),
