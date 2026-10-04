@@ -38,7 +38,7 @@ impl<'a> InventorContainer<'a> {
         let rse = RseInventory::build(ctx, &snapshot)?;
         let property_sets = property_set_inventory(ctx, &snapshot)?;
         let protein = parse_protein(ctx, &snapshot)?;
-        let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
+        let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind(ctx)?)?;
         Ok(Self {
             snapshot,
             rse,
@@ -50,8 +50,14 @@ impl<'a> InventorContainer<'a> {
 
     pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
         admit_container_entries(ctx, &self.snapshot)?;
-        let mut entries = self.snapshot.container_entries(ctx, classify)?;
-        for segment in &self.rse.segments {
+        let mut entries = self.snapshot.container_entries(ctx, |entry| match entry {
+            CompoundEntry::Storage(_) => ContainerRole::Storage,
+            CompoundEntry::Stream(_) => ContainerRole::Stream,
+        })?;
+        for (index, source) in ctx.admit_iter(self.snapshot.entries(), "classify Inventor summary entries")?.enumerate() {
+            entries[index].role = classify(ctx, source)?;
+        }
+        for segment in ctx.admit_iter(&self.rse.segments, "visit Inventor summary segments")? {
             let Some(entry) =
                 find_summary_entry(ctx, &mut entries, segment.pair.metadata.directory_id())?
             else {
@@ -135,21 +141,18 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let recovery = crate::dialect::DialectRecovery::of(ctx, self)?;
+        let mut recovery_storage = ctx.reserve_scoped(0, "collect Inventor dialect declarations")?;
+        let recovery = recovery_storage.with_storage(|| crate::dialect::DialectRecovery::of(ctx, self))?;
         let matched = recovery.classify(ctx)?;
         let mut losses = Vec::new();
-        admit_summary_loss_slot(ctx, &matched)?;
         if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched, &recovery)? {
-            losses.push(loss);
+            ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
         }
         let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
-        if let Some(kernel) = dialects
-            .iter()
-            .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        if let Some(kernel) = dialects.iter().find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         {
-            admit_summary_loss_slot(ctx, kernel)?;
             if let Some(loss) = crate::dialect::kernel_dialect_loss(ctx, kernel)? {
-                losses.push(loss);
+                ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
             }
         }
         let note = summary_note(
@@ -166,19 +169,6 @@ impl<'a> InventorContainer<'a> {
             vec![note],
         ))
     }
-}
-
-fn admit_summary_loss_slot(
-    ctx: &DecodeContext<'_>,
-    matched: &cadmpeg_core::dialect::DialectMatch,
-) -> Result<(), CodecError> {
-    if !matches!(
-        matched.admission(),
-        cadmpeg_core::dialect::Admission::Admitted
-    ) {
-        ctx.charge_collection_items(1, "collect Inventor summary loss")?;
-    }
-    Ok(())
 }
 
 fn summary_note(
@@ -202,7 +192,7 @@ fn admit_container_entries(
 ) -> Result<(), CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(snapshot.entries().len());
     ctx.charge_collection_items(count, "collect Inventor container summary entries")?;
-    for entry in snapshot.entries() {
+    for entry in ctx.admit_iter(snapshot.entries(), "visit Inventor container entries")? {
         let path_len = cadmpeg_core::decode::u64_from_index(entry.path().len());
         ctx.charge_retained(path_len, "retain Inventor summary entry path")?;
         ctx.charge_collection_items(1, "collect Inventor summary directory attribute")?;
@@ -238,11 +228,12 @@ fn find_summary_entry<'a>(
 ) -> Result<Option<&'a mut ContainerEntry>, CodecError> {
     for entry in entries {
         ctx.charge_work(1, "find Inventor summary entry")?;
-        if entry
-            .attributes
-            .get("directory_id")
-            .is_some_and(|value| value.parse::<u32>() == Ok(directory_id))
-        {
+        let matches = match entry.attributes.get("directory_id") {
+            Some(value) => ctx.parse_text::<u32>(value, "parse Inventor summary directory id")?
+                == Ok(directory_id),
+            None => false,
+        };
+        if matches {
             return Ok(Some(entry));
         }
     }
@@ -256,13 +247,8 @@ fn insert_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     let key = ctx.copy_retained_text(key, "retain Inventor summary attribute key")?;
-    ctx.admit_btree_entry(
-        &entry.attributes,
-        &key,
-        "collect Inventor summary attribute",
-    )?;
     let value = ctx.format_retained(value, "retain Inventor summary attribute value")?;
-    entry.attributes.insert(key, value);
+    ctx.insert_btree_map(&mut entry.attributes, key, value, "collect Inventor summary attribute")?;
     Ok(())
 }
 
@@ -271,75 +257,60 @@ pub(crate) fn has_inventor_evidence(
     paths: &[String],
 ) -> Result<bool, CodecError> {
     let mut has_storage = false;
-    for path in paths {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(path.len()),
-            "Inventor directory storage evidence",
-        )?;
-        if path.eq_ignore_ascii_case("RSeStorage") {
+    for path in ctx.admit_iter(paths, "visit Inventor directory storage evidence")? {
+        if ctx.eq_ignore_ascii_case(path, "RSeStorage", "Inventor directory storage evidence")? {
             has_storage = true;
             break;
         }
     }
-    for path in paths {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(path.len()),
-            "Inventor directory corroboration",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(path.len()),
-            "Inventor database evidence",
-        )?;
-        if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") || database_band(path).is_some() {
+    for path in ctx.admit_iter(paths, "visit Inventor directory corroboration")? {
+        if ctx.eq_ignore_ascii_case(path, "RSeStorage/RSeSegInfo", "Inventor directory corroboration")? || database_band(ctx, path)?.is_some() {
             return Ok(has_storage);
         }
     }
     Ok(false)
 }
 
-fn classify(entry: &CompoundEntry) -> ContainerRole {
+fn classify(ctx: &DecodeContext<'_>, entry: &CompoundEntry) -> Result<ContainerRole, CodecError> {
     let path = entry.path();
-    if path.eq_ignore_ascii_case("RSeStorage") {
-        return ContainerRole::RseStorage;
+    if ctx.eq_ignore_ascii_case(path, "RSeStorage", "classify Inventor entry path")? {
+        return Ok(ContainerRole::RseStorage);
     }
-    if database_band(path).is_some() {
-        return ContainerRole::RseDatabase;
+    if database_band(ctx, path)?.is_some() {
+        return Ok(ContainerRole::RseDatabase);
     }
-    if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") {
-        return ContainerRole::RseSegmentRegistry;
+    if ctx.eq_ignore_ascii_case(path, "RSeStorage/RSeSegInfo", "classify Inventor entry path")? {
+        return Ok(ContainerRole::RseSegmentRegistry);
     }
-    if path.eq_ignore_ascii_case("RSeStorage/RSeDbRevisionInfo") {
-        return ContainerRole::RseRevisionTable;
+    if ctx.eq_ignore_ascii_case(path, "RSeStorage/RSeDbRevisionInfo", "classify Inventor entry path")? {
+        return Ok(ContainerRole::RseRevisionTable);
     }
-    if path.eq_ignore_ascii_case("Protein") {
-        return ContainerRole::Protein;
+    if ctx.eq_ignore_ascii_case(path, "Protein", "classify Inventor entry path")? {
+        return Ok(ContainerRole::Protein);
     }
-    if path.eq_ignore_ascii_case("UFRxDoc") || is_reference_file(path) {
-        return ContainerRole::ExternalReference;
+    if ctx.eq_ignore_ascii_case(path, "UFRxDoc", "classify Inventor entry path")? || is_reference_file(ctx, path)? {
+        return Ok(ContainerRole::ExternalReference);
     }
-    if let Some(name) = direct_rse_child(path) {
+    if let Some(name) = direct_rse_child(ctx, path)? {
         if name.starts_with('M') {
-            return ContainerRole::RseSegmentMetadata;
+            return Ok(ContainerRole::RseSegmentMetadata);
         }
         if name.starts_with('B') {
-            return ContainerRole::RseSegmentBulk;
+            return Ok(ContainerRole::RseSegmentBulk);
         }
     }
-    match entry {
+    Ok(match entry {
         CompoundEntry::Storage(_) => ContainerRole::Storage,
         CompoundEntry::Stream(_) => ContainerRole::Stream,
-    }
+    })
 }
 
-fn is_reference_file(path: &str) -> bool {
+fn is_reference_file(ctx: &DecodeContext<'_>, path: &str) -> Result<bool, CodecError> {
     let mut components = path.split('/');
-    components
-        .next()
-        .is_some_and(|name| name.eq_ignore_ascii_case("RSeStorage"))
-        && components
-            .next()
-            .is_some_and(|name| name.eq_ignore_ascii_case("RefdFiles"))
-        && components.next().is_some()
+    let Some(storage) = components.next() else { return Ok(false); };
+    if !ctx.eq_ignore_ascii_case(storage, "RSeStorage", "match Inventor reference storage")? { return Ok(false); }
+    let Some(directory) = components.next() else { return Ok(false); };
+    Ok(ctx.eq_ignore_ascii_case(directory, "RefdFiles", "match Inventor reference directory")? && components.next().is_some())
 }
 
 #[cfg(test)]

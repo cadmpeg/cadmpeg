@@ -7,6 +7,7 @@ use std::io::Write;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
@@ -146,6 +147,14 @@ pub enum NativeConvertError {
         /// Codec-owned field admission error.
         #[source]
         source: serde_json::Error,
+    },
+    /// A codec-owned reader refused a stored record after charged conversion.
+    #[error("native record {id}: {message}")]
+    ReadRecordMessage {
+        /// Identity of the refused stored record.
+        id: crate::ids::Identity,
+        /// Codec-owned validation detail whose storage is admitted by the caller.
+        message: String,
     },
     /// A producer's record cannot enter a native arena.
     #[error("native input record at ordinal {ordinal}: {source}")]
@@ -362,6 +371,15 @@ impl NativeRecord {
     #[must_use]
     pub fn id(&self) -> &str {
         self.id.as_str()
+    }
+
+    /// Copy the validated record identity within the caller's decode budget.
+    pub fn identity_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<crate::ids::Identity, CodecError> {
+        self.id.try_clone_for_decode(ctx, operation)
     }
 
     /// The codec-owned fields, excluding `id`.

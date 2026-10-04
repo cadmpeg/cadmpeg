@@ -25,6 +25,17 @@ pub enum RadiusForm {
     Variable,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for RadiusForm {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Constant => (0_u8,).decode_cost(ctx, operation),
+            Self::Chordal => (1_u8,).decode_cost(ctx, operation),
+            Self::Asymmetric => (2_u8,).decode_cost(ctx, operation),
+            Self::Variable => (3_u8,).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// Radius assignment along filleted edges.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -64,6 +75,18 @@ pub enum RadiusSpec {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for RadiusSpec {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Unresolved { form } => (0_u8, form).decode_cost(ctx, operation),
+            Self::Constant { radius } => (1_u8, radius).decode_cost(ctx, operation),
+            Self::Chordal { chord_length } => (2_u8, chord_length).decode_cost(ctx, operation),
+            Self::Asymmetric { offset_one, offset_two } => (3_u8, offset_one, offset_two).decode_cost(ctx, operation),
+            Self::Variable { points } => (4_u8, points).decode_cost(ctx, operation),
+        }
+    }
+}
+
 impl RadiusSpec {
     /// Copy admitted fields through the caller's decode context.
     pub fn try_clone_for_decode(
@@ -98,6 +121,12 @@ pub struct FilletGroup {
     pub tangency_weight: Option<FiniteReal>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FilletGroup {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.edges, &self.radius, &self.tangency_weight).decode_cost(ctx, operation)
+    }
+}
+
 /// One full-round fillet group with pairwise disjoint face selections.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -108,6 +137,12 @@ pub struct FullRoundFilletGroup {
     side_one: FullRoundSideSelection,
     #[serde(rename = "side_two_faces")]
     side_two: FullRoundSideSelection,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FullRoundFilletGroup {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.center, &self.side_one, &self.side_two).decode_cost(ctx, operation)
+    }
 }
 
 #[derive(Deserialize)]
@@ -190,6 +225,16 @@ pub enum FullRoundSideSelection {
     Unresolved,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FullRoundSideSelection {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Automatic => (0_u8,).decode_cost(ctx, operation),
+            Self::Explicit(value) => (1_u8, value).decode_cost(ctx, operation),
+            Self::Unresolved => (2_u8,).decode_cost(ctx, operation),
+        }
+    }
+}
+
 /// One independently dimensioned group of chamfered edges.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -199,6 +244,12 @@ pub struct ChamferGroup {
     pub edges: EdgeSelection,
     /// Dimensional definition applied to the edges.
     pub spec: ChamferSpec,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ChamferGroup {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.edges, &self.spec).decode_cost(ctx, operation)
+    }
 }
 
 const INVALID_VARIABLE_RADII: &str = "variable radius points require at least two ordered parameters in [0, 1] and nonnegative radii with one positive radius";
@@ -220,6 +271,12 @@ pub enum VariableRadiiMapError<E> {
 #[cfg_attr(feature = "schema", schemars(into = "Vec<VariableRadius>"))]
 #[serde(try_from = "Vec<VariableRadius>")]
 pub struct VariableRadii(Vec<VariableRadius<Fraction, NonNegativeLength>>);
+
+impl cadmpeg_core::decode::cost::DecodeCost for VariableRadii {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
 
 impl VariableRadii {
     /// Admits finite ordered parameters in [0, 1] and nonnegative radii with one positive radius.
@@ -344,6 +401,12 @@ pub struct VariableRadius<P = f64, L = Length> {
     pub radius: L,
 }
 
+impl<P: cadmpeg_core::decode::cost::DecodeCost, L: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for VariableRadius<P, L> {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.parameter, &self.radius).decode_cost(ctx, operation)
+    }
+}
+
 impl VariableRadius<Fraction, NonNegativeLength> {
     /// The sample with a raw parameter and a signed length radius.
     #[must_use]
@@ -367,6 +430,16 @@ pub enum ChamferForm {
     TwoDistances,
     /// A setback distance plus an angle from its reference face.
     DistanceAngle,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ChamferForm {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Distance => (0_u8,).decode_cost(ctx, operation),
+            Self::TwoDistances => (1_u8,).decode_cost(ctx, operation),
+            Self::DistanceAngle => (2_u8,).decode_cost(ctx, operation),
+        }
+    }
 }
 
 /// Dimensional definition of an edge chamfer.
@@ -403,6 +476,17 @@ pub enum ChamferSpec {
         /// Chamfer angle measured from the reference face.
         angle: InteriorAngle,
     },
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ChamferSpec {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Unresolved { form } => (0_u8, form).decode_cost(ctx, operation),
+            Self::Distance { distance } => (1_u8, distance).decode_cost(ctx, operation),
+            Self::TwoDistances { first, second } => (2_u8, first, second).decode_cost(ctx, operation),
+            Self::DistanceAngle { distance, angle } => (3_u8, distance, angle).decode_cost(ctx, operation),
+        }
+    }
 }
 
 impl ChamferSpec {

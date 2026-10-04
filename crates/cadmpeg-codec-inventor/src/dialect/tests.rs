@@ -154,7 +154,7 @@ fn dialect_join_refuses_collection_and_retained_limits_before_join() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        join(&ctx, [Ok("a".to_owned())], "retain Inventor test join"),
+        join(&ctx, &[Ok::<_, cadmpeg_core::CodecError>("a".to_owned())], |value| ctx.copy_retained_text(value.as_ref().expect("valid join part"), "copy Inventor test join part").map(Some), "visit Inventor test join parts", "retain Inventor test join"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor dialect join parts"
@@ -163,7 +163,7 @@ fn dialect_join_refuses_collection_and_retained_limits_before_join() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        join(&ctx, [Ok("a".to_owned())], "retain Inventor test join"),
+        join(&ctx, &[Ok::<_, cadmpeg_core::CodecError>("a".to_owned())], |value| ctx.copy_retained_text(value.as_ref().expect("valid join part"), "copy Inventor test join part").map(Some), "visit Inventor test join parts", "retain Inventor test join"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor test join"
@@ -171,13 +171,13 @@ fn dialect_join_refuses_collection_and_retained_limits_before_join() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     assert_eq!(
-        join(&ctx, [Ok("a".to_owned())], "retain Inventor test join").expect("admitted join"),
+        join(&ctx, &[Ok::<_, cadmpeg_core::CodecError>("a".to_owned())], |value| ctx.copy_retained_text(value.as_ref().expect("valid join part"), "copy Inventor test join part").map(Some), "visit Inventor test join parts", "retain Inventor test join").expect("admitted join"),
         "a"
     );
 }
 
 #[test]
-fn dialect_loss_refuses_retained_limit_before_absent_schema_reason() {
+fn dialect_loss_refuses_materialized_limit_before_absent_schema_reason() {
     let recovery = empty_recovery();
     let arena = DecodeArena::new();
     let (setup_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -186,12 +186,13 @@ fn dialect_loss_refuses_retained_limit_before_absent_schema_reason() {
         .classify(&setup_ctx)
         .expect("admitted classification");
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    // The absent-schema reason is temporary text and admits its bytes as materialized storage.
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         dialect_loss(&ctx, &matched, &recovery),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "retain Inventor absent schema reason"
     ));
     assert!(dialect_loss(&setup_ctx, &matched, &recovery)
@@ -358,7 +359,7 @@ fn decoded(bytes: &[u8]) -> (DialectMatch, Vec<LossNote>) {
 
 /// Whether `losses` charges [`InventorLossCode::SourceDialectUnverified`].
 fn charges_dialect_unverified(losses: &[LossNote]) -> bool {
-    let expected = InventorLossCode::SourceDialectUnverified.kind();
+    let expected = InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code");
     losses.iter().any(|loss| loss.code == expected)
 }
 
@@ -389,7 +390,7 @@ fn a_broken_schema_31_stream_keeps_its_declaration_in_the_dialect_reason() {
     assert_eq!(matched.dialect().as_str(), "inventor:cfb3-rse31-meta8");
     let loss = losses
         .iter()
-        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code"))
         .expect("unframed schema-31 recovery loss");
     assert!(loss.message.contains("RSe database schema 31 is declared"));
     assert!(!loss
@@ -409,7 +410,7 @@ fn a_broken_verified_meta_stream_keeps_its_declaration_but_is_not_admitted() {
     assert!(matches!(matched.admission(), Admission::Unverified { .. }));
     let loss = losses
         .iter()
-        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code"))
         .expect("unframed version-8 metadata recovery loss");
     assert!(loss.message.contains(
         "RSe segment metadata marker \"RSe Meta Stream Version 8\" version 8 is declared"
@@ -512,17 +513,17 @@ fn inspect_and_decode_report_the_same_match_and_the_source_mirrors_it() {
             .losses
             .iter()
             .filter(|loss| {
-                loss.code == InventorLossCode::SourceDialectUnverified.kind()
-                    || loss.code == InventorLossCode::KernelDialectUnverified.kind()
-                    || loss.code == InventorLossCode::KernelCarrierUnparseable.kind()
+                loss.code == InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")
+                    || loss.code == InventorLossCode::KernelDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")
+                    || loss.code == InventorLossCode::KernelCarrierUnparseable.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")
             })
             .collect::<Vec<_>>();
         let decoded_classification = decoded_losses
             .iter()
             .filter(|loss| {
-                loss.code == InventorLossCode::SourceDialectUnverified.kind()
-                    || loss.code == InventorLossCode::KernelDialectUnverified.kind()
-                    || loss.code == InventorLossCode::KernelCarrierUnparseable.kind()
+                loss.code == InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")
+                    || loss.code == InventorLossCode::KernelDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")
+                    || loss.code == InventorLossCode::KernelCarrierUnparseable.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code")
             })
             .collect::<Vec<_>>();
         assert_eq!(
@@ -571,7 +572,7 @@ fn inspect_and_decode_do_not_invent_a_kernel_layer_without_kernel_evidence() {
         .report()
         .losses
         .iter()
-        .all(|loss| { loss.code != InventorLossCode::KernelDialectUnverified.kind() }));
+        .all(|loss| { loss.code != InventorLossCode::KernelDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code") }));
 }
 
 #[test]
@@ -583,19 +584,22 @@ fn a_selected_unparseable_kernel_carrier_charges_its_retained_layer() {
     let loss = kernel_dialect_loss(&ctx, &matched)
         .expect("service admission")
         .expect("refused embedded layer is a reported loss");
-    assert_eq!(loss.code, InventorLossCode::KernelCarrierUnparseable.kind());
+    assert_eq!(loss.code, InventorLossCode::KernelCarrierUnparseable.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code"));
     assert!(loss.message.contains("native records remain retained"));
 }
 
 #[test]
-fn kernel_dialect_loss_refuses_collection_limit_before_note() {
+fn kernel_dialect_loss_refuses_collection_limit_before_storage() {
     let matched = cadmpeg_asm::dialect::classify(&cadmpeg_test_support::service_decode_context(), cadmpeg_asm::dialect::KernelHeaderRef::Unknown).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    // Note construction has no collection slot; storing the note admits one slot.
+    let note = kernel_dialect_loss(&ctx, &matched).expect("note text fits").expect("refused kernel note");
+    let mut losses = Vec::new();
     assert!(matches!(
-        kernel_dialect_loss(&ctx, &matched),
+        ctx.push_vec(&mut losses, note, "collect Inventor kernel dialect loss"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor kernel dialect loss"
@@ -699,7 +703,7 @@ fn kernel_recovery_message_refuses_retained_limit_and_matches_asm_text() {
         kernel_dialect_loss(&ctx, &matched),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor kernel loss namespace"
+                && limit.operation == "retain Inventor loss code"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
@@ -723,7 +727,7 @@ fn the_charged_loss_names_the_declaration_that_diverged() {
     }));
     let note = losses
         .iter()
-        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind())
+        .find(|loss| loss.code == InventorLossCode::SourceDialectUnverified.kind(&cadmpeg_test_support::service_decode_context()).expect("expected loss code"))
         .expect("an unimplemented declaration charges the dialect loss");
     assert!(note.message.contains("RSe database schema 12"), "{note:?}");
     assert!(

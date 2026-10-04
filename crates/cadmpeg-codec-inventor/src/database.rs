@@ -7,6 +7,18 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RseSchema(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for RseSchema {
+    const FIXED_BYTES: Option<u64> = Some(4);
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(4)
+    }
+}
+
 impl RseSchema {
     pub(crate) const SCHEMA_31: Self = Self(31);
 
@@ -125,12 +137,19 @@ pub(crate) enum DatabaseHeader {
 
 impl DatabaseHeader {
     /// The detail an unframed schema reports as a database issue.
-    pub(crate) fn unframed_detail(schema: RseSchema, detail: &str) -> String {
-        format!(
-            "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
-             {detail}",
-            schema.value(),
-            RseSchema::SCHEMA_31.value()
+    pub(crate) fn unframed_detail(
+        ctx: &DecodeContext<'_>,
+        schema: RseSchema,
+        detail: &str,
+    ) -> Result<String, CodecError> {
+        ctx.format_retained(
+            format_args!(
+                "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
+                 {detail}",
+                schema.value(),
+                RseSchema::SCHEMA_31.value()
+            ),
+            "retain Inventor database issue detail",
         )
     }
 }
@@ -152,14 +171,11 @@ pub(crate) fn parse_database(
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            ctx.charge_formatted_retained(
+            let detail = ctx.format_retained(
                 format_args!("{error}"),
                 "retain RSe unframed database detail",
             )?;
-            Ok(DatabaseHeader::Unframed {
-                schema,
-                detail: error.to_string(),
-            })
+            Ok(DatabaseHeader::Unframed { schema, detail })
         }
     }
 }
@@ -646,7 +662,8 @@ mod tests {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema(12));
-            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            let reported = DatabaseHeader::unframed_detail(ctx, schema, &detail)
+                .expect("service policy admits issue detail");
             assert!(reported.contains("schema 12"), "{reported}");
             assert!(reported.contains("schema 31 grammar"), "{reported}");
         });
@@ -662,7 +679,8 @@ mod tests {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema::SCHEMA_31);
-            let reported = DatabaseHeader::unframed_detail(schema, &detail);
+            let reported = DatabaseHeader::unframed_detail(ctx, schema, &detail)
+                .expect("service policy admits issue detail");
             assert!(reported.contains("schema 31"), "{reported}");
         });
     }

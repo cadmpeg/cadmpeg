@@ -22,6 +22,8 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[macro_use]
+mod decode_cost;
 macro_rules! selection_field_deserializer {
     ($name:ident, $field:literal) => {
         fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -174,6 +176,7 @@ checked_feature_geometry!(
     value.is_finite(),
     "FinitePoint3 coordinates must be finite", get, as_raw
 );
+impl_feature_decode_cost_copy!(crate::features::FinitePoint3);
 impl FinitePoint3 {
     /// The model origin.
     pub const ZERO: Self = Self(Point3 {
@@ -241,6 +244,7 @@ checked_feature_geometry!(
     value.is_finite(),
     "FiniteVector3 components must be finite", get, as_raw
 );
+impl_feature_decode_cost_copy!(crate::features::FiniteVector3);
 impl FiniteVector3 {
     /// The zero displacement.
     pub const ZERO: Self = Self(Vector3 {
@@ -298,7 +302,7 @@ checked_feature_geometry!(
     value.dot(value).is_finite() && value.dot(value) > 0.0,
     "FeatureDirection3 norm must be finite and nonzero", get
 );
-
+impl_feature_decode_cost_copy!(crate::features::FeatureDirection3);
 impl From<UnitVector3> for FiniteVector3 {
     /// Carry an admitted unit direction as a finite displacement. Its
     /// components are finite, so no admission can refuse it.
@@ -403,7 +407,7 @@ checked_feature_geometry!(
     FeatureRigidPlacement, Transform, value, value.is_proper_rigid(),
     "FeatureRigidPlacement must be a finite right-handed rigid transform"
 );
-
+impl_feature_decode_cost_record!(FeatureRigidPlacement; (0));
 impl FeatureRigidPlacement {
     /// Return the identity placement.
     pub fn identity() -> Self {
@@ -436,7 +440,7 @@ pub struct FeatureUnitPlaneFrame {
     u_axis: UnitVector3,
     v_axis: UnitVector3,
 }
-
+impl_feature_decode_cost_record!(FeatureUnitPlaneFrame; { origin, u_axis, v_axis });
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -511,7 +515,7 @@ pub struct FeatureCoordinateFrame {
     plane: FeatureUnitPlaneFrame,
     z_axis: UnitVector3,
 }
-
+impl_feature_decode_cost_record!(FeatureCoordinateFrame; { plane, z_axis });
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -594,6 +598,7 @@ impl From<FeatureCoordinateFrame> for FeatureCoordinateFrameWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "[Point2; 2]", into = "[Point2; 2]")]
 pub struct FeatureImageBounds([FinitePoint2; 2]);
+impl_feature_decode_cost_record!(FeatureImageBounds; (0));
 impl FeatureImageBounds {
     /// Admit finite corners with nonzero width and height, in either order.
     pub fn new(corners: [Point2; 2]) -> Option<Self> {
@@ -694,12 +699,13 @@ checked_feature_plane_frame!(
     FeatureDatumPlaneFrame, normal_length, u_length,
     { let scale = normal_length * u_length; if !scale.is_finite() { return None; } EPS_FEATURE_PLANE_ORTHOGONAL * scale }
 );
+impl_feature_decode_cost_record!(FeatureDatumPlaneFrame; { origin, normal, u_axis });
 checked_feature_plane_frame!(
     /// A resolved support-plane frame whose relative orthogonality bound scales each norm in order.
     FeatureSupportPlaneFrame, normal_length, u_length,
     EPS_FEATURE_PLANE_ORTHOGONAL * normal_length * u_length
 );
-
+impl_feature_decode_cost_record!(FeatureSupportPlaneFrame; { origin, normal, u_axis });
 /// A straight feature edge with distinct finite endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -708,7 +714,7 @@ pub struct FeatureLineSegment {
     start: FinitePoint3,
     end: FinitePoint3,
 }
-
+impl_feature_decode_cost_record!(FeatureLineSegment; { start, end });
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -758,7 +764,7 @@ pub struct FeaturePolyline {
     points: Vec<FinitePoint3>,
     closed: bool,
 }
-
+impl_feature_decode_cost_record!(FeaturePolyline; { points, closed });
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -825,7 +831,7 @@ pub struct FeatureEquationCurve {
     z_expression: String,
     domain: crate::topology::IncreasingParameterInterval,
 }
-
+impl_feature_decode_cost_record!(FeatureEquationCurve; { parameter, x_expression, y_expression, z_expression, domain });
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -930,7 +936,7 @@ pub struct FeatureCircularArc {
     radius: PositiveLength,
     angles: crate::geometry::DirectedParameterRange,
 }
-
+impl_feature_decode_cost_record!(FeatureCircularArc; { center, normal, radius, angles });
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1036,7 +1042,7 @@ pub struct FeatureEllipticArc {
     radii: [PositiveLength; 2],
     angles: crate::geometry::DirectedParameterRange,
 }
-
+impl_feature_decode_cost_record!(FeatureEllipticArc; { center, normal, major_axis, radii, angles });
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1179,7 +1185,7 @@ pub struct DraftPull {
     )]
     pub plane: Option<FeatureId>,
 }
-
+impl_feature_decode_cost_record!(DraftPull; { direction, plane });
 /// Selection form and pull frame of a draft operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1205,7 +1211,7 @@ pub enum DraftAnchor {
         pull: DraftPull,
     },
 }
-
+impl_feature_decode_cost_enum!(DraftAnchor; { NeutralPlane { plane, pull }, PartingLine { tool, pull }, });
 impl DraftAnchor {
     /// Pull frame retained by this anchor, when available.
     #[must_use]
@@ -1444,7 +1450,7 @@ pub struct DesignParameter {
     )]
     pub native_ref: Option<String>,
 }
-
+impl_feature_decode_cost_record!(DesignParameter; map properties; { id, owner, ordinal, name, expression, display, value, dependencies, pmi, native_ref });
 /// Product-manufacturing semantics attached to a design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1470,7 +1476,7 @@ pub struct ParameterPmi {
     /// Identifier of the full-fidelity semantic record.
     pub native_ref: String,
 }
-
+impl_feature_decode_cost_record!(ParameterPmi; { subtype, precision, display_text, basic, inspection, reference_only, native_ref });
 /// Semantic PMI dimension family.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1492,7 +1498,7 @@ pub enum PmiDimensionSubtype {
     /// Source-native family without a neutral equivalent.
     Native(String),
 }
-
+impl_feature_decode_cost_enum!(PmiDimensionSubtype; { Linear, Angle, Diameter, Radial, Ordinate, Count, Native(value) });
 /// Geometric interpretation requested by a dimension display modifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1505,6 +1511,7 @@ pub enum DimensionDisplay {
     Radius,
 }
 
+impl_feature_decode_cost_enum!(DimensionDisplay; { Diameter, Radius });
 /// Canonical scalar value of a literal design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1528,7 +1535,7 @@ pub enum ParameterValue {
     /// Literal text value.
     String(String),
 }
-
+impl_feature_decode_cost_enum!(ParameterValue; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
 crate::units::named_field!(deserialize_parameter_real, FiniteReal, "value");
 
 fn deserialize_dependencies<'de, D, T>(deserializer: D) -> Result<DistinctMembers<T>, D::Error>
@@ -1544,7 +1551,7 @@ where
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct PolygonSideCount(u32);
-
+impl_feature_decode_cost_copy!(PolygonSideCount);
 impl PolygonSideCount {
     /// Admits a side count of at least three.
     pub fn new(value: u32) -> Option<Self> {
@@ -1565,7 +1572,7 @@ pub struct FeatureEvaluation {
     definition: FeatureDefinition,
     outputs: DistinctMembers<BodyId>,
 }
-
+impl_feature_decode_cost_record!(FeatureEvaluation; { definition, outputs });
 impl FeatureEvaluation {
     /// Construct an evaluation from its semantics and produced bodies.
     #[must_use]
@@ -1648,7 +1655,7 @@ pub struct Feature {
     /// Identifier of the full-fidelity record in a native namespace.
     pub native_ref: Option<String>,
 }
-
+impl_feature_decode_cost_record!(Feature; map source_properties; { id, ordinal, name, suppressed, dependencies, source_tag, source_text, source_content, evaluation, native_ref });
 #[derive(Serialize)]
 pub(crate) struct FeatureWriteWire<'a> {
     id: &'a FeatureId,
@@ -1922,7 +1929,7 @@ struct FeatureResultMembers {
     edges: Vec<NonBlankString>,
     vertices: Vec<NonBlankString>,
 }
-
+impl_feature_decode_cost_record!(FeatureResultMembers; { bodies, faces, edges, vertices });
 /// Refusal for a feature result member list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum FeatureResultMemberError {
@@ -2028,7 +2035,7 @@ pub struct FeatureResultTopology {
     )]
     pub native_ref: Option<String>,
 }
-
+impl_feature_decode_cost_record!(FeatureResultTopology; { id, output_of, members, native_ref });
 impl FeatureResultTopology {
     /// A nonempty result with distinct local identities in each arena.
     pub fn new(
@@ -2098,7 +2105,7 @@ impl FeatureResultTopology {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct FeatureContent(Vec<FeatureSourceContent>);
-
+impl_feature_decode_cost_record!(FeatureContent; (0));
 impl TryFrom<Vec<FeatureSourceContent>> for FeatureContent {
     type Error = FeatureCollectionError;
     fn try_from(value: Vec<FeatureSourceContent>) -> Result<Self, Self::Error> {
@@ -2215,7 +2222,7 @@ pub enum FeatureSourceContent {
     /// Nested feature record at this position.
     Feature(FeatureId),
 }
-
+impl_feature_decode_cost_enum!(FeatureSourceContent; { Text(value), Parameter(value), Feature(value) });
 /// Parametric support of an offset datum plane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2237,7 +2244,7 @@ pub enum DatumPlaneReference {
         frame: FeatureSupportPlaneFrame,
     },
 }
-
+impl_feature_decode_cost_enum!(DatumPlaneReference; { Feature { feature }, Face { face }, ResolvedPlane { frame }, });
 /// Sketch point operand resolved by a datum-point construction or retained in
 /// native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2268,7 +2275,7 @@ pub enum SketchPointSelection {
     /// Format-native selection reference.
     Native(String),
 }
-
+impl_feature_decode_cost_enum!(SketchPointSelection; { Unresolved, Planar { sketch, point, native }, Spatial { sketch, point, native }, Native(field0), });
 /// Construction rule used to derive one datum point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2315,7 +2322,7 @@ pub enum DatumPointConstruction {
         fraction: Fraction,
     },
 }
-
+impl_feature_decode_cost_enum!(DatumPointConstruction; { CircleCenter { edge }, TwoEdgeIntersection { edges }, ThreePlaneIntersection { planes }, Vertex { vertex }, SketchPoint { point }, EdgePlaneIntersection { edge, plane }, DistanceOnEdge { edge, fraction }, });
 /// Rule that maps a raster decal onto its selected faces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2325,7 +2332,7 @@ pub enum DecalMapping {
     /// Scale the complete raster to the selected faces' native parameter domain.
     FitToFaces,
 }
-
+impl_feature_decode_cost_enum!(DecalMapping; { FitToFaces });
 impl DatumPointConstruction {
     /// Return construction features referenced by this rule.
     pub fn feature_references(&self) -> Vec<&FeatureId> {
@@ -2377,7 +2384,7 @@ pub enum NativeFeatureKind {
     /// Source-native family without typed neutral handling.
     Other(String),
 }
-
+impl_feature_decode_cost_enum!(NativeFeatureKind; { Canvas, Decal, Draft, Fillet, Chamfer, Extrude, DeleteFace, SurfaceDeleteFace, Other(field0), });
 impl NativeFeatureKind {
     /// Stable source spelling carried on the CADIR wire.
     pub fn as_str(&self) -> &str {
@@ -2467,7 +2474,7 @@ pub enum LoftGuidance {
     /// Centerline to which loft sections remain normal.
     Centerline(PathRef),
 }
-
+impl_feature_decode_cost_enum!(LoftGuidance; { Guides(field0), Centerline(field0), });
 impl Default for LoftGuidance {
     fn default() -> Self {
         Self::Guides(Vec::new())
@@ -2493,7 +2500,7 @@ fn known_body_count(selection: &BodySelection) -> Option<usize> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SewBodySelection(BodySelection);
-
+impl_feature_decode_cost_record!(SewBodySelection; (0));
 impl TryFrom<BodySelection> for SewBodySelection {
     type Error = &'static str;
     fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
@@ -2596,6 +2603,7 @@ selection_operands!(
     second_faces,
     |first, second| !face_selections_overlap(first, second)
 );
+impl_feature_decode_cost_record!(FaceBlendOperands; { first_faces, second_faces });
 selection_operands!(
     ReplaceFaceOperands,
     ReplaceFaceOperandsWire,
@@ -2605,6 +2613,7 @@ selection_operands!(
     |first, second| !face_selections_overlap(first, second),
     try_edit
 );
+impl_feature_decode_cost_record!(ReplaceFaceOperands; { targets, replacements });
 selection_operands!(
     SectionOperands,
     SectionOperandsWire,
@@ -2613,6 +2622,7 @@ selection_operands!(
     second,
     |first, second| !body_selections_overlap(first, second)
 );
+impl_feature_decode_cost_record!(SectionOperands; { first, second });
 selection_operands!(
     CombineOperands,
     CombineOperandsWire,
@@ -2623,6 +2633,7 @@ selection_operands!(
         && !body_selections_overlap(first, second),
     try_edit
 );
+impl_feature_decode_cost_record!(CombineOperands; { target, tools });
 selection_operands!(
     TrimBodyOperands,
     TrimBodyOperandsWire,
@@ -2631,7 +2642,7 @@ selection_operands!(
     tools,
     |first, second| !body_selections_overlap(first, second)
 );
-
+impl_feature_decode_cost_record!(TrimBodyOperands; { targets, tools });
 impl CombineOperands {
     /// Move both selections out of this admitted pair.
     pub fn into_parts(self) -> (BodySelection, BodySelection) {
@@ -2750,7 +2761,7 @@ pub struct TreeChildren {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     active_child: Option<FeatureId>,
 }
-
+impl_feature_decode_cost_record!(TreeChildren; { children, active_child });
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TreeChildrenWire {
@@ -4047,7 +4058,7 @@ pub enum FeatureOperation {
         allow_multi_profile_faces: Option<bool>,
     },
 }
-
+impl_feature_decode_cost_enum!(FeatureOperation; map Native { kind; parameters }; { TreeNode { role, children }, BaseFeature { bodies }, MeshImport { tessellations }, InsertBodies { bodies }, InsertComponent { occurrence }, AssemblyJoint { joint }, Form { cages }, CosmeticThread { face, diameter, extent }, ReferenceImage { asset, visible, mirror_u, mirror_v, frame, bounds, opacity }, Decal { asset, faces, mapping, opacity }, DatumPrincipalPlane { plane }, DatumPlane { frame }, DatumThreePointPlane { frame, points }, DatumOffsetPlane { reference, distance }, DatumAxis { origin, direction }, DatumPoint { position, construction }, PointGeometry { position }, LineSegment { segment }, CircularArc { arc }, EllipticArc { arc }, Polyline { chain }, RegularPolygonCurve { sides, circumradius }, PlanarPatch { length, width }, FaceFromShapes { sources, face_maker }, DatumCoordinateSystem { frame }, Block { dimensions, placement, op }, EquationCurve { curve }, ProjectedCurve { source, target_faces, direction, bidirectional }, ProjectOnSurface { sources, support_face, direction, mode, height, offset }, CompositeCurve { segments, closed }, Helix { axis_origin, axis_direction, radius, shape, revolutions, start_angle, clockwise, segment_turns, construction_style }, HelixNativeAxis { axis_native_ref, axial_rise, pitch, revolutions, start_angle, clockwise }, Coil { construction, result }, Sphere { center, radius, op }, Torus { center, axis, major_radius, minor_radius, op }, Wrap { profile, face, mode }, Sketch { sketch }, SpatialSketch { sketch }, SketchBlockDefinition { sketch }, SketchBlockInstance { block, placement }, StoredGeometry { }, ExtractBody { source }, DerivedGeometry { source }, ImportedGeometry { path, format }, Primitive { solid, op }, Revolve { construction, op }, Sweep { shape, path, orientation, transition, transformation, path_tangent, linearize, twist, path_extent, guide_rail, taper, scale, allow_multi_profile_faces }, HelicalSweep { construction, op }, Binder { sources, construction }, Rib { construction, op }, SheetMetalBaseFlange { profile, thickness, side }, SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius }, SheetMetalHem { edges, form, direction, bend_radius }, Fillet { groups }, FullRoundFillet { groups }, FaceBlend { operands, radius }, Chamfer { groups, flip_direction }, Shell { bodies, removed_faces, thickness, outward, mode, join, resolve_intersections, allow_self_intersections }, OffsetShape { source, distance, mode, join, resolve_intersections, allow_self_intersections, fill, planar }, Compound { members }, RefineShape { source }, ReverseShape { source }, RuledBetweenCurves { first, second, orientation }, SectionShape { operands, approximate }, MirrorShape { source, plane_origin, plane_normal, plane_reference }, Thicken { faces, thickness, side }, OffsetSurface { faces, distance }, KnitSurface { faces, merge_entities, create_solid, gap_tolerance }, SewBodies { bodies, gap_tolerance }, FilledSurface { boundary, support_faces, continuity, merge_result }, TrimSurface { faces, tool, keep }, ExtendSurface { faces, distance, method }, RuledSurface { edges, support_faces, mode, angle, alternate_face, corner }, Draft { faces, anchor, angle, outward }, Combine { operands, op, keep_tools }, BoundaryFill { tools, cells }, CutWithSurface { targets, tools, reverse }, TrimBodies { operands, keep }, SplitBody { targets, tools }, SplitFace { targets, tool }, DeleteBody { bodies, mode }, DeleteFace { faces, heal }, ReplaceFace { operands }, MoveFace { faces, motion }, MoveBody { bodies, translation, rotation, copies }, Dome { faces, height, elliptical, reverse }, Flex { axis, mode }, Scale { bodies, center, factors }, Hole { profile, profile_filter, face, direction, placements, shape, extent, bottom, taper_angle, allow_multi_profile_faces }, Pattern { seeds, pattern }, Unresolved { family }, Extrude { profile, direction, start, extent, op, solid, face_maker, inner_wire_taper, length_along_profile_normal, allow_multi_profile_faces }, Loft { sections, guidance, op, closed, solid, ruled, linearize, max_degree, allow_multi_profile_faces }, });
 /// Neutral construction semantics: one operation, optionally under a single
 /// post-processing layer.
 ///
@@ -4073,7 +4084,7 @@ pub enum FeatureDefinition {
     #[serde(untagged)]
     Operation(FeatureOperation),
 }
-
+impl_feature_decode_cost_enum!(FeatureDefinition; { PostProcess { operation, refine, fuzzy_tolerance }, Operation(field0), });
 /// Operation family of a feature whose construction operands are unresolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4139,7 +4150,7 @@ pub enum UnresolvedFamily {
     /// The `move_object` operation family.
     MoveObject,
 }
-
+impl_feature_decode_cost_enum!(UnresolvedFamily; { DatumPlane, DatumAxis, DatumPoint, DatumCoordinateSystem, BridgeCurve, Brep, Cylinder, Cone, Sphere, Thread, DetailedThread, Loft, ThroughCurveMesh, FreeformSurface, Extrude, Revolve, Fillet, ExtractFace, CopyFace, LinkedFace, FillHole, BoundarySurface, Draft, DeleteFace, MoveFace, MirrorFace, SubdivisionBody, TopologyOptimization, MoveObject });
 impl FeatureOperation {
     /// Family name of an operation whose replay produces body geometry, and `None` for
     /// definitions that do not.
@@ -4271,7 +4282,7 @@ pub enum ExtrudeDirection {
         source: Option<ExtrusionDirectionSource>,
     },
 }
-
+impl_feature_decode_cost_enum!(ExtrudeDirection; { Unresolved { }, ProfileNormal { }, ReversedProfileNormal { }, Explicit { vector, source }, });
 impl Default for ExtrudeDirection {
     fn default() -> Self {
         Self::ProfileNormal {}
@@ -4291,7 +4302,7 @@ pub enum GeometryImportFormat {
     /// Native boundary-representation model data.
     Brep,
 }
-
+impl_feature_decode_cost_enum!(GeometryImportFormat; { Step, Iges, Brep });
 /// Selection policy for Boolean-operation fuzzy tolerance.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4309,7 +4320,7 @@ pub enum FuzzyTolerance {
     /// Use the supplied positive model-unit tolerance.
     Explicit(PositiveLength),
 }
-
+impl_feature_decode_cost_enum!(FuzzyTolerance; { KernelDefault, Automatic, Explicit(field0) });
 /// Geometric offset construction used by a thin-wall shell operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4323,7 +4334,7 @@ pub enum ShellMode {
     /// Builds wall material on both sides of the original boundary.
     BothSides,
 }
-
+impl_feature_decode_cost_enum!(ShellMode; { Skin, Pipe, BothSides });
 /// Corner continuation law for adjacent shell offset faces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4337,7 +4348,7 @@ pub enum ShellJoin {
     /// Intersects adjacent offset faces to form sharp corners.
     Intersection,
 }
-
+impl_feature_decode_cost_enum!(ShellJoin; { Arc, Tangent, Intersection });
 /// Traversal relationship between ruled-surface boundary curves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4351,7 +4362,7 @@ pub enum RuledCurveOrientation {
     /// Reverse the second curve relative to the first.
     Reversed,
 }
-
+impl_feature_decode_cost_enum!(RuledCurveOrientation; { Automatic, Forward, Reversed });
 /// The refusal of primitive dimensions that define no solid.
 const INVALID_PRIMITIVE_DIMENSIONS: &str = "primitive dimensions are invalid";
 
@@ -4360,7 +4371,7 @@ const INVALID_PRIMITIVE_DIMENSIONS: &str = "primitive dimensions are invalid";
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PrimitiveSolidKind", into = "PrimitiveSolidKind")]
 pub struct PrimitiveSolid(PrimitiveSolidKind);
-
+impl_feature_decode_cost_record!(PrimitiveSolid; (0));
 /// Which condition refuses a scaled primitive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveSolidScaleError {
@@ -4763,7 +4774,7 @@ pub enum PrimitiveSolidKind {
         z2max: Length,
     },
 }
-
+impl_feature_decode_cost_enum!(PrimitiveSolidKind; { Box { length, width, height }, Cylinder { radius, height, angle }, Cone { radius1, radius2, height, angle }, Sphere { radius, latitude1, latitude2, longitude }, Ellipsoid { x_radius, y_radius, z_radius, latitude1, latitude2, longitude }, Torus { major_radius, minor_radius, latitude1, latitude2, longitude }, Prism { sides, circumradius, height }, Wedge { xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max }, });
 /// Resolution state and inputs of a profile revolution.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4811,7 +4822,7 @@ pub enum RevolveConstruction {
         allow_multi_profile_faces: Option<bool>,
     },
 }
-
+impl_feature_decode_cost_enum!(RevolveConstruction; { Unresolved(field0), Resolved { profile, axis, extent, solid, face_maker, fuse_order, allow_multi_profile_faces }, });
 /// Incomplete inputs of a profile revolution, named by the first absent operand
 /// in the order profile, axis, extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4945,7 +4956,7 @@ pub enum PartialRevolveConstruction {
         allow_multi_profile_faces: Option<bool>,
     },
 }
-
+impl_feature_decode_cost_enum!(PartialRevolveConstruction; { Profile { axis, extent, solid, face_maker, fuse_order, allow_multi_profile_faces }, Axis { profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces }, Extent { profile, axis, solid, face_maker, fuse_order, allow_multi_profile_faces }, });
 /// The four optional selections a revolution carries in every resolution state.
 struct RevolveSelections {
     solid: Option<bool>,
@@ -5342,7 +5353,7 @@ pub enum RevolutionFuseOrder {
     /// Newly revolved feature is the first fuse operand.
     FeatureFirst,
 }
-
+impl_feature_decode_cost_enum!(RevolutionFuseOrder; { BaseFirst, FeatureFirst });
 /// Complete line placement used as a revolution axis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5360,7 +5371,7 @@ pub struct RevolutionAxis {
     )]
     pub reference: Option<PathRef>,
 }
-
+impl_feature_decode_cost_record!(RevolutionAxis; { origin, direction, reference });
 /// Independently decoded inputs of a thin rib operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5398,7 +5409,7 @@ pub struct RibConstruction {
     #[serde(default)]
     pub draft: RibDraft,
 }
-
+impl_feature_decode_cost_record!(RibConstruction; { profile, direction, thickness, side, draft });
 /// Distribution of rib thickness around its profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5410,7 +5421,7 @@ pub enum RibSide {
     /// Thickness is split equally around the profile.
     Centered,
 }
-
+impl_feature_decode_cost_enum!(RibSide; { OneSided, Centered });
 /// Draft state of a rib construction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5425,7 +5436,7 @@ pub enum RibDraft {
     /// Rib walls use the specified draft angle.
     Angle(SlopeAngle),
 }
-
+impl_feature_decode_cost_enum!(RibDraft; { Unresolved, None, Angle(field0) });
 /// Canonical role of a non-modeling feature-tree node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5485,7 +5496,7 @@ pub enum FeatureTreeNodeRole {
     /// Table container.
     Tables,
 }
-
+impl_feature_decode_cost_enum!(FeatureTreeNodeRole; { Annotations, AmbientLight, Comments, CrossSections, DesignBinder, Details, DissectedProfile, DirectionalLight, Equations, ExplodedViews, Favorites, FeatureFolder, History, LightsAndCameras, Markups, ModelOrigin, PointLight, Materials, Notes, SelectionSets, Sensors, SheetMetal, SolidBodies, SpotLight, SurfaceBodies, Tables });
 /// Axial termination of a cosmetic-thread annotation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5500,7 +5511,7 @@ pub enum CosmeticThreadExtent {
     /// Thread annotation spans the complete cylindrical face.
     Through {},
 }
-
+impl_feature_decode_cost_enum!(CosmeticThreadExtent; { Blind { length }, Through { } });
 /// Canonical role of a built-in reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5514,7 +5525,7 @@ pub enum PrincipalPlane {
     /// Right plane through the model origin.
     Right,
 }
-
+impl_feature_decode_cost_enum!(PrincipalPlane; { Front, Top, Right });
 /// Known sketch space and its optional resolved planar geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5526,7 +5537,7 @@ pub enum SketchFeatureBinding {
     /// The source declares a planar sketch, with optional decoded geometry.
     Planar(Option<crate::sketches::SketchId>),
 }
-
+impl_feature_decode_cost_enum!(SketchFeatureBinding; { Unresolved, Planar(field0), });
 impl SketchFeatureBinding {
     /// Resolved planar sketch identity, when available.
     pub fn id(&self) -> Option<&crate::sketches::SketchId> {
@@ -5586,7 +5597,7 @@ pub enum BodyTrimSide {
     /// Retain the side opposite tool orientation.
     Reverse,
 }
-
+impl_feature_decode_cost_enum!(BodyTrimSide; { Unresolved, Forward, Reverse });
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
@@ -5597,7 +5608,7 @@ pub enum CurveProjectionDirection {
     /// Direction state without one explicit vector.
     State(CurveProjectionDirectionState),
 }
-
+impl_feature_decode_cost_enum!(CurveProjectionDirection; { Vector(field0), State(field0) });
 impl Default for CurveProjectionDirection {
     fn default() -> Self {
         Self::State(CurveProjectionDirectionState::TargetNormal)
@@ -5615,6 +5626,7 @@ pub enum CurveProjectionDirectionState {
     /// Project along each target face's normal.
     TargetNormal,
 }
+impl_feature_decode_cost_enum!(CurveProjectionDirectionState; { Unresolved, TargetNormal });
 
 /// Selection interpretation for a delete/keep-body operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -5629,7 +5641,7 @@ pub enum BodyRetentionMode {
     /// Delete every body except the selected bodies.
     KeepSelected,
 }
-
+impl_feature_decode_cost_enum!(BodyRetentionMode; { Unresolved, DeleteSelected, KeepSelected });
 /// Material effect of a wrapped profile.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5648,7 +5660,7 @@ pub enum WrapMode {
     /// Imprint the profile without adding or removing material.
     Scribe,
 }
-
+impl_feature_decode_cost_enum!(WrapMode; { Emboss { depth }, Deboss { depth }, Scribe });
 /// Continuity order imposed at a generated surface boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5662,7 +5674,7 @@ pub enum SurfaceContinuity {
     /// Second-derivative continuity.
     Curvature,
 }
-
+impl_feature_decode_cost_enum!(SurfaceContinuity; { Contact, Tangent, Curvature });
 /// Resolved continuity conditions for a filled-surface boundary.
 ///
 /// One condition per boundary component, in source order. A boundary whose
@@ -5675,7 +5687,7 @@ pub struct FilledSurfaceContinuity {
     /// Conditions of the boundary components, in source order.
     pub conditions: NonEmptyMembers<SurfaceContinuity>,
 }
-
+impl_feature_decode_cost_record!(FilledSurfaceContinuity; { conditions });
 impl FilledSurfaceContinuity {
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
@@ -5699,7 +5711,7 @@ pub struct FilledSurfaceContinuityState(
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     Option<FilledSurfaceContinuity>,
 );
-
+impl_feature_decode_cost_record!(FilledSurfaceContinuityState; (0));
 impl FilledSurfaceContinuityState {
     /// Creates an unresolved continuity state.
     #[must_use]
@@ -5751,7 +5763,7 @@ pub enum SurfaceBoundary {
     /// Boundary selected as a sketch, curve, or mixed path collection.
     Path(PathRef),
 }
-
+impl_feature_decode_cost_enum!(SurfaceBoundary; { Edges(field0), Path(field0), });
 /// Region retained by a trim-surface operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5767,7 +5779,7 @@ pub enum TrimRegion {
     /// Remove an explicit set of partition cells.
     Cells(TrimCellSelection),
 }
-
+impl_feature_decode_cost_enum!(TrimRegion; { Unresolved, Inside, Outside, Cells(field0), });
 /// Cells removed by a trim operation from its partition of the target faces.
 ///
 /// Cell ordinals are one-based within the operation's source partition. The
@@ -5782,7 +5794,7 @@ pub struct TrimCellSelection {
     /// Number of cells in the operation's partition.
     total: u64,
 }
-
+impl_feature_decode_cost_record!(TrimCellSelection; { removed, total });
 impl TrimCellSelection {
     /// Creates a nonempty selection whose unique ordinals are within the partition.
     #[must_use]
@@ -5831,7 +5843,7 @@ pub enum SurfaceExtension {
     /// Extend boundary faces perpendicular to the source faces.
     Perpendicular,
 }
-
+impl_feature_decode_cost_enum!(SurfaceExtension; { Unresolved, Natural, Linear, Perpendicular });
 /// Direction law for a ruled-surface operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5856,7 +5868,7 @@ pub enum RuledSurfaceMode {
         distance: PositiveLength,
     },
 }
-
+impl_feature_decode_cost_enum!(RuledSurfaceMode; { Normal { distance }, Tangent { distance }, Direction { direction, distance }, });
 /// Corner construction law for a ruled-surface operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5868,7 +5880,7 @@ pub enum RuledSurfaceCorner {
     /// Intersect adjacent ruled strips to form mitered corners.
     Mitered,
 }
-
+impl_feature_decode_cost_enum!(RuledSurfaceCorner; { Rounded, Mitered });
 /// Fixed locus of a body-scale transform.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5884,7 +5896,7 @@ pub enum ScaleCenter {
     /// Format-native coordinate-system or reference identifier.
     Native(String),
 }
-
+impl_feature_decode_cost_enum!(ScaleCenter; { Centroid, ModelOrigin, Point(field0), Native(field0), });
 /// Factors of a body-scale transform.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5904,7 +5916,7 @@ pub enum ScaleFactors {
         factors: [NonZeroReal; 3],
     },
 }
-
+impl_feature_decode_cost_enum!(ScaleFactors; { Unresolved { }, Uniform { factor }, PerAxis { factors } });
 impl ScaleFactors {
     /// Resolve the effective model-space factors when construction is complete.
     #[must_use]
@@ -5936,7 +5948,7 @@ pub enum ThickenSide {
     /// Split the thickness equally across both sides.
     Both,
 }
-
+impl_feature_decode_cost_enum!(ThickenSide; { Forward, Reverse, Both });
 /// Face pair a sheet-metal flange height is measured from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5948,7 +5960,7 @@ pub enum SheetMetalHeightDatum {
     /// The height is measured from the outer faces of the sheet.
     OuterFaces,
 }
-
+impl_feature_decode_cost_enum!(SheetMetalHeightDatum; { InnerFaces, OuterFaces });
 /// Placement of a sheet-metal bend region against its selected edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5964,7 +5976,7 @@ pub enum SheetMetalBendPosition {
     /// The bend is tangent to the side reference plane.
     TangentToSide,
 }
-
+impl_feature_decode_cost_enum!(SheetMetalBendPosition; { Outside, Inside, Adjacent, TangentToSide });
 /// Dimensional owner layout carried by a sheet-metal hem.
 ///
 /// The source uses one owner layout for flat and open hems. A resolved
@@ -6012,7 +6024,7 @@ pub enum SheetMetalHemForm {
         radius: PositiveLength,
     },
 }
-
+impl_feature_decode_cost_enum!(SheetMetalHemForm; { Flat { length }, Open { gap, length }, GapLength { gap, length }, Rolled { radius, angle }, Teardrop { gap, length, radius }, });
 /// Direction of a sheet-metal hem fold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6026,7 +6038,7 @@ pub enum SheetMetalHemDirection {
     /// Source direction carrier is not resolved.
     Unresolved,
 }
-
+impl_feature_decode_cost_enum!(SheetMetalHemDirection; { Forward, Reverse, Unresolved });
 /// Construction feature used as the reference for a sheet-metal flange height.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6038,7 +6050,7 @@ pub enum SheetMetalFlangeHeightTarget {
     /// A source selection whose neutral construction identity is not resolved.
     Native(String),
 }
-
+impl_feature_decode_cost_enum!(SheetMetalFlangeHeightTarget; { Feature(field0), Native(field0), });
 /// Height law for a sheet-metal edge flange.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6055,7 +6067,7 @@ pub enum SheetMetalFlangeHeight {
         offset: Length,
     },
 }
-
+impl_feature_decode_cost_enum!(SheetMetalFlangeHeight; { Distance(field0), ToObject { target, offset }, });
 /// Extent of a sheet-metal flange along its selected edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6086,13 +6098,13 @@ pub enum SheetMetalFlangeWidth {
         widths: SheetMetalFlangeEdgeWidths,
     },
 }
-
+impl_feature_decode_cost_enum!(SheetMetalFlangeWidth; { FullEdge, Symmetric { width }, TwoSides { first, second }, TwoSidesPerEdge { widths }, });
 /// Nonempty source-ordered per-edge flange widths.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SheetMetalFlangeEdgeWidths(Vec<SheetMetalFlangeTwoSidedWidth>);
-
+impl_feature_decode_cost_record!(SheetMetalFlangeEdgeWidths; (0));
 impl SheetMetalFlangeEdgeWidths {
     /// Construct widths for at least one selected source edge group.
     pub fn new(widths: Vec<SheetMetalFlangeTwoSidedWidth>) -> Result<Self, &'static str> {
@@ -6130,7 +6142,7 @@ pub struct SheetMetalFlangeTwoSidedWidth {
     #[serde(deserialize_with = "deserialize_flange_second")]
     pub second: PositiveLength,
 }
-
+impl_feature_decode_cost_record!(SheetMetalFlangeTwoSidedWidth; { first, second });
 /// Distribution of sheet thickness relative to its construction plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6142,7 +6154,7 @@ pub enum SheetMetalThicknessSide {
     /// Thickness is split equally across both sides of the profile plane.
     Symmetric,
 }
-
+impl_feature_decode_cost_enum!(SheetMetalThicknessSide; { Forward, Symmetric });
 selection_field_deserializer!(deserialize_selection_native, "native");
 selection_field_deserializer!(deserialize_selection_local_id, "local_id");
 selection_field_deserializer!(deserialize_selection_edges, "edges");
@@ -6228,7 +6240,7 @@ pub enum EdgeSelection {
     /// Format-native selection reference.
     Native(String),
 }
-
+impl_feature_decode_cost_enum!(EdgeSelection; { Unresolved, All, Edges(field0), Resolved { edges, native }, Historical { state, edges, native }, HistoricalPartial { state, edges, unresolved, native }, Generated { edges, native }, Native(field0), });
 /// Persistent identity of an edge in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6240,7 +6252,7 @@ pub struct GeneratedEdgeRef {
     #[serde(deserialize_with = "deserialize_selection_local_id")]
     pub local_id: SelectionReference,
 }
-
+impl_feature_decode_cost_record!(GeneratedEdgeRef; { feature, local_id });
 /// Persistent identity of a face in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6252,7 +6264,7 @@ pub struct GeneratedFaceRef {
     #[serde(deserialize_with = "deserialize_selection_local_id")]
     pub local_id: SelectionReference,
 }
-
+impl_feature_decode_cost_record!(GeneratedFaceRef; { feature, local_id });
 /// Persistent identity of a vertex in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6264,7 +6276,7 @@ pub struct GeneratedVertexRef {
     #[serde(deserialize_with = "deserialize_selection_local_id")]
     pub local_id: SelectionReference,
 }
-
+impl_feature_decode_cost_record!(GeneratedVertexRef; { feature, local_id });
 /// Vertex operand resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6295,7 +6307,7 @@ pub enum VertexSelection {
     /// Format-native selection reference.
     Native(#[serde(deserialize_with = "deserialize_selection_native")] SelectionReference),
 }
-
+impl_feature_decode_cost_enum!(VertexSelection; { Unresolved, Generated { vertex, native }, Historical { state, vertex, native }, Native(field0), });
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6355,7 +6367,7 @@ pub enum FaceSelection {
     /// Format-native selection reference.
     Native(String),
 }
-
+impl_feature_decode_cost_enum!(FaceSelection; { Unresolved, Faces(field0), Resolved { faces, native }, Historical { state, faces, native }, HistoricalPartial { state, faces, unresolved, native }, Generated { faces, native }, Native(field0), });
 /// A nonempty sequence of members in source order.
 ///
 /// The members stay contiguous: the sequence is read through slice patterns
@@ -6366,7 +6378,7 @@ pub enum FaceSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct NonEmptyMembers<T>(Vec<T>);
-
+impl_feature_decode_cost_record!(NonEmptyMembers<T>, [T]; (0));
 impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {
     type Error = BodySelectionError;
     fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
@@ -6726,7 +6738,7 @@ impl GeneratedVertexRef {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SelectionReference(String);
-
+impl_feature_decode_cost_record!(SelectionReference; (0));
 impl TryFrom<String> for SelectionReference {
     type Error = BodySelectionError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -6800,7 +6812,7 @@ impl From<FeatureCollectionError> for cadmpeg_core::CodecError {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct DistinctMembers<T>(Vec<T>);
-
+impl_feature_decode_cost_record!(DistinctMembers<T>, [T]; (0));
 impl<T> Default for DistinctMembers<T> {
     fn default() -> Self {
         Self(Vec::new())
@@ -6967,7 +6979,7 @@ impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for Disti
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SelectionMembers<T>(Vec<T>);
-
+impl_feature_decode_cost_record!(SelectionMembers<T>, [T]; (0));
 impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
     type Error = BodySelectionError;
     fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
@@ -7041,7 +7053,7 @@ impl<'de, T: Deserialize<'de> + Eq + std::hash::Hash> Deserialize<'de> for Selec
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct NativeSelections(Vec<String>);
-
+impl_feature_decode_cost_record!(NativeSelections; (0));
 impl TryFrom<Vec<String>> for NativeSelections {
     type Error = BodySelectionError;
     fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
@@ -7147,7 +7159,7 @@ pub enum InsertedBodies {
         native: String,
     },
 }
-
+impl_feature_decode_cost_enum!(InsertedBodies; { Native(field0), Resolved { native }, });
 impl InsertedBodies {
     /// Whether the copied bodies are resolved to the neutral model.
     #[must_use]
@@ -7163,7 +7175,7 @@ pub struct BodyMember<B> {
     body: B,
     native: cadmpeg_core::text::NonBlankString,
 }
-
+impl_feature_decode_cost_record!(BodyMember<B>, [B]; { body, native });
 impl<B> BodyMember<B> {
     /// Construct one body/native selection row.
     ///
@@ -7212,7 +7224,7 @@ where
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct BodyMembers<B>(Vec<BodyMember<B>>);
-
+impl_feature_decode_cost_record!(BodyMembers<B>, [B]; (0));
 impl<B> BodyMembers<B> {
     /// Construct checked rows from body/native pairs.
     pub fn try_from_rows(rows: Vec<BodyMember<B>>) -> Result<Self, BodySelectionError>
@@ -7339,7 +7351,7 @@ pub enum BodySelection {
     /// group record.
     NativeSet(NativeSelections),
 }
-
+impl_feature_decode_cost_enum!(BodySelection; { Unresolved, Bodies(field0), Resolved { bodies, native }, ResolvedSet { members }, Historical { state, bodies, native }, HistoricalSet { state, members }, Generated { bodies, native }, Local { bodies, native }, Native(field0), NativeSet(field0), });
 /// Persistent identity of a body in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7350,7 +7362,7 @@ pub struct GeneratedBodyRef {
     /// Feature-local persistent body identity.
     pub local_id: SelectionReference,
 }
-
+impl_feature_decode_cost_record!(GeneratedBodyRef; { feature, local_id });
 impl GeneratedBodyRef {
     /// A feature-local body identity with a nonblank local name.
     pub fn new(feature: FeatureId, local_id: String) -> Result<Self, BodySelectionError> {
@@ -7389,7 +7401,7 @@ pub enum FaceMotion {
         angle: Angle,
     },
 }
-
+impl_feature_decode_cost_enum!(FaceMotion; { Offset { distance }, Translate { direction, distance }, Rotate { axis_origin, axis_dir, angle }, });
 /// Model-space axis-angle rotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7402,7 +7414,7 @@ pub struct AxisAngle {
     /// Signed rotation angle.
     pub angle: Angle,
 }
-
+impl_feature_decode_cost_record!(AxisAngle; { origin, direction, angle });
 /// Start condition of a linear extrusion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7430,7 +7442,7 @@ pub enum ExtrudeStart {
         offset: Option<Length>,
     },
 }
-
+impl_feature_decode_cost_enum!(ExtrudeStart; { Unresolved { }, ProfilePlane { }, OffsetProfilePlane { offset }, FromFace { face, offset }, });
 /// One-sided termination law of a linear sweep. Sidedness around the profile
 /// plane is stated by the owning feature's extent type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7482,7 +7494,7 @@ pub enum LinearTermination {
         target: FaceSelection,
     },
 }
-
+impl_feature_decode_cost_enum!(LinearTermination; { Unresolved { }, Blind { length }, ThroughAll { }, ThroughNext { }, ToFirst { }, ToLast { }, ToFace { face, offset }, ToVertex { vertex }, OffsetFromFace { face, offset }, ToShape { target }, });
 /// One-sided termination law of an angular sweep. Sidedness around the profile
 /// plane is stated by the owning revolution extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7534,7 +7546,7 @@ pub enum AngularTermination {
         angle: PositiveAngle,
     },
 }
-
+impl_feature_decode_cost_enum!(AngularTermination; { Unresolved { }, ThroughAll { }, ThroughNext { }, ToFirst { }, ToLast { }, ToFace { face, offset }, ToVertex { vertex }, OffsetFromFace { face, offset }, ToShape { target }, Angle { angle }, });
 /// One side of an extrusion: its termination law and side-local modifiers.
 /// Drafts are measured from the profile plane outward along the side's
 /// travel; an absent draft leaves the side walls parallel.
@@ -7552,7 +7564,7 @@ pub struct ExtrudeSide {
     )]
     pub draft: Option<SlopeAngle>,
 }
-
+impl_feature_decode_cost_record!(ExtrudeSide; { termination, draft });
 impl Default for ExtrudeStart {
     fn default() -> Self {
         Self::ProfilePlane {}
@@ -7583,7 +7595,7 @@ pub enum ExtrudeExtent {
         side: ExtrudeSide,
     },
 }
-
+impl_feature_decode_cost_enum!(ExtrudeExtent; { OneSided { side }, TwoSided { first, second }, Symmetric { side }, });
 /// Revolution sidedness around the profile plane. Revolution sides carry no
 /// side-local modifiers, only their termination laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7609,7 +7621,7 @@ pub enum RevolveExtent {
         termination: AngularTermination,
     },
 }
-
+impl_feature_decode_cost_enum!(RevolveExtent; { OneSided { termination }, TwoSided { first, second }, Symmetric { termination }, });
 /// Persisted source of a resolved linear-extrusion direction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7625,7 +7637,7 @@ pub enum ExtrusionDirectionSource {
     /// Direction comes from the source profile's plane normal.
     ProfileNormal {},
 }
-
+impl_feature_decode_cost_enum!(ExtrusionDirectionSource; { Custom { }, Edge { reference }, ProfileNormal { }, });
 /// Native algorithm used to construct faces from wires.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FaceMaker {
@@ -7642,7 +7654,7 @@ pub enum FaceMaker {
     /// Retains an extension face-maker class.
     Other(NonBlankString),
 }
-
+impl_feature_decode_cost_enum!(FaceMaker; { Simple, Cheese, Extrusion, Bullseye, Unified, Other(field0), });
 impl FaceMaker {
     /// Parses a non-empty runtime class name under the caller budget.
     pub fn new(ctx: &cadmpeg_core::decode::DecodeContext<'_>, class: impl cadmpeg_core::decode::text::TextSource) -> Result<Option<Self>, cadmpeg_core::CodecError> {
@@ -7727,7 +7739,7 @@ pub enum InnerWireTaper {
     /// Inner wires taper in the same direction as outer wires.
     SameAsOuter,
 }
-
+impl_feature_decode_cost_enum!(InnerWireTaper; { Inverted, SameAsOuter });
 /// Persisted construction algorithm used for a parametric helix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7739,7 +7751,7 @@ pub enum HelixConstructionStyle {
     /// Corrected construction used by newly created features.
     Corrected,
 }
-
+impl_feature_decode_cost_enum!(HelixConstructionStyle; { Legacy, Corrected });
 /// Axial or radial construction law of a helix feature.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7763,7 +7775,7 @@ pub enum HelixShape {
         radial_growth: Length,
     },
 }
-
+impl_feature_decode_cost_enum!(HelixShape; { Cylindrical { pitch }, Conical { pitch, cone_angle }, Spiral { radial_growth } });
 /// Result topology retained by a projection-on-surface operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7777,7 +7789,7 @@ pub enum SurfaceProjectionMode {
     /// Retain projected edges only.
     Edges,
 }
-
+impl_feature_decode_cost_enum!(SurfaceProjectionMode; { All, Faces, Edges });
 /// Boolean effect of a solid-producing feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7795,7 +7807,7 @@ pub enum BooleanOp {
     /// Creates an independent new body without combining.
     NewBody,
 }
-
+impl_feature_decode_cost_enum!(BooleanOp; { Unresolved, Join, Cut, Intersect, NewBody });
 /// Boolean operation that consumes at least one existing target body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7809,7 +7821,7 @@ pub enum BooleanKind {
     /// Intersection with existing bodies.
     Intersect,
 }
-
+impl_feature_decode_cost_enum!(BooleanKind; { Join, Cut, Intersect });
 impl From<BooleanKind> for BooleanOp {
     fn from(value: BooleanKind) -> Self {
         match value {
@@ -7878,7 +7890,7 @@ pub struct CoilConstruction {
     /// Signed cone half-angle of an axial coil; zero produces a cylindrical helix.
     pub taper: Angle,
 }
-
+impl_feature_decode_cost_record!(CoilConstruction; { placement, diameter, extent, section, section_placement, clockwise, taper });
 /// Geometric placement of a Coil trajectory.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7895,7 +7907,7 @@ pub enum CoilPlacement {
         native_ref: SelectionReference,
     },
 }
-
+impl_feature_decode_cost_enum!(CoilPlacement; { Explicit { frame }, Native { native_ref }, });
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -7981,7 +7993,7 @@ pub enum CoilExtent {
         radial_pitch: NonZeroLength,
     },
 }
-
+impl_feature_decode_cost_enum!(CoilExtent; { RevolutionsHeight { revolutions, height }, RevolutionsPitch { revolutions, pitch }, HeightPitch { height, pitch }, Spiral { revolutions, radial_pitch } });
 /// Generated cross-section of a Coil primitive.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8009,7 +8021,7 @@ pub enum CoilSection {
         size: PositiveLength,
     },
 }
-
+impl_feature_decode_cost_enum!(CoilSection; { Circular { diameter }, Square { size }, ExternalTriangle { size }, InternalTriangle { size } });
 /// Radial placement of a generated Coil section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8023,7 +8035,7 @@ pub enum CoilSectionPlacement {
     /// Section lies outside the reference trajectory.
     Outside,
 }
-
+impl_feature_decode_cost_enum!(CoilSectionPlacement; { Inside, Center, Outside });
 /// Result semantics of a solid Coil primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8040,7 +8052,7 @@ pub enum CoilResult {
         targets: BodySelection,
     },
 }
-
+impl_feature_decode_cost_enum!(CoilResult; { NewBody { }, Boolean { operation, targets }, });
 /// Result semantics of a swept profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8072,7 +8084,7 @@ pub enum SolidSweepOperation {
     /// Keep the intersection with existing bodies.
     Intersect,
 }
-
+impl_feature_decode_cost_enum!(SolidSweepOperation; { NewBody, Join, Cut, Intersect });
 /// Directed fractions of a sweep path consumed from the profile location.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8083,7 +8095,7 @@ pub struct SweepPathExtent {
     /// Fraction consumed in the path's reverse traversal direction.
     pub against_fraction: Fraction,
 }
-
+impl_feature_decode_cost_record!(SweepPathExtent; { along_fraction, against_fraction });
 /// Guide rail controlling a sweep, with its directed consumed extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8094,7 +8106,7 @@ pub struct SweepGuideRail {
     /// Fractions consumed on either side of the profile location.
     pub extent: SweepPathExtent,
 }
-
+impl_feature_decode_cost_record!(SweepGuideRail; { path, extent });
 /// The generated cross-section of a result that generates none.
 ///
 /// A sheet sweep owns no geometry of its own, so this type has no value and
@@ -8103,6 +8115,7 @@ pub struct SweepGuideRail {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum NoGeneratedSection {}
 
+impl_feature_decode_cost_empty_enum!(NoGeneratedSection);
 /// A cross-section of a result that generates no geometry of its own.
 pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
 
@@ -8127,7 +8140,7 @@ pub enum SweepSection<G = GeneratedSweepSection> {
     /// Cross-section generated by the sweep construction itself.
     Generated(G),
 }
-
+impl_feature_decode_cost_enum!(SweepSection<G>, [G]; { Unresolved(field0), Profile(field0), Generated(field0), });
 impl<G> SweepSection<G> {
     /// Returns the referenced profile when this section does not own its geometry.
     pub const fn referenced_profile(&self) -> Option<&PlanarProfileRef> {
@@ -8167,7 +8180,7 @@ pub struct SweepCircularRegion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     wall_thickness: Option<PositiveLength>,
 }
-
+impl_feature_decode_cost_record!(SweepCircularRegion; { outer_radius, wall_thickness });
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SweepCircularRegionWire {
@@ -8256,7 +8269,7 @@ pub enum SweepShape {
         sections: Vec<SheetSweepSection>,
     },
 }
-
+impl_feature_decode_cost_enum!(SweepShape; { Unresolved { section, sections }, Solid { op, section, sections }, Surface { section, sections }, });
 impl SweepShape {
     /// Construct an unresolved sweep section and result mode.
     pub fn unresolved(native: Option<String>) -> Self {
@@ -8460,7 +8473,7 @@ pub enum GeneratedSweepSection {
         region: SweepCircularRegion,
     },
 }
-
+impl_feature_decode_cost_enum!(GeneratedSweepSection; { CircularRegion { region }, });
 /// One directed use of a solved sketch curve in an arrangement boundary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8475,7 +8488,7 @@ pub struct SketchProfileBoundaryUse {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reversed: bool,
 }
-
+impl_feature_decode_cost_record!(SketchProfileBoundaryUse; { entity, parameter_range, reversed });
 /// Whole-loop region with distinct holes that exclude its outer loop.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8485,7 +8498,7 @@ pub struct SketchProfileLoops {
     #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
     holes: DistinctMembers<u32>,
 }
-
+impl_feature_decode_cost_record!(SketchProfileLoops; { outer, holes });
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -8565,7 +8578,7 @@ pub enum SketchProfileRegion {
         hole_boundaries: Vec<NonEmptyMembers<SketchProfileBoundaryUse>>,
     },
 }
-
+impl_feature_decode_cost_enum!(SketchProfileRegion; { Loops { loops }, Trimmed { outer_boundary, hole_boundaries }, });
 impl SketchProfileRegion {
     /// Admits a whole-loop region with distinct holes that exclude the exterior loop.
     pub fn loops(outer: u32, holes: Vec<u32>) -> Result<Self, FeatureCollectionError> {
@@ -8611,7 +8624,7 @@ impl SketchProfileRegion {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SketchProfileRegions(Vec<SketchProfileRegion>);
-
+impl_feature_decode_cost_record!(SketchProfileRegions; (0));
 impl TryFrom<Vec<SketchProfileRegion>> for SketchProfileRegions {
     type Error = &'static str;
     fn try_from(regions: Vec<SketchProfileRegion>) -> Result<Self, Self::Error> {
@@ -8681,7 +8694,7 @@ pub enum SweepOrientation {
         direction: UnitVector3,
     },
 }
-
+impl_feature_decode_cost_enum!(SweepOrientation; { CorrectedFrenet { }, Fixed { }, Frenet { }, Auxiliary { path, tangent, curvilinear }, GuideSurface { faces }, Binormal { direction }, });
 /// Corner continuation used by a sweep path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8695,7 +8708,7 @@ pub enum SweepTransition {
     /// Insert a rounded corner transition.
     RoundCorner,
 }
-
+impl_feature_decode_cost_enum!(SweepTransition; { Transformed, RightCorner, RoundCorner });
 /// Cross-section interpolation law for a multi-section sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8713,7 +8726,7 @@ pub enum SweepTransformation {
     /// Apply the native smooth interpolation law.
     Interpolation,
 }
-
+impl_feature_decode_cost_enum!(SweepTransformation; { Constant, MultiSection, Linear, SShape, Interpolation });
 /// Signed axial travel and radial growth, named by which components move.
 ///
 /// Each arm carries only the components that move, and each is a
@@ -8742,7 +8755,7 @@ pub enum HelicalSweepTravel {
         radial_growth: NonZeroLength,
     },
 }
-
+impl_feature_decode_cost_enum!(HelicalSweepTravel; { Axial { height }, Radial { radial_growth }, Conical { height, radial_growth } });
 impl HelicalSweepTravel {
     /// Admit finite signed travel with nonzero height or radial growth.
     pub fn new(height: Length, radial_growth: Length) -> Option<Self> {
@@ -8819,7 +8832,7 @@ pub struct HelicalSweepConstruction {
     )]
     pub allow_multi_profile_faces: Option<bool>,
 }
-
+impl_feature_decode_cost_record!(HelicalSweepConstruction; { profile, axis_origin, axis_direction, law, pitch, travel, turns, cone_angle, left_handed, reversed, tolerance, allow_multi_profile_faces });
 /// Independent-parameter law used to author a helical sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8835,7 +8848,7 @@ pub enum HelicalSweepLaw {
     /// Height, turn count, and radial growth are independent.
     HeightTurnsGrowth,
 }
-
+impl_feature_decode_cost_enum!(HelicalSweepLaw; { PitchHeightAngle, PitchTurnsAngle, HeightTurnsAngle, HeightTurnsGrowth });
 /// One object or subelement selection consumed by a design binder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8848,7 +8861,7 @@ pub struct BinderSource {
     #[serde(deserialize_with = "deserialize_local_subelements")]
     pub subelements: Vec<NonBlankString>,
 }
-
+impl_feature_decode_cost_record!(BinderSource; { target, subelements });
 /// Resolved or externally scoped binder target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8876,7 +8889,7 @@ pub enum BinderTarget {
         reference: NonBlankString,
     },
 }
-
+impl_feature_decode_cost_enum!(BinderTarget; { Feature { feature }, External { document, object }, Native { reference }, });
 /// Binding behavior and optional derived-shape construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8922,7 +8935,7 @@ pub enum BinderConstruction {
         context: Option<BinderTarget>,
     },
 }
-
+impl_feature_decode_cost_enum!(BinderConstruction; { Shape { trace_support }, SubShape { lifecycle, placement, copy_on_change, claim_children, fuse, make_face, partial_load, refine, offset, context }, });
 /// Update lifecycle of a subshape binder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8936,7 +8949,7 @@ pub enum BinderLifecycle {
     /// Stores a copied shape and no longer retains live binding behavior.
     Detached,
 }
-
+impl_feature_decode_cost_enum!(BinderLifecycle; { Synchronized, Frozen, Detached });
 /// Placement interpretation for bound subobjects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8948,7 +8961,7 @@ pub enum BinderPlacement {
     /// Preserve source placement in global coordinates.
     Global,
 }
-
+impl_feature_decode_cost_enum!(BinderPlacement; { Relative, Global });
 /// Copy-on-change state of a subshape binder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8962,7 +8975,7 @@ pub enum BinderCopyOnChange {
     /// A private source copy has already been mutated.
     Mutated,
 }
-
+impl_feature_decode_cost_enum!(BinderCopyOnChange; { Disabled, Enabled, Mutated });
 /// Two-dimensional offset applied to bound faces or wires.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8979,7 +8992,7 @@ pub struct BinderOffset {
     /// Whether child-wire intersections are resolved together.
     pub intersection: bool,
 }
-
+impl_feature_decode_cost_record!(BinderOffset; { distance, join, fill, open_result, intersection });
 /// Corner join law of a binder offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8993,6 +9006,7 @@ pub enum BinderOffsetJoin {
     /// Sharp line-line intersections.
     Intersection,
 }
+impl_feature_decode_cost_enum!(BinderOffsetJoin; { Arcs, Tangent, Intersection });
 
 /// Profile consumed by a profile-driven feature that admits no spatial-sketch
 /// form.
@@ -9068,7 +9082,7 @@ pub enum PlanarProfileRef {
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
 }
-
+impl_feature_decode_cost_enum!(PlanarProfileRef; { Unresolved(field0), Native(field0), Sketch(field0), SketchProfiles { sketch, profiles }, SketchRegions { sketch, regions }, SketchEntities { sketch, entities }, SketchSelection { sketch, selections }, HistoricalFaces { state, faces, native }, Feature(field0), Generated { curves, native }, Faces(field0), });
 /// Profile consumed by a profile-driven feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9099,7 +9113,7 @@ pub enum ProfileRef {
     #[serde(untagged)]
     Planar(PlanarProfileRef),
 }
-
+impl_feature_decode_cost_enum!(ProfileRef; { SpatialSketchProfiles { sketch, profiles }, SpatialSketchSelection { sketch, selections }, Planar(field0), });
 impl From<crate::sketches::SketchId> for PlanarProfileRef {
     fn from(sketch: crate::sketches::SketchId) -> Self {
         Self::Sketch(sketch)
@@ -9135,7 +9149,7 @@ pub enum LoftSection {
     /// Point-like terminal section.
     Point(LoftPointSection),
 }
-
+impl_feature_decode_cost_enum!(LoftSection; { Profile(field0), Point(field0), });
 /// Point-like cross-section consumed by a loft operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9150,7 +9164,7 @@ pub enum LoftPointSection {
     /// Solved B-rep vertex section.
     Vertex(VertexId),
 }
-
+impl_feature_decode_cost_enum!(LoftPointSection; { Native(field0), Point(field0), Vertex(field0), });
 /// Persistent identity of a curve in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9162,7 +9176,7 @@ pub struct GeneratedCurveRef {
     #[serde(deserialize_with = "deserialize_selection_local_id")]
     pub local_id: SelectionReference,
 }
-
+impl_feature_decode_cost_record!(GeneratedCurveRef; { feature, local_id });
 /// Trajectory consumed by a sweep or path-driven operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9219,7 +9233,7 @@ pub enum PathRef {
         native: NonBlankString,
     },
 }
-
+impl_feature_decode_cost_enum!(PathRef; { Unresolved(field0), Native(field0), Sketch(field0), SketchCurves { sketch, curves }, SpatialSketchSelection { sketch, selections }, SpatialSketchCurves { sketch, curves }, Edges(field0), Curves(field0), HistoricalEdges { state, edges, native }, });
 impl PlanarProfileRef {
     /// Admits nonempty distinct profile regions in one sketch.
     pub fn sketch_regions(
@@ -9543,7 +9557,7 @@ impl GeneratedCurveRef {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct ThreePointSelection(Box<[VertexSelection; 3]>);
-
+impl_feature_decode_cost_record!(ThreePointSelection; (0));
 impl TryFrom<Box<[VertexSelection; 3]>> for ThreePointSelection {
     type Error = &'static str;
     fn try_from(points: Box<[VertexSelection; 3]>) -> Result<Self, Self::Error> {
@@ -9585,7 +9599,7 @@ impl<'de> Deserialize<'de> for ThreePointSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SplitFacePlanes(SelectionMembers<FeatureId>);
-
+impl_feature_decode_cost_record!(SplitFacePlanes; (0));
 impl TryFrom<Vec<FeatureId>> for SplitFacePlanes {
     type Error = &'static str;
     fn try_from(planes: Vec<FeatureId>) -> Result<Self, Self::Error> {
@@ -9625,7 +9639,7 @@ impl<'de> Deserialize<'de> for SplitFacePlanes {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct GeometryImportPath(String);
-
+impl_feature_decode_cost_record!(GeometryImportPath; (0));
 impl TryFrom<String> for GeometryImportPath {
     type Error = &'static str;
     fn try_from(path: String) -> Result<Self, Self::Error> {
@@ -9697,7 +9711,7 @@ pub enum SplitFaceTool {
         planes: SplitFacePlanes,
     },
 }
-
+impl_feature_decode_cost_enum!(SplitFaceTool; { Path(field0), Plane { plane }, Planes { planes }, });
 /// Deformation applied by a flex feature.
 ///
 /// Each resolved arm carries the one magnitude its family needs, and the
@@ -9739,7 +9753,7 @@ pub enum FlexMode {
         distance: Length,
     },
 }
-
+impl_feature_decode_cost_enum!(FlexMode; { Unresolved { form }, Bending { angle }, Twisting { angle }, Tapering { factor }, Stretching { distance } });
 /// Structural form of a flex deformation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9755,6 +9769,7 @@ pub enum FlexForm {
     /// Axial stretching.
     Stretching,
 }
+impl_feature_decode_cost_enum!(FlexForm; { Bending, Twisting, Tapering, Stretching });
 
 #[cfg(test)]
 mod tests;

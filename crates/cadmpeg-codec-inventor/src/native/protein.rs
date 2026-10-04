@@ -2,9 +2,11 @@
 //! Protein state and its owned package entries on the native wire.
 
 use cadmpeg_container::ZipCompression;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{de::Error as _, ser::SerializeStruct, Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProteinRecord {
@@ -113,24 +115,44 @@ impl ProteinRecord {
         namespace.set_arena(ctx, "protein_entries", self.entries())
     }
 
-    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let [wire] = <[_; 1]>::try_from(namespace.arena_as::<ProteinRecordWire>("protein")?)
-            .map_err(|records: Vec<_>| {
-                serde_json::Error::custom(format!(
-                    "Inventor native data has {} Protein state records",
-                    records.len()
-                ))
-            })?;
-        let entries = namespace.arena_as("protein_entries")?;
-        wire.into_record(entries)
-            .map_err(|detail| serde_json::Error::custom(detail).into())
+    pub(crate) fn read(
+        ctx: &DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let records = namespace.arena_as_for_decode::<ProteinRecordWire>(ctx, "protein")?;
+        let wire = match <[_; 1]>::try_from(records) {
+            Ok([wire]) => wire,
+            Err(records) => {
+                let detail = ctx.format_retained(
+                    format_args!(
+                        "Inventor native data has {} Protein state records",
+                        records.len()
+                    ),
+                    "retain Inventor Protein cardinality issue",
+                )?;
+                return Err(NativeConvertError::ConversionMessage(detail));
+            }
+        };
+        let entries = namespace.arena_as_for_decode(ctx, "protein_entries")?;
+        match wire.into_record(entries) {
+            Ok(record) => Ok(record),
+            Err(CodecError::Malformed(detail)) => {
+                Err(NativeConvertError::ConversionMessage(detail))
+            }
+            Err(error) => Err(NativeConvertError::Resource(error)),
+        }
     }
 }
 
 impl ProteinRecordWire {
-    fn into_record(self, entries: Vec<ProteinEntryRecord>) -> Result<ProteinRecord, String> {
+    fn into_record(
+        self,
+        entries: Vec<ProteinEntryRecord>,
+    ) -> Result<ProteinRecord, CodecError> {
         if self.entry_count != cadmpeg_core::decode::u64_from_index(entries.len()) {
-            return Err("Protein entry_count does not match its entry arena".into());
+            return Err(CodecError::Malformed(
+                "Protein entry_count does not match its entry arena".into(),
+            ));
         }
         match self.state {
             ProteinRecordState::Absent
@@ -148,16 +170,24 @@ impl ProteinRecordWire {
                     id: self.id,
                     directory_id: self
                         .directory_id
-                        .ok_or("empty Protein requires directory_id")?,
+                .ok_or_else(|| {
+                    CodecError::Malformed("empty Protein requires directory_id".into())
+                })?,
                 })
             }
             ProteinRecordState::Package if self.detail.is_none() => Ok(ProteinRecord::Package {
                 id: self.id,
                 directory_id: self
                     .directory_id
-                    .ok_or("Protein package requires directory_id")?,
+                    .ok_or_else(|| {
+                        CodecError::Malformed("Protein package requires directory_id".into())
+                    })?,
                 declared_len: std::num::NonZeroU32::new(self.declared_len.unwrap_or(0))
-                    .ok_or("Protein package declared_len must be nonzero")?,
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "Protein package declared_len must be nonzero".into(),
+                        )
+                    })?,
                 entries,
             }),
             ProteinRecordState::Malformed if self.declared_len.is_none() && entries.is_empty() => {
@@ -165,11 +195,17 @@ impl ProteinRecordWire {
                     id: self.id,
                     directory_id: self
                         .directory_id
-                        .ok_or("malformed Protein requires directory_id")?,
-                    detail: self.detail.ok_or("malformed Protein requires detail")?,
+                        .ok_or_else(|| {
+                            CodecError::Malformed("malformed Protein requires directory_id".into())
+                        })?,
+                    detail: self.detail.ok_or_else(|| {
+                        CodecError::Malformed("malformed Protein requires detail".into())
+                    })?,
                 })
             }
-            _ => Err("Protein state carries incompatible fields or entries".into()),
+            _ => Err(CodecError::Malformed(
+                "Protein state carries incompatible fields or entries".into(),
+            )),
         }
     }
 }
@@ -194,8 +230,7 @@ pub(crate) struct ProteinEntryRecord {
     pub(crate) uncompressed_size: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "ProteinAssetRecordWire")]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProteinAssetRecord {
     pub(crate) id: String,
     pub(crate) entry_name: InstancePropertiesEntry,
@@ -221,16 +256,25 @@ pub(crate) struct ProteinAssetRecordWire {
     pub(crate) asset: cadmpeg_protein::DecodedRecord,
 }
 
-impl TryFrom<ProteinAssetRecordWire> for ProteinAssetRecord {
-    type Error = String;
-    fn try_from(wire: ProteinAssetRecordWire) -> Result<Self, Self::Error> {
-        if wire.ordinal != wire.asset.ordinal {
-            return Err("ordinal disagrees with asset.ordinal".into());
+impl ProteinAssetRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<ProteinAssetRecord, CodecError> {
+        if self.ordinal != self.asset.ordinal {
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "ordinal disagrees with asset.ordinal",
+                "retain Inventor Protein asset conversion issue",
+            )?));
         }
-        Ok(Self {
-            id: wire.id,
-            entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
-            asset: wire.asset,
+        Ok(ProteinAssetRecord {
+            id: self.id,
+            entry_name: InstancePropertiesEntry::try_new(
+                ctx,
+                self.entry_name,
+                "retain Inventor Protein asset conversion issue",
+            )?,
+            asset: self.asset,
         })
     }
 }
@@ -241,8 +285,7 @@ impl ProteinAssetRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "ProteinRejectionRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProteinRejectionRecord {
     pub(crate) id: String,
     pub(crate) entry_name: InstancePropertiesEntry,
@@ -262,27 +305,44 @@ impl Serialize for ProteinRejectionRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ProteinRejectionRecordWire<T = String> {
+pub(crate) struct ProteinRejectionRecordWire {
     pub(crate) id: String,
     pub(crate) entry_name: String,
     pub(crate) ordinal: u64,
-    pub(crate) detail: T,
+    pub(crate) detail: String,
 }
 
-impl<T: TryInto<NonBlankString>> TryFrom<ProteinRejectionRecordWire<T>> for ProteinRejectionRecord {
-    type Error = String;
-    fn try_from(wire: ProteinRejectionRecordWire<T>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
-            ordinal: wire.ordinal,
-            detail: wire.detail.try_into().ok().ok_or("detail must not be empty")?,
+impl ProteinRejectionRecordWire {
+    pub(crate) fn into_record(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<ProteinRejectionRecord, CodecError> {
+        let entry_name = InstancePropertiesEntry::try_new(
+            ctx,
+            self.entry_name,
+            "retain Inventor Protein rejection conversion issue",
+        )?;
+        let detail = NonBlankString::for_decode(
+            ctx,
+            self.detail,
+            "validate Protein rejection detail",
+        )?;
+        let Some(detail) = detail else {
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "detail must not be empty",
+                "retain Inventor Protein rejection conversion issue",
+            )?));
+        };
+        Ok(ProteinRejectionRecord {
+            id: self.id,
+            entry_name,
+            ordinal: self.ordinal,
+            detail,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InstancePropertiesEntry(String);
 
 impl Serialize for InstancePropertiesEntry {
@@ -291,11 +351,21 @@ impl Serialize for InstancePropertiesEntry {
     }
 }
 
-impl TryFrom<String> for InstancePropertiesEntry {
-    type Error = &'static str;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if !value.ends_with("InstanceProperties.bin") {
-            return Err("entry_name must end with InstanceProperties.bin");
+impl InstancePropertiesEntry {
+    fn try_new(
+        ctx: &DecodeContext<'_>,
+        value: String,
+        issue_operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        if !ctx.ends_with(
+            &value,
+            "InstanceProperties.bin",
+            "validate Inventor Protein archive entry name",
+        )? {
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "entry_name must end with InstanceProperties.bin",
+                issue_operation,
+            )?));
         }
         Ok(Self(value))
     }
@@ -309,10 +379,27 @@ impl InstancePropertiesEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord};
+    use super::{
+        ProteinAssetRecord, ProteinAssetRecordWire, ProteinEntryRecord, ProteinRecord,
+        ProteinRejectionRecord, ProteinRejectionRecordWire,
+    };
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use std::num::NonZeroU32;
+
+    fn decode_asset(value: serde_json::Value) -> Result<ProteinAssetRecord, String> {
+        let wire = serde_json::from_value::<ProteinAssetRecordWire>(value)
+            .map_err(|error| error.to_string())?;
+        wire.into_record(&crate::native::test_ctx())
+            .map_err(|error| error.to_string())
+    }
+
+    fn decode_rejection(value: serde_json::Value) -> Result<ProteinRejectionRecord, String> {
+        let wire = serde_json::from_value::<ProteinRejectionRecordWire>(value)
+            .map_err(|error| error.to_string())?;
+        wire.into_record(&crate::native::test_ctx())
+            .map_err(|error| error.to_string())
+    }
 
     #[test]
     fn protein_package_streams_once_with_retained_limit() {
@@ -347,8 +434,7 @@ mod tests {
             "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
                 "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
         });
-        let record: ProteinAssetRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+        let record = decode_asset(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -358,8 +444,7 @@ mod tests {
             "id": "inventor:protein:rejection#0", "entry_name": "InstanceProperties.bin",
             "ordinal": 0, "detail": "unsupported schema"
         });
-        let record: ProteinRejectionRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+        let record = decode_rejection(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -370,8 +455,7 @@ mod tests {
             "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
                 "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
         });
-        let mut admitted: ProteinAssetRecord =
-            serde_json::from_value(asset.clone()).expect("valid asset");
+        let mut admitted = decode_asset(asset.clone()).expect("valid asset");
         assert_eq!(serde_json::to_value(&admitted).expect("valid asset"), asset);
         admitted.asset.ordinal = 4;
         assert_eq!(admitted.ordinal(), 4);
@@ -380,15 +464,13 @@ mod tests {
         assert_eq!(wire["asset"]["ordinal"], 4);
         let mut inconsistent = asset.clone();
         inconsistent["ordinal"] = serde_json::json!(4);
-        assert!(serde_json::from_value::<ProteinAssetRecord>(inconsistent)
+        assert!(decode_asset(inconsistent)
             .expect_err("inconsistent ordinal")
-            .to_string()
             .contains("ordinal"));
         let rejection = serde_json::json!({
             "id": "rejection", "entry_name": "InstanceProperties.bin", "ordinal": 0, "detail": "unsupported schema"
         });
-        let admitted: ProteinRejectionRecord =
-            serde_json::from_value(rejection.clone()).expect("valid rejection");
+        let admitted = decode_rejection(rejection.clone()).expect("valid rejection");
         assert_eq!(
             serde_json::to_value(admitted).expect("valid rejection"),
             rejection
@@ -396,22 +478,19 @@ mod tests {
         for entry_name in ["", "InstanceProperties.bin.bak", "instanceproperties.bin"] {
             let mut wire = asset.clone();
             wire["entry_name"] = serde_json::json!(entry_name);
-            assert!(serde_json::from_value::<ProteinAssetRecord>(wire)
+            assert!(decode_asset(wire)
                 .expect_err("invalid entry")
-                .to_string()
                 .contains("entry_name"));
             let mut wire = rejection.clone();
             wire["entry_name"] = serde_json::json!(entry_name);
-            assert!(serde_json::from_value::<ProteinRejectionRecord>(wire)
+            assert!(decode_rejection(wire)
                 .expect_err("invalid entry")
-                .to_string()
                 .contains("entry_name"));
         }
         let mut wire = rejection;
         wire["detail"] = serde_json::json!("");
-        assert!(serde_json::from_value::<ProteinRejectionRecord>(wire)
+        assert!(decode_rejection(wire)
             .expect_err("empty detail")
-            .to_string()
             .contains("detail"));
     }
 
@@ -440,14 +519,15 @@ mod tests {
             .expect("valid test fixture");
         assert_eq!(wire[0]["entry_count"], 1);
         assert_eq!(
-            ProteinRecord::read(&namespace).expect("valid test fixture"),
+            ProteinRecord::read(&crate::native::test_ctx(), &namespace)
+                .expect("valid test fixture"),
             record
         );
         wire[0]["entry_count"] = serde_json::json!(0);
         namespace
             .set_arena(&crate::native::test_ctx(), "protein", &wire)
             .expect("valid test fixture");
-        assert!(ProteinRecord::read(&namespace)
+        assert!(ProteinRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("invalid test fixture")
             .to_string()
             .contains("entry_count"));
@@ -457,7 +537,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "protein", &[absent])
             .expect("valid test fixture");
-        assert!(ProteinRecord::read(&namespace).is_err());
+        assert!(ProteinRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     #[test]
@@ -482,7 +562,8 @@ mod tests {
                 .expect("valid test fixture");
             assert!(record.entries().is_empty());
             assert_eq!(
-                ProteinRecord::read(&namespace).expect("valid test fixture"),
+                ProteinRecord::read(&crate::native::test_ctx(), &namespace)
+                    .expect("valid test fixture"),
                 record
             );
         }
