@@ -1345,3 +1345,14 @@ fn aggregate_pcurve_retain_refuses_work() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo aggregate pcurve retain"));
 }
+
+#[test]
+fn version_line_trim_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo version line trim",
+        |ctx| super::line_at(ctx, b" x \n", 0),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo version line trim"));
+}

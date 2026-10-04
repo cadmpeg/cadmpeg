@@ -1780,3 +1780,29 @@ fn legacy_candidate_retain_refuses_work() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo legacy candidate retain"));
 }
+
+#[test]
+fn legacy_model_trim_refuses_work() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len())).expect("valid model fixture");
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo legacy model name trim",
+        |ctx| persistence.model_name(ctx),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy model name trim"));
+}
+
+#[test]
+fn legacy_source_model_trim_refuses_work() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len())).expect("valid model fixture");
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo legacy source model name trim",
+        |ctx| persistence.first_source_model_name(ctx),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy source model name trim"));
+}

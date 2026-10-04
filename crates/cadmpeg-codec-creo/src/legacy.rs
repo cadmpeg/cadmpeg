@@ -631,7 +631,7 @@ impl Persistence {
             else {
                 continue;
             };
-            let text = text.trim();
+            let text = ctx.trim_text(text, "creo legacy model name trim")?;
             if text.is_empty() {
                 continue;
             }
@@ -685,7 +685,7 @@ impl Persistence {
             } = &record.payload else {
                 continue;
             };
-            let text = text.trim();
+            let text = ctx.trim_text(text, "creo legacy source model name trim")?;
             if text.is_empty()
                 || ctx.eq_ignore_ascii_case(text, "NULL", "creo legacy null source model name")?
             {
