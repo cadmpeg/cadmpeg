@@ -22,6 +22,7 @@ use super::{
     NativePcurveCandidates, NeutralShellSpec,
 };
 
+mod admission_details;
 mod body_index;
 mod component_topology;
 mod contains_set;
