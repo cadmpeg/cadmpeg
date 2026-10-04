@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::decode::iter_source::IncrementalSource;
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 
 pub fn owned_sources(
     ctx: &DecodeContext<'_>,
@@ -45,11 +45,18 @@ pub fn unadmitted_mutable_source(_ctx: &DecodeContext<'_>, values: &mut Vec<u8>)
     }
 }
 
-pub fn generic_incremental_extend<I: Iterator<Item = u8>>(
+pub fn mutable_map_values(
     ctx: &DecodeContext<'_>,
-    target: &mut Vec<u8>,
-    source: I,
+    values: &mut BTreeMap<u8, u8>,
 ) -> Result<(), CodecError> {
-    ctx.extend_vec(target, IncrementalSource::new(source), "generic iterator extension")?; // finding: unproven_decode_charge, unproven_decode_charge
+    for (_key, value) in ctx.admit_iter(values, "mutable map")? {
+        *value = 1;
+    }
     Ok(())
+}
+
+pub fn unadmitted_mutable_map_values(_ctx: &DecodeContext<'_>, values: &mut BTreeMap<u8, u8>) {
+    for value in values.values_mut() { // finding: uncharged_decode_work
+        *value = 1;
+    }
 }

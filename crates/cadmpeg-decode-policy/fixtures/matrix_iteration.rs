@@ -47,7 +47,7 @@ pub fn owned_json_map_source(
     ctx: &DecodeContext<'_>,
     values: Map<String, Value>,
 ) -> Result<(), CodecError> {
-    for (key, value) in ctx.admit_iter(values, "owned JSON map")? { // finding: unproven_decode_charge
+    for (key, value) in ctx.admit_iter(values, "owned JSON map")? {
         let _entry = (key, value);
     }
     Ok(())
@@ -57,7 +57,7 @@ pub fn owned_json_map_early_break(
     ctx: &DecodeContext<'_>,
     values: Map<String, Value>,
 ) -> Result<(), CodecError> {
-    for (key, value) in ctx.admit_iter(values, "owned nested JSON map")? { // finding: unproven_decode_charge
+    for (key, value) in ctx.admit_iter(values, "owned nested JSON map")? {
         let _key_length = key.len();
         if value.is_array() || value.is_object() {
             break;

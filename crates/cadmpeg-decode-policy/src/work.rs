@@ -1,43 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{external, types, Analysis};
-use rustc_hir::intravisit::{walk_expr, walk_pat, Visitor};
-use rustc_hir::{
-    BinOpKind, Expr, ExprKind, HirId, LoopSource, MatchSource, Pat, PatKind, StmtKind,
-};
+use rustc_hir::intravisit::{walk_expr, Visitor};
+use rustc_hir::{BinOpKind, Expr, ExprKind, LoopSource, MatchSource, StmtKind};
 use rustc_span::Span;
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
-    fn raw_bytes_zip_iterator(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
-        let value = types::reveal_opaque(self.tcx, value.peel_refs());
-        let rustc_middle::ty::Adt(owner, arguments) = value.kind() else {
-            return false;
-        };
-        if !types::physical_item_path(
-            self.tcx,
-            owner.did(),
-            "core",
-            &["iter", "adapters", "zip", "Zip"],
-        ) {
-            return false;
-        }
-        let sources: Vec<_> = arguments.types().collect();
-        sources.len() == 2
-            && sources.iter().all(|source| {
-                let source = types::reveal_opaque(self.tcx, *source);
-                matches!(
-                    source.kind(),
-                    rustc_middle::ty::Adt(bytes, _)
-                        if types::physical_item_path(
-                            self.tcx,
-                            bytes.did(),
-                            "core",
-                            &["str", "iter", "Bytes"],
-                        )
-                )
-            })
-    }
-
     fn borrowed_cow_conversion(
         &self,
         expression: &'tcx Expr<'tcx>,
@@ -100,319 +68,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     !types::standard(self.tcx, target.def_id())
                         && self.checked_body(target.def_id())
                 })
-    }
-
-    fn stepwise_result_item(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
-        let item = match self.iterator_item(value) {
-            Some(item) => types::reveal_opaque(self.tcx, item),
-            None => return false,
-        };
-        self.codec_error_result(item)
-    }
-
-    fn stepwise_iterator_lineage(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
-        let value = types::reveal_opaque(self.tcx, value.peel_refs());
-        let rustc_middle::ty::Adt(owner, arguments) = value.kind() else {
-            return false;
-        };
-        if types::physical_item_path(
-            self.tcx,
-            owner.did(),
-            "cadmpeg_core",
-            &["decode", "scan", "AdmittedIter"],
-        ) {
-            return arguments
-                .types()
-                .nth(1)
-                .is_some_and(|mode| self.incremental_mode(mode));
-        }
-        if !types::standard(self.tcx, owner.did())
-            || !matches!(
-                self.tcx.item_name(owner.did()).as_str(),
-                "Map"
-                    | "Filter"
-                    | "FilterMap"
-                    | "Enumerate"
-                    | "Rev"
-                    | "Cloned"
-                    | "Copied"
-                    | "Inspect"
-                    | "Take"
-                    | "Skip"
-                    | "TakeWhile"
-                    | "SkipWhile"
-                    | "StepBy"
-                    | "Peekable"
-                    | "Fuse"
-                    | "Scan"
-                    | "MapWhile"
-                    | "DecodeUtf16"
-                    | "Zip"
-                    | "Chain"
-                    | "Flatten"
-                    | "FlatMap"
-            )
-        {
-            return false;
-        }
-        arguments
-            .types()
-            .any(|source| self.stepwise_iterator_lineage(source))
-    }
-
-    fn direct_incremental_admitted_iterator(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
-        let value = types::reveal_opaque(self.tcx, value.peel_refs());
-        let rustc_middle::ty::Adt(owner, arguments) = value.kind() else {
-            return false;
-        };
-        types::physical_item_path(
-            self.tcx,
-            owner.did(),
-            "cadmpeg_core",
-            &["decode", "scan", "AdmittedIter"],
-        ) && arguments
-            .types()
-            .nth(1)
-            .is_some_and(|mode| self.incremental_mode(mode))
-    }
-
-    fn precharged_admission_refusal_propagates(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-        seen: &mut Vec<HirId>,
-    ) -> bool {
-        if seen.contains(&expression.hir_id) || seen.len() >= 64 {
-            return false;
-        }
-        seen.push(expression.hir_id);
-        match expression.kind {
-            ExprKind::DropTemps(inner) => self.precharged_admission_refusal_propagates(inner, seen),
-            ExprKind::Match(scrutinee, _, MatchSource::TryDesugar(_)) => {
-                let Some((branch, arguments)) = self.call(scrutinee) else {
-                    return false;
-                };
-                if !types::physical_item_path(
-                    self.tcx,
-                    branch,
-                    "core",
-                    &["ops", "try_trait", "Try", "branch"],
-                ) {
-                    return false;
-                }
-                let Some(operation) = arguments.first().copied() else {
-                    return false;
-                };
-                self.call(operation).is_some_and(|(definition, _)| {
-                    types::decode_context_method(self.tcx, definition, "admit_iter")
-                        && self.propagated(operation)
-                })
-            }
-            ExprKind::Path(_) => self.initializer(expression).is_some_and(|initializer| {
-                self.precharged_admission_refusal_propagates(initializer, seen)
-            }),
-            _ => {
-                let Some((definition, operands)) = self.call(expression) else {
-                    return false;
-                };
-                if !types::standard(self.tcx, definition) {
-                    return false;
-                }
-                let mut receipts = operands
-                    .iter()
-                    .filter(|operand| self.precharged_iterator_lineage(self.expr_ty(operand)));
-                let Some(first) = receipts.next() else {
-                    return false;
-                };
-                self.precharged_admission_refusal_propagates(first, seen)
-                    && receipts
-                        .all(|operand| self.precharged_admission_refusal_propagates(operand, seen))
-            }
-        }
-    }
-
-    fn precharged_result_item_propagates(
-        &self,
-        input_type: rustc_middle::ty::Ty<'tcx>,
-        user_body: Option<(&'tcx rustc_hir::Pat<'tcx>, &'tcx Expr<'tcx>)>,
-    ) -> bool {
-        if !self.stepwise_result_item(input_type) {
-            return true;
-        }
-        user_body.is_some_and(|(pattern, body)| {
-            self.loop_item_propagates_stepwise_refusal(body, pattern)
-        })
-    }
-
-    fn refusal_preserving_stepwise_iterator(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
-        let value = types::reveal_opaque(self.tcx, value.peel_refs());
-        let rustc_middle::ty::Adt(owner, arguments) = value.kind() else {
-            return false;
-        };
-        if types::physical_item_path(
-            self.tcx,
-            owner.did(),
-            "cadmpeg_core",
-            &["decode", "scan", "AdmittedIter"],
-        ) {
-            return arguments.types().nth(1).is_some_and(|mode| {
-                self.incremental_mode(mode) && self.bounded_iterator_step(value)
-            });
-        }
-        if !types::standard(self.tcx, owner.did()) || !self.stepwise_iterator_lineage(value) {
-            return false;
-        }
-        let name = self.tcx.item_name(owner.did());
-        match name.as_str() {
-            "Inspect" => {
-                let mut arguments = arguments.types();
-                let source = arguments.next();
-                let callback = arguments.next();
-                source.is_some_and(|source| self.refusal_preserving_stepwise_iterator(source))
-                    && callback.is_some_and(|callback| self.checked_iterator_callback(callback))
-                    && self.bounded_iterator_step(value)
-            }
-            "Rev" | "Take" | "Fuse" | "Peekable" => {
-                arguments
-                    .types()
-                    .next()
-                    .is_some_and(|source| self.refusal_preserving_stepwise_iterator(source))
-                    && self.bounded_iterator_step(value)
-            }
-            "Chain" => {
-                let sources: Vec<_> = arguments.types().collect();
-                sources.len() == 2
-                    && sources
-                        .iter()
-                        .all(|source| self.refusal_preserving_stepwise_iterator(*source))
-                    && self.bounded_iterator_step(value)
-            }
-            _ => false,
-        }
-    }
-
-    fn incremental_mode(&self, value: rustc_middle::ty::Ty<'tcx>) -> bool {
-        matches!(value.kind(), rustc_middle::ty::Adt(definition, _)
-            if types::physical_item_path(self.tcx, definition.did(), "cadmpeg_core",
-                &["decode", "iter_source", "IncrementalAdmission"]))
-    }
-
-    fn codec_error_result(&self, item: rustc_middle::ty::Ty<'tcx>) -> bool {
-        let item = types::reveal_opaque(self.tcx, item);
-        let rustc_middle::ty::Adt(result, arguments) = item.kind() else {
-            return false;
-        };
-        if !types::standard(self.tcx, result.did())
-            || self.tcx.item_name(result.did()).as_str() != "Result"
-        {
-            return false;
-        }
-        let Some(error) = arguments.types().nth(1) else {
-            return false;
-        };
-        matches!(error.kind(), rustc_middle::ty::Adt(owner, _)
-            if types::physical_item_path(self.tcx, owner.did(), "cadmpeg_core", &["error", "CodecError"]))
-    }
-
-    fn stepwise_item_operand_is_binding(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-        bindings: &[HirId],
-    ) -> bool {
-        match expression.kind {
-            ExprKind::Path(path) => matches!(
-                self.typeck.qpath_res(&path, expression.hir_id),
-                rustc_hir::def::Res::Local(binding) if bindings.contains(&binding)
-            ),
-            ExprKind::DropTemps(inner) | ExprKind::Cast(inner, _) => {
-                self.stepwise_item_operand_is_binding(inner, bindings)
-            }
-            ExprKind::AddrOf(_, _, inner) => self.stepwise_item_operand_is_binding(inner, bindings),
-            _ => self.call(expression).is_some_and(|(definition, operands)| {
-                types::physical_item_path(
-                    self.tcx,
-                    definition,
-                    "core",
-                    &["convert", "Into", "into"],
-                ) && operands.len() == 1
-                    && self.stepwise_item_operand_is_binding(operands[0], bindings)
-            }),
-        }
-    }
-
-    fn loop_item_propagates_stepwise_refusal(
-        &self,
-        body: &'tcx Expr<'tcx>,
-        item_pattern: &'tcx Pat<'tcx>,
-    ) -> bool {
-        let ExprKind::Block(block, _) = body.kind else {
-            return false;
-        };
-        let Some(statement) = block.stmts.first() else {
-            return false;
-        };
-        struct Bindings(Vec<HirId>);
-        impl<'tcx> Visitor<'tcx> for Bindings {
-            fn visit_pat(&mut self, pattern: &'tcx Pat<'tcx>) {
-                if let PatKind::Binding(_, id, _, _) = pattern.kind {
-                    self.0.push(id);
-                }
-                walk_pat(self, pattern);
-            }
-        }
-        let mut bindings = Bindings(Vec::new());
-        bindings.visit_pat(item_pattern);
-        if bindings.0.is_empty() {
-            return false;
-        }
-        let initializer = match statement.kind {
-            StmtKind::Let(local) => local.init,
-            StmtKind::Expr(expression) | StmtKind::Semi(expression) => {
-                if let ExprKind::If(condition, _, _) = expression.kind {
-                    Some(condition)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        let Some(initializer) = initializer else {
-            return false;
-        };
-        self.leading_stepwise_try(initializer, &bindings.0)
-    }
-
-    fn leading_stepwise_try(&self, mut initializer: &'tcx Expr<'tcx>, bindings: &[HirId]) -> bool {
-        while let ExprKind::DropTemps(inner) = initializer.kind {
-            initializer = inner;
-        }
-        if let ExprKind::Binary(operator, left, _) = initializer.kind {
-            return matches!(
-                operator.node,
-                BinOpKind::Eq
-                    | BinOpKind::Ne
-                    | BinOpKind::Lt
-                    | BinOpKind::Le
-                    | BinOpKind::Gt
-                    | BinOpKind::Ge
-            ) && self.leading_stepwise_try(left, bindings);
-        }
-        let ExprKind::Match(source, _, MatchSource::TryDesugar(_)) = initializer.kind else {
-            return false;
-        };
-        let Some((definition, arguments)) = self.call(source) else {
-            return false;
-        };
-        let Some(item) = arguments.first() else {
-            return false;
-        };
-        types::physical_item_path(
-            self.tcx,
-            definition,
-            "core",
-            &["ops", "try_trait", "Try", "branch"],
-        ) && self.codec_error_result(self.expr_ty(item))
-            && (self.stepwise_item_operand_is_binding(item, bindings)
-                || self.leading_stepwise_try(item, bindings))
     }
 
     fn work_report(
@@ -536,27 +191,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 return;
             }
             None => (),
-        }
-        let structural_project = types::physical_item_path(
-            self.tcx,
-            definition,
-            "cadmpeg_ir",
-            &["schema", "structural", "project"],
-        );
-        if structural_project {
-            if operands.get(1).is_some_and(|source| {
-                crate::structural_projection::is_bounded_source(self.tcx, self.expr_ty(source))
-            }) {
-                return;
-            }
-            self.work_report(
-                expression,
-                expression.span,
-                Shape::Unknown,
-                Some(false),
-                "structural projection source",
-            );
-            return;
         }
         let name = self.tcx.item_name(definition);
         if matches!(
@@ -880,16 +514,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         ) {
             return;
         }
-        if consumers
-            && name == "any"
-            && operands.last().is_some_and(|callback| {
-                self.bounded_raw_chars_any(definition, value, self.expr_ty(callback))
-            })
-        {
-            let paid = self.take_credit(&operands);
-            self.work_report(expression, expression.span, Shape::Dynamic, paid, name);
-            return;
-        }
         if matches!(
             name,
             "to_vec" | "to_owned" | "copy_from_slice" | "copy_within"
@@ -957,58 +581,21 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
-        if consumers && self.precharged_iterator_lineage(value) {
-            if name == "any"
-                && (!operands.last().is_some_and(|callback| {
-                    self.bounded_precharged_chars_any(definition, value, self.expr_ty(callback))
-                }) || !self.precharged_admission_refusal_propagates(receiver, &mut Vec::new()))
-            {
+        if consumers && self.prepaid_iterator(value) {
+            // Admission charged every base visit before the first step; the
+            // consumer's own callbacks must be checked bodies.
+            let callbacks: Vec<_> = operands
+                .iter()
+                .skip(1)
+                .map(|operand| self.expr_ty(operand))
+                .collect();
+            if !self.consumer_callbacks_checked(&callbacks) {
                 self.work_report(
                     expression,
                     expression.span,
                     Shape::Unknown,
                     None,
-                    "precharged character any predicate or admission refusal",
-                );
-                return;
-            }
-            if name == "try_fold"
-                && (!operands
-                    .last()
-                    .is_some_and(|callback| self.checked_iterator_callback(self.expr_ty(callback)))
-                    || self.iterator_item(value).is_some_and(|item| {
-                        self.codec_error_result(types::reveal_opaque(self.tcx, item))
-                    }))
-            {
-                self.work_report(
-                    expression,
-                    expression.span,
-                    Shape::Unknown,
-                    None,
-                    "precharged iterator try_fold callback",
-                );
-                return;
-            }
-            if !self.precharged_admission_refusal_propagates(receiver, &mut Vec::new()) {
-                self.work_report(
-                    expression,
-                    expression.span,
-                    Shape::Unknown,
-                    None,
-                    "precharged iterator admission refusal",
-                );
-                return;
-            }
-            return;
-        }
-        if consumers && types::admitted_iterator(self.tcx, value) {
-            if self.stepwise_iterator_lineage(value) {
-                self.work_report(
-                    expression,
-                    expression.span,
-                    Shape::Unknown,
-                    None,
-                    "incremental iterator consumer lacks a refusal-preserving producer proof",
+                    "prepaid iterator consumer callback",
                 );
             }
             return;
@@ -1053,7 +640,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let shape = if name == "count" {
             Shape::Unknown
         } else if consumers {
-            self.iteration(receiver, &mut Vec::new())
+            match self.iteration(receiver, &mut Vec::new()) {
+                Shape::Unknown => self.bounded_iterator_shape(value).unwrap_or(Shape::Unknown),
+                shape => shape,
+            }
         } else {
             if self.constant(extent, &mut Vec::new()) || self.bounded_work(extent) {
                 Shape::Fixed
@@ -1216,13 +806,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     return Some(false);
                 }
                 let name = self.tcx.item_name(definition);
-                if types::physical_item_path(
-                    self.tcx,
-                    definition,
-                    "cadmpeg_core",
-                    &["decode", "collect", "next_charged"],
-                ) && self.trusted_context_callee(call)
-                {
+                if types::decode_context_method(self.tcx, definition, "next_charged") {
                     return Some(true);
                 }
                 if matches!(name.as_str(), "charge_work" | "charge_work_limit") {
@@ -1439,21 +1023,13 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if let Some((_, args)) = self.call(source) {
                     if let Some(input) = args.first() {
                         self.visit_expr(input);
-                        let input_type = self.expr_ty(input);
-                        let stepwise = self.stepwise_iterator_lineage(input_type);
-                        let precharged = self.precharged_iterator_lineage(input_type);
-                        let inferred_shape = self.iteration(input, &mut Vec::new());
-                        let shape = if stepwise || precharged {
-                            Shape::Dynamic
-                        } else if inferred_shape == Shape::Unknown {
-                            if self.raw_bytes_zip_iterator(input_type) {
-                                Shape::Dynamic
-                            } else {
-                                self.bounded_iterator_shape(input_type)
-                                    .unwrap_or(inferred_shape)
-                            }
-                        } else {
-                            inferred_shape
+                        // A one-step iterator whose source expression has no
+                        // inferred extent still needs one charge per step.
+                        let shape = match self.iteration(input, &mut Vec::new()) {
+                            Shape::Unknown => self
+                                .bounded_iterator_shape(self.expr_ty(input))
+                                .unwrap_or(Shape::Unknown),
+                            shape => shape,
                         };
                         let paid = self.take_credit(&[input]);
                         let user_body =
@@ -1466,9 +1042,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                                             ExprKind::Match(_, next_arms, _) => next_arms
                                                 .iter()
                                                 .find_map(|arm| match arm.body.kind {
-                                                    ExprKind::Block(_, _) => {
-                                                        Some((arm.pat, arm.body))
-                                                    }
+                                                    ExprKind::Block(_, _) => Some(arm.body),
                                                     _ => None,
                                                 }),
                                             _ => None,
@@ -1476,28 +1050,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
                                     }
                                     _ => None,
                                 });
-                        let prefix = user_body.and_then(|(_, body)| self.prefix_paid(body));
-                        let effective = if stepwise {
-                            let preserves_refusal = self
-                                .refusal_preserving_stepwise_iterator(input_type)
-                                && self.stepwise_result_item(input_type)
-                                && user_body.is_some_and(|(pattern, body)| {
-                                    self.loop_item_propagates_stepwise_refusal(body, pattern)
-                                });
-                            let boundary_reports_unbounded_source = self
-                                .direct_incremental_admitted_iterator(input_type)
-                                && !self.bounded_iterator_step(input_type);
-                            if preserves_refusal || boundary_reports_unbounded_source {
-                                Some(true)
-                            } else {
-                                None
-                            }
-                        } else if precharged
-                            && self.precharged_result_item_propagates(input_type, user_body)
-                            && self.precharged_admission_refusal_propagates(input, &mut Vec::new())
-                        {
-                            Some(true)
-                        } else if paid == Some(true) {
+                        let prefix = user_body.and_then(|body| self.prefix_paid(body));
+                        let effective = if paid == Some(true) {
                             if self.capacity_iteration(input) {
                                 None
                             } else {
@@ -1513,36 +1067,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                             Some(false)
                         } else {
                             prefix
-                        };
-                        let effective = if !precharged
-                            && self.contains_precharged_iterator(input_type)
-                            && self.skipped_source(input)
-                        {
-                            None
-                        } else {
-                            effective
-                        };
-                        let effective = if effective.is_none()
-                            && paid == Some(false)
-                            && shape == Shape::Dynamic
-                            && !stepwise
-                            && !precharged
-                            && !self.contains_precharged_iterator(input_type)
-                            && self.raw_bytes_zip_iterator(input_type)
-                        {
-                            Some(false)
-                        } else {
-                            effective
-                        };
-                        let effective = if effective.is_none()
-                            && !stepwise
-                            && !precharged
-                            && shape == Shape::Dynamic
-                            && self.bounded_iterator_step(input_type)
-                        {
-                            Some(false)
-                        } else {
-                            effective
                         };
                         self.work_report(expression, header, shape, effective, "for loop");
                         let mut saved = self.flow.clone();
@@ -1565,7 +1089,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         if let Some(bounds) = bounds {
                             self.flow.loop_bounds.push(bounds);
                         }
-                        if let Some((_, body)) = user_body {
+                        if let Some(body) = user_body {
                             self.visit_expr(body);
                         }
                         if iterations.is_some() {
@@ -1580,12 +1104,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         match expression.kind {
             ExprKind::Closure(_) => return,
             ExprKind::Loop(block, _, source, header) => {
-                let measured = (source == LoopSource::Loop)
-                    .then(|| self.measured_decoder_loop_paid(expression))
-                    .flatten();
-                let paid = if measured.is_some() {
-                    measured.flatten()
-                } else if source == LoopSource::While {
+                let paid = if source == LoopSource::While {
                     match block.expr {
                         Some(value) => match value.kind {
                             ExprKind::If(condition, body, _) => {
@@ -1602,21 +1121,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 } else {
                     self.prefix_block(block)
                 };
-                let shape = if measured.is_some() {
-                    Shape::Dynamic
-                } else if source == LoopSource::While && self.fixed_scalar_loop(block) {
+                let shape = if source == LoopSource::While && self.fixed_scalar_loop(block) {
                     Shape::Fixed
                 } else if source == LoopSource::ForLoop {
                     Shape::Unknown
                 } else {
                     Shape::Dynamic
                 };
-                let name = if measured.is_some() {
-                    "measured decoder loop"
-                } else {
-                    "loop"
-                };
-                self.work_report(expression, header, shape, paid, name);
+                self.work_report(expression, header, shape, paid, "loop");
                 let saved = self.flow.clone();
                 self.flow.work.clear();
                 self.flow.parser_receipts.clear();

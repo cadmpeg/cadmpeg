@@ -230,7 +230,7 @@ pub fn named_charge(reader: &WrappedContext<'_>, bytes: &[u8]) -> Result<(), ()>
     reader.charge_work(bytes.len() as u64, "not a core charge")?;
     let _count = bytes.iter().fold(0usize, |n, _| n + 1); // finding: unproven_decode_charge
     for _byte in bytes {
-        // finding: uncharged_decode_work
+        // finding: unproven_decode_charge
         reader.charge_work(1, "not a core charge")?;
     }
     Ok(())
