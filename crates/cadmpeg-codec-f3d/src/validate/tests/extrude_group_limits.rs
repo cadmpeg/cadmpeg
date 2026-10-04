@@ -179,3 +179,27 @@ fn extrude_group_missing_member_entity_refuses_retained_limit() {
         if limit.operation == "retain F3D validation entity")
     );
 }
+
+#[test]
+fn extrude_group_member_scan_preserves_work_refusal() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(true, false);
+        let group = &native.design_extrude_selection_groups[0];
+        let stream = super::super::design_stream(&group.id);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One group visit, two stream/u32 lookups, one scope reference, and both class tags.
+        policy.limits.max_work_units = 1 + 2 * (u64::try_from(stream.len()).unwrap() + 4) + 1 + 6;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let error = super::super::validate_extrude_selection_groups(&ctx, &mut Vec::new()).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = &error else {
+            panic!("expected resource refusal: {error}");
+        };
+        assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+        assert_eq!(limit.operation, "validate F3D Extrude group member records");
+    });
+}
