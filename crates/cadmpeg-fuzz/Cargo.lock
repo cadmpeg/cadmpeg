@@ -246,6 +246,7 @@ dependencies = [
  "memchr",
  "roxmltree",
  "serde",
+ "serde-value",
  "serde_json",
  "thiserror",
  "zstd",
