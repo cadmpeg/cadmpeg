@@ -2046,6 +2046,31 @@ class AbsentKeyCensusTests(unittest.TestCase):
             [],
         )
 
+    def test_generic_flattened_reader_follows_the_attributed_field_type(self) -> None:
+        source = '''
+            #[derive(serde::Deserialize)]
+            struct Owner {
+                #[serde(flatten)]
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                #[serde(deserialize_with = "read_inner")]
+                inner: Option<Inner>,
+            }
+            fn read_inner<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+            where D: serde::Deserializer<'de>, T: serde::Deserialize<'de> {
+                T::deserialize(d).map(Some)
+            }
+        '''
+        for value in ("u32", "Option<u32>"):
+            with self.subTest(value=value):
+                inner = f"struct Inner {{ value: {value} }}"
+                findings = self.run_absent_key_census({"wire.rs": source + inner})
+                if value == "u32":
+                    self.assertEqual(findings, [])
+                else:
+                    self.assertEqual(len(findings), 1, findings)
+                    self.assertIn("Inner.value", findings[0])
+                    self.assertIn("read_inner reads this key for Owner.inner", findings[0])
+
     def test_a_routed_reader_struct_states_no_key_of_its_own(self) -> None:
         self.assertEqual(
             self.run_absent_key_census({
