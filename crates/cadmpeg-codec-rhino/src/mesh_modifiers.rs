@@ -786,16 +786,20 @@ fn field_bool(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let Some(node) = typed_child(ctx, parent, name)? else {
         return Ok(default);
     };
-    let text = node.text().unwrap_or_default().trim();
+    let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino typed boolean text trim")?;
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if ctx.eq_ignore_ascii_case(kind, "string", "Rhino field bool case equality")? {
         parse_bool_text(ctx, text)?.or_else(|| text.parse::<i32>().ok().map(|value| value != 0))
     } else if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field bool case equality")? {
         parse_bool_text(ctx, text)?
-    } else if matches!(
-        kind.to_ascii_lowercase().as_str(),
+    } else if {
+        let mut lowercase_storage = ctx.reserve_scoped(0, "Rhino field bool type lowercase")?;
+        let lowercase = lowercase_storage.with_storage(|| ctx.to_ascii_lowercase(kind, "Rhino field bool type lowercase"))?;
+        matches!(
+        lowercase.as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
-    ) {
+    )
+    } {
         text.parse::<f64>()
             .ok()
             .filter(|value| value.is_finite())
@@ -825,10 +829,14 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field i32 optional case equality")? {
         parse_bool_text(ctx, text)?.map(i32::from)
-    } else if matches!(
-        kind.to_ascii_lowercase().as_str(),
+    } else if {
+        let mut lowercase_storage = ctx.reserve_scoped(0, "Rhino field i32 optional type lowercase")?;
+        let lowercase = lowercase_storage.with_storage(|| ctx.to_ascii_lowercase(kind, "Rhino field i32 optional type lowercase"))?;
+        matches!(
+        lowercase.as_str(),
         "float" | "double" | "real"
-    ) {
+    )
+    } {
         text.parse::<f64>().ok().and_then(|value| {
             if value.is_finite()
                 && value >= f64::from(i32::MIN)
@@ -847,10 +855,14 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         } else {
             text.parse::<i32>().ok()
         }
-    } else if matches!(
-        kind.to_ascii_lowercase().as_str(),
+    } else if {
+        let mut lowercase_storage = ctx.reserve_scoped(0, "Rhino field i32 optional type lowercase")?;
+        let lowercase = lowercase_storage.with_storage(|| ctx.to_ascii_lowercase(kind, "Rhino field i32 optional type lowercase"))?;
+        matches!(
+        lowercase.as_str(),
         "int" | "short" | "char" | "long"
-    ) {
+    )
+    } {
         text.parse::<i32>().ok()
     } else {
         None
@@ -872,10 +884,14 @@ fn field_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field f64 case equality")? {
         parse_bool_text(ctx, text)?.map(|value| f64::from(u8::from(value)))
-    } else if matches!(
-        kind.to_ascii_lowercase().as_str(),
+    } else if {
+        let mut lowercase_storage = ctx.reserve_scoped(0, "Rhino field f64 type lowercase")?;
+        let lowercase = lowercase_storage.with_storage(|| ctx.to_ascii_lowercase(kind, "Rhino field f64 type lowercase"))?;
+        matches!(
+        lowercase.as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
-    ) || ctx.eq_ignore_ascii_case(kind, "string", "Rhino field f64 case equality")?
+    )
+    } || ctx.eq_ignore_ascii_case(kind, "string", "Rhino field f64 case equality")?
     {
         text.parse::<f64>().ok()
     } else {

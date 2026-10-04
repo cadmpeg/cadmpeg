@@ -216,3 +216,66 @@ fn optional_modifier_case_equality_preserves_refusal_without_warning() {
         result
     });
 }
+
+#[test]
+fn typed_boolean_lowercase_storage_preserves_scoped_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int">1</value></root>"#).unwrap();
+    let root = document.root_element();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = super::super::field_bool(&ctx, root, "value", false).unwrap_err();
+    let FramingError::Resource(refusal) = error else { panic!("lowercase must return its resource refusal"); };
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(refusal.operation, "Rhino field bool type lowercase");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}
+
+#[test]
+fn typed_integer_lowercase_storage_preserves_scoped_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="double">1</value></root>"#).unwrap();
+    let root = document.root_element();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = super::super::field_i32_optional(&ctx, root, "value").unwrap_err();
+    let FramingError::Resource(refusal) = error else { panic!("lowercase must return its resource refusal"); };
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(refusal.operation, "Rhino field i32 optional type lowercase");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}
+
+#[test]
+fn typed_real_lowercase_storage_preserves_scoped_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="int">1</value></root>"#).unwrap();
+    let root = document.root_element();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = super::super::field_f64(&ctx, root, "value", 0.0).unwrap_err();
+    let FramingError::Resource(refusal) = error else { panic!("lowercase must return its resource refusal"); };
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(refusal.operation, "Rhino field f64 type lowercase");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}
+
+#[test]
+fn typed_boolean_text_trim_preserves_work_refusal() {
+    let document = roxmltree::Document::parse(r#"<root><value type="bool"> true </value></root>"#).unwrap();
+    let root = document.root_element();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino typed boolean text trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::field_bool(&ctx, root, "value", false).map(|_| ()).map_err(|error| match error {
+            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+            other => panic!("valid boolean returned {other:?}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
