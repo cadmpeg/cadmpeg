@@ -259,12 +259,17 @@ fn check_fixture(name: &str) {
         for (index, line) in source.lines().enumerate() {
             if let Some(method) = line.trim().strip_prefix("// replacement: ") {
                 let line_number = (index + 2).to_string();
+                let replacement = if method.starts_with("DecodeContext::") {
+                    method.to_owned()
+                } else {
+                    format!("DecodeContext::{method}")
+                };
                 assert!(
                     actual.lines().any(|row| {
                         let fields: Vec<_> = row.split('\t').collect();
                         fields.len() == 4
                             && fields[2] == line_number
-                            && fields[3].contains(&format!("replacement: DecodeContext::{method}"))
+                            && fields[3].contains(&format!("replacement: {replacement}"))
                     }),
                     "missing replacement {method} at {line_number}: {actual}"
                 );

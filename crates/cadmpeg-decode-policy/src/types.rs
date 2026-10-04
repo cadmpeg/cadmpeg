@@ -27,6 +27,11 @@ pub(crate) fn standard(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -
     )
 }
 
+pub(crate) fn standard_string(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
+    matches!(value.peel_refs().kind(), ty::Adt(owner, _)
+        if standard(tcx, owner.did()) && tcx.item_name(owner.did()).as_str() == "String")
+}
+
 pub(crate) fn reveal_opaque<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Ty<'tcx> {
     value.fold_with(&mut RevealOpaque {
         tcx,

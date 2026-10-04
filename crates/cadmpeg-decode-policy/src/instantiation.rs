@@ -471,6 +471,7 @@ pub(crate) fn check_imported<'tcx>(
             let fixed_extent = args
                 .get(match summary.work {
                     external::Work::Argument(index) => index,
+                    external::Work::TextCharacter => 1,
                     _ => 0,
                 })
                 .is_some_and(|operand| {
@@ -639,8 +640,13 @@ pub(crate) fn check_imported<'tcx>(
                             | external::Allocation::Conversion
                             | external::Allocation::Result
                             | external::Allocation::Input(0)
-                    ) {
+                ) {
                 types::Shape::Fixed
+            } else if (summary.work == external::Work::TextCharacter
+                || operation_name.is_some_and(|name| name.as_str() == "write_str"))
+                && types::standard_string(tcx, receiver)
+            {
+                types::heap(tcx, receiver.peel_refs(), &mut Vec::new())
             } else if summary.allocation == external::Allocation::Growth {
                 // Backing slot bytes are proved in the generic body. Child
                 // cloning and key traits remain concrete work obligations.
@@ -648,16 +654,34 @@ pub(crate) fn check_imported<'tcx>(
             } else {
                 allocation_shape(output, receiver, true)
             };
-            let symbolic_allocation = raw_receiver.map_or(types::Shape::Unknown, |receiver| {
-                allocation_shape(raw_output, receiver, false)
-            });
+            let string_fmt_write = summary.allocation == external::Allocation::Growth
+                && operation_name.is_some_and(|name| {
+                    matches!(name.as_str(), "write_char" | "write_str")
+                });
+            // A generic fmt::Write receiver has no String allocation summary.
+            let symbolic_formatter = string_fmt_write
+                && raw_receiver.is_some_and(|receiver| !types::standard_string(tcx, receiver));
+            let symbolic_allocation = if symbolic_formatter {
+                types::Shape::Fixed
+            } else {
+                raw_receiver.map_or(types::Shape::Unknown, |receiver| {
+                    allocation_shape(raw_output, receiver, false)
+                })
+            };
             let index = match summary.work {
                 external::Work::Argument(index) => index,
+                external::Work::TextCharacter => 1,
                 _ => 0,
             };
             let raw_extent = args.get(index).map(|operand| operand.node.ty(body, tcx));
             let work_shape = |extent: rustc_middle::ty::Ty<'tcx>, allocation, concrete, fixed| {
-                if concrete && (fixed || admitted_conversion)
+                if summary.work == external::Work::TextCharacter {
+                    if fixed {
+                        types::Shape::Fixed
+                    } else {
+                        types::Shape::Dynamic
+                    }
+                } else if concrete && (fixed || admitted_conversion)
                     || summary.work == external::Work::Fixed
                     || summary.work == external::Work::Iterator
                         && vector_output
@@ -763,7 +787,12 @@ pub(crate) fn check_imported<'tcx>(
                     ))
                 })
             };
-            let symbolic_work = if let external::Work::Arguments(indices) = summary.work {
+            // A String specialization adds UTF-8 work that the generic trait body does not see.
+            let symbolic_work = if summary.work == external::Work::TextCharacter
+                && raw_receiver.is_some_and(|receiver| !types::standard_string(tcx, receiver))
+            {
+                types::Shape::Fixed
+            } else if let external::Work::Arguments(indices) = summary.work {
                 arguments_work(indices, false)
             } else {
                 raw_extent.map_or(types::Shape::Unknown, |extent| {
