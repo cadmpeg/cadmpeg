@@ -57,6 +57,10 @@ fn compose_feature_id<'a>(
         ),
         "creo model feature identity",
     )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(text.len()),
+        "creo model feature identity grammar",
+    )?;
     let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
     Ok((id, reservation))
 }
