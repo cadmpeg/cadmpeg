@@ -587,11 +587,11 @@ pub(super) fn decode(
                                 .map(|vertex| placement.apply_point(vertex.get())),
                         )
                     })?
-                    .ok_or_else(|| {
-                        CodecError::malformed(format!(
+                    .map_or_else(|| {
+                        Err(CodecError::malformed(ctx.format_retained(format_args!(
                         "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
-                    ))
-                    })?;
+                    ), "STEP decode text")?)
+                    )}, Ok)?;
                 if let Some(source_normals) = normals.take() {
                     placed_normal_bytes = {
                         ctx.charge_collection_items(

@@ -488,7 +488,7 @@ pub(crate) fn decode_inner(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
         POINT => {
-            let position = read_point(&mut reader, scale)?;
+            let position = read_point(ctx, &mut reader, scale)?;
             DecodedGeometry::Point {
                 position,
                 scaled: scale != MillimeterScale::IDENTITY,
@@ -867,7 +867,7 @@ pub(crate) fn remap_nurbs_domain(
     }
     curve
         .with_knots(ctx, remapped)?
-        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+        .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino remap_nurbs_domain text")?)))
 }
 
 /// Exact joined curve and recoverable join diagnostics.
@@ -1142,7 +1142,7 @@ fn elevate_to_degree(
         rational.then_some(output_weights),
         false,
     )?
-    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino elevate_to_degree text")?)))
 }
 
 pub(crate) fn join_nurbs_segments(
@@ -1307,7 +1307,7 @@ pub(crate) fn join_nurbs_segments(
     }
     Ok(NurbsJoin {
         curve: NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
-            .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
+            .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino join_nurbs_segments text")?)))?,
         warnings,
     })
 }
@@ -1462,13 +1462,13 @@ pub(crate) fn consume_legacy_polycurve_2d(
     Ok(start..reader.position())
 }
 
-fn read_point(
+fn read_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<FinitePoint3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let point = native_point(reader)?;
+    let point = native_point(ctx, reader)?;
     crate::wire::scaled_point(point.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
 }
@@ -1484,14 +1484,14 @@ fn read_cloud(
     let point_count = crate::wire::element_count(reader, 24)?;
     let mut points = ctx.collection_vec(point_count, "Rhino point-cloud points")?;
     for _ in 0..point_count {
-        let point = native_point(reader)?;
+        let point = native_point(ctx, reader)?;
         points.push(
             crate::wire::scaled_point(point.0.get(), scale)
                 .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
         );
     }
-    plane(reader)?;
-    bbox(reader)?;
+    plane(ctx, reader)?;
+    bbox(ctx, reader)?;
     reader.i32()?;
     let mut warnings = Diagnostics::new();
     if minor >= 1 {
@@ -1504,7 +1504,7 @@ fn read_cloud(
             )?;
         }
         for _ in 0..normal_count {
-            crate::settings::vector(reader)?;
+            crate::settings::vector(ctx, reader)?;
         }
         let color_count = crate::wire::element_count(reader, 4)?;
         for _ in 0..color_count {
@@ -1557,13 +1557,13 @@ fn read_line(
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let from = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
+    let from = crate::wire::scaled_point(native_point(ctx, reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
         .get();
-    let to = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
+    let to = crate::wire::scaled_point(native_point(ctx, reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
         .get();
-    let domain = interval(reader)?.0.get();
+    let domain = interval(ctx, reader)?.0.get();
     let dimension = reader.i32()?;
     if expected_dimension.is_some_and(|expected| dimension != expected)
         || !(dimension == 2 || dimension == 3)
@@ -1581,7 +1581,7 @@ fn read_line(
         false,
     )
     .map_err(GeometryError::from)?
-    .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
+    .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_line text")?)))
 }
 
 fn read_polyline(
@@ -1603,7 +1603,7 @@ fn read_polyline(
         .collection_vec(point_count, "Rhino polyline points")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..point_count {
-        let point = native_point(reader)?;
+        let point = native_point(ctx, reader)?;
         points.push(
             crate::wire::scaled_point(point.0.get(), scale)
                 .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
@@ -1656,9 +1656,9 @@ fn read_polyline(
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
     let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(ctx, knots)?
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_polyline text")?)))?;
     NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
+        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_polyline text")?)))
 }
 
 fn read_arc(
@@ -1670,9 +1670,9 @@ fn read_arc(
 ) -> Result<(CurveGeometry, Diagnostics), GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let circle = read_circle(reader, scale)?;
-    let angle = interval(reader)?.0.get();
-    let domain = interval(reader)?.0.get();
+    let circle = read_circle(ctx, reader, scale)?;
+    let angle = interval(ctx, reader)?.0.get();
+    let domain = interval(ctx, reader)?.0.get();
     let dimension = reader.i32()?;
     let mut warnings = Diagnostics::new();
     if expected_dimension.is_some_and(|expected| dimension != expected) {
@@ -1732,15 +1732,15 @@ struct Circle {
     radius: PositiveLength,
 }
 
-fn read_circle(
+fn read_circle(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<Circle, GeometryError> {
-    let native = plane(reader)?;
+    let native = plane(ctx, reader)?;
     let radius = reader.f64()?;
-    let zero = native_point(reader)?;
-    let half_pi = native_point(reader)?;
-    let at_pi = native_point(reader)?;
+    let zero = native_point(ctx, reader)?;
+    let half_pi = native_point(ctx, reader)?;
+    let at_pi = native_point(ctx, reader)?;
     let radius = PositiveReal::new(radius)
         .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
     let scaled_radius = PositiveLength::new(radius.get() * scale.value())
@@ -1890,7 +1890,7 @@ fn read_polycurve_parameters(
     if parameter_count != segment_count + 1 {
         return Err(GeometryError::malformed(
             reader.position(),
-            format!("{label} parameter count mismatch"),
+            ctx.format_retained(format_args!("{label} parameter count mismatch"), "Rhino read_polycurve_parameters text")?,
         ));
     }
     let mut parameters = ctx
@@ -1898,7 +1898,7 @@ fn read_polycurve_parameters(
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..segment_count {
         let value = reader.f64()?;
-        parameters.push(checked_polycurve_parameter(
+        parameters.push(checked_polycurve_parameter(ctx, 
             parameters.last().copied(),
             value,
             reader.position(),
@@ -1907,11 +1907,11 @@ fn read_polycurve_parameters(
     }
     let value = reader.f64()?;
     let end_parameter =
-        checked_polycurve_parameter(parameters.last().copied(), value, reader.position(), label)?;
+        checked_polycurve_parameter(ctx, parameters.last().copied(), value, reader.position(), label)?;
     Ok((parameters, end_parameter))
 }
 
-fn checked_polycurve_parameter(
+fn checked_polycurve_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     previous: Option<FiniteReal>,
     value: f64,
     offset: usize,
@@ -1919,7 +1919,7 @@ fn checked_polycurve_parameter(
 ) -> Result<FiniteReal, GeometryError> {
     FiniteReal::new(value)
         .filter(|value| previous.is_none_or(|previous| value.get() > previous.get()))
-        .ok_or_else(|| GeometryError::malformed(offset, format!("{label} parameters are invalid")))
+        .map_or_else(|| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{label} parameters are invalid"), "Rhino checked_polycurve_parameter text")?)), Ok)
 }
 
 fn arc_nurbs(
@@ -2013,7 +2013,7 @@ fn arc_nurbs(
         false,
     )
     .map_err(GeometryError::from)?
-    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino arc_nurbs text")?)))
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
@@ -2043,8 +2043,8 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
     )
 }
 
-fn native_point(reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingError> {
-    crate::settings::point(reader)
+fn native_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingError> {
+    crate::settings::point(ctx, reader)
 }
 
 fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
@@ -2891,6 +2891,9 @@ mod tests {
 
     #[test]
     fn source_circle_keeps_checked_center_and_radius() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let values = [
             1.0_f64, 2.0, 3.0, // plane origin
             1.0, 0.0, 0.0, // x axis
@@ -2907,14 +2910,14 @@ mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
-        let circle = super::read_circle(&mut reader, crate::test_support::millimeter_scale(2.0))
+        let circle = super::read_circle(&ctx, &mut reader, crate::test_support::millimeter_scale(2.0))
             .expect("valid circle");
         assert_eq!(circle.center.get(), Point3::new(2.0, 4.0, 6.0));
         assert_eq!(circle.radius.get(), 4.0);
 
         bytes[128..136].copy_from_slice(&0.0_f64.to_le_bytes());
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
-        let error = super::read_circle(&mut reader, MillimeterScale::IDENTITY)
+        let error = super::read_circle(&ctx, &mut reader, MillimeterScale::IDENTITY)
             .expect_err("zero circle radius");
         assert!(error.to_string().contains("circle radius is invalid"));
     }
@@ -3307,14 +3310,20 @@ mod tests {
 
     #[test]
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let previous = FiniteReal::new(1.0);
-        assert!(checked_polycurve_parameter(previous, 1.0, 8, "polycurve").is_err());
+        assert!(checked_polycurve_parameter(&ctx, previous, 1.0, 8, "polycurve").is_err());
     }
 
     #[test]
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
+        let arena = cadmpeg_core::decode::DecodeArena::default();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let previous = FiniteReal::new(1.0);
-        assert!(checked_polycurve_parameter(previous, 1.0, 8, "C2 polycurve").is_err());
+        assert!(checked_polycurve_parameter(&ctx, previous, 1.0, 8, "C2 polycurve").is_err());
     }
 
     #[test]

@@ -337,9 +337,9 @@ pub(super) fn decode(
             }
             if has_shape_binding && bodies.is_empty() {
                 ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "{owner} has a shape representation with no committed topology body"
-                )));
+                ), "STEP decode text")?));
             }
             ctx.reserve_vec(
                 &mut ir.model.product_definitions,

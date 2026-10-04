@@ -330,11 +330,7 @@ impl DefinitionDiagnostic {
             ),
             "Rhino instance-definition loss text",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(message.len()),
-            "Rhino instance-definition loss message",
-        )?;
-        ctx.charge_retained(
+            ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index("INSTANCE_DEFINITION_TABLE".len()),
             "Rhino instance-definition loss tag",
         )?;
@@ -342,7 +338,7 @@ impl DefinitionDiagnostic {
             .diagnostic
             .code
             .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)
-            .note(&message)
+            .note(message)
             .with_provenance(
                 cadmpeg_ir::SourceProvenance::root(
                     "rhino",
@@ -447,7 +443,7 @@ fn anonymous_versioned<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
-            format!("{label} is not anonymous"),
+            ctx.format_retained(format_args!("{label} is not anonymous"), "Rhino anonymous_versioned text")?,
         ));
     }
     if verify_container_crc {
@@ -472,7 +468,7 @@ fn anonymous<'a>(
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
-            format!("unsupported {label} version"),
+            ctx.format_retained(format_args!("unsupported {label} version"), "Rhino anonymous text")?,
         ));
     }
     Ok((chunk, payload))
@@ -859,7 +855,7 @@ fn parse_v5(
     let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
     let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
     let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
-    let _bounds = bbox(&mut reader)?;
+    let _bounds = bbox(ctx, &mut reader)?;
     let mut kind = v5_definition_kind(reader.u32()?);
     let mut legacy_linked_path = utf16_retained(ctx, &mut reader, "Rhino instance linked path")?;
     if matches!(
@@ -967,7 +963,7 @@ fn parse_v6(
     let description = utf16_retained(ctx, &mut reader, "Rhino instance description")?;
     let url = utf16_retained(ctx, &mut reader, "Rhino instance URL")?;
     let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
-    let _bounds = bbox(&mut reader)?;
+    let _bounds = bbox(ctx, &mut reader)?;
     let member_ids = if reader.bool()? {
         members(ctx, &mut reader)?
     } else {
@@ -1469,7 +1465,7 @@ pub(crate) fn parse_definitions(
 // relative to the magnitude of the column it compares.
 const EPS_INVERSE_IDENTITY: f64 = 1.0e-6;
 
-pub(crate) fn parse_reference(
+pub(crate) fn parse_reference(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     range: Range<usize>,
 ) -> Result<InstanceReference, FramingError> {
@@ -1495,7 +1491,7 @@ pub(crate) fn parse_reference(
             *value = reader.f64()?;
         }
     }
-    let _bounds = bbox(&mut reader)?;
+    let _bounds = bbox(ctx, &mut reader)?;
     reader.skip_remaining()?;
     if rows[3] != [0.0, 0.0, 0.0, 1.0] {
         return Err(FramingError::structural(

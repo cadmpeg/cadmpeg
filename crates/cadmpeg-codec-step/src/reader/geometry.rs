@@ -532,7 +532,7 @@ pub(super) fn decode(
                     ctx.push_vec(
                         &mut losses,
                         StepLossCode::DecodeWarning
-                            .note(format!("{point_type} #{id} has invalid coordinates")),
+                            .note(ctx.format_retained(format_args!("{point_type} #{id} has invalid coordinates"), "STEP decode text")?),
                         "step_geometry_losses",
                     )?;
                 }
@@ -1054,7 +1054,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning
-                    .note(format!("{} #{id} has invalid geometry", curve_kind.name())),
+                    .note(ctx.format_retained(format_args!("{} #{id} has invalid geometry", curve_kind.name()), "STEP decode text")?),
                 "step_geometry_losses",
             )?;
         }
@@ -1303,7 +1303,7 @@ pub(super) fn decode(
                         ctx.push_vec(
                             &mut losses,
                             StepLossCode::DecodeWarning
-                                .note(format!("TRIMMED_CURVE #{id}: {error}")),
+                                .note(ctx.format_retained(format_args!("TRIMMED_CURVE #{id}: {error}"), "STEP decode text")?),
                             "step_geometry_losses",
                         )?;
                         continue;
@@ -1390,7 +1390,7 @@ pub(super) fn decode(
                         ctx.push_vec(
                             &mut losses,
                             StepLossCode::DecodeWarning
-                                .note(format!("COMPOSITE_CURVE #{id}: {error}")),
+                                .note(ctx.format_retained(format_args!("COMPOSITE_CURVE #{id}: {error}"), "STEP decode text")?),
                             "step_geometry_losses",
                         )?;
                         continue;
@@ -1491,7 +1491,7 @@ pub(super) fn decode(
                 Ok(procedural) => procedural,
                 Err(error) => {
                     ctx.push_vec(&mut losses, StepLossCode::DecodeWarning
-                            .note(format!("curve construction #{id}: {error}")), "step_geometry_losses")?;
+                            .note(ctx.format_retained(format_args!("curve construction #{id}: {error}"), "STEP decode text")?), "step_geometry_losses")?;
                     continue;
                 }
             };
@@ -1581,10 +1581,10 @@ pub(super) fn decode(
         if !carrier_index.curves.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "{} #{id} has invalid, cyclic, or unresolved segments",
                     record.simple_name().unwrap_or("COMPOSITE_CURVE")
-                )),
+                ), "STEP decode text")?),
                 "step_geometry_losses",
             )?;
         }
@@ -1649,10 +1649,10 @@ pub(super) fn decode(
         let Some(basis) = surface_curve_basis(record) else {
             ctx.push_vec(
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "{} #{id} has no decoded 3D curve",
                     record.simple_name().unwrap_or("SURFACE_CURVE")
-                )),
+                ), "STEP decode text")?),
                 "step_geometry_losses",
             )?;
             continue;
@@ -1662,10 +1662,10 @@ pub(super) fn decode(
         } else {
             ctx.push_vec(
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "{} #{id} has no decoded 3D curve",
                     record.simple_name().unwrap_or("SURFACE_CURVE")
-                )),
+                ), "STEP decode text")?),
                 "step_geometry_losses",
             )?;
         }
@@ -1718,9 +1718,9 @@ pub(super) fn decode(
         let Some(definition) = definition else {
             ctx.push_vec(
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "{surface_type} #{id} has an unresolved directrix, vector, or axis"
-                )),
+                ), "STEP decode text")?),
                 "step_geometry_losses",
             )?;
             continue;
@@ -1730,7 +1730,7 @@ pub(super) fn decode(
             Err(error) => {
                 ctx.push_vec(
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")),
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("procedural surface #{id}: {error}"), "STEP decode text")?),
                     "step_geometry_losses",
                 )?;
                 continue;
@@ -1865,7 +1865,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut losses,
                 StepLossCode::DecodeWarning
-                    .note(format!("{surface_type} #{id} has invalid geometry")),
+                    .note(ctx.format_retained(format_args!("{surface_type} #{id} has invalid geometry"), "STEP decode text")?),
                 "step_geometry_losses",
             )?;
         }
@@ -2068,7 +2068,7 @@ pub(super) fn decode(
                     Ok(surface) => surface,
                     Err(error) => {
                         ctx.push_vec(&mut losses, StepLossCode::DecodeWarning
-                                .note(format!("procedural surface #{id}: {error}")), "step_geometry_losses")?;
+                                .note(ctx.format_retained(format_args!("procedural surface #{id}: {error}"), "STEP decode text")?), "step_geometry_losses")?;
                         continue;
                     }
                 })?;
@@ -2236,7 +2236,7 @@ pub(super) fn decode(
                 )) {
                     Ok(surface) => surface,
                     Err(error) => {
-                        ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")), "step_geometry_losses")?;
+                        ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("procedural surface #{id}: {error}"), "STEP decode text")?), "step_geometry_losses")?;
                         continue;
                     }
                 })?;
@@ -3926,9 +3926,9 @@ fn finalize_unit_candidates(
         }
     }
     if ambiguous > 0 {
-        ctx.push_vec(losses, StepLossCode::ConflictingRepresentationUnits.note(format!(
+        ctx.push_vec(losses, StepLossCode::ConflictingRepresentationUnits.note(ctx.format_retained(format_args!(
                 "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
-            )), "step_geometry_losses")?;
+            ), "STEP finalize_unit_candidates text")?), "step_geometry_losses")?;
     }
     Ok(selected)
 }
@@ -5039,9 +5039,9 @@ fn periodic_value(
         None => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
-                )),
+                ), "STEP periodic_value text")?),
                 "step_geometry_losses",
             )?;
             Ok(Some(false))
@@ -5374,9 +5374,9 @@ fn nurbs_curve(
         Err(error) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
-                )),
+                ), "STEP nurbs_curve text")?),
                 "step_geometry_losses",
             )?;
             Ok(None)
@@ -5420,9 +5420,9 @@ fn nurbs_pcurve(
         Err(error) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "B_SPLINE_CURVE pcurve #{id} is not a pcurve carrier: {error}"
-                )),
+                ), "STEP nurbs_pcurve text")?),
                 "step_geometry_losses",
             )?;
             Ok(None)
@@ -6171,9 +6171,9 @@ fn polyline_pcurve(
         Err(error) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "POLYLINE pcurve #{id} is not a pcurve carrier: {error}"
-                )),
+                ), "STEP polyline_pcurve text")?),
                 "step_geometry_losses",
             )?;
             Ok(None)
@@ -6222,7 +6222,7 @@ fn polyline(
             ctx.push_vec(
                 losses,
                 StepLossCode::DecodeWarning
-                    .note(format!("POLYLINE #{id} is not a curve carrier: {error}")),
+                    .note(ctx.format_retained(format_args!("POLYLINE #{id} is not a curve carrier: {error}"), "STEP polyline text")?),
                 "step_geometry_losses",
             )?;
             Ok(None)
@@ -6299,16 +6299,18 @@ fn nurbs_surface(
     .into_iter()
     .find(|name| record.partial(name).is_some())
     .unwrap_or("B_SPLINE_SURFACE");
+    let (u_label, _u_label_storage) = ctx.format_scoped(format_args!("{surface_name} U direction"), "STEP surface periodicity label")?;
     let u_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 4),
-        &format!("{surface_name} U direction"),
+        &u_label,
         id,
         losses,
         ctx,
     )?);
+    let (v_label, _v_label_storage) = ctx.format_scoped(format_args!("{surface_name} V direction"), "STEP surface periodicity label")?;
     let v_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 5),
-        &format!("{surface_name} V direction"),
+        &v_label,
         id,
         losses,
         ctx,
@@ -6397,9 +6399,9 @@ fn nurbs_surface(
         Err(error) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
-                )),
+                ), "STEP nurbs_surface text")?),
                 "step_geometry_losses",
             )?;
             Ok(None)

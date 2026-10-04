@@ -486,8 +486,8 @@ impl RhinoLossCode {
     /// The structured code is `rhino/<local>`; the message is the per-instance
     /// text only. Severity and strict floor come from the local code.
     #[must_use]
-    pub(crate) fn note(self, message: impl std::fmt::Display) -> LossNote {
-        LossNote::new(self.kind(), message.to_string()).with_severity(self.severity())
+    pub(crate) fn note(self, message: String) -> LossNote {
+        LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
 
@@ -644,7 +644,7 @@ mod tests {
     #[test]
     fn note_takes_severity_from_the_code_and_renders_it() {
         for code in RhinoLossCode::ALL {
-            let note = code.note("x");
+            let note = code.note("x".into());
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert_eq!(note.code.namespace(), "rhino");

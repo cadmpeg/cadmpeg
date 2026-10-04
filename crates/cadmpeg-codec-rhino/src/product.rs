@@ -329,7 +329,7 @@ pub(crate) fn install(
             continue;
         }
         let identity = &object.identity;
-        let reference = match crate::instances::parse_reference(
+        let reference = match crate::instances::parse_reference(ctx, 
             scan.data,
             object.class_data_range.clone(),
         ) {

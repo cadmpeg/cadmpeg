@@ -322,9 +322,9 @@ fn measure_scale(
             push_validation_loss(
                 losses,
                 StepLossCode::ValidationMeasureUnitUnresolved,
-                format!(
+                ctx.format_retained(format_args!(
                     "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
-                ),
+                ), "STEP measure_scale text")?,
                 ctx,
             )?;
             Ok(fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 }))

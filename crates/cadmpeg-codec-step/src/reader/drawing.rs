@@ -163,9 +163,9 @@ pub(super) fn decode(
         let parameters = source_parameters(record, name);
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
             ctx.reserve_vec(&mut losses, 1, "step_drawing_losses")?;
-            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
+            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(ctx.format_retained(format_args!(
                 "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-            )));
+            ), "STEP decode text")?));
             continue;
         }
         ctx.reserve_vec(&mut candidates, 1, "step_drawing_candidates")?;
@@ -647,21 +647,24 @@ fn add_reference_fields(
                         "step_drawing_relationship_members",
                     )?;
                 }
-                TargetResolution::Ambiguous(identities) => note_ambiguous_target(
+                TargetResolution::Ambiguous(identities) => {
+                    let (source, _source_storage) = target_context.ctx.format_scoped(format_args!("drawing #{source_id} {name}"), "STEP drawing source label")?;
+                    note_ambiguous_target(
                     losses,
-                    &format!("drawing #{source_id} {name}"),
+                    &source,
                     role.as_str(),
                     target_id,
                     &identities,
                     target_context.ctx,
-                )?,
+                )?;
+                }
                 TargetResolution::Unresolved => {
                     target_context
                         .ctx
                         .reserve_vec(losses, 1, "step_drawing_losses")?;
-                    losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
+                    losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(target_context.ctx.format_retained(format_args!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
-                    )));
+                    ), "STEP unresolved drawing relationship")?));
                 }
             }
             Ok(())

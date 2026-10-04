@@ -1476,7 +1476,7 @@ fn object_attributes_presentation(
     })
 }
 
-fn read_color_f32(
+fn read_color_f32(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<[FiniteBinary32; 4], FramingError> {
@@ -1485,19 +1485,19 @@ fn read_color_f32(
     let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
         return Err(FramingError::structural(
             offset,
-            format!("{label} contains a non-finite component"),
+            ctx.format_retained(format_args!("{label} contains a non-finite component"), "Rhino read_color_f32 text")?,
         ));
     };
     Ok([red, green, blue, alpha])
 }
 
-fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {
+fn finite3(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {
     let offset = reader.position();
     let value = [reader.f64()?, reader.f64()?, reader.f64()?];
     let [Some(x), Some(y), Some(z)] = value.map(FiniteReal::new) else {
         return Err(FramingError::structural(
             offset,
-            format!("{label} is not finite"),
+            ctx.format_retained(format_args!("{label} is not finite"), "Rhino finite3 text")?,
         ));
     };
     Ok([x, y, z])
@@ -1598,7 +1598,7 @@ fn component(
     Ok(Component { index, id, name })
 }
 
-fn parse_physically_based_material(
+fn parse_physically_based_material(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     payload_range: Range<usize>,
     archive: ArchiveVersion,
@@ -1610,28 +1610,28 @@ fn parse_physically_based_material(
             "physically based material payload version is unsupported",
         ));
     }
-    let base_color = read_color_f32(&mut reader, "base color")?;
+    let base_color = read_color_f32(ctx, &mut reader, "base color")?;
     let brdf = reader.i32()?;
-    let subsurface = read_finite(&mut reader, "subsurface")?;
-    let subsurface_scattering_color = read_color_f32(&mut reader, "subsurface scattering color")?;
-    let subsurface_scattering_radius = read_finite(&mut reader, "subsurface scattering radius")?;
-    let metallic = read_finite(&mut reader, "metallic")?;
-    let specular = read_finite(&mut reader, "specular")?;
-    let specular_tint = read_finite(&mut reader, "specular tint")?;
-    let roughness = read_finite(&mut reader, "roughness")?;
-    let anisotropic = read_finite(&mut reader, "anisotropic")?;
-    let anisotropic_rotation = read_finite(&mut reader, "anisotropic rotation")?;
-    let sheen = read_finite(&mut reader, "sheen")?;
-    let sheen_tint = read_finite(&mut reader, "sheen tint")?;
-    let clearcoat = read_finite(&mut reader, "clearcoat")?;
-    let clearcoat_roughness = read_finite(&mut reader, "clearcoat roughness")?;
-    let opacity_ior = read_finite(&mut reader, "opacity IOR")?;
-    let opacity = read_finite(&mut reader, "opacity")?;
-    let opacity_roughness = read_finite(&mut reader, "opacity roughness")?;
-    let emission = read_color_f32(&mut reader, "emission")?;
+    let subsurface = read_finite(ctx, &mut reader, "subsurface")?;
+    let subsurface_scattering_color = read_color_f32(ctx, &mut reader, "subsurface scattering color")?;
+    let subsurface_scattering_radius = read_finite(ctx, &mut reader, "subsurface scattering radius")?;
+    let metallic = read_finite(ctx, &mut reader, "metallic")?;
+    let specular = read_finite(ctx, &mut reader, "specular")?;
+    let specular_tint = read_finite(ctx, &mut reader, "specular tint")?;
+    let roughness = read_finite(ctx, &mut reader, "roughness")?;
+    let anisotropic = read_finite(ctx, &mut reader, "anisotropic")?;
+    let anisotropic_rotation = read_finite(ctx, &mut reader, "anisotropic rotation")?;
+    let sheen = read_finite(ctx, &mut reader, "sheen")?;
+    let sheen_tint = read_finite(ctx, &mut reader, "sheen tint")?;
+    let clearcoat = read_finite(ctx, &mut reader, "clearcoat")?;
+    let clearcoat_roughness = read_finite(ctx, &mut reader, "clearcoat roughness")?;
+    let opacity_ior = read_finite(ctx, &mut reader, "opacity IOR")?;
+    let opacity = read_finite(ctx, &mut reader, "opacity")?;
+    let opacity_roughness = read_finite(ctx, &mut reader, "opacity roughness")?;
+    let emission = read_color_f32(ctx, &mut reader, "emission")?;
     let revision = if version == 2 {
         PhysicallyBasedMaterialRevision::V2 {
-            alpha: read_finite(&mut reader, "alpha")?,
+            alpha: read_finite(ctx, &mut reader, "alpha")?,
         }
     } else {
         PhysicallyBasedMaterialRevision::V1
@@ -1748,15 +1748,15 @@ fn classify_rdk_material_payload(
     })?;
     let admitted_document = ctx
         .parse_xml(xml, "Rhino legacy RDK XML tree")
-        .map_err(|error| {
+        .or_else(|error| {
             let CodecError::Malformed(error) = error else {
-                return error.into();
+                return Err(error.into());
             };
-            FramingError::structural(
+            Err(FramingError::structural(
                 payload_range.start,
-                format!("legacy RDK XML is malformed: {error}"),
+                ctx.format_retained(format_args!("legacy RDK XML is malformed: {error}"), "Rhino classify_rdk_material_payload text")?,
             )
-        })?;
+        )})?;
     let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "xml" {
@@ -2198,22 +2198,22 @@ fn parse_texture(
     let transparent_color = reader.array()?;
     let transparency = uuid(&mut reader)?;
     let bump_scale = [
-        read_finite(&mut reader, "bump scale minimum")?,
-        read_finite(&mut reader, "bump scale maximum")?,
+        read_finite(ctx, &mut reader, "bump scale minimum")?,
+        read_finite(ctx, &mut reader, "bump scale maximum")?,
     ];
     let alpha_blend = [
-        read_finite(&mut reader, "alpha blend constant")?,
-        read_finite(&mut reader, "alpha blend coefficient")?,
-        read_finite(&mut reader, "alpha blend coefficient")?,
-        read_finite(&mut reader, "alpha blend coefficient")?,
-        read_finite(&mut reader, "alpha blend coefficient")?,
+        read_finite(ctx, &mut reader, "alpha blend constant")?,
+        read_finite(ctx, &mut reader, "alpha blend coefficient")?,
+        read_finite(ctx, &mut reader, "alpha blend coefficient")?,
+        read_finite(ctx, &mut reader, "alpha blend coefficient")?,
+        read_finite(ctx, &mut reader, "alpha blend coefficient")?,
     ];
     let rgb_blend_constant = reader.array()?;
     let rgb_blend = [
-        read_finite(&mut reader, "RGB blend coefficient")?,
-        read_finite(&mut reader, "RGB blend coefficient")?,
-        read_finite(&mut reader, "RGB blend coefficient")?,
-        read_finite(&mut reader, "RGB blend coefficient")?,
+        read_finite(ctx, &mut reader, "RGB blend coefficient")?,
+        read_finite(ctx, &mut reader, "RGB blend coefficient")?,
+        read_finite(ctx, &mut reader, "RGB blend coefficient")?,
+        read_finite(ctx, &mut reader, "RGB blend coefficient")?,
     ];
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
@@ -2397,7 +2397,7 @@ fn parse_v2_v3_texture(
     let mode = reader.i32()?;
     let _obsolete_index = reader.i32()?;
     let bump_scale = if matches!(kind, LegacyTextureKind::Bump) {
-        [FiniteReal::ZERO, read_finite(reader, "legacy bump scale")?]
+        [FiniteReal::ZERO, read_finite(ctx, reader, "legacy bump scale")?]
     } else {
         [FiniteReal::ZERO, FiniteReal::ONE]
     };
@@ -2485,8 +2485,8 @@ fn parse_v2_v3_material(
     let diffuse = reader.array()?;
     let emission = reader.array()?;
     let specular = reader.array()?;
-    let shine = read_finite(&mut reader, "shine")?;
-    let transparency = read_finite(&mut reader, "transparency")?;
+    let shine = read_finite(ctx, &mut reader, "shine")?;
+    let transparency = read_finite(ctx, &mut reader, "transparency")?;
     reader.skip(4)?;
     let _obsolete_wire_color = reader.array::<4>()?;
     reader.skip(20)?;
@@ -2526,7 +2526,7 @@ fn parse_v2_v3_material(
             uuid(&mut reader)?,
             reader.array()?,
             reader.array()?,
-            read_finite(&mut reader, "index of refraction")?,
+            read_finite(ctx, &mut reader, "index of refraction")?,
         )
     } else {
         (
@@ -2669,10 +2669,10 @@ fn parse_material(
             )?);
         }
     }
-    let index_of_refraction = read_finite(&mut reader, "index of refraction")?;
-    let reflectivity = read_finite(&mut reader, "reflectivity")?;
-    let shine = read_finite(&mut reader, "shine")?;
-    let transparency = read_finite(&mut reader, "transparency")?;
+    let index_of_refraction = read_finite(ctx, &mut reader, "index of refraction")?;
+    let reflectivity = read_finite(ctx, &mut reader, "reflectivity")?;
+    let shine = read_finite(ctx, &mut reader, "shine")?;
+    let transparency = read_finite(ctx, &mut reader, "transparency")?;
     let textures = texture_array(ctx, data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
         crate::settings::utf16_deferred(ctx, &mut reader)?;
@@ -2701,9 +2701,9 @@ fn parse_material(
     let fresnel = if minor >= 4 || modern {
         Some(MaterialFresnelSettings {
             reflections: reader.bool_with_writer_version(writer_version)?,
-            reflection_glossiness: read_finite(&mut reader, "reflection glossiness")?,
-            refraction_glossiness: read_finite(&mut reader, "refraction glossiness")?,
-            index_of_refraction: read_finite(&mut reader, "Fresnel index")?,
+            reflection_glossiness: read_finite(ctx, &mut reader, "reflection glossiness")?,
+            refraction_glossiness: read_finite(ctx, &mut reader, "refraction glossiness")?,
+            index_of_refraction: read_finite(ctx, &mut reader, "Fresnel index")?,
         })
     } else {
         None
@@ -2871,30 +2871,30 @@ fn parse_light(
     }
     let enabled = reader.i32()? != 0;
     let style = reader.i32()?;
-    let intensity = read_finite(&mut reader, "light intensity")?;
-    let watts = read_finite(&mut reader, "light watts")?;
+    let intensity = read_finite(ctx, &mut reader, "light intensity")?;
+    let watts = read_finite(ctx, &mut reader, "light watts")?;
     let ambient = reader.array()?;
     let diffuse = reader.array()?;
     let specular = reader.array()?;
-    let direction = finite3(&mut reader, "light direction")?;
-    let mut location = finite3(&mut reader, "light location")?;
-    let spot_angle_degrees = read_finite(&mut reader, "spot angle")?;
-    let mut spot_exponent = read_finite(&mut reader, "spot exponent")?;
-    let attenuation = finite3(&mut reader, "light attenuation")?;
-    let shadow_intensity = read_finite(&mut reader, "shadow intensity")?;
+    let direction = finite3(ctx, &mut reader, "light direction")?;
+    let mut location = finite3(ctx, &mut reader, "light location")?;
+    let spot_angle_degrees = read_finite(ctx, &mut reader, "spot angle")?;
+    let mut spot_exponent = read_finite(ctx, &mut reader, "spot exponent")?;
+    let attenuation = finite3(ctx, &mut reader, "light attenuation")?;
+    let shadow_intensity = read_finite(ctx, &mut reader, "shadow intensity")?;
     let index = reader.i32()?;
     let id = uuid(&mut reader)?;
     let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino light name")?;
     let mut length = [FiniteReal::ZERO; 3];
     let mut width = [FiniteReal::ZERO; 3];
     if packed & 0x0f >= 1 {
-        length = finite3(&mut reader, "light length")?;
-        width = finite3(&mut reader, "light width")?;
+        length = finite3(ctx, &mut reader, "light length")?;
+        width = finite3(ctx, &mut reader, "light width")?;
     }
     // A stored hotspot is admitted finite; an older record derives it from the
     // spot exponent, a value clamped to `[0, 1]` that no reader admits.
     let hotspot = if packed & 0x0f >= 2 {
-        read_finite(&mut reader, "light hotspot")?.get()
+        read_finite(ctx, &mut reader, "light hotspot")?.get()
     } else {
         let value = (1.0 - spot_exponent.get() / 128.0).clamp(0.0, 1.0);
         spot_exponent = FiniteReal::ZERO;
@@ -2999,7 +2999,7 @@ fn segments(
         .collection_vec(bytes / 12, "Rhino linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 12 {
-        let length = read_finite(reader, "linetype segment length")?;
+        let length = read_finite(ctx, reader, "linetype segment length")?;
         values.push(SourceLinetypeSegment {
             length,
             segment_type: reader.u32()?,
@@ -3054,7 +3054,7 @@ fn parse_linetype(
         }
         if version.1 >= 2 {
             if item == 3 {
-                width = read_finite(&mut reader, "linetype width")?;
+                width = read_finite(ctx, &mut reader, "linetype width")?;
                 item = reader.u8()?;
             }
             if item == 4 {
@@ -3171,14 +3171,14 @@ fn hatch_line_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
 ) -> Result<SourceHatchLine, FramingError> {
-    let angle_radians = read_finite(reader, "hatch-line angle")?;
+    let angle_radians = read_finite(ctx, reader, "hatch-line angle")?;
     let base = [
-        read_finite(reader, "hatch-line base")?,
-        read_finite(reader, "hatch-line base")?,
+        read_finite(ctx, reader, "hatch-line base")?,
+        read_finite(ctx, reader, "hatch-line base")?,
     ];
     let offset = [
-        read_finite(reader, "hatch-line offset")?,
-        read_finite(reader, "hatch-line offset")?,
+        read_finite(ctx, reader, "hatch-line offset")?,
+        read_finite(ctx, reader, "hatch-line offset")?,
     ];
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
@@ -3192,7 +3192,7 @@ fn hatch_line_fields(
         .collection_vec(bytes / 8, "Rhino hatch line dashes")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 8 {
-        dashes.push(read_finite(reader, "hatch dash")?);
+        dashes.push(read_finite(ctx, reader, "hatch dash")?);
     }
     Ok(SourceHatchLine {
         angle_radians,
@@ -3398,15 +3398,15 @@ fn parse_hatch_pattern(
     })
 }
 
-fn scaled_length(
+fn scaled_length(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     label: &str,
 ) -> Result<FiniteReal, FramingError> {
-    let value = read_finite(reader, label)?.get();
-    scaled_coordinate(value, scale).ok_or_else(|| {
-        FramingError::structural(reader.position() - 8, format!("scaled {label} is invalid"))
-    })
+    let value = read_finite(ctx, reader, label)?.get();
+    scaled_coordinate(value, scale).map_or_else(|| {
+        Err(FramingError::structural(reader.position() - 8, ctx.format_retained(format_args!("scaled {label} is invalid"), "Rhino scaled_length text")?)
+    )}, Ok)
 }
 
 fn named_child(
@@ -3468,20 +3468,20 @@ fn dimension_style_controls(
     }
     put!("tolerance_format", reader.u32()?);
     put!("tolerance_resolution", reader.i32()?);
-    put!("tolerance_upper", read_finite(reader, "upper tolerance")?);
-    put!("tolerance_lower", read_finite(reader, "lower tolerance")?);
+    put!("tolerance_upper", read_finite(ctx, reader, "upper tolerance")?);
+    put!("tolerance_lower", read_finite(ctx, reader, "lower tolerance")?);
     put!(
         "tolerance_height_scale",
-        read_finite(reader, "tolerance height scale")?
+        read_finite(ctx, reader, "tolerance height scale")?
     );
     put!(
         "baseline_spacing_mm",
-        scaled_length(reader, scale, "baseline spacing")?
+        scaled_length(ctx, reader, scale, "baseline spacing")?
     );
     put!("draw_text_mask_legacy", reader.bool()?);
     put!("mask_fill_type_legacy", reader.u32()?);
     put!("mask_color_legacy", reader.array::<4>()?);
-    put!("dimension_scale", read_finite(reader, "dimension scale")?);
+    put!("dimension_scale", read_finite(ctx, reader, "dimension scale")?);
     put!("dimension_scale_source", reader.i32()?);
     let source = uuid(reader)?;
     put!(
@@ -3516,25 +3516,25 @@ fn dimension_style_controls(
     put!("plot_weight_sources", reader.array::<2>()?);
     put!(
         "extension_line_plot_weight_mm",
-        read_finite(reader, "extension plot weight")?
+        read_finite(ctx, reader, "extension plot weight")?
     );
     put!(
         "dimension_line_plot_weight_mm",
-        read_finite(reader, "dimension plot weight")?
+        read_finite(ctx, reader, "dimension plot weight")?
     );
     put!(
         "fixed_extension_length_mm",
-        scaled_length(reader, scale, "fixed extension length")?
+        scaled_length(ctx, reader, scale, "fixed extension length")?
     );
     put!("fixed_extension_length_enabled", reader.bool()?);
     put!(
         "text_rotation_radians",
-        read_finite(reader, "text rotation")?
+        read_finite(ctx, reader, "text rotation")?
     );
     put!("alternate_tolerance_resolution", reader.i32()?);
     put!(
         "tolerance_text_height_fraction",
-        read_finite(reader, "tolerance text fraction")?
+        read_finite(ctx, reader, "tolerance text fraction")?
     );
     put!("suppress_arrow_1", reader.bool()?);
     put!("suppress_arrow_2", reader.bool()?);
@@ -3542,15 +3542,15 @@ fn dimension_style_controls(
     put!("arc_length_symbol", reader.i32()?);
     put!(
         "stack_text_height_fraction",
-        read_finite(reader, "stack text fraction")?
+        read_finite(ctx, reader, "stack text fraction")?
     );
     put!("stack_format", reader.u32()?);
     put!(
         "alternate_rounding",
-        read_finite(reader, "alternate rounding")?
+        read_finite(ctx, reader, "alternate rounding")?
     );
-    put!("rounding", read_finite(reader, "rounding")?);
-    put!("angular_rounding", read_finite(reader, "angular rounding")?);
+    put!("rounding", read_finite(ctx, reader, "rounding")?);
+    put!("angular_rounding", read_finite(ctx, reader, "angular rounding")?);
     put!("alternate_zero_suppression", reader.u32()?);
     put!("obsolete_tolerance_zero_suppression", reader.u32()?);
     put!("zero_suppression", reader.u32()?);
@@ -3582,12 +3582,12 @@ fn dimension_style_controls(
         put!("leader_curve_type", reader.u32()?);
         put!(
             "leader_content_angle_radians",
-            read_finite(reader, "leader content angle")?
+            read_finite(ctx, reader, "leader content angle")?
         );
         put!("leader_has_landing", reader.bool()?);
         put!(
             "leader_landing_length_mm",
-            scaled_length(reader, scale, "leader landing length")?
+            scaled_length(ctx, reader, scale, "leader landing length")?
         );
         put!("obsolete_text_horizontal_alignment", reader.u32()?);
         put!("obsolete_leader_horizontal_alignment", reader.u32()?);
@@ -3647,7 +3647,7 @@ fn dimension_style_controls(
         put!("use_kerning", reader.bool()?);
     }
     if minor >= 11 {
-        put!("line_space_scale", read_finite(reader, "line-space scale")?);
+        put!("line_space_scale", read_finite(ctx, reader, "line-space scale")?);
     }
     reader.skip_remaining()?;
     Ok(values)
@@ -3685,17 +3685,17 @@ fn parse_v5_dimension_style_extra(
     }
     let tolerance_style = reader.i32()?;
     let tolerance_resolution = reader.i32()?;
-    let tolerance_upper_value = read_finite(&mut reader, "tolerance upper value")?;
-    let tolerance_lower_value = read_finite(&mut reader, "tolerance lower value")?;
-    let tolerance_height_scale = read_finite(&mut reader, "tolerance height scale")?;
-    let baseline_spacing_mm = scaled_length(&mut reader, scale, "baseline spacing")?;
+    let tolerance_upper_value = read_finite(ctx, &mut reader, "tolerance upper value")?;
+    let tolerance_lower_value = read_finite(ctx, &mut reader, "tolerance lower value")?;
+    let tolerance_height_scale = read_finite(ctx, &mut reader, "tolerance height scale")?;
+    let baseline_spacing_mm = scaled_length(ctx, &mut reader, scale, "baseline spacing")?;
     let (draw_text_mask, mask_color_source, mask_color) = if version.1 >= 1 {
         (reader.bool()?, reader.i32()?, reader.array()?)
     } else {
         (false, 0, [255, 255, 255, 0])
     };
     let (dimension_scale, dimension_scale_source) = if version.1 >= 2 {
-        (read_finite(&mut reader, "dimension scale")?, reader.i32()?)
+        (read_finite(ctx, &mut reader, "dimension scale")?, reader.i32()?)
     } else {
         (FiniteReal::ONE, 0)
     };
@@ -3758,11 +3758,11 @@ fn parse_v5_dimension_style(
     let archive_index = reader.i32()?;
     let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino V5 dimension name")?;
     let extension_line_extension_mm =
-        scaled_length(&mut reader, scale, "extension-line extension")?;
-    let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
-    let arrow_size_mm = scaled_length(&mut reader, scale, "arrow size")?;
-    let center_mark_size_mm = scaled_length(&mut reader, scale, "center-mark size")?;
-    let text_gap_mm = scaled_length(&mut reader, scale, "text gap")?;
+        scaled_length(ctx, &mut reader, scale, "extension-line extension")?;
+    let extension_line_offset_mm = scaled_length(ctx, &mut reader, scale, "extension-line offset")?;
+    let arrow_size_mm = scaled_length(ctx, &mut reader, scale, "arrow size")?;
+    let center_mark_size_mm = scaled_length(ctx, &mut reader, scale, "center-mark size")?;
+    let text_gap_mm = scaled_length(ctx, &mut reader, scale, "text gap")?;
     let text_display_mode = reader.u32()?;
     let arrow_type = reader.i32()?;
     let angular_units = reader.i32()?;
@@ -3772,7 +3772,7 @@ fn parse_v5_dimension_style(
     let angle_resolution = reader.i32()?;
     let text_style_index = reader.i32()?;
     let text_height_mm = if minor >= 1 {
-        scaled_length(&mut reader, scale, "text height")?.get()
+        scaled_length(ctx, &mut reader, scale, "text height")?.get()
     } else {
         scale.value()
     };
@@ -3795,13 +3795,13 @@ fn parse_v5_dimension_style(
         alternate_prefix,
         alternate_suffix,
     ) = if minor >= 2 {
-        let length_factor = read_finite(&mut reader, "length factor")?;
+        let length_factor = read_finite(ctx, &mut reader, "length factor")?;
         let prefix =
             crate::settings::utf16_retained(ctx, &mut reader, "Rhino V5 dimension prefix")?;
         let suffix =
             crate::settings::utf16_retained(ctx, &mut reader, "Rhino V5 dimension suffix")?;
         let alternate_enabled = reader.bool()?;
-        let alternate_length_factor = read_finite(&mut reader, "alternate length factor")?;
+        let alternate_length_factor = read_finite(ctx, &mut reader, "alternate length factor")?;
         let alternate_length_format = reader.u32()?;
         let alternate_length_resolution = reader.i32()?;
         let alternate_angle_format = reader.u32()?;
@@ -3857,7 +3857,7 @@ fn parse_v5_dimension_style(
         Uuid::nil()
     };
     let dimension_line_extension_mm = if minor >= 4 {
-        scaled_length(&mut reader, scale, "dimension-line extension")?
+        scaled_length(ctx, &mut reader, scale, "dimension-line extension")?
     } else {
         FiniteReal::ZERO
     };
@@ -3868,7 +3868,7 @@ fn parse_v5_dimension_style(
         suppress_extension_line_2,
     ) = if minor >= 5 {
         (
-            scaled_length(&mut reader, scale, "leader arrow size")?.get(),
+            scaled_length(ctx, &mut reader, scale, "leader arrow size")?.get(),
             reader.i32()?,
             reader.bool()?,
             reader.bool()?,
@@ -3944,22 +3944,22 @@ fn parse_dimension_style(
     }
     let component = component(ctx, data, &mut reader, archive)?;
     let extension_line_extension_mm =
-        scaled_length(&mut reader, scale, "extension-line extension")?;
-    let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
-    let arrow_size_mm = scaled_length(&mut reader, scale, "arrow size")?;
-    let leader_arrow_size_mm = scaled_length(&mut reader, scale, "leader arrow size")?.get();
-    let center_mark_size_mm = scaled_length(&mut reader, scale, "center-mark size")?;
-    let text_gap_mm = scaled_length(&mut reader, scale, "text gap")?;
-    let text_height_mm = scaled_length(&mut reader, scale, "text height")?.get();
+        scaled_length(ctx, &mut reader, scale, "extension-line extension")?;
+    let extension_line_offset_mm = scaled_length(ctx, &mut reader, scale, "extension-line offset")?;
+    let arrow_size_mm = scaled_length(ctx, &mut reader, scale, "arrow size")?;
+    let leader_arrow_size_mm = scaled_length(ctx, &mut reader, scale, "leader arrow size")?.get();
+    let center_mark_size_mm = scaled_length(ctx, &mut reader, scale, "center-mark size")?;
+    let text_gap_mm = scaled_length(ctx, &mut reader, scale, "text gap")?;
+    let text_height_mm = scaled_length(ctx, &mut reader, scale, "text height")?.get();
     let text_display_mode = reader.u32()?;
     let angle_format = reader.u32()?;
     let length_format = reader.u32()?;
     let angle_resolution = reader.i32()?;
     let length_resolution = reader.i32()?;
     let text_style_index = reader.i32()?;
-    let length_factor = read_finite(&mut reader, "length factor")?;
+    let length_factor = read_finite(ctx, &mut reader, "length factor")?;
     let alternate_enabled = reader.bool()?;
-    let alternate_length_factor = read_finite(&mut reader, "alternate length factor")?;
+    let alternate_length_factor = read_finite(ctx, &mut reader, "alternate length factor")?;
     let alternate_length_format = reader.u32()?;
     let alternate_length_resolution = reader.i32()?;
     let prefix = crate::settings::utf16_retained(ctx, &mut reader, "Rhino dimension prefix")?;
@@ -3969,7 +3969,7 @@ fn parse_dimension_style(
     let alternate_suffix =
         crate::settings::utf16_retained(ctx, &mut reader, "Rhino dimension alternate suffix")?;
     let dimension_line_extension_mm =
-        scaled_length(&mut reader, scale, "dimension-line extension")?;
+        scaled_length(ctx, &mut reader, scale, "dimension-line extension")?;
     let suppress_extension_line_1 = reader.bool()?;
     let suppress_extension_line_2 = reader.bool()?;
     let parent = uuid(&mut reader)?;
@@ -4698,11 +4698,11 @@ fn parse_font(
     if minor >= 2 {
         font.weight = FontWeight::Modern {
             windows: value.i32()?,
-            apple: read_finite(&mut value, "Apple font weight trait")?,
+            apple: read_finite(ctx, &mut value, "Apple font weight trait")?,
         };
     }
     if minor >= 3 {
-        font.point_size = Some(read_finite(&mut value, "font point size")?);
+        font.point_size = Some(read_finite(ctx, &mut value, "font point size")?);
         if value.bool_with_writer_version(writer_version)? {
             value.skip(4 + 16)?;
         }
@@ -4832,7 +4832,7 @@ fn parse_text_style(
                     "legacy font italic flag is invalid",
                 ));
             }
-            let _linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
+            let _linefeed_ratio = read_finite(ctx, &mut reader, "legacy font linefeed ratio")?;
             font.weight = FontWeight::Legacy {
                 windows,
                 italic: italic != 0,
@@ -5039,12 +5039,13 @@ pub(crate) fn install(
                                 && (value.application_uuid.is_none()
                                     || value.application_uuid == Some(OPENNURBS6_APPLICATION))
                         }) {
-                        match parse_physically_based_material(
+                        match parse_physically_based_material(ctx, 
                             scan.data,
                             value.payload_range.clone(),
                             scan.archive,
                         ) {
                             Ok(material) => Some(material),
+                            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
                             Err(error) => {
                                 material_requires_opaque = true;
                                 push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(

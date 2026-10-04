@@ -1217,11 +1217,12 @@ fn surface_reads_a_rational_two_dimensional_lattice() {
 
 #[test]
 fn plane_versions_consume_defaults_and_explicit_extents() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     for version in [0x10, 0x11] {
         let bytes = plane_payload(version, false, false);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
         let plane =
-            read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+            read_plane_surface_with_parameterization(&ctx, &mut reader, MillimeterScale::IDENTITY)
                 .expect("required invariant");
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(plane, TypedSurface::Plane { .. }));
@@ -1230,7 +1231,7 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
         let bytes = plane_payload(0x11, bad_frame, bad_range);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
         assert!(
-            read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+            read_plane_surface_with_parameterization(&ctx, &mut reader, MillimeterScale::IDENTITY)
                 .is_err()
         );
     }
@@ -1238,11 +1239,12 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
 
 #[test]
 fn plane_parameterization_maps_domain_to_physical_extents() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let bytes = plane_payload(0x11, false, false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let TypedSurface::Plane {
         parameterization, ..
-    } = read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+    } = read_plane_surface_with_parameterization(&ctx, &mut reader, MillimeterScale::IDENTITY)
         .expect("plane surface")
     else {
         panic!("plane parameterization");
@@ -1756,7 +1758,7 @@ fn revolution_subnormal_axis_defers_unit_refusal_to_payload_admission() {
                         .expect("identity grammar"),
                 )
             },
-            |error| error.to_string(),
+            |error| Ok(error.to_string()),
         )
         .expect_err("unit axis required by procedural payload");
     assert!(error.contains(

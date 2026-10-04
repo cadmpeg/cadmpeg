@@ -259,7 +259,7 @@ fn evaluation(
     })
 }
 
-fn instance_reference(
+fn instance_reference(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -267,7 +267,7 @@ fn instance_reference(
 ) -> Result<(InstanceReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     let reference_id = uuid(&mut reader)?;
-    let transform = xform(&mut reader)?;
+    let transform = xform(ctx, &mut reader)?;
     let definition_id = uuid(&mut reader)?;
     let geometry_index = reader.i32()?;
     let evaluation = if minor >= 1 {
@@ -308,7 +308,7 @@ fn object_reference(
     let object_id = uuid(&mut reader)?;
     let component = component(&mut reader)?;
     let geometry_type = reader.i32()?;
-    let point = point(&mut reader)?;
+    let point = point(ctx, &mut reader)?;
     let mut evaluation = evaluation(&mut reader, 0)?;
     let path_count = count(&mut reader, 1)?;
     let mut instance_path = ctx
@@ -316,7 +316,7 @@ fn object_reference(
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..path_count {
         let (value, value_next) =
-            instance_reference(bytes, reader.position(), reader.end(), archive)?;
+            instance_reference(ctx, bytes, reader.position(), reader.end(), archive)?;
         reader.skip(value_next - reader.position())?;
         instance_path.push(value);
     }
@@ -630,9 +630,9 @@ fn parse_value_with_warnings(
         2 => Value::Integers(array(ctx, &mut reader, 4, BoundedReader::i32)?),
         3 => Value::Doubles(array(ctx, &mut reader, 8, BoundedReader::f64)?),
         4 => Value::Colors(array(ctx, &mut reader, 4, BoundedReader::array)?),
-        5 => Value::Points(array(ctx, &mut reader, 24, point)?),
-        6 => Value::Vectors(array(ctx, &mut reader, 24, vector)?),
-        7 => Value::Transforms(array(ctx, &mut reader, 128, xform)?),
+        5 => Value::Points(array(ctx, &mut reader, 24, |reader| point(ctx, reader))?),
+        6 => Value::Vectors(array(ctx, &mut reader, 24, |reader| vector(ctx, reader))?),
+        7 => Value::Transforms(array(ctx, &mut reader, 128, |reader| xform(ctx, reader))?),
         8 => Value::Strings(array(ctx, &mut reader, 4, |reader| {
             utf16_retained(ctx, reader, "Rhino history string")
         })?),
@@ -670,7 +670,7 @@ fn parse_record(
     if class.class_uuid != HISTORY_CLASS {
         return Err(FramingError::structural(
             record.body().start,
-            format!("history record has class {}", class.class_uuid),
+            ctx.format_retained(format_args!("history record has class {}", class.class_uuid), "Rhino parse_record text")?,
         ));
     }
     let (mut reader, _next, minor) = anonymous(
@@ -750,7 +750,7 @@ pub(crate) fn parse_records(
             Ok(value) => {
                 ctx.reserve_vec(&mut result.records, 1, "Rhino history records")
                     .map_err(crate::chunks::FramingError::from)
-                    .map_err(history_resource_error)?;
+                    .or_else(|error| Err(history_resource_error(ctx, error)?))?;
                 result.records.push(value);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
@@ -765,7 +765,7 @@ pub(crate) fn parse_records(
                     "Rhino opaque history records",
                 )
                 .map_err(crate::chunks::FramingError::from)
-                .map_err(history_resource_error)?;
+                .or_else(|error| Err(history_resource_error(ctx, error)?))?;
                 result.opaque_records.push(OpaqueRecord {
                     table_typecode,
                     record: record.clone(),
@@ -776,12 +776,12 @@ pub(crate) fn parse_records(
     Ok(result)
 }
 
-fn history_resource_error(error: FramingError) -> CodecError {
+fn history_resource_error(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: FramingError) -> Result<CodecError, cadmpeg_core::CodecError> { Ok(
     match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-        other => CodecError::Malformed(other.to_string()),
+        other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino history_resource_error text")?),
     }
-}
+) }
 
 struct Joined<I>(I, &'static str);
 
@@ -1710,7 +1710,10 @@ fn extended_geometry_json(
             refusal,
         )?;
         if let Err(errors) =
-            crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch)
+            match crate::hatch::apply_userdata(expand.ctx(), data, &value.userdata, scale, archive, &mut hatch) {
+                Ok(result) => result,
+                Err(error) => { *refusal = Some(error); return None; }
+            }
         {
             for error in errors {
                 optional_warning(
@@ -1726,13 +1729,13 @@ fn extended_geometry_json(
         }
         let plane = hatch.plane;
         let millimetres = |coordinate: f64, field: &str| {
-            crate::wire::scaled_coordinate(coordinate, scale).ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
+            crate::wire::scaled_coordinate(coordinate, scale).map_or_else(|| {
+                Err(cadmpeg_core::CodecError::NotImplemented(expand.ctx().format_retained(format_args!(
                     "history hatch {field} {coordinate} at {} millimetres per unit has no \
                      finite millimetre value",
                     scale.value()
-                ))
-            })
+                ), "Rhino history hatch coordinate message")?))
+            }, Ok)
         };
         let scaled = (|| {
             Ok::<_, cadmpeg_core::CodecError>((
@@ -1746,6 +1749,7 @@ fn extended_geometry_json(
         })();
         let (origin, equation_constant) = match scaled {
             Ok(scaled) => scaled,
+            Err(error @ CodecError::ResourceLimit(_)) => { *refusal = Some(error); return None; }
             Err(error) => {
                 optional_warning(
                     expand.ctx(),
@@ -2245,11 +2249,11 @@ pub(crate) fn project(
     let mut ids = ctx
         .collection_vec(records.len(), "Rhino history feature ids")
         .map_err(crate::chunks::FramingError::from)
-        .map_err(history_resource_error)?;
+        .or_else(|error| Err(history_resource_error(ctx, error)?))?;
     let mut native_ids = ctx
         .collection_vec(records.len(), "Rhino history native ids")
         .map_err(crate::chunks::FramingError::from)
-        .map_err(history_resource_error)?;
+        .or_else(|error| Err(history_resource_error(ctx, error)?))?;
     let mut seen_record_ids = HashSet::new();
     ctx.reserve_set(
         &mut seen_record_ids,
@@ -2274,7 +2278,7 @@ pub(crate) fn project(
                 "Rhino history feature identity",
             )
             .map_err(ProjectionError::Codec)?;
-        ids.push(FeatureId::mint(feature_id).map_err(|error| error.to_string())?);
+        ids.push(FeatureId::mint(feature_id).or_else(|error| Err(ProjectionError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?);
         native_ids.push(
             ctx.format_retained(
                 format_args!("rhino:history:record#{key}"),
@@ -2337,7 +2341,7 @@ pub(crate) fn project(
         let mut dependencies = ctx
             .collection_vec(record.antecedents.len(), "Rhino history dependencies")
             .map_err(crate::chunks::FramingError::from)
-            .map_err(history_resource_error)?;
+            .or_else(|error| Err(history_resource_error(ctx, error)?))?;
         for antecedent in &record.antecedents {
             let Some((producer_index, id)) = producers.get(antecedent).and_then(Option::as_ref)
             else {
@@ -2475,7 +2479,7 @@ pub(crate) fn project(
                 "Rhino history projected feature identity",
             )
             .map_err(ProjectionError::Codec)?;
-        let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
+        let feature_id = FeatureId::mint(feature_id_text).or_else(|error| Err(ProjectionError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?;
         let source_tag = ctx
             .copy_retained_text("HistoryRecord", "Rhino history feature source tag")
             .map_err(ProjectionError::Codec)?;
@@ -2532,15 +2536,15 @@ pub(crate) fn project(
     ir.native
         .namespace_mut("rhino")
         .set_arena_from(ctx, "history_records", native)
-        .map_err(|error| {
-            let detail = error.to_string();
-            match cadmpeg_core::CodecError::from(error) {
+        .or_else(|error| {
+            let detail = ctx.format_retained(format_args!("{}", error), "Rhino project text")?;
+            Err(match cadmpeg_core::CodecError::from(error) {
                 resource @ cadmpeg_core::CodecError::ResourceLimit(_) => {
                     ProjectionError::Codec(resource)
                 }
                 _ => ProjectionError::Admission(detail),
             }
-        })?;
+        )})?;
     Ok((
         sink.untyped,
         sink.failed,

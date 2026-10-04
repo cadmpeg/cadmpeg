@@ -159,7 +159,7 @@ impl DecodedProceduralSurface {
             &'static str,
             DecodedCurve,
         ) -> Result<cadmpeg_ir::ids::CurveId, E>,
-        reject_payload: impl FnOnce(cadmpeg_ir::geometry::ProceduralGeometryError) -> E,
+        reject_payload: impl FnOnce(cadmpeg_ir::geometry::ProceduralGeometryError) -> Result<E, E>,
     ) -> Result<cadmpeg_ir::geometry::ProceduralSurfaceDefinition, E> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
@@ -190,7 +190,7 @@ impl DecodedProceduralSurface {
                             cadmpeg_ir::geometry::CacheContract::from_form(None),
                         )
                     })
-                    .map_err(reject_payload)?,
+                    .or_else(|error| Err(reject_payload(error)?))?,
                 )
             }
             Self::Sum {
@@ -207,7 +207,7 @@ impl DecodedProceduralSurface {
                         basepoint,
                         cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
-                    .map_err(reject_payload)?,
+                    .or_else(|error| Err(reject_payload(error)?))?,
                 )
             }
         })
@@ -233,13 +233,13 @@ pub(crate) fn decode(
             derived: true,
         }
     } else if class == PLANE_SURFACE {
-        let geometry = read_plane_surface_with_parameterization(&mut reader, scale)?;
+        let geometry = read_plane_surface_with_parameterization(ctx, &mut reader, scale)?;
         DecodedSurface::Typed {
             geometry,
             derived: scale != MillimeterScale::IDENTITY,
         }
     } else if class == CLIPPING_PLANE_SURFACE {
-        read_clipping_plane_surface(data, &mut reader, scale, archive)?
+        read_clipping_plane_surface(ctx, data, &mut reader, scale, archive)?
     } else if matches!(class, REV_SURFACE | REV_SURFACE_LEGACY) {
         read_revolution(ctx, data, &mut reader, scale, archive, depth)?
     } else if class == SUM_SURFACE {
@@ -254,7 +254,7 @@ pub(crate) fn decode(
     Ok(result)
 }
 
-fn read_clipping_plane_surface(
+fn read_clipping_plane_surface(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -285,10 +285,10 @@ fn read_clipping_plane_surface(
     }
     let mut plane_reader =
         BoundedReader::new(data, plane_chunk.body().start, plane_chunk.body().end)?;
-    let geometry = read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
+    let geometry = read_plane_surface_with_parameterization(ctx, &mut plane_reader, scale)?;
     plane_reader.skip_remaining()?;
     payload.skip(plane_chunk.next_offset() - payload.position())?;
-    read_clipping_plane(data, &mut payload, archive)?;
+    read_clipping_plane(ctx, data, &mut payload, archive)?;
     payload.skip_remaining()?;
     reader.skip(outer.next_offset() - reader.position())?;
     Ok(DecodedSurface::Typed {
@@ -297,7 +297,7 @@ fn read_clipping_plane_surface(
     })
 }
 
-fn read_clipping_plane(
+fn read_clipping_plane(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -323,7 +323,7 @@ fn read_clipping_plane(
     }
     let _first_viewport = Uuid::from_wire(payload.array()?);
     let _plane_id = Uuid::from_wire(payload.array()?);
-    let native_plane = plane(&mut payload)?;
+    let native_plane = plane(ctx, &mut payload)?;
     validate_plane(native_plane, payload.position())?;
     let _enabled = payload.bool()?;
     if minor != 0 {
@@ -420,13 +420,13 @@ fn read_revolution(
             "unsupported revolution-surface version",
         ));
     }
-    let from = crate::wire::scaled_point(point(reader)?.0.get(), scale)
+    let from = crate::wire::scaled_point(point(ctx, reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
-    let to = crate::wire::scaled_point(point(reader)?.0.get(), scale)
+    let to = crate::wire::scaled_point(point(ctx, reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
     let angular_interval =
-        increasing_interval(interval(reader)?.0, reader.position(), "revolution angle")?;
+        increasing_interval(interval(ctx, reader)?.0, reader.position(), "revolution angle")?;
     if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACE_DEGENERATE {
         return Err(error(
             reader.position(),
@@ -435,14 +435,14 @@ fn read_revolution(
     }
     let parameter_interval = if major >= 2 {
         increasing_interval(
-            interval(reader)?.0,
+            interval(ctx, reader)?.0,
             reader.position(),
             "revolution parameter interval",
         )?
     } else {
         angular_interval
     };
-    bbox(reader)?;
+    bbox(ctx, reader)?;
     let transposed = match reader.i32()? {
         0 => false,
         1 => true,
@@ -514,7 +514,7 @@ fn read_sum(
             "unsupported sum-surface version",
         ));
     }
-    let native = native_vector(reader)?;
+    let native = native_vector(ctx, reader)?;
     let basepoint = Vector3::new(
         crate::wire::scaled_coordinate(native.0[0], scale)
             .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
@@ -526,7 +526,7 @@ fn read_sum(
             .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
             .get(),
     );
-    bbox(reader)?;
+    bbox(ctx, reader)?;
     let first = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
     let second = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
     let first_nurbs = exact_nurbs(ctx, &first, version_offset)?;
@@ -716,7 +716,7 @@ fn revolution_nurbs(
         false,
     )
     .map_err(GeometryError::from)?
-    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
+    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino revolution_nurbs text")?)))?;
     if transposed {
         result.transpose_parameter_axes(ctx)?;
     }
@@ -833,7 +833,7 @@ fn sum_nurbs(
         NurbsSurfaceLanes::new(point_rows, weight_rows),
         false,
     )?
-    .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino sum_nurbs text")?)))
 }
 
 fn admit_sum_product(
@@ -915,7 +915,7 @@ pub(crate) fn extrusion_nurbs(
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
         KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
-            .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
+            .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?)))?;
     let mut surface = NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
@@ -923,7 +923,7 @@ pub(crate) fn extrusion_nurbs(
         poles,
         false,
     )?
-    .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
+    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?)))?;
     if transposed {
         surface.transpose_parameter_axes(ctx)?;
     }
@@ -1054,7 +1054,7 @@ fn read_nurbs_curve_inner(
     let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
     reader.skip_remaining()?;
     let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_curve_inner text")?)))?;
     NurbsCurve::new(
         ctx,
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
@@ -1062,7 +1062,7 @@ fn read_nurbs_curve_inner(
         poles,
         periodic,
     )?
-    .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
+    .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_curve_inner text")?)))
 }
 
 pub(crate) fn read_nurbs_surface(
@@ -1161,7 +1161,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
     let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_surface_prefix text")?)))?;
     NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
@@ -1179,10 +1179,10 @@ pub(crate) fn read_nurbs_surface_prefix(
         poles,
         false,
     )?
-    .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
+    .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_surface_prefix text")?)))
 }
 
-fn read_plane_surface_with_parameterization(
+fn read_plane_surface_with_parameterization(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<TypedSurface, GeometryError> {
@@ -1194,14 +1194,14 @@ fn read_plane_surface_with_parameterization(
             "unsupported plane-surface version",
         ));
     }
-    let native_plane = plane(reader)?;
+    let native_plane = plane(ctx, reader)?;
     let frame = validate_plane(native_plane, reader.position())?;
-    let domain = increasing_interval(interval(reader)?.0, reader.position(), "plane U domain")?;
-    let v_domain = increasing_interval(interval(reader)?.0, reader.position(), "plane V domain")?;
+    let domain = increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane U domain")?;
+    let v_domain = increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane V domain")?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
         (
-            increasing_interval(interval(reader)?.0, reader.position(), "plane U extents")?,
-            increasing_interval(interval(reader)?.0, reader.position(), "plane V extents")?,
+            increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane U extents")?,
+            increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane V extents")?,
         )
     } else {
         (domain, v_domain)

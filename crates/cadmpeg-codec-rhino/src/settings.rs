@@ -932,43 +932,43 @@ pub(crate) struct DocumentMetadata {
 
 /// Refuses a group of `f64` values with a non-finite member at `offset`, the
 /// first byte of the group.
-fn finite_array<const N: usize>(
+fn finite_array<const N: usize>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     offset: usize,
     values: [f64; N],
     label: &str,
 ) -> Result<FiniteVector<N>, FramingError> {
-    FiniteVector::new(values).ok_or_else(|| {
-        FramingError::structural(offset, format!("{label} contains a nonfinite value"))
-    })
+    FiniteVector::new(values).map_or_else(|| {
+        Err(FramingError::structural(offset, ctx.format_retained(format_args!("{label} contains a nonfinite value"), "Rhino finite_array text")?)
+    )}, Ok)
 }
 
 /// Reads a finite point.
-pub(crate) fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, FramingError> {
+pub(crate) fn point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<Point3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Point3(finite_array(offset, values, "point")?))
+    Ok(Point3(finite_array(ctx, offset, values, "point")?))
 }
 
 /// Reads a finite vector.
-pub(crate) fn vector(reader: &mut BoundedReader<'_>) -> Result<Vector3, FramingError> {
+pub(crate) fn vector(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<Vector3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Vector3(finite_array(offset, values, "vector")?))
+    Ok(Vector3(finite_array(ctx, offset, values, "vector")?))
 }
 
 /// Reads a finite interval.
-pub(crate) fn interval(reader: &mut BoundedReader<'_>) -> Result<Interval, FramingError> {
+pub(crate) fn interval(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<Interval, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?];
-    Ok(Interval(finite_array(offset, values, "interval")?))
+    Ok(Interval(finite_array(ctx, offset, values, "interval")?))
 }
 
 /// Reads a finite plane without reconstructing its serialized equation.
-pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingError> {
-    let origin = point(reader)?;
-    let xaxis = vector(reader)?;
-    let yaxis = vector(reader)?;
-    let zaxis = vector(reader)?;
+pub(crate) fn plane(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<Plane, FramingError> {
+    let origin = point(ctx, reader)?;
+    let xaxis = vector(ctx, reader)?;
+    let yaxis = vector(ctx, reader)?;
+    let zaxis = vector(ctx, reader)?;
     let equation_offset = reader.position();
     let equation = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Plane {
@@ -976,7 +976,7 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
         xaxis: xaxis.0,
         yaxis: yaxis.0,
         zaxis: zaxis.0,
-        equation: CoordinateLane::Admitted(finite_array(
+        equation: CoordinateLane::Admitted(finite_array(ctx, 
             equation_offset,
             equation,
             "plane equation",
@@ -985,21 +985,21 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
 }
 
 /// Reads a finite bounding box.
-pub(crate) fn bbox(reader: &mut BoundedReader<'_>) -> Result<BoundingBox, FramingError> {
+pub(crate) fn bbox(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<BoundingBox, FramingError> {
     Ok(BoundingBox {
-        minimum: point(reader)?,
-        maximum: point(reader)?,
+        minimum: point(ctx, reader)?,
+        maximum: point(ctx, reader)?,
     })
 }
 
 /// Reads a finite row-major transform.
-pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingError> {
+pub(crate) fn xform(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<Xform, FramingError> {
     let offset = reader.position();
     let mut values = [0.0; 16];
     for value in &mut values {
         *value = reader.f64()?;
     }
-    Ok(Xform(finite_array(offset, values, "transform")?))
+    Ok(Xform(finite_array(ctx, offset, values, "transform")?))
 }
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.
@@ -1322,14 +1322,14 @@ fn times(reader: &mut BoundedReader<'_>) -> Result<UtcTime, FramingError> {
     Ok(UtcTime { fields })
 }
 
-fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
+fn short_index(ctx: &cadmpeg_core::decode::DecodeContext<'_>, record: &Record, label: &str) -> Result<i64, FramingError> {
     record
         .short_value()
         .filter(|value| (-1..=i64::from(i32::MAX)).contains(value))
-        .ok_or_else(|| FramingError::Structural {
+        .map_or_else(|| Err(FramingError::Structural {
             offset: record.range.start,
-            message: format!("{label} is not a valid short index"),
-        })
+            message: ctx.format_retained(format_args!("{label} is not a valid short index"), "Rhino short_index text")?,
+        }), Ok)
 }
 
 fn parse_revision(
@@ -1437,7 +1437,7 @@ fn parse_units_reader(
         ));
     }
     let unit_value = reader.i32()?;
-    let absolute = read_finite(reader, "absolute tolerance")?;
+    let absolute = read_finite(ctx, reader, "absolute tolerance")?;
     // The two remaining tolerances are checked after both are read, so the
     // refused one does not depend on the version-gated wire order.
     let (relative, relative_offset, angular, angular_offset) = if legacy {
@@ -1453,8 +1453,8 @@ fn parse_units_reader(
         let relative = reader.f64()?;
         (relative, relative_offset, angular, angular_offset)
     };
-    let angular = finite(angular_offset, angular, "angular tolerance")?;
-    let relative = finite(relative_offset, relative, "relative tolerance")?;
+    let angular = finite(ctx, angular_offset, angular, "angular tolerance")?;
+    let relative = finite(ctx, relative_offset, relative, "relative tolerance")?;
     let absolute = PositiveReal::from_finite(absolute).ok_or_else(|| {
         FramingError::structural(reader.position(), "absolute tolerance must be positive")
     })?;
@@ -1524,7 +1524,7 @@ fn parse_units_reader(
     })
 }
 
-fn anonymous_payload<'a>(
+fn anonymous_payload<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -1535,7 +1535,7 @@ fn anonymous_payload<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             start,
-            format!("{label} must be a long anonymous chunk"),
+            ctx.format_retained(format_args!("{label} must be a long anonymous chunk"), "Rhino anonymous_payload text")?,
         ));
     }
     let payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -1543,7 +1543,7 @@ fn anonymous_payload<'a>(
     Ok((payload, chunk.range()))
 }
 
-fn anonymous_version(
+fn anonymous_version(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<(i32, i32), FramingError> {
@@ -1551,7 +1551,7 @@ fn anonymous_version(
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
-            format!("{label} version is unsupported"),
+            ctx.format_retained(format_args!("{label} version is unsupported"), "Rhino anonymous_version text")?,
         ));
     }
     Ok(version)
@@ -1563,8 +1563,8 @@ fn parse_plugin_reference<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
-    let (mut payload, _) = anonymous_payload(data, reader, archive, "plugin reference")?;
-    let version = anonymous_version(&mut payload, "plugin reference")?;
+    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "plugin reference")?;
+    let version = anonymous_version(ctx, &mut payload, "plugin reference")?;
     uuid(&mut payload)?;
     payload.i32()?;
     for _ in 0..3 {
@@ -1620,14 +1620,14 @@ fn parse_earth_anchor<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
-    let (mut payload, _) = anonymous_payload(data, reader, archive, "earth anchor")?;
-    let version = anonymous_version(&mut payload, "earth anchor")?;
+    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "earth anchor")?;
+    let version = anonymous_version(ctx, &mut payload, "earth anchor")?;
     for _ in 0..3 {
         payload.f64()?;
     }
-    point(&mut payload)?;
-    vector(&mut payload)?;
-    vector(&mut payload)?;
+    point(ctx, &mut payload)?;
+    vector(ctx, &mut payload)?;
+    vector(ctx, &mut payload)?;
     if version.1 >= 1 {
         payload.i32()?;
         uuid(&mut payload)?;
@@ -1642,26 +1642,26 @@ fn parse_earth_anchor<'a>(
     Ok(())
 }
 
-fn parse_io_settings<'a>(
+fn parse_io_settings<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
-    let (mut payload, _) = anonymous_payload(data, reader, archive, "IO settings")?;
-    anonymous_version(&mut payload, "IO settings")?;
+    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "IO settings")?;
+    anonymous_version(ctx, &mut payload, "IO settings")?;
     payload.bool()?;
     payload.i32()?;
     payload.skip_remaining()?;
     Ok(())
 }
 
-fn parse_subd_display_parameters<'a>(
+fn parse_subd_display_parameters<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
 ) -> Result<SubDDisplayParameters, FramingError> {
-    let (mut payload, _) = anonymous_payload(data, reader, archive, "SubD display parameters")?;
-    let version = anonymous_version(&mut payload, "SubD display parameters")?.1;
+    let (mut payload, _) = anonymous_payload(ctx, data, reader, archive, "SubD display parameters")?;
+    let version = anonymous_version(ctx, &mut payload, "SubD display parameters")?.1;
     let display_density = payload.i32()?.cast_unsigned();
     let mesh_location = payload.i32()?.cast_unsigned();
     let display_density_is_absolute = if version >= 2 {
@@ -1684,7 +1684,7 @@ fn parse_subd_display_parameters<'a>(
     })
 }
 
-pub(crate) fn parse_mesh_parameters<'a>(
+pub(crate) fn parse_mesh_parameters<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -1702,16 +1702,16 @@ pub(crate) fn parse_mesh_parameters<'a>(
     let refine = reader.i32()? != 0;
     let jagged_seams = reader.i32()? != 0;
     let obsolete_weld = reader.i32()?;
-    let tolerance = read_finite(reader, "mesh tolerance")?;
-    let min_edge_length = read_finite(reader, "minimum mesh edge length")?;
-    let max_edge_length = read_finite(reader, "maximum mesh edge length")?;
-    let grid_aspect_ratio = read_finite(reader, "mesh grid aspect ratio")?;
+    let tolerance = read_finite(ctx, reader, "mesh tolerance")?;
+    let min_edge_length = read_finite(ctx, reader, "minimum mesh edge length")?;
+    let max_edge_length = read_finite(ctx, reader, "maximum mesh edge length")?;
+    let grid_aspect_ratio = read_finite(ctx, reader, "mesh grid aspect ratio")?;
     let grid_min_count = reader.i32()?;
     let grid_max_count = reader.i32()?;
-    let grid_angle_radians = read_finite(reader, "mesh grid angle")?;
-    let grid_amplification = read_finite(reader, "mesh grid amplification")?;
-    let refine_angle_radians = read_finite(reader, "mesh refine angle")?;
-    let obsolete_combine_angle = read_finite(reader, "mesh combine angle")?;
+    let grid_angle_radians = read_finite(ctx, reader, "mesh grid angle")?;
+    let grid_amplification = read_finite(ctx, reader, "mesh grid amplification")?;
+    let refine_angle_radians = read_finite(ctx, reader, "mesh refine angle")?;
+    let obsolete_combine_angle = read_finite(ctx, reader, "mesh combine angle")?;
     let face_type = reader.i32()?;
     let texture_range = if version.1 >= 1 {
         Some(reader.i32()?.cast_unsigned())
@@ -1721,7 +1721,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
     let (custom_settings, relative_tolerance) = if version.1 >= 2 {
         (
             Some(reader.bool()?),
-            Some(read_finite(reader, "mesh relative tolerance")?),
+            Some(read_finite(ctx, reader, "mesh relative tolerance")?),
         )
     } else {
         (None, None)
@@ -1737,7 +1737,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
         None
     };
     let subd = if version.1 >= 5 {
-        Some(parse_subd_display_parameters(data, reader, archive)?)
+        Some(parse_subd_display_parameters(ctx, data, reader, archive)?)
     } else {
         None
     };
@@ -1786,32 +1786,32 @@ fn parse_settings_attributes(
             "unsupported settings-attributes version",
         ));
     }
-    read_finite(&mut reader, "linetype display scale")?;
+    read_finite(ctx, &mut reader, "linetype display scale")?;
     color(&mut reader)?;
     for _ in 0..3 {
         reader.i32()?;
     }
     if version.1 >= 1 {
         let (mut payload, _) =
-            anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
-        anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
+            anonymous_payload(ctx, data, &mut reader, archive, "settings-attributes page units")?;
+        anonymous_version(ctx, &mut payload, "settings-attributes page-units wrapper")?;
         parse_units_reader(ctx, &mut payload, false)?;
     }
     if version.1 >= 2 {
         uuid(&mut reader)?;
     }
     if version.1 >= 3 {
-        point(&mut reader)?;
+        point(ctx, &mut reader)?;
         parse_earth_anchor(ctx, data, &mut reader, archive)?;
     }
     if version.1 >= 4 {
         reader.bool()?;
     }
     if version.1 >= 5 {
-        parse_io_settings(data, &mut reader, archive)?;
+        parse_io_settings(ctx, data, &mut reader, archive)?;
     }
     if version.1 >= 6 {
-        parse_mesh_parameters(data, &mut reader, archive, false)?;
+        parse_mesh_parameters(ctx, data, &mut reader, archive, false)?;
     }
     if version.1 >= 7 {
         for _ in 0..6 {
@@ -1822,13 +1822,13 @@ fn parse_settings_attributes(
     Ok(())
 }
 
-fn parse_mesh_record(
+fn parse_mesh_record(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    parse_mesh_parameters(data, &mut reader, archive, true)?;
+    parse_mesh_parameters(ctx, data, &mut reader, archive, true)?;
     reader.skip_remaining()?;
     Ok(())
 }
@@ -1941,7 +1941,7 @@ pub(crate) fn parse_rendering_attributes(
             mapping_payload.i32()?;
             uuid(&mut mapping_payload)?;
             if mapping_minor >= 1 {
-                xform(&mut mapping_payload)?;
+                xform(ctx, &mut mapping_payload)?;
             }
             mapping_payload.skip_remaining()?;
             material_payload.skip(mapping.next_offset() - material_payload.position())?;
@@ -2075,7 +2075,7 @@ pub(crate) fn parse_rendering_attributes(
     Ok(start..reader.position())
 }
 
-fn begin_direct_object<'a>(
+fn begin_direct_object<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -2085,7 +2085,7 @@ fn begin_direct_object<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
-            format!("{label} must be an object chunk"),
+            ctx.format_retained(format_args!("{label} must be an object chunk"), "Rhino begin_direct_object text")?,
         ));
     }
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -2150,7 +2150,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
-        begin_direct_object(data, reader, archive, "embedded linetype")?;
+        begin_direct_object(ctx, data, reader, archive, "embedded linetype")?;
     let mut children = Vec::new();
     if (archive.value() < 60 && version != (1, 1))
         || (archive.value() >= 60 && (version.0 != 2 || version.1 < 1))
@@ -2255,7 +2255,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
-        begin_direct_object(data, reader, archive, "embedded section style")?;
+        begin_direct_object(ctx, data, reader, archive, "embedded section style")?;
     if version.0 != 1 {
         return Err(FramingError::structural(
             payload.position(),
@@ -2428,7 +2428,7 @@ fn parse_layer(
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
-            message: format!("layer record has class UUID {}", class.class_uuid),
+            message: ctx.format_retained(format_args!("layer record has class UUID {}", class.class_uuid), "Rhino parse_layer text")?,
         });
     }
     let mut reader = BoundedReader::new(
@@ -2451,8 +2451,8 @@ fn parse_layer(
     let layer_color = color(&mut reader)?;
     let _obsolete_line_style = reader.i16()?;
     let _obsolete_line_style_index = reader.i16()?;
-    let _obsolete_thickness = read_finite(&mut reader, "layer thickness")?;
-    let _obsolete_scale = read_finite(&mut reader, "layer scale")?;
+    let _obsolete_thickness = read_finite(ctx, &mut reader, "layer thickness")?;
+    let _obsolete_scale = read_finite(ctx, &mut reader, "layer scale")?;
     let name = utf16_retained(ctx, &mut reader, "Rhino layer name")?;
     let visible = if version.1 >= 1 {
         reader.bool_with_writer_version(writer_version)?
@@ -2464,7 +2464,7 @@ fn parse_layer(
         let color = color(&mut reader)?;
         Some(LayerPlot {
             color,
-            weight_mm: read_finite(&mut reader, "plot weight")?,
+            weight_mm: read_finite(ctx, &mut reader, "plot weight")?,
         })
     } else {
         None
@@ -2504,10 +2504,10 @@ fn parse_layer(
                 RenderingAttributesKind::Layer,
                 warnings,
             )
-            .map_err(|error| match error {
+            .or_else(|error| Err(match error {
                 FramingError::Resource(_) => error,
-                other => FramingError::structural(reader.position(), format!("rendering: {other}")),
-            })?,
+                other => FramingError::structural(reader.position(), ctx.format_retained(format_args!("rendering: {other}"), "Rhino parse_layer text")?),
+            }))?,
         )
     } else {
         None
@@ -2515,9 +2515,9 @@ fn parse_layer(
     let display_material_id = (version.1 >= 8)
         .then(|| uuid(&mut reader))
         .transpose()
-        .map_err(|error| {
-            FramingError::structural(reader.position(), format!("display material: {error}"))
-        })?;
+        .or_else(|error| {
+            Err(FramingError::structural(reader.position(), ctx.format_retained(format_args!("display material: {error}"), "Rhino parse_layer text")?)
+        )})?;
     if version.1 == 9 {
         reader.skip(2)?;
     }
@@ -2600,12 +2600,12 @@ fn parse_layer(
             }
             if item == 30 {
                 push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
-                read_finite(&mut reader, "layer extension value")?;
+                read_finite(ctx, &mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
             if item == 31 {
                 push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
-                read_finite(&mut reader, "layer extension value")?;
+                read_finite(ctx, &mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
         }
@@ -2971,10 +2971,10 @@ fn parse_setting(
     match record.typecode {
         PLUGIN_LIST => parse_plugin_list(ctx, data, record, archive),
         UNITS => parse_units(ctx, data, record).map(|value| settings.units = Some(value)),
-        RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(data, record, archive),
+        RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(ctx, data, record, archive),
         ATTRIBUTES => parse_settings_attributes(ctx, data, record, archive),
         CURRENT_LAYER => {
-            settings.current_layer = Some(short_index(record, "current layer")?);
+            settings.current_layer = Some(short_index(ctx, record, "current layer")?);
             Ok(())
         }
         CURRENT_MATERIAL => {
@@ -3012,11 +3012,11 @@ fn parse_setting(
             Ok(())
         }
         CURRENT_FONT => {
-            settings.current_font = Some(short_index(record, "current font")?);
+            settings.current_font = Some(short_index(ctx, record, "current font")?);
             Ok(())
         }
         CURRENT_DIMSTYLE => {
-            settings.current_dimstyle = Some(short_index(record, "current dimstyle")?);
+            settings.current_dimstyle = Some(short_index(ctx, record, "current dimstyle")?);
             Ok(())
         }
         MODEL_URL => utf16_record(ctx, data, record, "Rhino model URL")

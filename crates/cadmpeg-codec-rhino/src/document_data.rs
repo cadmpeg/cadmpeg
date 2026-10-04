@@ -725,11 +725,7 @@ pub(crate) fn install(
                     binding.label()
                 ), "Rhino unit-binding setting message")?;
                 ctx.reserve_vec(&mut losses, 1, "Rhino document setting losses")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(message.len()),
-                    "Rhino unit-binding loss message",
-                )?;
-                losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(&message));
+                            losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(ctx.copy_retained_text(&message, "Rhino unit-binding loss message")?));
                 ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
                 opaque_records.push(OpaqueRecord {
                     table_typecode: table.typecode,

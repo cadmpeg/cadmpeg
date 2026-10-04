@@ -421,10 +421,10 @@ pub(super) fn decode(
         ctx.push_vec(
             &mut result.losses,
             StepLossCode::OrientedShellOmitsCfsFaces
-                .note(format!(
+                .note(ctx.format_retained(format_args!(
                     "{name} #{id} omits the derived `cfs_faces` slot required by ISO 10303-21; \
                  read the shell element from positional slot 1"
-                ))
+                ), "STEP decode text")?)
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
@@ -543,10 +543,10 @@ pub(super) fn decode(
             } else if let Some(failures) = failures {
                 ctx.push_vec(
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
                 failures.count
-            )),
+            ), "STEP decode text")?),
                     "step_topology_losses",
                 )?;
             }
@@ -616,10 +616,10 @@ pub(super) fn decode(
         } else if let Some(failures) = failures {
             ctx.push_vec(
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
                     failures.count
-                )),
+                ), "STEP decode text")?),
                 "step_topology_losses",
             )?;
         }
@@ -817,10 +817,10 @@ pub(super) fn decode(
                     .unwrap_or_default();
                 ctx.push_vec(
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                         "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
                         failures.count,
-                    )),
+                    ), "STEP decode text")?),
                     "step_topology_losses",
                 )?;
             }
@@ -1432,7 +1432,7 @@ fn build_wire_set(
         Err(error) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("CONNECTED_EDGE_SET #{set_id}: {error}"), "STEP build_wire_set text")?),
                 "step_topology_losses",
             )?;
             return Ok(None);
@@ -1470,7 +1470,7 @@ fn build_wire_set(
         Err(StageError::Draft(error)) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("CONNECTED_EDGE_SET #{set_id}: {error}"), "STEP build_wire_set text")?),
                 "step_topology_losses",
             )?;
             return Ok(None);
@@ -1753,7 +1753,7 @@ fn build_shell_wire_set(
         Err(error) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("wire shell #{shell_id}: {error}"), "STEP build_shell_wire_set text")?),
                 "step_topology_losses",
             )?;
             return Ok(None);
@@ -1791,7 +1791,7 @@ fn build_shell_wire_set(
         Err(StageError::Draft(error)) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("wire shell #{shell_id}: {error}"), "STEP build_shell_wire_set text")?),
                 "step_topology_losses",
             )?;
             return Ok(None);
@@ -1967,9 +1967,9 @@ fn build_geometric_set(
         Err(StageError::Draft(error)) => {
             ctx.push_vec(
                 losses,
-                StepLossCode::DecodeWarning.note(format!(
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
-                )),
+                ), "STEP build_geometric_set text")?),
                 "step_topology_losses",
             )?;
             Ok(None)
@@ -3733,11 +3733,11 @@ fn build_one(
         let components =
             connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices, ctx)?;
         if components.len() > 1 {
-            let note = StepLossCode::ShellDisconnectedFaces.note(format!(
+            let note = StepLossCode::ShellDisconnectedFaces.note(ctx.format_retained(format_args!(
                     "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
                     components.len(),
                     face_ids.len(),
-                ));
+                ), "STEP disconnected shell message")?);
             ctx.push_vec(
                 losses,
                 note.with_provenance(
@@ -3802,7 +3802,7 @@ fn build_one(
                         ctx.push_vec(
                             losses,
                             StepLossCode::DecodeWarning
-                                .note(format!("{shell_type} #{shell_step}: {error}")),
+                                .note(ctx.format_retained(format_args!("{shell_type} #{shell_step}: {error}"), "STEP shell failure message")?),
                             "step_topology_losses",
                         )?;
                         return Err(BuildError::Absent);
@@ -6085,9 +6085,9 @@ fn validate_subset_parent(
     let Some(parent) = parent else {
         ctx.push_vec(
             losses,
-            StepLossCode::DecodeWarning.note(format!(
+            StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "{subset_type} #{id} has no resolvable parent {base_type}"
-            )),
+            ), "STEP validate_subset_parent text")?),
             "step_topology_losses",
         )?;
         return Ok(false);
@@ -6101,9 +6101,9 @@ fn validate_subset_parent(
     } else {
         ctx.push_vec(
             losses,
-            StepLossCode::DecodeWarning.note(format!(
+            StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "{subset_type} #{id} parent #{parent} does not resolve to {base_type}"
-            )),
+            ), "STEP validate_subset_parent text")?),
             "step_topology_losses",
         )?;
         Ok(false)

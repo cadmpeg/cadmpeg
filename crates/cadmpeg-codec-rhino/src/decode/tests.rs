@@ -379,19 +379,19 @@ fn rejected_expansion_discards_every_report_bucket() {
     report.phase_warnings.push("existing warning".to_string());
     report
         .phase_losses
-        .push(RhinoLossCode::ContainerScanDiagnostic.note("existing parse-phase loss"));
+        .push(RhinoLossCode::ContainerScanDiagnostic.note("existing parse-phase loss".into()));
     report
         .typed_losses
-        .push(RhinoLossCode::IntegrityFailure.note("existing typed loss"));
+        .push(RhinoLossCode::IntegrityFailure.note("existing typed loss".into()));
     let checkpoint = report.checkpoint();
 
     report.phase_warnings.push("rejected warning".to_string());
     report
         .phase_losses
-        .push(RhinoLossCode::ContainerScanDiagnostic.note("rejected parse-phase loss"));
+        .push(RhinoLossCode::ContainerScanDiagnostic.note("rejected parse-phase loss".into()));
     report
         .typed_losses
-        .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss"));
+        .push(RhinoLossCode::IntegrityFailure.note("rejected typed loss".into()));
     report.rollback(checkpoint);
 
     assert_eq!(
@@ -427,6 +427,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
             expand.ctx(),
             &mut curve,
             hatch_plane_transform(
+                expand.ctx(),
                 &plane,
                 crate::test_support::millimeter_scale(10.0),
                 "rhino hatch record #test",

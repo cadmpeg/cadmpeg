@@ -74,12 +74,12 @@ pub(crate) struct HistoryPolyEdge {
     pub(crate) evaluation_mode: i32,
 }
 
-fn refused(offset: usize, error: &CodecError) -> FramingError {
+fn refused(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, error: &CodecError) -> Result<FramingError, cadmpeg_core::CodecError> { Ok(
     match error {
         CodecError::ResourceLimit(limit) => FramingError::Resource(*limit),
-        _ => FramingError::structural(offset, format!("polyedge allocation refused: {error}")),
+        _ => FramingError::structural(offset, ctx.format_retained(format_args!("polyedge allocation refused: {error}"), "Rhino refused text")?),
     }
-}
+) }
 
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
     let offset = view.position();
@@ -229,7 +229,7 @@ pub(crate) fn decode(
 
     let mut reserved =
         ExactVec::<FiniteReal>::new(expand.ctx(), parameter_bound, "Rhino polyedge parameters")
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
@@ -249,18 +249,18 @@ pub(crate) fn decode(
         previous = Some(value);
         reserved
             .push(expand.ctx(), value, "Rhino polyedge parameters")
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     }
     let parameters = reserved
         .finish()
-        .map_err(|error| refused(body.position(), &error))?;
+        .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
 
     let mut segments = ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(
         expand.ctx(),
         segment_bound,
         "Rhino polyedge segments",
     )
-    .map_err(|error| refused(body.position(), &error))?;
+    .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
@@ -283,7 +283,7 @@ pub(crate) fn decode(
                 segment(expand.root(), data, class.class_data_range, archive)?,
                 "Rhino polyedge segments",
             )
-            .map_err(|error| refused(body.position(), &error))?;
+            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
         body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")
         })?;
@@ -294,7 +294,7 @@ pub(crate) fn decode(
     })?;
     let segments = segments
         .finish()
-        .map_err(|error| refused(body.position(), &error))?;
+        .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     Ok(PolyEdge {
         parameters,
         segments,

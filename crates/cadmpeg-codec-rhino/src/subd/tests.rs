@@ -1233,7 +1233,7 @@ fn an_offset_free_framing_refusal_names_no_byte() {
         let expected = framing.to_string();
         let error = SubdError::from(framing);
         assert!(
-            matches!(error, SubdError::Unpositioned { ref message } if *message == expected),
+            matches!(error, SubdError::Framing { ref error, offset: None } if error.to_string() == expected),
             "{error}"
         );
         assert_eq!(error.to_string(), expected);

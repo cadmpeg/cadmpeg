@@ -93,7 +93,7 @@ impl std::fmt::Display for SubdEnumDiagnostic {
 }
 
 /// A bounded `SubD` payload failure.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum SubdError {
     /// The payload or nested record uses a future version.
     UnsupportedVersion { offset: usize, message: String },
@@ -102,6 +102,10 @@ pub(crate) enum SubdError {
     /// The bounded payload is malformed by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
+    /// An owned core error rendered at the decode boundary.
+    Core(cadmpeg_core::CodecError),
+    /// A framing cause with the serialized SubD offset suffix.
+    Framing { error: FramingError, offset: Option<usize> },
     /// A decode allocation was refused.
     Resource(cadmpeg_core::decode::ResourceLimit),
 }
@@ -114,6 +118,12 @@ impl fmt::Display for SubdError {
             }
             Self::Malformed { offset, message } => write!(formatter, "{message} at byte {offset}"),
             Self::Unpositioned { message } => formatter.write_str(message),
+            Self::Core(error) => error.fmt(formatter),
+            Self::Framing { error, offset } => {
+                error.fmt(formatter)?;
+                if let Some(offset) = offset { write!(formatter, " at byte {offset}")?; }
+                Ok(())
+            }
             Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(formatter),
         }
     }
@@ -140,27 +150,26 @@ impl From<cadmpeg_core::CodecError> for SubdError {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         match error {
             cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            other => Self::Unpositioned {
-                message: other.to_string(),
-            },
+            other => Self::Core(other),
         }
     }
 }
 
 impl From<FramingError> for SubdError {
-    fn from(value: FramingError) -> Self {
-        let message = value.to_string();
-        match value {
-            FramingError::Resource(limit) => Self::Resource(limit),
+    fn from(error: FramingError) -> Self {
+        let offset = match &error {
+            FramingError::Resource(limit) => return Self::Resource(*limit),
             FramingError::Truncated { offset, .. }
             | FramingError::InvalidLength { offset, .. }
             | FramingError::Structural { offset, .. }
             | FramingError::Overflow { offset }
-            | FramingError::OutOfBounds { offset, .. } => Self::Malformed { offset, message },
+            | FramingError::OutOfBounds { offset, .. } => Some(*offset),
             FramingError::InvalidHeader
             | FramingError::Unpositioned { .. }
-            | FramingError::MissingEof => Self::Unpositioned { message },
-        }
+            | FramingError::Core(_)
+            | FramingError::MissingEof => None,
+        };
+        Self::Framing { error, offset }
     }
 }
 
@@ -246,7 +255,7 @@ pub(crate) fn decode(
             Ok(None)
         }
         1 => {
-            let chunk = anonymous_chunk(&reader, archive, "SubDimple")?;
+            let chunk = anonymous_chunk(ctx, &reader, archive, "SubDimple")?;
             let mut child = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
             let major = child.i32()?;
             let minor = child.i32()?;
@@ -320,13 +329,13 @@ pub(crate) fn decode_mesh_proxy(
     }
 
     let embedded_start = reader.position();
-    let embedded_end = embedded_subd_end(&reader, archive)?;
+    let embedded_end = embedded_subd_end(ctx, &reader, archive)?;
     let decoded = decode(ctx, data, embedded_start..embedded_end, archive, scale, id)?;
     reader.skip(embedded_end - reader.position())?;
     let face_count = reader.i32()?;
     let vertex_count = reader.i32()?;
-    let face_sha1 = read_proxy_sha1(&mut reader, archive)?;
-    let vertex_sha1 = read_proxy_sha1(&mut reader, archive)?;
+    let face_sha1 = read_proxy_sha1(ctx, &mut reader, archive)?;
+    let vertex_sha1 = read_proxy_sha1(ctx, &mut reader, archive)?;
     reader.skip_remaining()?;
 
     let transform_is_identity = identity_userdata_transform(data, &extra.transform_range)?;
@@ -346,14 +355,14 @@ pub(crate) fn decode_mesh_proxy(
     Ok(decoded)
 }
 
-fn embedded_subd_end(
+fn embedded_subd_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<usize, SubdError> {
     let mut probe = *reader;
     match probe.u8()? {
         0 => Ok(probe.position()),
-        1 => Ok(anonymous_chunk(&probe, archive, "SubD proxy payload")?.next_offset()),
+        1 => Ok(anonymous_chunk(ctx, &probe, archive, "SubD proxy payload")?.next_offset()),
         value => Err(malformed(
             reader.position(),
             format!("invalid SubD proxy has_subdimple value {value}"),
@@ -361,11 +370,11 @@ fn embedded_subd_end(
     }
 }
 
-fn read_proxy_sha1(
+fn read_proxy_sha1(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<[u8; 20], SubdError> {
-    let chunk = anonymous_chunk(parent, archive, "SubD mesh proxy SHA-1")?;
+    let chunk = anonymous_chunk(ctx, parent, archive, "SubD mesh proxy SHA-1")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
@@ -402,11 +411,11 @@ fn read_subdimple(
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Diagnostics,
 ) -> Result<(RawLevel, usize, Vec<Range<usize>>), SubdError> {
-    let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
+    let level_count = capped_u32(ctx, reader, MAX_LEVELS, "SubD level count")?;
     reader.u32()?;
     reader.u32()?;
     reader.u32()?;
-    read_finite_values(reader, 6, "SubD global bounding box")?;
+    read_finite_values(ctx, reader, 6, "SubD global bounding box")?;
 
     let mut level_zero = None;
     let mut children = Vec::new();
@@ -462,7 +471,7 @@ fn read_level(
     expected_level: usize,
     warnings: &mut Diagnostics,
 ) -> Result<RawLevel, SubdError> {
-    let chunk = anonymous_chunk(parent, archive, "SubD level")?;
+    let chunk = anonymous_chunk(ctx, parent, archive, "SubD level")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
@@ -488,7 +497,7 @@ fn read_level(
             ));
         }
     }
-    read_finite_values(&mut reader, 6, "SubD control bounding box")?;
+    read_finite_values(ctx, &mut reader, 6, "SubD control bounding box")?;
     let partitions = [reader.u32()?, reader.u32()?, reader.u32()?, reader.u32()?];
     let partitions_offset = reader.position() - 16;
     validate_partitions(partitions, partitions_offset)?;
@@ -550,7 +559,7 @@ fn read_level(
     }
     match reader.u8()? {
         0 => {}
-        1 => consume_anonymous(&mut reader, archive, "SubD render mesh")?,
+        1 => consume_anonymous(ctx, &mut reader, archive, "SubD render mesh")?,
         value => {
             return Err(malformed(
                 reader.position() - 1,
@@ -575,7 +584,7 @@ fn read_vertex(
     expected_id: u32,
     level: usize,
 ) -> Result<RawVertex, SubdError> {
-    let base = read_base(reader, archive, expected_id, level)?;
+    let base = read_base(ctx, reader, archive, expected_id, level)?;
     let tag = match reader.u8()? {
         0 => None,
         1 => Some(SubdVertexTag::Smooth),
@@ -584,7 +593,7 @@ fn read_vertex(
         4 => Some(SubdVertexTag::Dart),
         _ => return Err(malformed(reader.position() - 1, "invalid SubD vertex tag")),
     };
-    let point = point(reader, "SubD control point")?;
+    let point = point(ctx, reader, "SubD control point")?;
     let edge_count = usize::from(reader.u16()?);
     let face_count = usize::from(reader.u16()?);
     if edge_count > MAX_INCIDENT_COMPONENTS || face_count > MAX_INCIDENT_COMPONENTS {
@@ -595,7 +604,7 @@ fn read_vertex(
     }
     let saved_limit_marker = reader.u8()?;
     if saved_limit_marker != 0 {
-        let limit_count = capped_u32(
+        let limit_count = capped_u32(ctx, 
             reader,
             face_count.min(MAX_SAVED_LIMIT_POINTS),
             "saved SubD limit-point count",
@@ -607,7 +616,7 @@ fn read_vertex(
             ));
         }
         for _ in 0..limit_count {
-            read_finite_values(reader, 12, "saved SubD limit point")?;
+            read_finite_values(ctx, reader, 12, "saved SubD limit point")?;
             read_pointer(reader, true)?;
         }
     }
@@ -627,7 +636,7 @@ fn read_vertex(
         ));
     }
     let faces = read_pointers(ctx, reader, face_count, false)?;
-    read_record_end(reader, archive)?;
+    read_record_end(ctx, reader, archive)?;
     Ok(RawVertex {
         base,
         point,
@@ -644,7 +653,7 @@ fn read_edge(
     expected_id: u32,
     level: usize,
 ) -> Result<RawEdge, SubdError> {
-    let base = read_base(reader, archive, expected_id, level)?;
+    let base = read_base(ctx, reader, archive, expected_id, level)?;
     let tag = match reader.u8()? {
         0 => None,
         1 => Some(SubdEdgeTag::Smooth),
@@ -680,7 +689,7 @@ fn read_edge(
     let faces = read_pointers(ctx, reader, face_count, false)?;
     let mut sharpness = [start, start];
     if archive.value() < 70 {
-        expect_zero(reader, "SubD edge end marker")?;
+        expect_zero(ctx, reader, "SubD edge end marker")?;
     } else {
         if archive.value() >= 80 {
             match reader.u8()? {
@@ -705,7 +714,7 @@ fn read_edge(
                 }
             }
         }
-        finish_additions(reader, archive)?;
+        finish_additions(ctx, reader, archive)?;
     }
     Ok(RawEdge {
         base,
@@ -724,7 +733,7 @@ fn read_face(
     expected_id: u32,
     level: usize,
 ) -> Result<RawFace, SubdError> {
-    let base = read_base(reader, archive, expected_id, level)?;
+    let base = read_base(ctx, reader, archive, expected_id, level)?;
     reader.u32()?;
     reader.u32()?;
     let edge_count = usize::from(reader.u16()?);
@@ -737,42 +746,42 @@ fn read_face(
     }
     let edges = read_pointers(ctx, reader, edge_count, false)?;
     if archive.value() < 70 {
-        expect_zero(reader, "SubD face end marker")?;
+        expect_zero(ctx, reader, "SubD face end marker")?;
     } else {
-        match consume_known_addition(reader, archive, 34, "SubD face packing rectangle")? {
+        match consume_known_addition(ctx, reader, archive, 34, "SubD face packing rectangle")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.skip(2)?;
-                read_finite_values(reader, 4, "SubD face packing rectangle")?;
+                read_finite_values(ctx, reader, 4, "SubD face packing rectangle")?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face material channel")? {
+        match consume_known_addition(ctx, reader, archive, 4, "SubD face material channel")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face color")? {
+        match consume_known_addition(ctx, reader, archive, 4, "SubD face color")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face pack ID")? {
+        match consume_known_addition(ctx, reader, archive, 4, "SubD face pack ID")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 4, "SubD face texture points")? {
+        match consume_known_addition(ctx, reader, archive, 4, "SubD face texture points")? {
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
-                let ten_count = capped_u32(reader, edge_count / 10, "SubD texture chunk count")?;
+                let ten_count = capped_u32(ctx, reader, edge_count / 10, "SubD texture chunk count")?;
                 if ten_count != edge_count / 10 {
                     return Err(malformed(
                         reader.position() - 4,
@@ -786,7 +795,7 @@ fn read_face(
                             "SubD ten-point addition size is not 240",
                         ));
                     }
-                    read_finite_values(reader, 30, "SubD texture points")?;
+                    read_finite_values(ctx, reader, 30, "SubD texture points")?;
                 }
                 let remainder = edge_count % 10;
                 if remainder > 0 {
@@ -798,16 +807,16 @@ fn read_face(
                             "SubD texture remainder size disagrees",
                         ));
                     }
-                    read_finite_values(reader, remainder * 3, "SubD texture points")?;
+                    read_finite_values(ctx, reader, remainder * 3, "SubD texture points")?;
                 }
             }
         }
-        finish_additions(reader, archive)?;
+        finish_additions(ctx, reader, archive)?;
     }
     Ok(RawFace { base, edges })
 }
 
-fn read_base(
+fn read_base(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_id: u32,
@@ -838,7 +847,7 @@ fn read_base(
             ));
         }
         if saved_size != 0 {
-            read_finite_values(reader, 3, "saved subdivision point")?;
+            read_finite_values(ctx, reader, 3, "saved subdivision point")?;
         }
         let deprecated_size = reader.u8()?;
         if !matches!(deprecated_size, 0 | 4) {
@@ -848,10 +857,10 @@ fn read_base(
             ));
         }
         if deprecated_size != 0 {
-            read_finite_values(reader, 3, "deprecated SubD vector")?;
+            read_finite_values(ctx, reader, 3, "deprecated SubD vector")?;
         }
     } else {
-        match consume_known_addition(reader, archive, 24, "SubD displacement")? {
+        match consume_known_addition(ctx, reader, archive, 24, "SubD displacement")? {
             Addition::End => {
                 return Ok(ComponentBase {
                     source_offset,
@@ -859,9 +868,9 @@ fn read_base(
                 })
             }
             Addition::Absent => {}
-            Addition::Present => read_finite_values(reader, 3, "deprecated SubD displacement")?,
+            Addition::Present => read_finite_values(ctx, reader, 3, "deprecated SubD displacement")?,
         }
-        match consume_known_addition(reader, archive, 4, "SubD group ID")? {
+        match consume_known_addition(ctx, reader, archive, 4, "SubD group ID")? {
             Addition::End => {
                 return Ok(ComponentBase {
                     source_offset,
@@ -873,7 +882,7 @@ fn read_base(
                 reader.u32()?;
             }
         }
-        match consume_known_addition(reader, archive, 5, "SubD symmetry-next")? {
+        match consume_known_addition(ctx, reader, archive, 5, "SubD symmetry-next")? {
             Addition::End => {
                 return Ok(ComponentBase {
                     source_offset,
@@ -883,7 +892,7 @@ fn read_base(
             Addition::Absent => {}
             Addition::Present => read_untyped_pointer(reader)?,
         }
-        finish_additions(reader, archive)?;
+        finish_additions(ctx, reader, archive)?;
     }
     Ok(ComponentBase {
         source_offset,
@@ -891,7 +900,7 @@ fn read_base(
     })
 }
 
-fn consume_known_addition(
+fn consume_known_addition(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected: u8,
@@ -901,40 +910,40 @@ fn consume_known_addition(
         match reader.u8()? {
             0 => return Ok(Addition::Absent),
             value if value == expected => return Ok(Addition::Present),
-            254 => consume_anonymous(reader, archive, label)?,
+            254 => consume_anonymous(ctx, reader, archive, label)?,
             255 => return Ok(Addition::End),
             value => {
                 return Err(malformed(
                     reader.position() - 1,
-                    format!("invalid {label} addition size {value}"),
+                    ctx.format_retained(format_args!("invalid {label} addition size {value}"), "Rhino consume_known_addition text")?,
                 ));
             }
         }
     }
 }
 
-fn finish_additions(
+fn finish_additions(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<(), SubdError> {
     loop {
         match reader.u8()? {
             255 => return Ok(()),
-            254 => consume_anonymous(reader, archive, "future SubD addition")?,
+            254 => consume_anonymous(ctx, reader, archive, "future SubD addition")?,
             0 => {}
             size => reader.skip(usize::from(size))?,
         }
     }
 }
 
-fn read_record_end(
+fn read_record_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<(), SubdError> {
     if archive.value() < 70 {
-        expect_zero(reader, "SubD component end marker")
+        expect_zero(ctx, reader, "SubD component end marker")
     } else {
-        finish_additions(reader, archive)
+        finish_additions(ctx, reader, archive)
     }
 }
 
@@ -1198,9 +1207,9 @@ fn compare_incidence(
     }
     let empty = HashSet::new();
     if &serialized_ids != derived.unwrap_or(&empty) {
-        return Err(unpositioned(format!(
+        return Err(unpositioned(ctx.format_retained(format_args!(
             "SubD {label} incidence is not reciprocal"
-        )));
+        ), "Rhino compare_incidence text")?));
     }
     Ok(())
 }
@@ -1308,7 +1317,7 @@ fn materialize(
                 ctx,
             )
             .map_err(SubdError::from)?
-            .map_err(|error| malformed(edge.base.source_offset, error.to_string()))?,
+            .or_else(|error| Err(malformed(edge.base.source_offset, ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?)))?,
         );
     }
     let mut faces = ctx
@@ -1328,7 +1337,7 @@ fn materialize(
         }
         faces.push(
             SubdFace::new(face_edges)
-                .map_err(|error| malformed(face.base.source_offset, error.to_string()))?,
+                .or_else(|error| Err(malformed(face.base.source_offset, ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?)))?,
         );
     }
     Ok(SubdSurface {
@@ -1337,7 +1346,7 @@ fn materialize(
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new(), ctx)
             .map_err(SubdError::from)?
-            .map_err(|error| malformed(level.source_offset, error.to_string()))?,
+            .or_else(|error| Err(malformed(level.source_offset, ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?)))?,
     })
 }
 
@@ -1368,23 +1377,23 @@ fn partition_count(start: u32, end: u32, offset: usize) -> Result<usize, SubdErr
     .map_err(|_| malformed(offset, "SubD partition conversion overflow"))
 }
 
-fn capped_u32(reader: &mut BoundedReader<'_>, cap: usize, label: &str) -> Result<usize, SubdError> {
+fn capped_u32(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, cap: usize, label: &str) -> Result<usize, SubdError> {
     let offset = reader.position();
     let value = usize::try_from(reader.u32()?)
-        .map_err(|_| malformed(offset, format!("{label} conversion overflow")))?;
+        .or_else(|_| Err(malformed(offset, ctx.format_retained(format_args!("{label} conversion overflow"), "Rhino capped_u32 text")?)))?;
     if value > cap {
-        return Err(malformed(offset, format!("{label} exceeds cap")));
+        return Err(malformed(offset, ctx.format_retained(format_args!("{label} exceeds cap"), "Rhino capped_u32 text")?));
     }
     Ok(value)
 }
 
-fn point(reader: &mut BoundedReader<'_>, label: &str) -> Result<FinitePoint3, SubdError> {
+fn point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<FinitePoint3, SubdError> {
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
     FinitePoint3::new(Point3::new(values[0], values[1], values[2]))
-        .ok_or_else(|| malformed(reader.position() - 24, format!("{label} is not finite")))
+        .map_or_else(|| Err(malformed(reader.position() - 24, ctx.format_retained(format_args!("{label} is not finite"), "Rhino point text")?)), Ok)
 }
 
-fn read_finite_values(
+fn read_finite_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     count: usize,
     label: &str,
@@ -1393,7 +1402,7 @@ fn read_finite_values(
         if !reader.f64()?.is_finite() {
             return Err(malformed(
                 reader.position() - 8,
-                format!("{label} is not finite"),
+                ctx.format_retained(format_args!("{label} is not finite"), "Rhino read_finite_values text")?,
             ));
         }
     }
@@ -1410,7 +1419,7 @@ fn read_mapping_tag(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
-    let chunk = anonymous_chunk(parent, archive, "SubD texture mapping tag")?;
+    let chunk = anonymous_chunk(ctx, parent, archive, "SubD texture mapping tag")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
@@ -1423,7 +1432,7 @@ fn read_mapping_tag(
     }
     reader.take(16)?;
     reader.i32()?;
-    read_finite_values(&mut reader, 16, "SubD mapping transform")?;
+    read_finite_values(ctx, &mut reader, 16, "SubD mapping transform")?;
     if minor >= 1 {
         reader.u32()?;
     }
@@ -1472,7 +1481,7 @@ fn read_symmetry(
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
-    let chunk = anonymous_chunk(parent, archive, "SubD symmetry")?;
+    let chunk = anonymous_chunk(ctx, parent, archive, "SubD symmetry")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
@@ -1496,7 +1505,7 @@ fn read_symmetry(
     reader.u32()?;
     reader.u32()?;
     reader.take(16)?;
-    let inner = anonymous_chunk(&reader, archive, "SubD symmetry transform")?;
+    let inner = anonymous_chunk(ctx, &reader, archive, "SubD symmetry transform")?;
     let mut transform =
         BoundedReader::new(reader.backing_bytes(), inner.body().start, inner.body().end)?;
     let inner_major = transform.i32()?;
@@ -1511,22 +1520,22 @@ fn read_symmetry(
     }
     match symmetry_type {
         SubdSymmetryType::Reflect => {
-            read_finite_values(&mut transform, 4, "SubD reflection plane")?;
+            read_finite_values(ctx, &mut transform, 4, "SubD reflection plane")?;
         }
         SubdSymmetryType::Rotate { new_prototype } => {
-            read_finite_values(&mut transform, 6, "SubD rotation axis")?;
+            read_finite_values(ctx, &mut transform, 6, "SubD rotation axis")?;
             if inner_version >= 2 && !new_prototype {
                 transform.skip(4 * std::mem::size_of::<f64>())?;
             }
         }
         SubdSymmetryType::ReflectAndRotate => {
-            read_finite_values(&mut transform, 4, "SubD reflection plane")?;
-            read_finite_values(&mut transform, 6, "SubD rotation axis")?;
+            read_finite_values(ctx, &mut transform, 4, "SubD reflection plane")?;
+            read_finite_values(ctx, &mut transform, 6, "SubD rotation axis")?;
         }
         SubdSymmetryType::Transform => {
-            read_finite_values(&mut transform, 16, "SubD symmetry transform")?;
+            read_finite_values(ctx, &mut transform, 16, "SubD symmetry transform")?;
             if inner_version >= 2 {
-                read_finite_values(&mut transform, 4, "SubD symmetry plane")?;
+                read_finite_values(ctx, &mut transform, 4, "SubD symmetry plane")?;
             }
         }
     }
@@ -1557,7 +1566,7 @@ fn read_subd_hash(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
-    let chunk = anonymous_chunk(parent, archive, "SubD topology hash")?;
+    let chunk = anonymous_chunk(ctx, parent, archive, "SubD topology hash")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
@@ -1586,7 +1595,7 @@ fn read_sha1(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<(), SubdError> {
-    let chunk = anonymous_chunk(parent, archive, "SHA-1 hash")?;
+    let chunk = anonymous_chunk(ctx, parent, archive, "SHA-1 hash")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
@@ -1601,18 +1610,18 @@ fn read_sha1(
     finish_direct_chunk(ctx, parent, &chunk, reader, warnings)
 }
 
-fn expect_zero(reader: &mut BoundedReader<'_>, label: &str) -> Result<(), SubdError> {
+fn expect_zero(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<(), SubdError> {
     if reader.u8()? == 0 {
         Ok(())
     } else {
         Err(malformed(
             reader.position() - 1,
-            format!("{label} is not zero"),
+            ctx.format_retained(format_args!("{label} is not zero"), "Rhino expect_zero text")?,
         ))
     }
 }
 
-fn anonymous_chunk(
+fn anonymous_chunk(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
@@ -1627,18 +1636,18 @@ fn anonymous_chunk(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(malformed(
             chunk.header_start,
-            format!("expected bounded anonymous {label} chunk"),
+            ctx.format_retained(format_args!("expected bounded anonymous {label} chunk"), "Rhino anonymous_chunk text")?,
         ));
     }
     Ok(chunk)
 }
 
-fn consume_anonymous(
+fn consume_anonymous(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
 ) -> Result<(), SubdError> {
-    let chunk = anonymous_chunk(reader, archive, label)?;
+    let chunk = anonymous_chunk(ctx, reader, archive, label)?;
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }

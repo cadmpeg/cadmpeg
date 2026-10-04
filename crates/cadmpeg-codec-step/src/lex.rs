@@ -106,8 +106,7 @@ impl BinaryValue {
 }
 
 /// Lexical failure with a stable byte position.
-#[derive(Debug, thiserror::Error)]
-#[error("{message} at byte {offset}")]
+#[derive(Debug)]
 pub(crate) struct LexError {
     /// Byte offset at which tokenization failed.
     offset: usize,
@@ -115,6 +114,17 @@ pub(crate) struct LexError {
     pub(crate) message: String,
     resource: Option<CodecError>,
 }
+
+impl std::fmt::Display for LexError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.resource {
+            Some(error) => write!(formatter, "{error} at byte {}", self.offset),
+            None => write!(formatter, "{} at byte {}", self.message, self.offset),
+        }
+    }
+}
+
+impl std::error::Error for LexError {}
 
 impl LexError {
     pub(crate) fn into_codec_error(self) -> CodecError {
@@ -931,7 +941,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     fn resource_error(offset: usize, error: CodecError) -> LexError {
         LexError {
             offset,
-            message: error.to_string(),
+            message: String::new(),
             resource: Some(error),
         }
     }
