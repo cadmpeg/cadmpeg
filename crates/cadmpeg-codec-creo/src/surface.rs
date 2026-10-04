@@ -6444,18 +6444,17 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
-    let state_count = body.len() + 1;
+    let state_count = body.len().checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo_counted_parameter_slots", u64::MAX, u64::MAX))?;
     let mut states = Vec::new();
-    ctx.reserve_vec(&mut states, state_count, "creo_counted_parameter_slots")?;
-    states.resize_with(state_count, BTreeMap::new);
+    ctx.resize_with(&mut states, state_count, || Ok(CountedParameterState(BTreeMap::new())), "creo_counted_parameter_slots")?;
     ctx.insert_btree_map(
-        &mut states[0],
+        &mut states[0].0,
         0,
         CountedParameterParse::Unique(Vec::new()),
         "creo counted parameter initial state",
     )?;
     for cursor in 0..body.len() {
-        let current = std::mem::take(&mut states[cursor]);
+        let current = std::mem::take(&mut states[cursor].0);
         for (slots_used, parse) in current {
             if slots_used >= count {
                 continue;
@@ -6476,7 +6475,7 @@ fn counted_parameter_scalar_slots(
                     slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
                     add_counted_parameter_state(
                         ctx,
-                        &mut states[cursor + 1],
+                        &mut states[cursor + 1].0,
                         slots_used + run,
                         advance_counted_parameter_parse(ctx, parse, slots)?,
                     )?;
@@ -6487,7 +6486,7 @@ fn counted_parameter_scalar_slots(
             if body[cursor] == 0x18 {
                 add_counted_parameter_state(
                     ctx,
-                    &mut states[cursor + 1],
+                    &mut states[cursor + 1].0,
                     slots_used + 1,
                     advance_counted_parameter_parse(
                         ctx,
@@ -6500,7 +6499,7 @@ fn counted_parameter_scalar_slots(
                 {
                     add_counted_parameter_state(
                         ctx,
-                        &mut states[next],
+                        &mut states[next].0,
                         slots_used + 1,
                         advance_counted_parameter_parse(
                             ctx,
@@ -6521,7 +6520,7 @@ fn counted_parameter_scalar_slots(
             ) {
                 add_counted_parameter_state(
                     ctx,
-                    &mut states[next],
+                    &mut states[next].0,
                     slots_used + 1,
                     advance_counted_parameter_parse(
                         ctx,
@@ -6532,9 +6531,20 @@ fn counted_parameter_scalar_slots(
             }
         }
     }
-    match states[body.len()].remove(&count) {
+    match states[body.len()].0.remove(&count) {
         Some(CountedParameterParse::Unique(slots)) => Ok(Some(slots)),
         Some(CountedParameterParse::Ambiguous) | None => Ok(None),
+    }
+}
+
+struct CountedParameterState(BTreeMap<usize, CountedParameterParse>);
+
+impl cadmpeg_core::decode::cost::DecodeCost for CountedParameterState {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        ctx.admit_iter(&self.0, operation)?.try_fold(0_u64, |bytes, entry| {
+            let cost = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&entry, ctx, operation)?;
+            bytes.checked_add(cost).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+        })
     }
 }
 
@@ -6542,6 +6552,16 @@ enum CountedParameterParse {
     Unique(Vec<ScalarTokenSlot>),
     Ambiguous,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for CountedParameterParse {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        match self {
+            Self::Unique(slots) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, slots), ctx, operation),
+            Self::Ambiguous => Ok(1),
+        }
+    }
+}
+
 
 fn advance_counted_parameter_parse(
     ctx: &DecodeContext<'_>,
