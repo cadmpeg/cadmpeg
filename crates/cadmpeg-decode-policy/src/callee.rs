@@ -82,7 +82,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         };
         field.name.as_str() == "source"
-            && types::admitted_iterator(self.tcx, self.expr_ty(base))
+            && types::admitted_iter(self.tcx, self.expr_ty(base))
             && self
                 .tcx
                 .crate_name(self.typeck.hir_owner.def_id.to_def_id().krate)

@@ -18,15 +18,6 @@ pub(crate) struct Instantiation<'tcx> {
     pub(crate) fixed_parameters: HashSet<rustc_hir::HirId>,
 }
 
-fn structural_project(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
-    types::physical_item_path(
-        tcx,
-        definition,
-        "cadmpeg_ir",
-        &["schema", "structural", "project"],
-    )
-}
-
 fn shared_identity_grammar(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) -> bool {
     [
         (&["ids", "IdentityComponent"][..], "try_new"),
@@ -739,40 +730,6 @@ pub(crate) fn check_imported<'tcx>(
             if operation_owned {
                 continue;
             }
-            let callback = args.last().map(|operand| {
-                instance.instantiate_mir(
-                    tcx,
-                    rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx)),
-                )
-            });
-            let normalized_callback = receiver.zip(callback).and_then(|(receiver, callback)| {
-                let receiver = tcx
-                    .try_normalize_erasing_regions(
-                        reporter.typing_env(),
-                        rustc_middle::ty::Unnormalized::new_wip(receiver),
-                    )
-                    .ok()?;
-                let callback = tcx
-                    .try_normalize_erasing_regions(
-                        reporter.typing_env(),
-                        rustc_middle::ty::Unnormalized::new_wip(callback),
-                    )
-                    .ok()?;
-                Some((receiver, callback))
-            });
-            if normalized_callback.is_some_and(|(receiver, callback)| {
-                reporter.bounded_precharged_chars_any(*definition, receiver, callback)
-            }) {
-                continue;
-            }
-            let serde_call = tcx
-                .trait_of_assoc(*definition)
-                .is_some_and(|trait_id| types::serde_serialize(tcx, trait_id));
-            if serde_call && structural_project(tcx, instance.def_id()) {
-                // The project call's source check owns this callback proof.
-                // An unproved source remains one unresolved obligation there.
-                continue;
-            }
             let Ok(arguments) = tcx.try_normalize_erasing_regions(
                 reporter.typing_env(),
                 rustc_middle::ty::Unnormalized::new_wip(arguments),
@@ -1120,6 +1077,30 @@ pub(crate) fn check_imported<'tcx>(
                     allocation_shape(raw_output, receiver, false)
                 })
             };
+            // A consumer over a prepaid iterator was charged by the admission;
+            // its own callbacks must still be checked bodies.
+            let prepaid_consumer = summary.work == external::Work::Iterator
+                && reporter.prepaid_iterator(receiver)
+                && reporter.consumer_callbacks_checked(
+                    &args
+                        .iter()
+                        .skip(1)
+                        .map(|operand| {
+                            let value = instance.instantiate_mir(
+                                tcx,
+                                rustc_middle::ty::EarlyBinder::bind(
+                                    tcx,
+                                    operand.node.ty(body, tcx),
+                                ),
+                            );
+                            tcx.try_normalize_erasing_regions(
+                                reporter.typing_env(),
+                                rustc_middle::ty::Unnormalized::new_wip(value),
+                            )
+                            .unwrap_or(value)
+                        })
+                        .collect::<Vec<_>>(),
+                );
             let index = match summary.work {
                 external::Work::Argument(index) => index,
                 external::Work::TextCharacter => 1,
@@ -1133,7 +1114,7 @@ pub(crate) fn check_imported<'tcx>(
                     } else {
                         types::Shape::Dynamic
                     }
-                } else if concrete && (fixed || fixed_conversion)
+                } else if concrete && (fixed || fixed_conversion || prepaid_consumer)
                     || summary.work == external::Work::Fixed
                     || summary.work == external::Work::Iterator
                         && vector_output

@@ -138,16 +138,8 @@ fn check_fixture(name: &str) {
             | "const_grammar"
             | "xml_routes"
             | "adapter_receipts"
-            | "structural_projection"
-            | "structural_fixed"
-            | "structural_wire"
-            | "structural_record"
-            | "structural_derived"
-            | "structural_map"
-            | "actual_structural_sources"
             | "matrix_iteration"
             | "hash_set_callbacks"
-            | "decoder_progress"
             | "serde_storage"
             | "collection_sources"
             | "archive_probe"
@@ -249,6 +241,7 @@ fn check_fixture(name: &str) {
             | "reader_callbacks"
             | "unicode_case"
             | "work_integer_ranges"
+            | "work_admitted"
             | "bounded_slices"
     ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
@@ -406,16 +399,8 @@ fn check_fixture(name: &str) {
                     | "const_grammar"
                     | "xml_routes"
                     | "adapter_receipts"
-                    | "structural_projection"
-                    | "structural_fixed"
-                    | "structural_wire"
-                    | "structural_record"
-                    | "structural_derived"
-                    | "structural_map"
-                    | "actual_structural_sources"
                     | "matrix_iteration"
                     | "hash_set_callbacks"
-                    | "decoder_progress"
                     | "serde_storage"
                     | "collection_sources"
                     | "archive_probe"
@@ -1151,38 +1136,8 @@ fn xml_queries_keep_source_and_name_admissions() {
 }
 
 #[test]
-fn concrete_dialect_iterator_preserves_incremental_refusals() {
+fn dialect_layers_are_an_exact_admitted_source() {
     check_fixture("adapter_receipts");
-}
-
-#[test]
-fn structural_projection_requires_bounded_serde_sources() {
-    check_fixture("structural_projection");
-}
-
-#[test]
-fn structural_fixed_callbacks_require_concrete_finite_bodies() {
-    check_fixture("structural_fixed");
-}
-
-#[test]
-fn structural_wire_callbacks_require_borrowed_value_and_result_lineage() {
-    check_fixture("structural_wire");
-}
-
-#[test]
-fn structural_record_callbacks_require_fixed_fields_and_result_lineage() {
-    check_fixture("structural_record");
-}
-
-#[test]
-fn structural_derived_callbacks_require_concrete_protocol_and_lineage() {
-    check_fixture("structural_derived");
-}
-
-#[test]
-fn structural_maps_require_declared_full_borrowed_traversal() {
-    check_fixture("structural_map");
 }
 
 #[test]
@@ -1201,11 +1156,6 @@ fn hash_set_lookup_requires_bounded_key_and_builder_callbacks() {
 }
 
 #[test]
-fn measured_decoder_loops_require_exact_source_progress_and_credit() {
-    check_fixture("decoder_progress");
-}
-
-#[test]
 fn typed_json_targets_require_bounded_storage_and_consuming_recursion() {
     check_fixture("serde_storage");
 }
@@ -1218,9 +1168,4 @@ fn owned_and_mutable_collection_sources_preserve_admission() {
 #[test]
 fn archive_name_probe_keeps_concrete_callback_obligations() {
     check_fixture("archive_probe");
-}
-
-#[test]
-fn actual_ir_serializers_keep_concrete_callback_obligations() {
-    check_fixture("actual_structural_sources");
 }

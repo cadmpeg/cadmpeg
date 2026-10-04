@@ -1,32 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::iter_source::IncrementalSource;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-
-pub fn incremental_slice(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    for byte in ctx.admit_iter(IncrementalSource::new(bytes.iter()), "slice")? {
-        let byte = byte?;
-        if *byte == 0 {
-            continue;
-        }
-    }
-    Ok(())
-}
-
-pub fn incremental_fixed_chain(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    for byte in ctx
-        .admit_iter(
-            IncrementalSource::new(std::iter::once(0_u8).chain(bytes.iter().copied())),
-            "chain",
-        )?
-    {
-        let byte = byte?;
-        if byte == 0 {
-            continue;
-        }
-    }
-    Ok(())
-}
 
 pub fn precharged_and_fixed_chain_orders(
     ctx: &DecodeContext<'_>,
@@ -83,36 +57,6 @@ pub fn mixed_raw_then_precharged_chain(
     Ok(())
 }
 
-pub fn incremental_filter(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let source = IncrementalSource::new(bytes.iter().filter(|byte| **byte != 0)); // finding: unproven_decode_charge
-    let values = ctx.admit_iter(source, "filter")?; // finding: unproven_decode_charge
-    for byte in values {
-        let byte = byte?;
-        if *byte == 0 {
-            continue;
-        }
-    }
-    Ok(())
-}
-
-pub fn incremental_zip(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let source = IncrementalSource::new(bytes.iter().copied().zip(bytes.iter().copied())); // finding: unproven_decode_charge
-    let values = ctx.admit_iter(source, "zip")?; // finding: unproven_decode_charge
-    for pair in values {
-        let pair = pair?;
-        if pair.0 == pair.1 {
-            continue;
-        }
-    }
-    Ok(())
-}
-
-pub fn incremental_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let values = ctx.admit_iter(IncrementalSource::new(bytes.iter()), "count")?;
-    let _count = values.count(); // finding: unproven_decode_charge
-    Ok(())
-}
-
 pub fn owned_string_source(
     ctx: &DecodeContext<'_>,
     values: Vec<String>,
@@ -123,69 +67,12 @@ pub fn owned_string_source(
     Ok(())
 }
 
-struct ScanningDrop(String);
-
-impl Drop for ScanningDrop {
-    fn drop(&mut self) {
-        for byte in self.0.bytes() {
+pub fn discarded_admission_refusal(ctx: &DecodeContext<'_>, bytes: &[u8]) {
+    if let Ok(values) = ctx.admit_iter(bytes, "discarded refusal") { // finding: unproven_decode_charge
+        for byte in values {
             std::hint::black_box(byte);
         }
     }
-}
-
-pub fn owned_source_with_custom_drop(
-    ctx: &DecodeContext<'_>,
-    values: Vec<ScanningDrop>,
-) -> Result<(), CodecError> {
-    for value in ctx.admit_iter(values, "owned custom-drop source")? { // finding: unproven_decode_charge
-        if value.0.is_empty() {
-            break;
-        }
-    }
-    Ok(())
-}
-
-pub fn stepwise_source_with_custom_callback_drop(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    capture: ScanningDrop,
-) -> Result<(), CodecError> {
-    let source = IncrementalSource::new(bytes.iter().map(move |byte| {
-        let _captured = std::hint::black_box(&capture).0.len();
-        Ok::<_, CodecError>(*byte)
-    }));
-    for value in ctx.admit_iter(source, "custom callback drop")? { // finding: unproven_decode_charge
-        if value?? == 0 {
-            break;
-        }
-    }
-    Ok(())
-}
-
-pub fn stepwise_source_with_string_callback_capture(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    capture: String,
-) -> Result<(), CodecError> {
-    let source = IncrementalSource::new(bytes.iter().map(move |byte| {
-        let _length = capture.len();
-        Ok::<_, CodecError>(*byte)
-    }));
-    for value in ctx.admit_iter(source, "string callback capture")? {
-        let _value = value?;
-        break;
-    }
-    Ok(())
-}
-
-pub fn incremental_result_ok(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let values = ctx.admit_iter(IncrementalSource::new(bytes.iter()), "result adapter")?;
-    for value in values.map(Result::ok).flatten() { // finding: unproven_decode_charge
-        if *value == 0 {
-            continue;
-        }
-    }
-    Ok(())
 }
 
 struct ScanningSource<'a>(&'a [u8]);
@@ -221,42 +108,6 @@ pub fn standard_into_iter_constructor(
     Ok(())
 }
 
-pub fn incremental_filter_map(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let filtered = bytes
-        .iter()
-        .filter_map(|byte| (*byte != 0).then_some(byte));
-    let source = IncrementalSource::new(filtered); // finding: unproven_decode_charge
-    let values = ctx.admit_iter(source, "filter_map")?; // finding: unproven_decode_charge
-    for byte in values {
-        let byte = byte?;
-        if *byte == 0 {
-            continue;
-        }
-    }
-    Ok(())
-}
-
-pub fn incremental_flat_map(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let expanded = bytes
-        .iter()
-        .flat_map(|byte| std::iter::repeat(*byte));
-    let source = IncrementalSource::new(expanded); // finding: unproven_decode_charge
-    let values = ctx.admit_iter(source, "flat_map")?; // finding: unproven_decode_charge
-    for byte in values {
-        let byte = byte?;
-        if byte == 0 {
-            continue;
-        }
-    }
-    Ok(())
-}
-
-pub fn incremental_try_fold(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
-    let mut values = ctx.admit_iter(IncrementalSource::new(bytes.iter()), "fallible fold")?;
-    let _count = values.try_fold(0_usize, |count, _result| Some(count + 1)); // finding: unproven_decode_charge
-    Ok(())
-}
-
 pub fn prepaid_filter_flat_map_fold(
     ctx: &DecodeContext<'_>,
     name: &str,
@@ -272,6 +123,16 @@ pub fn prepaid_filter_flat_map_fold(
     Ok(())
 }
 
+pub fn prepaid_flat_map_with_dynamic_inner(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    suffix: &str,
+) -> Result<(), CodecError> {
+    let chars = ctx.admit_iter(name, "suffixed source")?;
+    let _length = chars.flat_map(|_| suffix.chars()).count(); // finding: unproven_decode_charge
+    Ok(())
+}
+
 pub fn prepaid_records_zip_wires(
     ctx: &DecodeContext<'_>,
     records: &[u8],
@@ -280,6 +141,20 @@ pub fn prepaid_records_zip_wires(
     let records = ctx.admit_iter(records, "record source")?;
     for (record, wire) in records.zip(wires.iter()) {
         if record == wire {
+            continue;
+        }
+    }
+    Ok(())
+}
+
+pub fn raw_wires_zip_prepaid_records(
+    ctx: &DecodeContext<'_>,
+    wires: &[u8],
+    records: &[u8],
+) -> Result<(), CodecError> {
+    let records = ctx.admit_iter(records, "record source")?;
+    for (wire, record) in wires.iter().zip(records) {
+        if wire == record {
             continue;
         }
     }
@@ -305,7 +180,7 @@ pub fn reversed_zip_source(
     records: &[u8],
 ) -> Result<(), CodecError> {
     let records = ctx.admit_iter(records, "record source")?;
-    for (wire, record) in wires.iter().filter(|wire| **wire != 0).zip(records) { // finding: unproven_decode_charge
+    for (wire, record) in wires.iter().filter(|wire| **wire != 0).zip(records) { // finding: uncharged_decode_work
         if wire == record {
             continue;
         }
@@ -325,28 +200,83 @@ pub fn prepaid_nested_fallible_producer(
     Ok(())
 }
 
-pub fn incremental_nested_result_condition(
+pub fn prepaid_by_ref_search(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+    let mut admitted = ctx.admit_iter(bytes, "by-ref search")?;
+    let found = admitted.by_ref().any(|byte| *byte == 0);
+    let _remaining = admitted.count();
+    Ok(found)
+}
+
+pub fn raw_by_ref_search(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> bool {
+    let mut raw = bytes.iter();
+    raw.by_ref().any(|byte| *byte == 0) // finding: uncharged_decode_work
+}
+
+pub fn prepaid_consumer_with_unchecked_callback(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    predicate: fn(&u8) -> bool,
+) -> Result<bool, CodecError> {
+    let mut admitted = ctx.admit_iter(bytes, "pointer predicate")?;
+    Ok(admitted.any(predicate)) // finding: unproven_decode_charge
+}
+
+pub fn prepaid_copy_clones(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<usize, CodecError> {
+    Ok(ctx.admit_iter(bytes, "copied clones")?.cloned().count())
+}
+
+pub fn prepaid_owned_clones(ctx: &DecodeContext<'_>, names: &[String]) -> Result<usize, CodecError> {
+    Ok(ctx.admit_iter(names, "string clones")?.cloned().count()) // finding: unproven_decode_charge, unproven_decode_charge
+}
+
+pub fn charged_steps_over_prepaid_filter(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(), CodecError> {
-    let source = IncrementalSource::new(bytes.iter().map(|byte| Ok::<_, CodecError>(*byte)));
-    for value in ctx.admit_iter(source, "nested result condition")? {
-        if value?? == 0 {
-            break;
-        }
+    let mut nonzero = ctx.admit_iter(bytes, "filtered steps")?.filter(|byte| **byte != 0);
+    while let Some(byte) = ctx.next_charged(&mut nonzero, "filtered step")? {
+        std::hint::black_box(byte);
     }
     Ok(())
 }
 
-pub fn incremental_short_circuit_does_not_propagate_refusal(
+pub fn charged_steps_over_raw_filter(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    condition: bool,
 ) -> Result<(), CodecError> {
-    for value in ctx.admit_iter(IncrementalSource::new(bytes.iter()), "conditional refusal")? { // finding: unproven_decode_charge
-        if condition && *value? == 0 {
-            break;
-        }
+    let mut nonzero = bytes.iter().filter(|byte| **byte != 0);
+    while let Some(byte) = ctx.next_charged(&mut nonzero, "raw filtered step")? { // finding: unproven_decode_charge
+        std::hint::black_box(byte);
     }
     Ok(())
+}
+
+pub fn charged_steps_over_from_fn(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
+    let mut index = 0_usize;
+    let mut steps = std::iter::from_fn(|| {
+        let byte = bytes.get(index).copied();
+        index += 1;
+        byte
+    });
+    while let Some(byte) = ctx.next_charged(&mut steps, "from_fn step")? {
+        std::hint::black_box(byte);
+    }
+    Ok(())
+}
+
+pub fn charged_steps_over_opaque_from_fn(
+    ctx: &DecodeContext<'_>,
+    step: fn() -> Option<u8>,
+) -> Result<(), CodecError> {
+    let mut steps = std::iter::from_fn(step);
+    while let Some(byte) = ctx.next_charged(&mut steps, "opaque step")? { // finding: unproven_decode_charge
+        std::hint::black_box(byte);
+    }
+    Ok(())
+}
+
+pub fn fixed_count_outer_flatten(_ctx: &DecodeContext<'_>, left: &[u8], right: &[u8]) {
+    for byte in [left, right].into_iter().flatten() { // finding: unproven_decode_charge
+        std::hint::black_box(byte);
+    }
 }
