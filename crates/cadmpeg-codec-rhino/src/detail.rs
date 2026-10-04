@@ -25,6 +25,7 @@ pub(crate) struct Detail {
 }
 
 fn anonymous<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     offset: usize,
     end: usize,
@@ -35,7 +36,7 @@ fn anonymous<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
-            format!("{family} is not anonymous"),
+            ctx.format_retained(format_args!("{family} is not anonymous"), "Rhino detail framing message")?,
         ));
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -44,7 +45,7 @@ fn anonymous<'a>(
     if major != 1 {
         return Err(GeometryError::UnsupportedVersion {
             offset: chunk.body().start,
-            message: format!("unsupported {family} version {major}.{minor}"),
+            message: ctx.format_retained(format_args!("unsupported {family} version {major}.{minor}"), "Rhino detail version message")?,
         });
     }
     Ok((reader, chunk.next_offset(), minor))
@@ -56,7 +57,7 @@ pub(crate) fn decode(
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<Detail, GeometryError> {
-    let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive, "detail")?;
+    let (mut outer, next, minor) = anonymous(ctx, data, range.start, range.end, archive, "detail")?;
     if next != range.end || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
@@ -65,12 +66,13 @@ pub(crate) fn decode(
     }
     let view_start = outer.position();
     let (view, view_next, _view_minor) =
-        anonymous(data, view_start, outer.end(), archive, "detail view state")?;
+        anonymous(ctx, data, view_start, outer.end(), archive, "detail view state")?;
     let view_range = view.position()..view.end();
     outer.skip(view_next - outer.position())?;
 
     let boundary_start = outer.position();
     let (mut boundary, boundary_next, _boundary_minor) = anonymous(
+        ctx,
         data,
         boundary_start,
         outer.end(),
@@ -168,6 +170,40 @@ mod tests {
         content.extend(anonymous(4, &boundary()));
         content.extend(ratio.to_le_bytes());
         anonymous(4, &content)
+    }
+
+    #[test]
+    fn detail_framing_message_propagates_work_refusal() {
+        let bytes = crc_chunk(ArchiveVersion::V5, 0x4000_8001, &[]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("context");
+        let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5)
+            .expect_err("message work refuses");
+        let crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+            panic!("resource refusal")
+        };
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+
+    #[test]
+    fn detail_version_message_propagates_work_refusal() {
+        let mut body = 2_i32.to_le_bytes().to_vec();
+        body.extend(0_i32.to_le_bytes());
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("context");
+        let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5)
+            .expect_err("message work refuses");
+        let crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+            panic!("resource refusal")
+        };
+        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
     }
 
     #[test]
