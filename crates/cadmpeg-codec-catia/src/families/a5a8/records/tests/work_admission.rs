@@ -41,6 +41,27 @@ fn work_refusals<T>(
     panic!("fixture did not finish its admitted work");
 }
 
+fn require_sticky_work_refusal<T>(
+    operation: &'static str,
+    run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
+) {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            crate::test_support::with_work_limit(cap, |ctx| {
+                let result = run(ctx);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
+}
+
 #[test]
 fn a5_knots_refuse_multiplicity_scan_and_expansion_work() {
     let operations = work_refusals(|ctx| a5_knots(ctx, &[0.0, 1.0], 1));
@@ -188,6 +209,7 @@ fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
         &[
             "catia_a8_frame_scan",
             "catia_a8_jet_preflight",
+            "catia_a8_jet_multiplicity_preflight_scan",
             "catia_a8_jet_knot_preflight_scan",
             "catia_a8_jet_materialization",
         ],
@@ -198,6 +220,15 @@ fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
     .expect("service parse")
     .pop()
     .expect("one jet");
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| curve.multiplicities(ctx))
+            .expect("service multiplicities"),
+        [6, 6]
+    );
+    require_sticky_work_refusal(
+        "catia_a8_jet_multiplicity_preflight_scan",
+        |ctx| super::super::a8_freeform_curves(ctx, &bytes),
+    );
     require_work_operations(
         |ctx| curve.multiplicities(ctx),
         &["catia_a8_jet_multiplicity_projection"],
@@ -216,6 +247,7 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
         &[
             "catia_object_stream_frame_scan",
             "catia_object_stream_pcurve_preflight",
+            "catia_object_stream_pcurve_multiplicity_preflight_scan",
             "catia_object_stream_pcurve_lane_scan",
             "catia_object_stream_pcurve_materialization",
         ],
@@ -226,6 +258,16 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
     .expect("service parse")
     .pop()
     .expect("one pcurve");
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| curve.knots(ctx))
+            .expect("service pcurve knots")
+            .len(),
+        2
+    );
+    require_sticky_work_refusal(
+        "catia_object_stream_pcurve_multiplicity_preflight_scan",
+        |ctx| super::super::object_stream_pcurves(ctx, &bytes),
+    );
     require_work_operations(|ctx| curve.knots(ctx), &["catia_a8_pcurve_knot_projection"]);
     require_work_operations(
         |ctx| curve.bspline(ctx),
@@ -245,6 +287,7 @@ fn a8_lane_preflight_and_inline_grid_materialization_refuse_caller_work() {
             "catia_a8_frame_scan",
             "catia_a8_lane_preflight",
             "catia_a8_distinct_knot_preflight_scan",
+            "catia_a8_surface_multiplicity_preflight_scan",
             "catia_a8_distinct_materialization",
             "catia_a8_multiplicity_materialization",
             "catia_a8_pole_count_scan",
@@ -254,6 +297,23 @@ fn a8_lane_preflight_and_inline_grid_materialization_refuse_caller_work() {
             "catia_a8_inline_pole_rows",
             "catia_a8_inline_weight_rows",
         ],
+    );
+    let surfaces = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service A8 surfaces");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(
+        surfaces[0]
+            .geometry
+            .pole_grid()
+            .weights()
+            .map(|rows| rows.concat()),
+        Some(vec![2.0; 9])
+    );
+    require_sticky_work_refusal(
+        "catia_a8_surface_multiplicity_preflight_scan",
+        |ctx| super::super::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new()),
     );
 }
 
@@ -341,6 +401,10 @@ fn mirrored_weight_program_refuses_seed_and_copy_work() {
             .collect::<Vec<_>>(),
         [1.0, 0.8, 0.8, 1.0, 1.0, 0.8, 0.8, 1.0]
     );
+    require_sticky_work_refusal(
+        "catia_a5_weight_mirror_copy",
+        |ctx| super::super::a5_weights(ctx, &bytes, &mut 0, 2, 4, bytes.len()),
+    );
 }
 
 #[test]
@@ -357,11 +421,25 @@ fn explicit_weight_program_refuses_lane_read_work() {
 
 #[test]
 fn grid_partition_refuses_move_work_before_rows_are_created() {
-    let result = crate::test_support::with_work_limit(0, |ctx| {
-        super::super::grid_rows(ctx, vec![0; 8], 4, "test grid partition")
+    crate::test_support::with_work_limit(0, |ctx| {
+        let result = super::super::grid_rows(ctx, vec![0; 8], 4, "test grid partition");
+        let Err(CodecError::ResourceLimit(limit)) = result else {
+            panic!("grid row range must refuse before row allocation")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "test grid partition");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 2);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "test grid partition"));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::grid_rows(ctx, vec![0; 8], 4, "test grid partition")
+        })
+        .expect("service grid rows"),
+        vec![vec![0; 4], vec![0; 4]]
+    );
+    // Two admitted rows plus eight moved values use ten work units.
     assert_eq!(
         crate::test_support::with_work_limit(10, |ctx| {
             super::super::grid_rows(ctx, vec![0; 8], 4, "test grid partition")

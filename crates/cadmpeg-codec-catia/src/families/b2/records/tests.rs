@@ -1945,3 +1945,5 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 mod carrier_records;
 mod indexed_wrappers;
 mod spatial_and_consolidated;
+
+mod range_admission;

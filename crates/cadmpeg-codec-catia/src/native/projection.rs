@@ -1201,7 +1201,10 @@ pub(crate) fn native_object_graph(
         "catia_native_graph_record_indices",
     )?;
     let terminal_null_entity_id = terminal_null_entity_id(ctx, &record_indices)?;
-    for index in 0..records.len() {
+    for index in ctx.admit_iter(
+        &(0..records.len()),
+        "catia_native_graph_record_link_updates",
+    )? {
         let storage_ref = records[index]
             .storage
             .as_ref()

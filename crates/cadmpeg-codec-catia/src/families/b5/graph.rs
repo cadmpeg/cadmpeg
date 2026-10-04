@@ -2009,7 +2009,14 @@ fn parse_a8_class21_pcurve(
             Err(error) => return Some(Err(error)),
         }
         let mut multiplicities_valid = true;
-        for index in 0..knot_count {
+        let multiplicity_indices = match ctx.admit_iter(
+            &(0..knot_count),
+            "catia_b5_a8_class21_multiplicity_scan",
+        ) {
+            Ok(indices) => indices,
+            Err(error) => return Some(Err(error.into())),
+        };
+        for index in multiplicity_indices {
             let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
             multiplicities_valid &= multiplicity
                 == if index == 0 || index + 1 == knot_count {
@@ -2205,20 +2212,14 @@ pub(in crate::families) fn edge_vertex_references(
 
 /// Return the ordered pcurve pair owned by each requested native edge's
 /// class-`23` curve-support wrapper.
-#[must_use]
 #[cfg(test)]
 fn edge_support_pcurve_references(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
-) -> BTreeMap<u32, [u32; 2]> {
-    let frames = crate::test_support::with_service_context(|ctx| {
-        object_stream_frames(ctx, bytes)?.collect::<Result<Vec<_>, CodecError>>()
-    })
-    .expect("service scan budget");
-    crate::test_support::with_service_context(|ctx| {
-        edge_support_pcurve_references_from_frames(ctx, bytes, edge_ids, &frames)
-    })
-    .expect("service budget")
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+    let frames = collect_object_stream_frames(ctx, bytes)?;
+    edge_support_pcurve_references_from_frames(ctx, bytes, edge_ids, &frames)
 }
 
 pub(in crate::families) fn edge_support_pcurve_references_from_frames(
@@ -2264,7 +2265,7 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
                 })
                 .or_insert(Some(wrapper));
         } else if frame.family == 0xb5 && frame.class == 0x23 {
-            let mut references = record_references(&record);
+            let mut references = record_references(ctx, &record)?;
             let (Some(first), Some(second), None) =
                 (references.next(), references.next(), references.next())
             else {
@@ -2939,10 +2940,12 @@ fn implicit_pcurve_bindings(
                     .admit_iter(&incidence.lanes, "catia_b5_implicit_pcurve_lane_scan")?
                     .any(|lane| lane.curve == pcurve))
             };
-            let curve_wrapper_contains = by_id.get(&edge.support).is_some_and(|wrapper| {
+            let curve_wrapper_contains = if let Some(wrapper) = by_id.get(&edge.support) {
                 matches!(wrapper.class, 0x23..=0x25)
-                    && record_references(wrapper).any(|reference| reference == pcurve)
-            });
+                    && record_references(ctx, wrapper)?.any(|reference| reference == pcurve)
+            } else {
+                false
+            };
             if !(curve_wrapper_contains
                 || endpoint_incidence_contains(edge.parameter_incidences[0])?
                     && endpoint_incidence_contains(edge.parameter_incidences[1])?)
@@ -5801,7 +5804,10 @@ fn rational_arc_pcurve(
     )?;
     distinct_knots.push(start);
     multiplicities.push(3);
-    for span in 0..span_count {
+    for span in ctx.admit_iter(
+        &(0..span_count),
+        "catia_b5_rational_arc_span_generation",
+    )? {
         let fraction0 = match f64_from_index(span) {
             Some(value) => value,
             None => return Ok(None),
@@ -6241,7 +6247,7 @@ fn admit_dependency_records(
             record.object_id,
             "catia_b5_existing_dependency_ids",
         )?;
-        for reference in record_references(record) {
+        for reference in record_references(ctx, record)? {
             if candidates.get(&reference).is_some_and(Option::is_some) {
                 ctx.insert_hash_set(&mut pending, reference, "catia_b5_pending_dependency_ids")?;
             }
@@ -6280,7 +6286,7 @@ fn admit_dependency_records(
                 candidate.object_id,
                 "catia_b5_admitted_dependency_ids",
             )?;
-            for reference in record_references(&candidate) {
+            for reference in record_references(ctx, &candidate)? {
                 if candidates.get(&reference).is_some_and(Option::is_some) {
                     ctx.insert_hash_set(
                         &mut pending,
@@ -7175,10 +7181,16 @@ fn owned_object_stream_population(
     Ok(population)
 }
 
-fn record_references(record: &B5Record) -> impl Iterator<Item = u32> + '_ {
+fn record_references<'record>(
+    ctx: &DecodeContext<'_>,
+    record: &'record B5Record,
+) -> Result<impl Iterator<Item = u32> + 'record, CodecError> {
     let mut position = 0;
     let count = counted_cardinality(&record.payload, &mut position).unwrap_or_default();
-    (0..count).map_while(move |_| wire::tokens::object_ref(&record.payload, &mut position, true))
+    let indices = 0..count;
+    Ok(ctx
+        .admit_iter(&indices, "catia_b5_record_reference_range_scan")?
+        .map_while(move |_| wire::tokens::object_ref(&record.payload, &mut position, true)))
 }
 
 fn topology_surface_references(
@@ -7188,8 +7200,8 @@ fn topology_surface_references(
     let mut surfaces = HashSet::new();
     for record in ctx.admit_iter(records, "catia_b5_topology_surface_record_scan")? {
         let reference = match record.class {
-            0x5f => record_references(record).next(),
-            0x62 => record_references(record).last(),
+            0x5f => record_references(ctx, record)?.next(),
+            0x62 => record_references(ctx, record)?.last(),
             _ => None,
         };
         if let Some(reference) = reference {

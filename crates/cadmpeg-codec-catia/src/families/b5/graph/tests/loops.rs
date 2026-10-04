@@ -1354,11 +1354,14 @@ fn requested_edge_support_scan_closes_through_its_unique_wrapper() {
             0x85, 0x18, 20, 0, 0x18, 1, 0, 0x18, 2, 0, 0x18, 3, 0, 0x18, 4, 0, 0x22,
         ],
     );
-    assert_eq!(
-        edge_support_pcurve_references(&bytes, &HashSet::from([40])),
-        BTreeMap::from([(40, [30, 31])])
-    );
-    assert!(edge_support_pcurve_references(&bytes, &HashSet::from([41])).is_empty());
+    let (supported, absent) = crate::test_support::with_service_context(|ctx| {
+        let supported = edge_support_pcurve_references(ctx, &bytes, &HashSet::from([40]))?;
+        let absent = edge_support_pcurve_references(ctx, &bytes, &HashSet::from([41]))?;
+        Ok::<_, cadmpeg_core::CodecError>((supported, absent))
+    })
+    .expect("service edge-support scan budget");
+    assert_eq!(supported, BTreeMap::from([(40, [30, 31])]));
+    assert!(absent.is_empty());
 }
 
 #[test]

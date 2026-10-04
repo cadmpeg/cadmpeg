@@ -934,7 +934,8 @@ pub(crate) fn b2_counted_owners_from_records(
         let mut references = Vec::new();
         let mut reference_encodings = Vec::new();
         let mut valid = true;
-        for _ in 0..count {
+        let reference_slots = 0..count;
+        for _ in ctx.admit_iter(&reference_slots, "catia_b2_counted_owner_reference_scan")? {
             let Some(reference) = allocation_reference(data, &mut at) else {
                 valid = false;
                 break;

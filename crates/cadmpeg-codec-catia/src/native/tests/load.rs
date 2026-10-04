@@ -206,6 +206,45 @@ fn native_graph_projection_refuses_caller_limits() {
 }
 
 #[test]
+fn native_graph_record_link_updates_preserve_work_refusal() {
+    use cadmpeg_core::CodecError;
+
+    let bytes = object_graph_stream();
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::parse(ctx, &bytes)
+    })
+    .expect("service object-graph parse budget")
+    .expect("fixture has an object graph");
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
+    })
+    .expect("service graph projection budget");
+    assert!(!service.0.records.is_empty());
+    assert_eq!(service.0.records[0].ordinal, 0);
+
+    let operation = "catia_native_graph_record_link_updates";
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = super::super::projection::native_object_graph(
+            ctx,
+            &parsed,
+            Vec::new(),
+            None,
+            None,
+        );
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(
+        refused,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+    ));
+}
+
+#[test]
 fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
     let mut bytes = object_graph_stream();
     bytes.extend(catalog_stream(&[

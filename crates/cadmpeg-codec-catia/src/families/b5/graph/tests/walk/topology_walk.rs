@@ -525,20 +525,20 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
         },
     )]);
 
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            implicit_pcurve_bindings(
-                ctx,
-                &records,
-                &by_id,
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-                &surfaces,
-            )
-            .expect("service budget")
-        }),
-        BTreeMap::from([(9, 11)])
-    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        implicit_pcurve_bindings(
+            ctx,
+            &records,
+            &by_id,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &surfaces,
+        )
+    })
+    .expect("service budget");
+    assert_eq!(service, BTreeMap::from([(9, 11)]));
+
+
 }
 
 #[test]
@@ -700,4 +700,32 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
         }),
         BTreeMap::from([(9, 11)])
     );
+
+    let refused = crate::test_support::with_work_refusal(
+        "catia_b5_record_reference_range_scan",
+        |ctx| {
+            let result = implicit_pcurve_bindings(
+                ctx,
+                &records,
+                &by_id,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &surfaces,
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(
+                    limit.dimension,
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits
+                );
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "catia_b5_record_reference_range_scan"
+    ));
 }
