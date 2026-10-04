@@ -3731,6 +3731,68 @@ fn insert_mesh_scope_tessellations<'a, I: Iterator>(
     Ok(())
 }
 
+fn corner_shaded_mesh(
+    ctx: &DecodeContext<'_>,
+    body_id: &str,
+    vertices: Vec<cadmpeg_ir::features::FinitePoint3>,
+    triangles: Vec<[u32; 3]>,
+    corner_normals: Option<Vec<cadmpeg_ir::features::FiniteVector3>>,
+) -> Result<cadmpeg_ir::tessellation::TessellationMesh<
+    cadmpeg_ir::features::FinitePoint3,
+    cadmpeg_ir::features::FiniteVector3,
+>, CodecError> {
+    let Some(corner_normals) = corner_normals else {
+        return Ok(cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices,
+            triangles,
+        });
+    };
+    let triangle_count = triangles.len();
+    let normal_count = corner_normals.len();
+    let Some(corner_count) = triangle_count.checked_mul(3) else {
+        let error = cadmpeg_ir::tessellation::TessellationLaneError::CornerCountOverflow {
+            triangles: triangle_count,
+        };
+        return Err(CodecError::malformed(format_args!(
+            "paramesh body record {body_id}: {error}"
+        )));
+    };
+    if normal_count != corner_count {
+        let error = cadmpeg_ir::tessellation::TessellationLaneError::CornerNormalLane {
+            corners: corner_count,
+            normals: normal_count,
+        };
+        return Err(CodecError::malformed(format_args!(
+            "paramesh body record {body_id}: {error}"
+        )));
+    }
+    let mut normals =
+        ctx.admit_iter(&corner_normals, "scan F3D corner-shaded normal values")?;
+    let mut shaded_triangles =
+        ctx.collection_vec(triangle_count, "collect F3D corner-shaded triangles")?;
+    for corners in ctx.admit_iter(&triangles, "scan F3D corner-shaded triangle rows")? {
+        let (Some(first), Some(second), Some(third)) =
+            (normals.next(), normals.next(), normals.next())
+        else {
+            let error = cadmpeg_ir::tessellation::TessellationLaneError::CornerNormalLane {
+                corners: corner_count,
+                normals: normal_count,
+            };
+            return Err(CodecError::malformed(format_args!(
+                "paramesh body record {body_id}: {error}"
+            )));
+        };
+        shaded_triangles.push(cadmpeg_ir::tessellation::ShadedTriangle {
+            corners: *corners,
+            normals: [*first, *second, *third],
+        });
+    }
+    Ok(cadmpeg_ir::tessellation::TessellationMesh::CornerShadedList {
+        vertices,
+        triangles: shaded_triangles,
+    })
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -3861,17 +3923,15 @@ fn project_mesh_bodies(
             &texture_table,
             body.triangles.len(),
         )?;
-        let mut triangle_groups = Vec::new();
-        for group in std::mem::take(&mut body.triangle_groups) {
-            ctx.push_vec(
-                &mut triangle_groups,
-                cadmpeg_ir::tessellation::TessellationTriangleGroup {
+        let triangle_groups = ctx.collect_vec(
+            std::mem::take(&mut body.triangle_groups)
+                .into_iter()
+                .map(|group| cadmpeg_ir::tessellation::TessellationTriangleGroup {
                     source_id: Some(group.source_id),
                     triangles: group.triangles,
-                },
-                "collect F3D mesh triangle groups",
-            )?;
-        }
+                }),
+            "collect F3D mesh triangle groups",
+        )?;
         let channels = mesh_attribute_channels(
             ctx,
             &body.attributes,
@@ -3883,26 +3943,22 @@ fn project_mesh_bodies(
         // corner-normal channel, so the lane arrives absent, never empty.
         let corner_normals = match body.corner_normals.take() {
             Some(normals) => {
-                let mut converted = Vec::new();
-                for normal in normals {
-                    ctx.push_vec(
-                        &mut converted,
-                        cadmpeg_ir::features::FiniteVector3::from(normal),
-                        "collect F3D mesh corner normals",
-                    )?;
-                }
-                Some(converted)
+                Some(ctx.collect_vec(
+                    normals
+                        .into_iter()
+                        .map(cadmpeg_ir::features::FiniteVector3::from),
+                    "collect F3D mesh corner normals",
+                )?)
             }
             None => None,
         };
-        let mesh = cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
+        let mesh = corner_shaded_mesh(
+            ctx,
+            &body.id,
             body.vertices,
             body.triangles,
             corner_normals,
-        )
-        .map_err(|error| {
-            CodecError::malformed(format_args!("paramesh body record {}: {error}", body.id))
-        })?;
+        )?;
         let id = match cadmpeg_ir::tessellation::TessellationId::mint(body.id) {
             Ok(id) => id,
             Err(error) => return Err(CodecError::Malformed(ctx.format_retained(
@@ -3994,7 +4050,10 @@ fn mesh_texture_assignments(
         })?);
     }
     let mut assignments = Vec::new();
-    for ((source_id, texture), triangles) in textures.iter().zip(triangles) {
+    for ((source_id, texture), triangles) in ctx
+        .admit_iter(textures, "scan F3D mesh texture assignment rows")?
+        .zip(triangles)
+    {
         if triangles.is_empty() {
             continue;
         }
@@ -4146,7 +4205,10 @@ fn mesh_attribute_channels(
                     triangles.len(),
                     "collect F3D mesh triangle selectors",
                 )?;
-                for index in 0..triangles.len() {
+                for index in ctx.admit_iter(
+                    &(0..triangles.len()),
+                    "scan F3D mesh triangle attribute selectors",
+                )? {
                     indices.push(u32::try_from(index).map_err(|_| {
                         CodecError::Malformed("F3D mesh triangle selector exceeds u32".into())
                     })?);
@@ -4180,7 +4242,7 @@ fn report_unresolved_mesh_attributes(
 ) -> Result<(), CodecError> {
     use crate::paramesh::MeshAttributeDomain;
 
-    for (domain, count) in unresolved {
+    for (domain, count) in ctx.admit_iter(unresolved, "scan F3D unresolved mesh attributes")? {
         let (addressing, reason) = match domain {
             MeshAttributeDomain::Corner => (
                 "triangle corners",

@@ -47,10 +47,13 @@ fn insert_id(
     };
     ctx.reserve_vec(values, 1, operation)?;
     let moved_slots = u64_from_index(values.len() - index);
-    let move_work = moved_slots
-        .checked_mul(u64_from_index(std::mem::size_of::<String>()))
-        .and_then(|bytes| bytes.checked_add(moved_slots))
-        .ok_or_else(|| ctx.refuse_codec_limit("move F3D BREP graph IDs", u64::MAX - 1, u64::MAX))?;
+    let item_bytes = u64_from_index(std::mem::size_of::<String>());
+    let moved_bytes = moved_slots.checked_mul(item_bytes).ok_or_else(|| {
+        ctx.refuse_codec_limit("move F3D BREP graph IDs", u64::MAX / item_bytes, moved_slots)
+    })?;
+    let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
+        ctx.refuse_codec_limit("move F3D BREP graph IDs", u64::MAX - moved_slots, moved_bytes)
+    })?;
     ctx.charge_work(move_work, "move F3D BREP graph IDs")?;
     values.insert(index, value);
     Ok(true)
@@ -169,10 +172,13 @@ pub(super) fn insert_brep_adjacency(
             let source = ctx.copy_retained_text(source, "copy F3D BREP adjacency source")?;
             ctx.reserve_vec(adjacency, 1, "index F3D BREP adjacency")?;
             let moved_slots = u64_from_index(adjacency.len() - index);
-            let move_work = moved_slots
-                .checked_mul(u64_from_index(std::mem::size_of::<AdjacencyRow>()))
-                .and_then(|bytes| bytes.checked_add(moved_slots))
-                .ok_or_else(|| ctx.refuse_codec_limit("move F3D BREP adjacency rows", u64::MAX - 1, u64::MAX))?;
+            let item_bytes = u64_from_index(std::mem::size_of::<AdjacencyRow>());
+            let moved_bytes = moved_slots.checked_mul(item_bytes).ok_or_else(|| {
+                ctx.refuse_codec_limit("move F3D BREP adjacency rows", u64::MAX / item_bytes, moved_slots)
+            })?;
+            let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
+                ctx.refuse_codec_limit("move F3D BREP adjacency rows", u64::MAX - moved_slots, moved_bytes)
+            })?;
             ctx.charge_work(move_work, "move F3D BREP adjacency rows")?;
             adjacency.insert(
                 index,
@@ -221,10 +227,13 @@ fn adjacency(
             ctx.charge_work(0, "remove F3D BREP self reference")?;
             if let Ok(index) = position(ctx, &references, id, String::as_str)? {
                 let moved_slots = u64_from_index(references.len() - index - 1);
-                let move_work = moved_slots
-                    .checked_mul(u64_from_index(std::mem::size_of::<String>()))
-                    .and_then(|bytes| bytes.checked_add(moved_slots))
-                    .ok_or_else(|| ctx.refuse_codec_limit("remove F3D BREP self reference", u64::MAX - 1, u64::MAX))?;
+                let item_bytes = u64_from_index(std::mem::size_of::<String>());
+                let moved_bytes = moved_slots.checked_mul(item_bytes).ok_or_else(|| {
+                    ctx.refuse_codec_limit("remove F3D BREP self reference", u64::MAX / item_bytes, moved_slots)
+                })?;
+                let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
+                    ctx.refuse_codec_limit("remove F3D BREP self reference", u64::MAX - moved_slots, moved_bytes)
+                })?;
                 ctx.charge_work(move_work, "remove F3D BREP self reference")?;
                 references.remove(index);
             }

@@ -380,7 +380,7 @@ fn decode_table(
         return Err(malformed("entry count"));
     }
     let mut entries = Vec::new();
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "scan F3D ACT table entries")? {
         let index_offset = cursor.checked_add(1).ok_or_else(|| malformed("entry"))?;
         let entity_length_offset = cursor.checked_add(11).ok_or_else(|| malformed("entry"))?;
         if bytes.get(cursor) != Some(&1)
@@ -457,7 +457,7 @@ fn decode_table(
         return Err(malformed("table-reference count"));
     }
     let mut table_references = Vec::new();
-    for ordinal in 0..reference_count {
+    for ordinal in ctx.admit_iter(&(0..reference_count), "scan F3D ACT table references")? {
         let byte_offset = cursor;
         let (target_record, end) = marker_ref(ctx, bytes, cursor, 6, frame.end)?
             .ok_or_else(|| malformed("table reference"))?;
@@ -496,7 +496,7 @@ fn decode_table(
     }
     let mut registry_names = BTreeSet::new();
     let mut registry_channels = Vec::new();
-    for ordinal in 0..registry_count {
+    for ordinal in ctx.admit_iter(&(0..registry_count), "scan F3D ACT registry channels")? {
         let byte_offset = cursor;
         let (name, after_name) = lp_ascii_strict_charged(ctx, bytes, cursor, 1..=128)?
             .ok_or_else(|| malformed("channel-registry name"))?;
@@ -677,7 +677,7 @@ fn decode_channel_group(
     };
     let mut cursor = count_offset + 4;
     let mut channels = BTreeMap::new();
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "scan F3D ACT channel group entries")? {
         let Some((name, after_name)) =
             lp_ascii_strict_charged(ctx, bytes, cursor, 1..=128)?
         else {
@@ -973,6 +973,168 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 
+    fn act_table_frame(end: usize) -> RecordFrame {
+        RecordFrame {
+            start: 0,
+            end,
+            record_index: 0,
+            record_index_offset: 0,
+            payload_offset: 0,
+            class_tag: "001".to_owned().try_into().unwrap(),
+        }
+    }
+
+    fn table_entry_frame() -> (Vec<u8>, RecordFrame) {
+        let mut bytes = vec![0, 0];
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&7_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, "0_7");
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        let frame = act_table_frame(bytes.len());
+        (bytes, frame)
+    }
+
+    fn table_reference_frame() -> (Vec<u8>, RecordFrame) {
+        let mut bytes = vec![0, 0];
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        let frame = act_table_frame(bytes.len());
+        (bytes, frame)
+    }
+
+    fn registry_channel_frame() -> (Vec<u8>, RecordFrame) {
+        let mut bytes = vec![0, 0];
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        lp_ascii(&mut bytes, "Appearance");
+        lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+        let frame = act_table_frame(bytes.len());
+        (bytes, frame)
+    }
+
+    fn channel_group_frame() -> (Vec<u8>, RecordFrame, usize, usize) {
+        let payload_offset = 11;
+        let mut bytes = vec![0; payload_offset + 10];
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        lp_ascii(&mut bytes, "Appearance");
+        lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+        let entity_at = bytes.len();
+        lp_utf16(&mut bytes, "0_985");
+        let tail_at = bytes.len();
+        bytes.extend_from_slice(&[0; 11]);
+        let frame = RecordFrame {
+            start: 0,
+            end: bytes.len(),
+            record_index: 7,
+            record_index_offset: 7,
+            payload_offset,
+            class_tag: "261".to_owned().try_into().unwrap(),
+        };
+        (bytes, frame, entity_at, tail_at)
+    }
+
+    #[test]
+    fn act_table_entry_count_range_refuses_work_limit() {
+        let (bytes, frame) = table_entry_frame();
+        let decoded = super::decode_table(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &frame,
+            0,
+            "synthetic",
+        )
+        .unwrap();
+        assert_eq!(decoded.entries.len(), 1);
+        assert_eq!(decoded.entries[0].record_index, 7);
+        assert_eq!(decoded.entries[0].entity_id, "0_7");
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D ACT table entries",
+            0,
+            |ctx| super::decode_table(ctx, &bytes, &frame, 0, "synthetic").map(|_| ()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D ACT table entries"));
+    }
+
+    #[test]
+    fn act_table_reference_count_range_refuses_work_limit() {
+        let (bytes, frame) = table_reference_frame();
+        let decoded = super::decode_table(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &frame,
+            0,
+            "synthetic",
+        )
+        .unwrap();
+        assert_eq!(decoded.references.len(), 1);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D ACT table references",
+            0,
+            |ctx| super::decode_table(ctx, &bytes, &frame, 0, "synthetic").map(|_| ()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D ACT table references"));
+    }
+
+    #[test]
+    fn act_registry_count_range_refuses_work_limit() {
+        let (bytes, frame) = registry_channel_frame();
+        let decoded = super::decode_table(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &frame,
+            0,
+            "synthetic",
+        )
+        .unwrap();
+        assert_eq!(decoded.registry_channels.len(), 1);
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D ACT registry channels",
+            0,
+            |ctx| super::decode_table(ctx, &bytes, &frame, 0, "synthetic").map(|_| ()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D ACT registry channels"));
+    }
+
+    #[test]
+    fn act_channel_group_count_range_refuses_work_limit() {
+        let (bytes, frame, _, _) = channel_group_frame();
+        let group = decode_channel_group(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &frame,
+            "synthetic",
+        )
+        .unwrap()
+        .expect("valid channel group");
+        assert_eq!(group.channels.len(), 1);
+        assert_eq!(
+            group.entity_id.as_ref().map(|entity| entity.value.as_str()),
+            Some("0_985")
+        );
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D ACT channel group entries",
+            0,
+            |ctx| decode_channel_group(ctx, &bytes, &frame, "synthetic").map(|_| ()),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D ACT channel group entries"));
+    }
+
     fn table_entry(entity_id: &str) -> TableEntry {
         TableEntry {
             record_index: 7,
@@ -1062,23 +1224,7 @@ mod tests {
 
     #[test]
     fn channel_group_distinguishes_zero_padding_from_a_class_tail() {
-        let payload_offset = 11;
-        let mut bytes = vec![0; payload_offset + 10];
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        lp_ascii(&mut bytes, "Appearance");
-        lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
-        let entity_at = bytes.len();
-        lp_utf16(&mut bytes, "0_985");
-        let tail_at = bytes.len();
-        bytes.extend_from_slice(&[0; 11]);
-        let mut frame = RecordFrame {
-            start: 0,
-            end: bytes.len(),
-            record_index: 7,
-            record_index_offset: 7,
-            payload_offset,
-            class_tag: "261".to_owned().try_into().unwrap(),
-        };
+        let (mut bytes, mut frame, entity_at, tail_at) = channel_group_frame();
 
         let group = decode_channel_group(
             &cadmpeg_test_support::service_decode_context(),

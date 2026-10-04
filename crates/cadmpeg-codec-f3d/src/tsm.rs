@@ -1739,93 +1739,93 @@ ctx.push_vec(&mut symmetry_blocks, block, "read T-spline symmetry blocks")?;
             ));
         }
     }
-    let mut typed_symmetry_blocks = Vec::new();
-    for block in symmetry_blocks {
-        let plane = block
-            .plane
-            .ok_or_else(|| malformed(ctx, name, "symmetry block has no plane"))?;
-        let kind = match block.mode {
-            SymmetryMode::Correspondence => {
-                validate_symmetry_map(
-                    ctx,
-                    name,
-                    &block.face_forward,
-                    &block.face_reverse,
-                    &face_live,
-                    "face",
-                )?;
-                validate_symmetry_map(
-                    ctx,
-                    name,
-                    &block.edge_forward,
-                    &block.edge_reverse,
-                    &edge_live,
-                    "edge",
-                )?;
-                validate_symmetry_map(
-                    ctx,
-                    name,
-                    &block.vertex_forward,
-                    &block.vertex_reverse,
-                    &vertex_live,
-                    "vertex",
-                )?;
-                SymmetryKind::Correspondence {
-                    face: block.face_forward,
-                    edge: block.edge_forward,
-                    vertex: block.vertex_forward,
-                }
-            }
-            SymmetryMode::Radial => {
-                let segments = block.radial_segments.ok_or_else(|| {
-                    malformed(ctx, name, "radial symmetry block is missing segments")
-                })?;
-                let sweep = block.radial_sweep.ok_or_else(|| {
-                    malformed(ctx, name, "radial symmetry block is missing sweep")
-                })?;
-                for selector in [
-                    SubdRadialMapSelector::Ef,
-                    SubdRadialMapSelector::Er,
-                    SubdRadialMapSelector::Ff,
-                    SubdRadialMapSelector::Fr,
-                    SubdRadialMapSelector::Vf,
-                    SubdRadialMapSelector::Vr,
-                ] {
-                    if !ctx.any_by(
-                        &block.radial_maps,
-                        |map| Ok(map.selector == selector),
-                        "find T-spline radial symmetry map",
-                    )? {
-                        return Err(malformed(
+    let typed_symmetry_blocks = ctx.try_collect_vec(
+        symmetry_blocks
+            .into_iter()
+            .map(|block| -> Result<_, CodecError> {
+                let plane = block
+                    .plane
+                    .ok_or_else(|| malformed(ctx, name, "symmetry block has no plane"))?;
+                let kind = match block.mode {
+                    SymmetryMode::Correspondence => {
+                        validate_symmetry_map(
                             ctx,
                             name,
-                            format_args!(
-                                "radial symmetry block is missing {}",
-                                match selector {
-                                    SubdRadialMapSelector::Ef => "ef",
-                                    SubdRadialMapSelector::Er => "er",
-                                    SubdRadialMapSelector::Ff => "ff",
-                                    SubdRadialMapSelector::Fr => "fr",
-                                    SubdRadialMapSelector::Vf => "vf",
-                                    SubdRadialMapSelector::Vr => "vr",
-                                }
-                            ),
-                        ));
+                            &block.face_forward,
+                            &block.face_reverse,
+                            &face_live,
+                            "face",
+                        )?;
+                        validate_symmetry_map(
+                            ctx,
+                            name,
+                            &block.edge_forward,
+                            &block.edge_reverse,
+                            &edge_live,
+                            "edge",
+                        )?;
+                        validate_symmetry_map(
+                            ctx,
+                            name,
+                            &block.vertex_forward,
+                            &block.vertex_reverse,
+                            &vertex_live,
+                            "vertex",
+                        )?;
+                        SymmetryKind::Correspondence {
+                            face: block.face_forward,
+                            edge: block.edge_forward,
+                            vertex: block.vertex_forward,
+                        }
                     }
-                }
-                SymmetryKind::Radial {
-                    segments,
-                    sweep,
-                    maps: block.radial_maps,
-                }
-            }
-        };
-        ctx.push_vec(
-            &mut typed_symmetry_blocks,
-            SymmetryBlock { plane, kind },
-            "type T-spline symmetry blocks",
-        )?;
-    }
+                    SymmetryMode::Radial => {
+                        let segments = block.radial_segments.ok_or_else(|| {
+                            malformed(ctx, name, "radial symmetry block is missing segments")
+                        })?;
+                        let sweep = block.radial_sweep.ok_or_else(|| {
+                            malformed(ctx, name, "radial symmetry block is missing sweep")
+                        })?;
+                        for selector in [
+                            SubdRadialMapSelector::Ef,
+                            SubdRadialMapSelector::Er,
+                            SubdRadialMapSelector::Ff,
+                            SubdRadialMapSelector::Fr,
+                            SubdRadialMapSelector::Vf,
+                            SubdRadialMapSelector::Vr,
+                        ] {
+                            if !ctx.any_by(
+                                &block.radial_maps,
+                                |map| Ok(map.selector == selector),
+                                "find T-spline radial symmetry map",
+                            )? {
+                                return Err(malformed(
+                                    ctx,
+                                    name,
+                                    format_args!(
+                                        "radial symmetry block is missing {}",
+                                        match selector {
+                                            SubdRadialMapSelector::Ef => "ef",
+                                            SubdRadialMapSelector::Er => "er",
+                                            SubdRadialMapSelector::Ff => "ff",
+                                            SubdRadialMapSelector::Fr => "fr",
+                                            SubdRadialMapSelector::Vf => "vf",
+                                            SubdRadialMapSelector::Vr => "vr",
+                                        }
+                                    ),
+                                ));
+                            }
+                        }
+                        SymmetryKind::Radial {
+                            segments,
+                            sweep,
+                            maps: block.radial_maps,
+                        }
+                    }
+                };
+                Ok(SymmetryBlock { plane, kind })
+            }),
+        "type T-spline symmetry blocks",
+    )?;
     let mut grip_owners =
         ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for connectivity in ctx.admit_iter(&derived_grips, "validate T-spline derived-grip connectivity")? {
@@ -1923,32 +1923,36 @@ ctx.push_vec(&mut symmetry_blocks, block, "read T-spline symmetry blocks")?;
     let vertex_ir = compact(ctx, &vertex_live)?;
     let edge_ir = compact(ctx, &edge_live)?;
     let face_ir = compact(ctx, &face_live)?;
-    let mut symmetries = Vec::new();
-    for block in typed_symmetry_blocks {
-        let plane = symmetry_plane(ctx, name, block.plane)?;
-        let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.kind {
-            SymmetryKind::Correspondence { face, edge, vertex } => (
-                SubdSymmetryKind::Correspondence {},
-                remap_symmetry_pairs(ctx, name, &face, &face_ir, "face")?,
-                remap_symmetry_pairs(ctx, name, &edge, &edge_ir, "edge")?,
-                remap_symmetry_pairs(ctx, name, &vertex, &vertex_ir, "vertex")?,
-            ),
-            SymmetryKind::Radial {
-                segments,
-                sweep,
-                maps,
-            } => (
-                SubdSymmetryKind::radial_from_parts(segments, sweep, maps, ctx)?
-                    .map_err(|error| malformed(ctx, name, error))?,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ),
-        };
-        let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs, ctx)?
-            .map_err(|error| malformed(ctx, name, error))?;
-        ctx.push_vec(&mut symmetries, symmetry, "project T-spline symmetries")?;
-    }
+    let symmetries = ctx.try_collect_vec(
+        typed_symmetry_blocks
+            .into_iter()
+            .map(|block| -> Result<_, CodecError> {
+                let plane = symmetry_plane(ctx, name, block.plane)?;
+                let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.kind {
+                    SymmetryKind::Correspondence { face, edge, vertex } => (
+                        SubdSymmetryKind::Correspondence {},
+                        remap_symmetry_pairs(ctx, name, &face, &face_ir, "face")?,
+                        remap_symmetry_pairs(ctx, name, &edge, &edge_ir, "edge")?,
+                        remap_symmetry_pairs(ctx, name, &vertex, &vertex_ir, "vertex")?,
+                    ),
+                    SymmetryKind::Radial {
+                        segments,
+                        sweep,
+                        maps,
+                    } => (
+                        SubdSymmetryKind::radial_from_parts(segments, sweep, maps, ctx)?
+                            .map_err(|error| malformed(ctx, name, error))?,
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
+                };
+                let symmetry = SubdSymmetry::new(kind, plane, face_pairs, edge_pairs, vertex_pairs, ctx)?
+                    .map_err(|error| malformed(ctx, name, error))?;
+                Ok(symmetry)
+            }),
+        "project T-spline symmetries",
+    )?;
     let edge_knot_intervals_ir = ctx.collect_vec(
         ctx.admit_iter(&edge_knot_intervals, "project T-spline edge knot intervals")?
             .copied()
@@ -2591,6 +2595,52 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         "project T-spline symmetries"
     );
 
+    #[test]
+    fn tsm_typed_symmetry_source_refuses_work_limit() {
+        let source = symmetry_quad_source();
+        let cage = parse_cage(source.as_bytes()).expect("valid symmetry source");
+        assert_eq!(
+            wire::field_or_default::<Vec<subd::SubdSymmetry>>(&(cage.surface.cage), "symmetries")
+                .len(),
+            1
+        );
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "type T-spline symmetry blocks",
+            0,
+            |ctx| super::parse(ctx, "synthetic.tsm", source.as_bytes()).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "type T-spline symmetry blocks"
+        ));
+    }
+
+    #[test]
+    fn tsm_projected_symmetry_source_refuses_work_limit() {
+        let source = symmetry_quad_source();
+        let cage = parse_cage(source.as_bytes()).expect("valid symmetry source");
+        assert_eq!(
+            wire::field_or_default::<Vec<subd::SubdSymmetry>>(&(cage.surface.cage), "symmetries")
+                .len(),
+            1
+        );
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "project T-spline symmetries",
+            0,
+            |ctx| super::parse(ctx, "synthetic.tsm", source.as_bytes()).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "project T-spline symmetries"
+        ));
+    }
+
     fn fan_limit(items: u64) -> cadmpeg_core::CodecError {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = items;
@@ -2713,10 +2763,16 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     macro_rules! tsm_parse_collection_limit_test {
-        ($name:ident, $source:literal, $items:expr, $operation:literal) => {
+        ($name:ident, $source:literal, $operation:literal) => {
             #[test]
             fn $name() {
-                let error = parse_small_limit($source, $items, u64::MAX);
+                // The ceiling includes line views, field views and preceding parser slots.
+                let error = crate::test_support::resource_refusal_at(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    $operation,
+                    0,
+                    |ctx| super::parse(ctx, "synthetic.tsm", $source.as_bytes()).map(|_| ()),
+                );
                 assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.operation == $operation), "{error:?}");
             }
@@ -2726,151 +2782,126 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     tsm_parse_collection_limit_test!(
         tsm_face_slot_refuses_collection_limit,
         "#TS0200\nf\n",
-        0,
         "read T-spline face slots"
     );
     tsm_parse_collection_limit_test!(
         tsm_edge_slot_refuses_collection_limit,
         "#TS0200\ne\n",
-        0,
         "read T-spline edge slots"
     );
     tsm_parse_collection_limit_test!(
         tsm_edge_knot_interval_refuses_collection_limit,
         "#TS0200\ne\n",
-        1,
         "read T-spline edge knot intervals"
     );
     tsm_parse_collection_limit_test!(
         tsm_edge_knot_record_refuses_collection_limit,
         "#TS0200\n106ek 1\n",
-        0,
         "read T-spline edge knot records"
     );
     tsm_parse_collection_limit_test!(
         tsm_vertex_flag_refuses_collection_limit,
         "#TS0200\nv\n",
-        0,
         "read T-spline vertex live flags"
     );
     tsm_parse_collection_limit_test!(
         tsm_vertex_root_refuses_collection_limit,
         "#TS0200\nv\n",
-        1,
         "read T-spline vertex roots"
     );
     tsm_parse_collection_limit_test!(
         tsm_half_edge_slot_refuses_collection_limit,
         "#TS0200\nl\n",
-        0,
         "read T-spline half-edge slots"
     );
     tsm_parse_collection_limit_test!(
         tsm_grip_marker_refuses_collection_limit,
         "#TS0200\n0m odd-grip-map\n0m gvp 0\n",
-        0,
         "read T-spline grip vertex markers"
     );
     tsm_parse_collection_limit_test!(
         tsm_grip_point_refuses_collection_limit,
         "#TS0200\n0g\n",
-        0,
         "read T-spline grip points"
     );
     tsm_parse_collection_limit_test!(
         tsm_derived_spokes_refuses_collection_limit,
         "#TS0200\n0m odd-grip-map\n0m cg 0 1 0\n",
-        0,
         "read T-spline derived-grip spokes"
     );
     tsm_parse_collection_limit_test!(
         tsm_derived_indices_refuses_collection_limit,
         "#TS0200\n0m odd-grip-map\n0m cg 0 1 1 0 0\n",
-        1,
         "read T-spline derived-grip indices"
     );
     tsm_parse_collection_limit_test!(
         tsm_derived_grip_record_refuses_collection_limit,
         "#TS0200\n0m odd-grip-map\n0m cg 0 1 0\n",
-        1,
         "read T-spline derived grips"
     );
     tsm_parse_collection_limit_test!(
         tsm_symmetry_block_refuses_collection_limit,
         "#TS0200\n105sym 0\n105sym 0\n",
-        0,
         "read T-spline symmetry blocks"
     );
     tsm_parse_collection_limit_test!(
         tsm_symmetry_plane_coefficients_refuse_collection_limit,
         "#TS0200\n105sym 0\n105plane 0\n",
-        0,
         "read T-spline symmetry plane coefficients"
     );
     tsm_parse_collection_limit_test!(
         tsm_editor_selection_refuses_collection_limit,
         "#TS0200\n100edges 1\n",
-        0,
         "read T-spline editor selections"
     );
     tsm_parse_collection_limit_test!(
         tsm_grip_selection_merge_refuses_collection_limit,
         "#TS0200\n50000grip 1\n",
-        1,
         "merge T-spline grip selections"
     );
     tsm_parse_collection_limit_test!(
         tsm_crease_edge_refuses_collection_limit,
         "#TS0200\nec 0 0\n",
-        0,
         "read T-spline crease edges"
     );
     tsm_parse_collection_limit_test!(
         tsm_symmetry_map_values_refuse_collection_limit,
         "#TS0200\n105sym 0\n105a f 0 1\n",
-        0,
         "read T-spline symmetry map values"
     );
     tsm_parse_collection_limit_test!(
         tsm_symmetry_map_pairs_refuse_collection_limit,
         "#TS0200\n105sym 0\n105a f 0 1\n",
-        2,
         "index T-spline symmetry map pairs"
     );
     tsm_parse_collection_limit_test!(
         tsm_radial_map_values_refuse_collection_limit,
         "#TS0200\n105sym 1\n105r ef 0 1\n",
-        1,
         "read T-spline radial map values"
     );
     tsm_parse_collection_limit_test!(
         tsm_radial_map_sources_refuse_collection_limit,
         "#TS0200\n105sym 1\n105r ef 0 1\n",
-        3,
         "index T-spline radial map sources"
     );
     tsm_parse_collection_limit_test!(
         tsm_radial_map_pairs_refuse_collection_limit,
         "#TS0200\n105sym 1\n105r ef 0 1\n",
-        4,
         "read T-spline radial map pairs"
     );
     tsm_parse_collection_limit_test!(
         tsm_radial_map_run_refuses_collection_limit,
         "#TS0200\n105sym 1\n105r ef 0 1\n",
-        5,
         "read T-spline radial maps"
     );
     tsm_parse_collection_limit_test!(
         tsm_symmetry_kind_index_refuses_collection_limit,
         "#TS0200\n105sym 0\n105a f\n",
-        0,
         "index T-spline symmetry kinds"
     );
     tsm_parse_collection_limit_test!(
         tsm_unknown_kind_index_refuses_collection_limit,
         "#TS0200\nzzz\n",
-        0,
         "index T-spline unknown record kinds"
     );
 
