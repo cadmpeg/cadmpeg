@@ -935,30 +935,3 @@ fn located_design_type_entity_copy_refuses_each_resource_limit() {
     let expected = [Located { value: 17, offset: 23 }];
     assert_eq!(copied.entities.located_rows(), Some(&expected[..]));
 }
-
-#[test]
-fn design_type_module_utf8_validation_refuses_work() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let module = "Fusion";
-    let row = crate::design::test_support::design_type(
-        "11111111-2222-3333-4444-555555555555",
-        None,
-        1,
-        module,
-        Vec::new(),
-    );
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        "validate F3D Design type module",
-        0,
-        |ctx| super::copy_design_type(ctx, &row, "Design/MetaStream.dat").map(|_| ()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D Design type module"
-                && limit.additional == u64::try_from(module.len()).unwrap()
-    ));
-}

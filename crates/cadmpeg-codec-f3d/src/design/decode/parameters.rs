@@ -1318,18 +1318,6 @@ fn companion_payload<S: std::hash::BuildHasher>(
             &recipe.id,
             "f3d companion owned recipe identifier",
         )?;
-        match ctx.validate_utf8(
-            id.as_bytes(),
-            "validate F3D companion owned recipe identifier",
-        )? {
-            Ok(_) => {}
-            Err(_) => {
-                return Err(CodecError::malformed(
-                    "F3D companion recipe ID must be UTF-8",
-                ));
-            }
-        }
-
         ctx.reserve_vec(&mut owned_ids, 1, "f3d companion owned recipe identifiers")?;
         owned_ids.push(id);
     }

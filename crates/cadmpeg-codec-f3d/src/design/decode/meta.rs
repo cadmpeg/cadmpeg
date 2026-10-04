@@ -122,14 +122,6 @@ fn copy_design_type(
         ReferenceRun::unlocated(copied)
     };
     let module = ctx.copy_retained_text(&design_type.module, "f3d design type module")?;
-    match ctx.validate_utf8(module.as_bytes(), "validate F3D Design type module")? {
-        Ok(_) => {}
-        Err(_) => {
-            return Err(CodecError::Malformed(
-                "F3D Design module text is invalid UTF-8".into(),
-            ));
-        }
-    }
     let id = design_record_id_charged(
         ctx,
         stream,

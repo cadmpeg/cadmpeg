@@ -562,18 +562,6 @@ fn exact_legacy_as_built_face_selection(
                 Ok(id) => id,
                 Err(error) => return Some(Err(error)),
             };
-            match ctx.validate_utf8(
-                id.as_bytes(),
-                "validate F3D legacy AsBuilt selection header ID",
-            ) {
-                Ok(Ok(_)) => {}
-                Ok(Err(error)) => {
-                    return Some(Err(cadmpeg_core::CodecError::NotImplemented(
-                        error.to_string(),
-                    )))
-                }
-                Err(error) => return Some(Err(error)),
-            }
             let copied_class_tag = match ctx.copy_retained_text(
                 class_tag.as_str(),
                 "copy F3D As-built selection class tag",
@@ -753,44 +741,6 @@ mod tests {
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "copy F3D As-built selection class tag"
                     && failure.additional == 3
-        ));
-    }
-
-    #[test]
-    fn legacy_as_built_selection_header_id_validation_refuses_work() {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"307");
-        bytes.extend_from_slice(&77u32.to_le_bytes());
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        let scope = crate::records::feature::scope::DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-            42,
-        );
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "validate F3D legacy AsBuilt selection header ID",
-            0,
-            |ctx| {
-                exact_legacy_as_built_face_selection(
-                    ctx,
-                    &bytes,
-                    &records,
-                    &scope,
-                    0,
-                    (77, "307"),
-                    &[],
-                )
-                .map(|_| ())
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "validate F3D legacy AsBuilt selection header ID"
-                    && limit.additional == u64_from_index(scope.id.len())
         ));
     }
 }

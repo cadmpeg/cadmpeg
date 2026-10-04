@@ -100,10 +100,6 @@ pub(super) fn embedded_image_asset(
     .map(str::to_owned);
     let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
     let name = ctx.copy_retained_text(asset_name, "f3d embedded image name")?;
-    match ctx.validate_utf8(name.as_bytes(), "validate F3D embedded image name")? {
-        Ok(_) => {}
-        Err(_) => return Err(CodecError::Malformed("asset name must be UTF-8".into())),
-    }
     let native_ref = native_scope_charged(ctx, &entry.name)?;
     Ok(Some(Asset::try_new(
         ctx,
@@ -203,19 +199,6 @@ mod tests {
                             && failure.operation == operation
                 ));
             }
-            let error = crate::test_support::resource_refusal_at(
-                ResourceDimension::WorkUnits,
-                "validate F3D embedded image name",
-                0,
-                |ctx| super::embedded_image_asset(ctx, scan, NAME).map(|_| ()),
-            );
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "validate F3D embedded image name"
-                        && limit.additional == u64_from_index(NAME.len())
-            ));
             let extension_error = crate::test_support::resource_refusal_at(
                 ResourceDimension::WorkUnits,
                 "validate F3D embedded image extension",

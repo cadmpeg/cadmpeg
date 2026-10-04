@@ -568,10 +568,6 @@ fn copy_sketch_entity_id(
     source: &crate::records::identity::DesignEntityId,
 ) -> Result<crate::records::identity::DesignEntityId, CodecError> {
     let text = ctx.copy_retained_text(source.as_str(), "f3d Sketch scope entity ID")?;
-    match ctx.validate_utf8(text.as_bytes(), "validate F3D Sketch scope entity ID")? {
-        Ok(_) => {}
-        Err(error) => return Err(CodecError::NotImplemented(error.to_string())),
-    }
     crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::NotImplemented)
 }
 

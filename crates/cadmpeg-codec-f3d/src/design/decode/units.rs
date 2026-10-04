@@ -190,18 +190,9 @@ fn decode_modeling_length_unit(
                             continue;
                         };
                         if property == MODELING_LENGTH_PROPERTY {
-                            let value = ctx.copy_retained_text(value, "f3d document length unit")?;
-                            match ctx.validate_utf8(
-                                value.as_bytes(),
-                                "validate F3D document length unit",
-                            )? {
-                                Ok(_) => return Ok(Some(value)),
-                                Err(_) => {
-                                    return Err(CodecError::malformed(
-                                        "validated length unit is not UTF-8",
-                                    ));
-                                }
-                            }
+                            return Ok(Some(
+                                ctx.copy_retained_text(value, "f3d document length unit")?,
+                            ));
                         }
                     }
                 }
@@ -360,24 +351,6 @@ pub(crate) mod tests {
                 "expected the Custom system's {unit}"
             );
         }
-    }
-
-    #[test]
-    fn document_length_unit_utf8_validation_refuses_work() {
-        let bytes = stream(["centimeter", "millimeter", "meter", "inch", "foot", "inch"]);
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "validate F3D document length unit",
-            0,
-            |ctx| super::decode_modeling_length_unit(ctx, &bytes).map(|_| ()),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "validate F3D document length unit"
-                    && limit.additional == 4
-        ));
     }
 
     #[test]
