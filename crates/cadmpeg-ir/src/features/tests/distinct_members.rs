@@ -75,7 +75,17 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
             self.0 == other.0
         }
     }
-    for allowance in 0..=2 {
+    impl cadmpeg_core::decode::cost::DecodeCost for Counted {
+        fn decode_cost(
+            &self,
+            ctx: &DecodeContext<'_>,
+            operation: &'static str,
+        ) -> Result<u64, CodecError> {
+            cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.0, ctx, operation)
+        }
+    }
+    // Each checked member costs one visit and both one-byte key measurements.
+    for allowance in 0..=6 {
         let comparisons = Rc::new(Cell::new(0));
         let mut members = DistinctMembers(vec![
             Counted(1, comparisons.clone()),
@@ -90,9 +100,9 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = members.insert(&ctx, Counted(2, comparisons.clone()), "member comparisons");
-        assert_eq!(comparisons.get(), allowance);
+        assert_eq!(comparisons.get(), allowance / 3);
         assert_eq!(members.len(), 2);
-        if allowance < 2 {
+        if allowance < 6 {
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("work refusal required");
             };
@@ -119,6 +129,37 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
         members.iter().map(|value| value.0).collect::<Vec<_>>(),
         [1, 2, 3]
     );
+}
+
+#[test]
+fn long_parameter_member_comparison_refuses_work_before_equality() {
+    use crate::features::ParameterId;
+
+    let member = ParameterId::mint(format!(
+        "synthetic:test:parameter#{}",
+        "x".repeat(64)
+    ))
+    .expect("identity grammar");
+    let mut members = DistinctMembers(vec![member.clone()]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let operation = "compare long parameter member";
+    let error = members
+        .append(&ctx, [member.clone()], operation)
+        .expect_err("key comparison must be admitted");
+
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal required");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, operation);
+    assert_eq!(members.as_slice(), &[member]);
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(CodecError::ResourceLimit(original)) if original == limit
+    ));
 }
 
 #[test]
