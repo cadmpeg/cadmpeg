@@ -120,8 +120,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         |ctx| {
             let mut ir = CadIr::empty();
             let cone = SurfaceId::mint("test:model:entity#nx:test:cone").expect("identity grammar");
-            let sphere = SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
-            let torus = SurfaceId::mint("test:model:entity#nx:test:torus").expect("identity grammar");
+            let sphere =
+                SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
+            let torus =
+                SurfaceId::mint("test:model:entity#nx:test:torus").expect("identity grammar");
             ir.model.surfaces.extend([
                 Surface {
                     id: cone.clone(),
@@ -166,7 +168,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     source_object: None,
                 },
             ]);
-            let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
+            let plane =
+                SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: plane.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -303,7 +306,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                     .get();
                     let actual = cadmpeg_ir::eval::model_surface_point_by_id(
                         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                        &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                        &cadmpeg_ir::index::ModelIndex::build(
+                            &ir,
+                            cadmpeg_ir::index::StandardIndex,
+                        ),
                         surface,
                         uv.u,
                         uv.v,
@@ -314,23 +320,25 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 }
             }
 
-            let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
-                .expect("identity grammar");
+            let construction =
+                ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
+                    .expect("identity grammar");
             let _attached = ir.model.add_procedural_curve(
                 &cadmpeg_ir::document::admission::StandardAdmission,
                 &sphere_circle,
                 ProceduralCurve::new(
                     construction,
                     ProceduralCurveDefinition::TolerantIntersection {
-                        construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
-                            [sphere, plane],
-                            [
-                                Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                                Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                            ],
-                            TOLERANT_INTERSECTION_FIT,
-                        )
-                        .unwrap(),
+                        construction:
+                            cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                                [sphere, plane],
+                                [
+                                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                                ],
+                                TOLERANT_INTERSECTION_FIT,
+                            )
+                            .unwrap(),
                         parameterization: None,
                         cache: None,
                     },
@@ -338,8 +346,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             );
             let point =
                 PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
-            let vertex =
-                VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
+            let vertex = VertexId::mint("test:model:entity#nx:test:closed-vertex")
+                .expect("identity grammar");
             ir.model.points.push(Point::new(
                 point.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0_f64.sqrt(), 0.0, 1.0))
@@ -355,7 +363,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 ),
             });
             ir.model.edges.push(Edge {
-                id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
+                id: EdgeId::mint("test:model:entity#nx:test:closed-edge")
+                    .expect("identity grammar"),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(sphere_circle)),
                 start: vertex.clone(),
                 end: vertex,

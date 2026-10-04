@@ -198,6 +198,8 @@ fn check_fixture(name: &str) {
             | "parser_zstd"
             | "reader_callbacks"
             | "unicode_case"
+            | "work_integer_ranges"
+            | "bounded_slices"
     ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
@@ -253,17 +255,22 @@ fn check_fixture(name: &str) {
             "{actual}"
         );
     }
-    if name == "replacement_forms" {
+    if matches!(name, "replacement_forms" | "work_integer_ranges") {
         let source = std::fs::read_to_string(&path).expect("replacement fixture source");
         for (index, line) in source.lines().enumerate() {
             if let Some(method) = line.trim().strip_prefix("// replacement: ") {
                 let line_number = (index + 2).to_string();
+                let replacement = if method.starts_with("DecodeContext::") {
+                    method.to_owned()
+                } else {
+                    format!("DecodeContext::{method}")
+                };
                 assert!(
                     actual.lines().any(|row| {
                         let fields: Vec<_> = row.split('\t').collect();
                         fields.len() == 4
                             && fields[2] == line_number
-                            && fields[3].contains(&format!("replacement: DecodeContext::{method}"))
+                            && fields[3].contains(&format!("replacement: {replacement}"))
                     }),
                     "missing replacement {method} at {line_number}: {actual}"
                 );
@@ -288,7 +295,8 @@ fn check_fixture(name: &str) {
             )
             && (if matches!(
                 name,
-                "edges"
+                "bounded_slices"
+                    | "edges"
                     | "reachability"
                     | "indirect"
                     | "addresses"
@@ -558,6 +566,11 @@ fn constant_width_subslices() {
 #[test]
 fn charged_raw_steps() {
     check_fixture("raw_steps");
+}
+
+#[test]
+fn bounded_slice_copies_require_a_dominating_guard_and_exact_reserve() {
+    check_fixture("bounded_slices");
 }
 
 #[test]
@@ -903,6 +916,11 @@ fn generic_candidate_substitutions() {
 #[test]
 fn admitted_iteration_work() {
     check_fixture("work_admitted");
+}
+
+#[test]
+fn integer_range_loops_require_admitted_sources() {
+    check_fixture("work_integer_ranges");
 }
 
 #[test]
