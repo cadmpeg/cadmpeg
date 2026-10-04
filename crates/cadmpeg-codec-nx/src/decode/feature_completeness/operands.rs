@@ -487,13 +487,4 @@ pub(in crate::decode) fn path_ref_is_incomplete(path: &PathRef) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::selection_ids_are_incomplete;
-
-    #[test]
-    fn selection_completeness_detects_nonadjacent_duplicate_ids() {
-        assert!(selection_ids_are_incomplete::<u32>(&[]));
-        assert!(!selection_ids_are_incomplete(&[2, 1, 3]));
-        assert!(selection_ids_are_incomplete(&[2, 1, 2]));
-    }
-}
+mod tests;
