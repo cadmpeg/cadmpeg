@@ -527,7 +527,7 @@ fn order_parameters_by_dependencies(
                 if ctx.admit_iter(parameters[*index].dependencies.as_slice(), "scan SLDPRT order_parameters_by_dependencies values")?.try_fold(true, |found, dependency| { Ok::<_, cadmpeg_core::CodecError>(found && ( {
                     ctx.get_hash_map(&(parameter_owners), dependency, "look up SLDPRT hash key")?
                         .is_none_or(|dependency_owner| dependency_owner != &owner)
-                        || ordered_ids.contains(dependency)
+                        || ctx.contains_hash_set(&(ordered_ids), dependency, "test SLDPRT hashed identity")?
                 } )) })? {
                     next = Some(position);
                     break;
@@ -658,10 +658,9 @@ impl ParameterAliases {
                     insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 }
             }
-            if parameter
+            if match parameter
                 .owner
-                .as_ref()
-                .is_some_and(|owner| global_owners.contains(owner))
+                .as_ref() { Some(owner) => ctx.contains_hash_set(&(global_owners), owner, "test SLDPRT hashed identity")?, None => false }
             {
                 for alias in unqualified.into_iter().flatten() {
                     insert_parameter_alias(ctx, &mut aliases.global, copy(alias)?, &parameter.id)?;

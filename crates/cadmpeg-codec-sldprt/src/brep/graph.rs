@@ -409,7 +409,7 @@ fn shell_face_components(
     let mut loop_faces = HashMap::new();
     for loop_ in &out.loops {
         ctx.charge_work(1, "index Parasolid shell loops")?;
-        if candidate_ids.contains(loop_.face.as_str()) {
+        if ctx.contains_hash_set(&(candidate_ids), loop_.face.as_str(), "test SLDPRT hashed identity")? {
             let key = loop_.id.as_str();
             ctx.admit_hash_map_entry(&mut loop_faces, &key, "index Parasolid shell loops")?;
             loop_faces.insert(key, loop_.face.as_str());
@@ -2938,7 +2938,7 @@ fn decode_graph(
                 ctx.reserve_set(&mut face_ids, faces.len(), "index synthetic shell faces")?;
                 face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                 for face in &mut out.faces {
-                    if face_ids.contains(face.id.as_str()) {
+                    if ctx.contains_hash_set(&(face_ids), face.id.as_str(), "test SLDPRT hashed identity")? {
                         face.shell =
                             shell_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?;
                     }
@@ -2997,7 +2997,7 @@ fn decode_graph(
                         ctx.reserve_set(&mut face_ids, faces.len(), "index native shell faces")?;
                         face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                         for face in &mut out.faces {
-                            if face_ids.contains(face.id.as_str()) {
+                            if ctx.contains_hash_set(&(face_ids), face.id.as_str(), "test SLDPRT hashed identity")? {
                                 face.shell = shell_id
                                     .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?;
                             }
@@ -3213,26 +3213,7 @@ fn decode_graph(
         "index retained Parasolid entities",
     )?;
     let mut keep = |id: &str| {
-        let work = retained_ids
-            .len()
-            .checked_add(1)
-            .and_then(|count| {
-                id.len()
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "Parasolid annotation identity lookup",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "Parasolid annotation identity lookup",
-        )?;
-        Ok(retained_ids.contains(id))
+        ctx.contains_hash_set(&(retained_ids), id, "test SLDPRT hashed identity")
     };
     out.annotations.retain_provenance(ctx, &mut keep)?;
     let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
@@ -3251,8 +3232,14 @@ fn prune_rejected_topology(
             .map(cadmpeg_ir::ids::LoopId::as_str),
         "track retained Parasolid loops",
     )?;
-    out.loops
-        .retain(|loop_| kept_loops.contains(loop_.id.as_str()));
+    { let mut refusal = None;
+        out.loops.retain(|loop_| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_loops), loop_.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
 
     let kept_coedges = ctx.collect_hash_set(
         ctx.admit_iter(&out.loops[..], "scan SLDPRT prune_rejected_topology values")?
@@ -3260,10 +3247,16 @@ fn prune_rejected_topology(
             .map(cadmpeg_ir::ids::CoedgeId::as_str),
         "track retained Parasolid coedges",
     )?;
-    out.coedges
-        .retain(|coedge| kept_coedges.contains(coedge.id.as_str()));
+    { let mut refusal = None;
+        out.coedges.retain(|coedge| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_coedges), coedge.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
     for coedge in &mut out.coedges {
-        if !kept_coedges.contains(coedge.radial_next.as_str()) {
+        if !ctx.contains_hash_set(&(kept_coedges), coedge.radial_next.as_str(), "test SLDPRT hashed identity")? {
             coedge.radial_next = coedge
                 .id
                 .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?;
@@ -3277,15 +3270,27 @@ fn prune_rejected_topology(
             .map(cadmpeg_ir::ids::PcurveId::as_str),
         "track retained Parasolid pcurves",
     )?;
-    out.pcurves
-        .retain(|pcurve| kept_pcurves.contains(pcurve.id.as_str()));
+    { let mut refusal = None;
+        out.pcurves.retain(|pcurve| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_pcurves), pcurve.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
 
     let kept_edges = ctx.collect_hash_set(
         out.coedges.iter().map(|coedge| coedge.edge.as_str()),
         "track retained Parasolid edges",
     )?;
-    out.edges
-        .retain(|edge| kept_edges.contains(edge.id.as_str()));
+    { let mut refusal = None;
+        out.edges.retain(|edge| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_edges), edge.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
 
     let kept_vertices = ctx.collect_hash_set(
         ctx.admit_iter(&out.edges[..], "scan SLDPRT prune_rejected_topology values")?
@@ -3293,15 +3298,27 @@ fn prune_rejected_topology(
             .map(cadmpeg_ir::ids::VertexId::as_str),
         "track retained Parasolid vertices",
     )?;
-    out.vertices
-        .retain(|vertex| kept_vertices.contains(vertex.id.as_str()));
+    { let mut refusal = None;
+        out.vertices.retain(|vertex| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_vertices), vertex.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
 
     let kept_points = ctx.collect_hash_set(
         out.vertices.iter().map(|vertex| vertex.point.as_str()),
         "track retained Parasolid points",
     )?;
-    out.points
-        .retain(|point| kept_points.contains(point.id.as_str()));
+    { let mut refusal = None;
+        out.points.retain(|point| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_points), point.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
 
     let kept_curves = ctx.collect_hash_set(
         ctx.admit_iter(&out.edges[..], "scan SLDPRT prune_rejected_topology values")?
@@ -3319,8 +3336,14 @@ fn prune_rejected_topology(
             })),
         "track retained Parasolid curves",
     )?;
-    out.curves
-        .retain(|curve| kept_curves.contains(curve.id.as_str()));
+    { let mut refusal = None;
+        out.curves.retain(|curve| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(kept_curves), curve.id.as_str(), "test SLDPRT hashed identity") {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
     out.stats.unknown_curve_edges = ctx.admit_iter(&out.edges[..], "scan SLDPRT prune_rejected_topology values")?.try_fold(0_usize, |count, candidate| { let edge = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             match edge.curve() { Some(curve_id) => {
                 ctx.admit_iter(&out.curves[..], "scan SLDPRT prune_rejected_topology values")?.any(|curve| {
@@ -7195,7 +7218,14 @@ fn synthesize_cylinder_seams(
         }
         ctx.insert_hash_set(&mut removed, loop_b, "track replaced Parasolid seam loops")?;
     }
-    out.loops.retain(|lp| !removed.contains(&lp.id));
+    { let mut refusal = None;
+        out.loops.retain(|lp| { if refusal.is_some() { return true; }
+            match ctx.contains_hash_set(&(removed), &lp.id, "test SLDPRT hashed identity").map(|present| !present) {
+                Ok(keep) => keep, Err(error) => { refusal = Some(error); true }
+            }
+        });
+        if let Some(error) = refusal { return Err(error); }
+    };
     Ok(())
 }
 

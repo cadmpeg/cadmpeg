@@ -719,7 +719,7 @@ pub(crate) fn project_configuration_sketch_states(
                     continue;
                 };
                 if sketch.is_none()
-                    && reusable_spatial_sketches.contains(ctx, &expected, expected.as_str())?
+                    && ctx.contains_hash_set(&reusable_spatial_sketches.ids, &expected, reusable_spatial_sketches.match_operation)?
                 {
                     feature
                         .evaluation
@@ -743,7 +743,7 @@ pub(crate) fn project_configuration_sketch_states(
                 continue;
             };
             if sketch.id().is_none()
-                && reusable_spatial_sketches.contains(ctx, base_sketch, base_sketch.as_str())?
+                && ctx.contains_hash_set(&reusable_spatial_sketches.ids, base_sketch, reusable_spatial_sketches.match_operation)?
             {
                 const OPERATION: &str = "copy SLDPRT configuration spatial sketch identity";
                 let work = base_sketch
@@ -1256,18 +1256,7 @@ fn configuration_reference_plane_frame<'features>(
         } => {
             const OPERATION: &str = "resolve SLDPRT configuration datum frame";
             let _depth = ctx.enter_nested(OPERATION)?;
-            let bytes = ctx.admit_iter(&*visiting, "scan SLDPRT configuration_reference_plane_frame values")?
-                .try_fold(feature_id.as_str().len(), |bytes, id| {
-                    bytes
-                        .checked_add(id.as_str().len())
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-                })?;
-            let work = bytes
-                .checked_add(1)
-                .and_then(|bytes| bytes.checked_mul(4))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-            if visiting.contains(feature_id) {
+            if ctx.contains_hash_set(&(visiting), feature_id, "test SLDPRT hashed identity")? {
                 return Ok(None);
             }
             ctx.insert_hash_set(visiting, feature_id, OPERATION)?;
@@ -1535,22 +1524,6 @@ impl<'id, T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>
         self.key_bytes = bytes;
         Ok(())
     }
-
-    fn contains(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: &T,
-        text: &str,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
-        let operation = self.match_operation;
-        let work = self
-            .key_bytes
-            .checked_add(text.len())
-            .and_then(|bytes| bytes.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-        Ok(self.ids.contains(id))
-    }
 }
 
 fn configuration_surface_carriers(
@@ -1581,7 +1554,7 @@ fn configuration_surface_carriers(
         "match SLDPRT configuration surface ancestry",
     );
     for body in ctx.admit_iter(&ir.model.bodies, "scan SLDPRT configuration_surface_carriers values")? {
-        if bodies.contains(ctx, &body.id, body.id.as_str())? {
+        if ctx.contains_hash_set(&bodies.ids, &body.id, bodies.match_operation)? {
             for id in ctx.admit_iter(&body.regions, "scan SLDPRT configuration_surface_carriers values")? {
                 regions.insert(ctx, id, id.as_str())?;
             }
@@ -1592,7 +1565,7 @@ fn configuration_surface_carriers(
         "match SLDPRT configuration surface ancestry",
     );
     for region in ctx.admit_iter(&ir.model.regions, "scan SLDPRT configuration_surface_carriers values")? {
-        if regions.contains(ctx, &region.id, region.id.as_str())? {
+        if ctx.contains_hash_set(&regions.ids, &region.id, regions.match_operation)? {
             for id in ctx.admit_iter(&region.shells, "scan SLDPRT configuration_surface_carriers values")? {
                 shells.insert(ctx, id, id.as_str())?;
             }
@@ -1603,7 +1576,7 @@ fn configuration_surface_carriers(
         "match SLDPRT configuration surface ancestry",
     );
     for shell in ctx.admit_iter(&ir.model.shells, "scan SLDPRT configuration_surface_carriers values")? {
-        if shells.contains(ctx, &shell.id, shell.id.as_str())? {
+        if ctx.contains_hash_set(&shells.ids, &shell.id, shells.match_operation)? {
             for id in ctx.admit_iter(shell.faces(), "scan SLDPRT topology members")? {
                 faces.insert(ctx, id, id.as_str())?;
             }
@@ -1614,13 +1587,13 @@ fn configuration_surface_carriers(
         "match SLDPRT configuration surface ancestry",
     );
     for face in ctx.admit_iter(&ir.model.faces, "scan SLDPRT configuration_surface_carriers values")? {
-        if faces.contains(ctx, &face.id, face.id.as_str())? {
+        if ctx.contains_hash_set(&faces.ids, &face.id, faces.match_operation)? {
             surface_ids.insert(ctx, &face.surface, face.surface.as_str())?;
         }
     }
     let mut surfaces = Vec::new();
     for surface in ctx.admit_iter(&ir.model.surfaces, "scan SLDPRT configuration_surface_carriers values")? {
-        if surface_ids.contains(ctx, &surface.id, surface.id.as_str())? {
+        if ctx.contains_hash_set(&surface_ids.ids, &surface.id, surface_ids.match_operation)? {
             let work = surfaces
                 .len()
                 .checked_add(1)

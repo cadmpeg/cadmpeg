@@ -451,7 +451,7 @@ fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     let mut seen = HashSet::new();
     for reference in references {
         ctx.charge_work(1, operation)?;
-        if seen.contains(reference) || !known.contains(reference) {
+        if ctx.contains_hash_set(&seen, reference, operation)? || !ctx.contains_hash_set(known, reference, operation)? {
             return Ok(true);
         }
         ctx.insert_hash_set(&mut seen, reference, operation)?;
@@ -625,8 +625,7 @@ fn append_design_losses(
     for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration feature snapshots")? {
         if !configuration_source_needs_update(ir, configuration)
             && (configuration.feature_states.len() != feature_ids.len()
-                || ctx.admit_iter(&configuration.feature_states, "scan SLDPRT configuration feature snapshot keys")?
-                    .any(|(feature, _)| !feature_ids.contains(feature)))
+                || ctx.admit_iter(&configuration.feature_states, "scan SLDPRT configuration feature snapshot keys")?.try_fold(false, |found, (feature, _)| { Ok::<_, cadmpeg_core::CodecError>(found || ( !ctx.contains_hash_set(&(feature_ids), feature, "test SLDPRT hashed identity")? )) })?)
         {
             incomplete_configuration_feature_snapshots += 1;
         }
@@ -635,8 +634,7 @@ fn append_design_losses(
     for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration parameter snapshots")? {
         if !configuration_source_needs_update(ir, configuration)
             && (configuration.parameter_values.len() != parameter_ids.len()
-                || ctx.admit_iter(&configuration.parameter_values, "scan SLDPRT configuration parameter snapshot keys")?
-                    .any(|(parameter, _)| !parameter_ids.contains(parameter)))
+                || ctx.admit_iter(&configuration.parameter_values, "scan SLDPRT configuration parameter snapshot keys")?.try_fold(false, |found, (parameter, _)| { Ok::<_, cadmpeg_core::CodecError>(found || ( !ctx.contains_hash_set(&(parameter_ids), parameter, "test SLDPRT hashed identity")? )) })?)
         {
             incomplete_configuration_parameter_snapshots += 1;
         }
@@ -652,7 +650,7 @@ fn append_design_losses(
     for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration suppression snapshots")? {
         let mut incoherent = false;
         for (id, state) in ctx.admit_iter(&configuration.feature_states, "scan SLDPRT configuration suppression members")? {
-            if !feature_ids.contains(id)
+            if !ctx.contains_hash_set(&(feature_ids), id, "test SLDPRT hashed identity")?
                 || (configuration.active
                     && ctx.admit_iter(&ir.model.features, "find SLDPRT configuration suppression feature")?
                         .find(|feature| feature.id == *id)
@@ -668,8 +666,7 @@ fn append_design_losses(
     }
     let mut incoherent_configuration_overrides = 0;
     for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration override snapshots")? {
-        let incoherent = ctx.admit_iter(&configuration.parameter_overrides, "scan SLDPRT configuration override keys")?
-            .any(|(parameter, _)| !parameter_ids.contains(parameter));
+        let incoherent = ctx.admit_iter(&configuration.parameter_overrides, "scan SLDPRT configuration override keys")?.try_fold(false, |found, (parameter, _)| { Ok::<_, cadmpeg_core::CodecError>(found || ( !ctx.contains_hash_set(&(parameter_ids), parameter, "test SLDPRT hashed identity")? )) })?;
         incoherent_configuration_overrides += usize::from(incoherent);
     }
     if incoherent_configuration_suppression > 0 || incoherent_configuration_overrides > 0 {
@@ -709,7 +706,7 @@ fn append_design_losses(
             OPERATION,
         )?;
         if !crate::history::parameters::is_global_parameter_owner(feature)
-            || global_parameter_owners.contains(&feature.id)
+            || ctx.contains_hash_set(&(global_parameter_owners), &feature.id, "test SLDPRT hashed identity")?
         {
             continue;
         }
@@ -1934,18 +1931,15 @@ fn unprojected_sketch_relation_records(
                 .map(|marker| (marker.id(), marker)),
             "index SLDPRT sketch relation markers",
         )?;
-        let instances = ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT unprojected_sketch_relation_records values")?
-            .filter(|relation| {
-                sketch_feature_refs.contains(relation.feature_ref.as_str())
+        let instances = ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT unprojected_sketch_relation_records values")?.try_fold(0_usize, |count, candidate| { let relation = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
+                ctx.contains_hash_set(&(sketch_feature_refs), relation.feature_ref.as_str(), "test SLDPRT hashed identity")?
                     && owned_instances.contains_key(&relation.id)
-                    && !projected.contains(relation.id.as_str())
-            })
-            .count();
+                    && !ctx.contains_hash_set(&(projected), relation.id.as_str(), "test SLDPRT hashed identity")?
+            } )) })?;
         let bindings = ctx.admit_iter(&lane.relation_bindings[..], "scan SLDPRT unprojected_sketch_relation_records values")?.try_fold(0_usize, |count, candidate| { let binding = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
-                binding
+                (match binding
                     .feature_ref
-                    .as_deref()
-                    .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                    .as_deref() { Some(feature_ref) => ctx.contains_hash_set(&(sketch_feature_refs), feature_ref, "test SLDPRT hashed identity")?, None => false })
                     && !ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT unprojected_sketch_relation_records values")?.any(|relation| {
                         relation.class_ref == binding.class_ref
                             && relation.scalar_refs().contains(&binding.scalar_ref)
@@ -1953,16 +1947,15 @@ fn unprojected_sketch_relation_records(
             } )) })?;
         let mut markers = 0;
         for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT unprojected_sketch_relation_records values")? {
-            if marker
+            if match marker
                 .feature_ref
-                .as_deref()
-                .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                .as_deref() { Some(feature_ref) => ctx.contains_hash_set(&(sketch_feature_refs), feature_ref, "test SLDPRT hashed identity")?, None => false }
                 && crate::resolved_features::typed_relations::marker_owns_constraint(
                     ctx,
                     marker,
                     &markers_by_id,
                 )?
-                && !projected.contains(marker.id())
+                && !ctx.contains_hash_set(&(projected), marker.id(), "test SLDPRT hashed identity")?
             {
                 markers += 1;
             }
@@ -2009,9 +2002,8 @@ fn multiply_projected_sketch_relation_records(
             }
         }
     }
-    let projection_counts = count_keys(
-        ctx,
-        ir.model
+    let mut projection_counts = BTreeMap::<&str, usize>::new();
+    for native_ref in ir.model
             .sketch_constraints
             .iter()
             .filter_map(|constraint| constraint.native_ref.as_deref())
@@ -2032,10 +2024,16 @@ fn multiply_projected_sketch_relation_records(
                     .spatial_sketch_constraints
                     .iter()
                     .filter_map(|constraint| constraint.native_ref.as_deref()),
-            )
-            .filter(|native_ref| native_relation_ids.contains(native_ref)),
-        "count SLDPRT relation projections",
-    )?;
+            ) {
+        if !ctx.contains_hash_set(&native_relation_ids, native_ref, "test SLDPRT hashed identity")? { continue; }
+        const OPERATION: &str = "count SLDPRT relation projections";
+        ctx.charge_work(1, OPERATION)?;
+        if let Some(count) = projection_counts.get_mut(&native_ref) {
+            *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        } else {
+            ctx.insert_btree_map(&mut projection_counts, native_ref, 1, OPERATION)?;
+        }
+    }
     Ok(ctx.admit_iter(&projection_counts, "scan SLDPRT multiply_projected_sketch_relation_records map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .count())

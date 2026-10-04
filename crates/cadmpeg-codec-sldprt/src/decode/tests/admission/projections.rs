@@ -420,13 +420,13 @@ fn metadata_construction_binding_refuses_work_limit() {
         &construction_reference_source(),
         options,
         "index SLDPRT native construction sources",
-        Some(1), // One visitor work unit; key reads have separate requests.
+        Some(2), // Two feature slots in the admitted construction-source iteration.
     );
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 1);
+    assert_eq!(refusal.additional, 2);
 }
 
 #[test]
@@ -512,8 +512,8 @@ fn metadata_parameter_projection_refuses_work_limit() {
     let refusal = work_refusal_with_request(
         &native_definition_source(),
         options,
-        "classify SLDPRT parameter owners",
-        Some(1), // One visitor work unit; key reads have separate requests.
+        "scan SLDPRT project_parameters values",
+        Some(1), // One admitted history or feature slot in the parameter projection.
     );
     assert_eq!(
         refusal.dimension,

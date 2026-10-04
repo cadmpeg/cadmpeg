@@ -983,3 +983,24 @@ fn decoded_curve_carrier_copy_refuses_collection_limit() {
 mod baseline_hashes;
 
 mod surface_solver;
+
+#[test]
+fn reference_membership_refusals_do_not_become_incoherent_results() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+    let reference = 1_u32;
+    let known = HashSet::from([&reference]);
+    for budget in [1, 5] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One scan unit and four key bytes per hash lookup.
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::decode::has_incoherent_refs(&ctx, &[reference], &known, "check SLDPRT reference set").unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else { panic!("expected work refusal"); };
+        assert_eq!(limit.operation, "check SLDPRT reference set");
+        assert_eq!(limit.additional, 4);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+}

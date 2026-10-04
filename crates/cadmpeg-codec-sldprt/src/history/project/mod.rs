@@ -508,7 +508,7 @@ pub(super) fn bind_offset_plane_references(
         let mut visited = HashSet::new();
         loop {
             ctx.charge_work(1, "walk SLDPRT zero offset plane parents")?;
-            if visited.contains(current) {
+            if ctx.contains_hash_set(&(visited), current, "test SLDPRT hashed identity")? {
                 break;
             }
             ctx.insert_hash_set(
@@ -1009,7 +1009,7 @@ fn bind_native_construction_features(
                         | FeatureClass::ProjectedCurve
                         | FeatureClass::CompositeCurve
                 )
-            ) || construction_native_refs.contains(feature.id.as_str())
+            ) || ctx.contains_hash_set(&(construction_native_refs), feature.id.as_str(), "test SLDPRT hashed identity")?
             {
                 continue;
             }
@@ -1026,7 +1026,7 @@ fn bind_native_construction_features(
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        if construction_native_refs.contains(native) {
+        if ctx.contains_hash_set(&(construction_native_refs), native, "test SLDPRT hashed identity")? {
             let native = copy_projected_feature_text(ctx, native)?;
             let id = copy_projected_feature_id(ctx, &feature.id)?;
             ctx.insert_hash_map(
@@ -1274,7 +1274,7 @@ pub(crate) fn incomplete_history_reference_features(
         let mut native_ids = HashSet::new();
         for feature in &history.features {
             ctx.charge_work(1, "index SLDPRT history feature references")?;
-            if native_ids.contains(feature.id.as_str()) {
+            if ctx.contains_hash_set(&(native_ids), feature.id.as_str(), "test SLDPRT hashed identity")? {
                 continue;
             }
             ctx.insert_hash_set(
@@ -1289,16 +1289,15 @@ pub(crate) fn incomplete_history_reference_features(
             let duplicate_source = match feature
                 .source_id { Some(source) => ctx.get_hash_map(&(sources), &source, "look up SLDPRT hash key")?.is_some_and(Option::is_none), None => false };
             let parent_requested = feature.tree_parent.is_some();
-            let parent_resolved = feature
-                .tree_parent_record_id()
-                .is_some_and(|parent| native_ids.contains(parent))
+            let parent_resolved = match feature
+                .tree_parent_record_id() { Some(parent) => ctx.contains_hash_set(&(native_ids), parent, "test SLDPRT hashed identity")?, None => false }
                 || match feature
                     .parent_source_id() { Some(source) => ctx.get_hash_map(&(sources), &source, "look up SLDPRT hash key")?.is_some_and(Option::is_some), None => false };
-            let incomplete_content = ctx.admit_iter(&feature.content[..], "scan SLDPRT incomplete_history_reference_features values")?.any(|item| match item {
-                FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
+            let incomplete_content = ctx.admit_iter(&feature.content[..], "scan SLDPRT incomplete_history_reference_features values")?.try_fold(false, |found, item| { Ok::<_, cadmpeg_core::CodecError>(found || ( match item {
+                FeatureContent::Feature(child) => !ctx.contains_hash_set(&(native_ids), child.as_str(), "test SLDPRT hashed identity")?,
                 FeatureContent::Dimension(name) => !feature.parameters.contains_key(name.as_str()),
                 FeatureContent::Text(_) => false,
-            });
+            } )) })?;
             let mut unresolved_dependency = false;
             for name in ctx.admit_iter(FEATURE_REFERENCE_PROPERTIES, "scan SLDPRT incomplete_history_reference_features values")? {
                 let Some(value) = ctx.get_btree_map(&feature.properties, *name, "look up SLDPRT ordered key")? else { continue; };
@@ -1736,7 +1735,7 @@ pub(super) fn projected_parameter_names(
     let mut projected = Vec::new();
     for name in parameter_names(ctx, feature)? {
         ctx.charge_work(1, OPERATION)?;
-        if seen.contains(&name) {
+        if ctx.contains_hash_set(&(seen), &name, "test SLDPRT hashed identity")? {
             continue;
         }
         let key = copy_projected_feature_text(ctx, &name)?;
