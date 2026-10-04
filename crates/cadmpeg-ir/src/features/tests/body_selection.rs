@@ -72,7 +72,8 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
         vec![
             BodyMember::new(
                 b.clone(),
-                cadmpeg_core::text::NonBlankString::try_from("native-first").expect("non-blank fixture"),
+                cadmpeg_core::text::NonBlankString::try_from("native-first")
+                    .expect("non-blank fixture"),
             ),
             BodyMember::new(
                 a.clone(),

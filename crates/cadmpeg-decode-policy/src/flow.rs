@@ -54,6 +54,238 @@ impl Default for Flow<'_> {
 }
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn owns_field(&self, value: ty::Ty<'tcx>, name: rustc_span::Symbol) -> bool {
+        match value.kind() {
+            ty::Ref(_, pointee, _) => self.owns_field(*pointee, name),
+            ty::Adt(owner, arguments)
+                if types::standard(self.tcx, owner.did())
+                    && self.tcx.item_name(owner.did()).as_str() == "Box" =>
+            {
+                arguments
+                    .types()
+                    .next()
+                    .is_some_and(|pointee| self.owns_field(pointee, name))
+            }
+            ty::Adt(owner, _) => owner
+                .variants()
+                .iter()
+                .any(|variant| variant.fields.iter().any(|field| field.name == name)),
+            ty::Tuple(fields) => name
+                .as_str()
+                .parse::<usize>()
+                .ok()
+                .is_some_and(|index| index < fields.len()),
+            _ => false,
+        }
+    }
+
+    fn standard_sequence(&self, value: ty::Ty<'tcx>) -> bool {
+        match value.peel_refs().kind() {
+            ty::Array(..) | ty::Slice(_) => true,
+            ty::Adt(owner, arguments) if types::standard(self.tcx, owner.did()) => {
+                match self.tcx.item_name(owner.did()).as_str() {
+                    "Vec" => true,
+                    "Box" => arguments
+                        .types()
+                        .next()
+                        .is_some_and(|pointee| self.standard_sequence(pointee)),
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn stable_index_key(&self, expression: &'tcx Expr<'tcx>) -> Option<String> {
+        match expression.kind {
+            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
+                self.stable_index_key(inner)
+            }
+            ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Int(_, _)) => self
+                .constant_count(expression, &mut Vec::new())
+                .map(|value| format!("constant:{value}")),
+            ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
+                Res::Local(id) => Some(format!("local:{id:?}")),
+                Res::Def(_, id) => Some(format!("definition:{id:?}")),
+                _ => None,
+            },
+            ExprKind::Field(base, field) => {
+                if self.owns_field(self.expr_ty(base), field.name) {
+                    self.stable_index_key(base)
+                        .map(|key| format!("{key}.{}", field.name))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn standard_place_key(&self, expression: &'tcx Expr<'tcx>) -> Option<String> {
+        match expression.kind {
+            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
+                self.standard_place_key(inner)
+            }
+            ExprKind::Unary(rustc_hir::UnOp::Deref, inner)
+                if matches!(self.expr_ty(inner).kind(), ty::Ref(..))
+                    || matches!(self.expr_ty(inner).peel_refs().kind(), ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) && self.tcx.item_name(owner.did()).as_str() == "Box") =>
+            {
+                self.standard_place_key(inner)
+            }
+            ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
+                Res::Local(id) => Some(format!("local:{id:?}")),
+                Res::Def(_, id) => Some(format!("definition:{id:?}")),
+                _ => None,
+            },
+            ExprKind::Field(base, field) => {
+                if self.owns_field(self.expr_ty(base), field.name) {
+                    self.standard_place_key(base)
+                        .map(|key| format!("{key}.{}", field.name))
+                } else {
+                    None
+                }
+            }
+            ExprKind::Index(base, index, _) => {
+                if !self.standard_sequence(self.expr_ty(base)) {
+                    return None;
+                }
+                let base = self.standard_place_key(base)?;
+                let index = self.stable_index_key(index)?;
+                Some(format!(
+                    "indexed-element:{}:{base}:{}:{index}",
+                    base.len(),
+                    index.len()
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn stable_mutation_place(&self, expression: &'tcx Expr<'tcx>) -> bool {
+        match expression.kind {
+            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
+                self.stable_mutation_place(inner)
+            }
+            ExprKind::Unary(rustc_hir::UnOp::Deref, _)
+            | ExprKind::Field(_, _)
+            | ExprKind::Index(_, _, _) => self.standard_place_key(expression).is_some(),
+            _ => true,
+        }
+    }
+
+    fn char_result(&self, value: ty::Ty<'tcx>) -> bool {
+        match value.peel_refs().kind() {
+            ty::Char => true,
+            ty::Adt(owner, arguments)
+                if types::standard(self.tcx, owner.did())
+                    && matches!(
+                        self.tcx.item_name(owner.did()).as_str(),
+                        "Option" | "Result"
+                    ) =>
+            {
+                arguments
+                    .types()
+                    .next()
+                    .is_some_and(|element| matches!(element.kind(), ty::Char))
+            }
+            _ => false,
+        }
+    }
+
+    fn char_key(&self, expression: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Option<String> {
+        if seen.contains(&expression.hir_id) {
+            return None;
+        }
+        seen.push(expression.hir_id);
+        match expression.kind {
+            ExprKind::AddrOf(_, _, inner) | ExprKind::DropTemps(inner) => {
+                return self.char_key(inner, seen)
+            }
+            ExprKind::Unary(rustc_hir::UnOp::Deref, inner)
+                if matches!(self.expr_ty(inner).kind(), ty::Ref(..)) =>
+            {
+                return self.char_key(inner, seen)
+            }
+            ExprKind::Lit(literal) => {
+                if let rustc_ast::LitKind::Char(value) = literal.node {
+                    return Some(format!("char:{:X}", u32::from(value)));
+                }
+            }
+            ExprKind::Path(ref path) => {
+                if let Res::Local(id) = self.typeck.qpath_res(path, expression.hir_id) {
+                    return self
+                        .initializer(expression)
+                        .and_then(|initializer| self.char_key(initializer, seen))
+                        .or_else(|| Some(format!("local:{id:?}")));
+                }
+            }
+            ExprKind::Index(_, _, _) => {
+                return self.standard_place_key(expression);
+            }
+            ExprKind::Field(base, field) => {
+                if let Some(initializer) = self.initializer(base) {
+                    if let ExprKind::Struct(_, fields, _) = initializer.kind {
+                        if let Some(value) =
+                            fields.iter().find(|value| value.ident.name == field.name)
+                        {
+                            return self.char_key(value.expr, seen);
+                        }
+                    }
+                }
+                return self
+                    .standard_place_key(expression)
+                    .or_else(|| Some(format!("char-expression:{:?}", expression.hir_id)));
+            }
+            ExprKind::Match(scrutinee, _, MatchSource::TryDesugar(_)) => {
+                if let Some((_, operands)) = self.call(scrutinee) {
+                    if let Some(value) = operands.first() {
+                        return self.char_key(value, seen);
+                    }
+                }
+                return Some(format!("char-expression:{:?}", expression.hir_id));
+            }
+            _ => (),
+        }
+        if let Some((definition, operands)) = self.call(expression) {
+            let name = self.tcx.item_name(definition);
+            if types::standard(self.tcx, definition)
+                && matches!(
+                    name.as_str(),
+                    "unwrap" | "expect" | "map_err" | "ok_or" | "ok_or_else"
+                )
+                && operands
+                    .first()
+                    .is_some_and(|operand| self.char_result(self.expr_ty(operand)))
+            {
+                return operands
+                    .first()
+                    .and_then(|value| self.char_key(value, seen));
+            }
+            if self.char_result(self.expr_ty(expression))
+                && matches!(
+                    name.as_str(),
+                    "from_u32" | "try_from" | "try_into" | "from" | "into"
+                )
+            {
+                return Some(format!("char-conversion:{:?}", expression.hir_id));
+            }
+        }
+        if self.char_result(self.expr_ty(expression)) {
+            return self
+                .standard_place_key(expression)
+                .or_else(|| Some(format!("char-expression:{:?}", expression.hir_id)));
+        }
+        None
+    }
+
+    pub(crate) fn utf8_char_term(&self, expression: &'tcx Expr<'tcx>) -> Option<ExtentTerm> {
+        let key = self.char_key(expression, &mut Vec::new())?;
+        Some(ExtentTerm {
+            factors: vec![format!("utf8_len:{key}")],
+            coefficient: 1,
+        })
+    }
+
     fn range_key(&self, range: &'tcx Expr<'tcx>, seen: &mut Vec<HirId>) -> Option<String> {
         let range = self.initializer(range).unwrap_or(range);
         let ExprKind::Struct(_, fields, _) = range.kind else {
@@ -238,6 +470,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     factors: vec![format!("size:{element}")],
                     coefficient: 1,
                 }]);
+            }
+        }
+        if let Some((definition, operands)) = self.call(expression) {
+            if types::standard(self.tcx, definition)
+                && self.tcx.item_name(definition).as_str() == "len_utf8"
+                && operands
+                    .first()
+                    .is_some_and(|value| matches!(self.expr_ty(value).peel_refs().kind(), ty::Char))
+            {
+                return self
+                    .utf8_char_term(operands.first()?)
+                    .map(|term| vec![term]);
             }
         }
         if let Some(count) = self.constant_count(expression, &mut Vec::new()) {
@@ -559,6 +803,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .iter()
             .flat_map(|operand| self.dominated_keys(operand, &mut Vec::new()))
             .collect();
+        self.take_credit_for_keys(&keys)
+    }
+
+    pub(crate) fn take_credit_for_keys(&mut self, keys: &[String]) -> Option<bool> {
         for credit in &mut self.flow.work {
             if credit.opaque {
                 continue;
@@ -584,7 +832,26 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn invalidate_target(&mut self, expression: &'tcx Expr<'tcx>) {
-        if let Some(key) = self.key(expression, &mut Vec::new()) {
+        let utf8_factor = matches!(self.expr_ty(expression).peel_refs().kind(), ty::Char)
+            .then(|| {
+                self.utf8_char_term(expression)
+                    .and_then(|term| term.factors.into_iter().next())
+            })
+            .flatten();
+        let stable_place = self.standard_place_key(expression);
+        let key = if self.stable_mutation_place(expression) {
+            self.key(expression, &mut Vec::new())
+        } else {
+            None
+        };
+        if let Some(key) = key {
+            let invalidates_factor = |factor: &str| {
+                factor_depends_on(factor, &key)
+                    || stable_place
+                        .as_deref()
+                        .is_some_and(|place| factor_depends_on(factor, place))
+                    || utf8_factor.as_deref() == Some(factor)
+            };
             self.flow
                 .parser_receipts
                 .retain(|receipt| !factor_depends_on(&receipt.guard, &key));
@@ -594,31 +861,49 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         .terms
                         .iter()
                         .flat_map(|term| &term.factors)
-                        .any(|factor| factor_depends_on(factor, &key))
+                        .any(|factor| invalidates_factor(factor))
             });
             self.flow.work.retain(|credit| {
                 !credit
                     .extents
                     .iter()
                     .flat_map(|term| &term.factors)
-                    .any(|term| factor_depends_on(term, &key))
+                    .any(|factor| invalidates_factor(factor))
             });
             self.flow.storage_parameters.retain(|parameter| {
-                parameter != &key && !parameter.starts_with(&format!("{key}."))
+                parameter != &key
+                    && !parameter.starts_with(&format!("{key}."))
+                    && stable_place.as_ref().is_none_or(|place| {
+                        parameter != place && !parameter.starts_with(&format!("{place}."))
+                    })
             });
             self.flow.storage_extents.retain(|term| {
                 !term.factors.iter().any(|factor| {
                     factor.contains(&key)
                         || factor.starts_with(&format!("{key}."))
                         || key.starts_with(&format!("{factor}."))
+                        || utf8_factor
+                            .as_deref()
+                            .is_some_and(|utf8| factor.as_str() == utf8)
+                        || stable_place
+                            .as_deref()
+                            .is_some_and(|place| factor_depends_on(factor, place))
                 })
             });
             self.flow.storage_slots.retain(|credit| {
                 credit.target != key
+                    && stable_place
+                        .as_ref()
+                        .is_none_or(|place| credit.target.as_str() != place.as_str())
                     && !credit
                         .scope
                         .as_ref()
                         .is_some_and(|scope| scope.guard == key)
+                    && !credit
+                        .terms
+                        .iter()
+                        .flat_map(|term| &term.factors)
+                        .any(|factor| invalidates_factor(factor))
                     && !credit.target.starts_with(&format!("{key}."))
                     && !credit
                         .terms
@@ -627,6 +912,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                         .any(|factor| factor.contains(&key))
             });
             self.flow.mutated.insert(key);
+            if let Some(stable_place) = stable_place.as_ref() {
+                self.flow.mutated.insert(stable_place.clone());
+            }
         } else {
             self.flow.scoped_storage.clear();
             self.flow.storage_parameters.clear();
@@ -741,8 +1029,40 @@ impl Flow<'_> {
     }
 }
 
+fn take_sized_component(input: &str, separator: bool) -> Option<(&str, &str)> {
+    let (length, value) = input.split_once(':')?;
+    let length = length.parse::<usize>().ok()?;
+    let component = value.get(..length)?;
+    let remainder = value.get(length..)?;
+    let remainder = if separator {
+        remainder.strip_prefix(':')?
+    } else {
+        remainder
+    };
+    Some((component, remainder))
+}
+
+fn indexed_element_parts(place: &str) -> Option<(&str, &str)> {
+    let encoded = place.strip_prefix("indexed-element:")?;
+    let (base, encoded) = take_sized_component(encoded, true)?;
+    let (index, _) = take_sized_component(encoded, false)?;
+    Some((base, index))
+}
+
+fn place_depends_on(place: &str, key: &str) -> bool {
+    place == key
+        || place.starts_with(&format!("{key}."))
+        || key.starts_with(&format!("{place}."))
+        || indexed_element_parts(place).is_some_and(|(base, index)| {
+            place_depends_on(base, key) || place_depends_on(index, key)
+        })
+}
+
 pub(crate) fn factor_depends_on(factor: &str, key: &str) -> bool {
     factor == key
+        || factor
+            .strip_prefix("utf8_len:")
+            .is_some_and(|place| place_depends_on(place, key))
         || factor.contains(".range[") && factor.contains(key)
         || matches!(
             factor.split_once(':').map(|(kind, _)| kind),
