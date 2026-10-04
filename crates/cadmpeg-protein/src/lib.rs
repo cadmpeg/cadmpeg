@@ -783,10 +783,9 @@ fn read_texture_uri(
         )));
     }
     let count = read_count(ctx, bytes, at, id)?;
-    let mut paths = ctx.collection_vec(count, "Protein texture URI paths")?;
-    for _ in ctx.admit_iter(&(0..count), "Protein texture URI scan")? {
-        paths.push(take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?);
-    }
+    let paths = ctx.collect_indexed_vec(count, "Protein texture URI paths", |_| {
+        take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)
+    })?;
     Ok(PropertyValue::TextureUri(paths))
 }
 
@@ -903,15 +902,11 @@ fn read_connections(
         )));
     }
     let count = read_count(ctx, bytes, at, "connection")?;
-    let mut connections = ctx.collection_vec(count, "Protein connected asset GUIDs")?;
-    for _ in ctx.admit_iter(&(0..count), "Protein connected asset scan")? {
-        connections.push(
-            take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(|| {
-                CodecError::Malformed("Protein property connection GUID is truncated".into())
-            })?,
-        );
-    }
-    Ok(connections)
+    ctx.collect_indexed_vec(count, "Protein connected asset GUIDs", |_| {
+        take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(|| {
+            CodecError::Malformed("Protein property connection GUID is truncated".into())
+        })
+    })
 }
 
 fn take<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u8; N]> {
