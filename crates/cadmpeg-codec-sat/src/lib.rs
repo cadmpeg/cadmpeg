@@ -47,11 +47,7 @@ impl CodecBackend for SatCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
-        Ok(detect::confidence(prefix))
+        detect::confidence(ctx, prefix)
     }
 
     fn inspect_impl(
