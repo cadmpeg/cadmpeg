@@ -153,3 +153,66 @@ fn metadata_stable_sort_route_refuses_scoped_limit() {
 fn metadata_stable_sort_route_refuses_work_limit() {
     assert_source_route_refusal(&many_history_records(), true, ResourceDimension::WorkUnits);
 }
+
+
+fn parameter_baseline_document() -> cadmpeg_ir::document::CadIr {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        std::collections::BTreeMap::from([(cadmpeg_core::nonblank_literal!("unchanged"), String::from("kept"))]),
+    ));
+    ir
+}
+
+#[test]
+fn parameter_baseline_insertion_keeps_the_canonical_digest_and_existing_metadata() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut ir = parameter_baseline_document();
+    assert!(ir.model.parameters.is_empty());
+    crate::decode::stamp_parameter_baseline(&ctx, &mut ir).unwrap();
+    let attributes = &ir.source.as_ref().unwrap().attributes;
+    assert_eq!(attributes.len(), 2);
+    assert_eq!(attributes.get("unchanged").unwrap(), "kept");
+    // Canonical JSON for an empty parameter list is [], whose SHA-256 is fixed.
+    assert_eq!(attributes.get("sldprt_neutral_parameter_local_sha256").unwrap(),
+        "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945");
+}
+
+fn parameter_baseline_insertion_refusal(dimension: ResourceDimension) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension,
+        "insert SLDPRT parameter baseline digest",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => panic!("unexpected insertion dimension"),
+            }
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut ir = parameter_baseline_document();
+            let original = ir.source.as_ref().unwrap().attributes.clone();
+            let result = crate::decode::stamp_parameter_baseline(&ctx, &mut ir);
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                assert_eq!(ir.source.as_ref().unwrap().attributes, original);
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == "insert SLDPRT parameter baseline digest"));
+}
+
+#[test]
+fn parameter_baseline_insertion_collection_refusal_reaches_the_caller() {
+    parameter_baseline_insertion_refusal(ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn parameter_baseline_insertion_work_refusal_reaches_the_caller() {
+    parameter_baseline_insertion_refusal(ResourceDimension::WorkUnits);
+}
