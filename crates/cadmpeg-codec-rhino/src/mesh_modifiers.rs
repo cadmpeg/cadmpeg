@@ -825,7 +825,7 @@ fn field_i32_optional(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let Some(node) = typed_child(ctx, parent, name)? else {
         return Ok(None);
     };
-    let text = node.text().unwrap_or_default().trim();
+    let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field i32 optional text trim")?;
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field i32 optional case equality")? {
         parse_bool_text(ctx, text)?.map(i32::from)
@@ -880,7 +880,7 @@ fn field_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let Some(node) = typed_child(ctx, parent, name)? else {
         return FiniteReal::new(default).map_or_else(|| Err(malformed_typed_field(ctx, name, "default")?), Ok);
     };
-    let text = node.text().unwrap_or_default().trim();
+    let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field f64 text trim")?;
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if ctx.eq_ignore_ascii_case(kind, "bool", "Rhino field f64 case equality")? {
         parse_bool_text(ctx, text)?.map(|value| f64::from(u8::from(value)))
@@ -908,19 +908,19 @@ fn field_uuid(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::
     if !(ctx.eq_ignore_ascii_case(kind, "uuid", "Rhino field uuid case equality")? || ctx.eq_ignore_ascii_case(kind, "string", "Rhino field uuid case equality")?) {
         return Ok(None);
     }
-    Ok(parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil()))
+    Ok(parse_uuid(ctx.trim_text(node.text().unwrap_or_default(), "Rhino field uuid text trim")?).filter(|uuid| !uuid.is_nil()))
 }
 
 fn field_uuid_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'_, '_>, name: &str) -> Result<Option<Uuid>, cadmpeg_core::CodecError> {
     let Some(node) = direct_child(ctx, parent, name)? else { return Ok(None); };
-    Ok(parse_uuid(node.text().unwrap_or_default().trim()).filter(|uuid| !uuid.is_nil()))
+    Ok(parse_uuid(ctx.trim_text(node.text().unwrap_or_default(), "Rhino field uuid untyped text trim")?).filter(|uuid| !uuid.is_nil()))
 }
 
 fn field_bool_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(node) = direct_child(ctx, parent, name)? else {
         return Ok(default);
     };
-    let text = node.text().unwrap_or_default().trim();
+    let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field bool untyped text trim")?;
     Ok(ctx.eq_ignore_ascii_case(text, "true", "Rhino field bool untyped case equality")?
         || ctx.eq_ignore_ascii_case(text, "t", "Rhino field bool untyped case equality")?
         || text.parse::<i32>().is_ok_and(|value| value != 0))
@@ -934,7 +934,7 @@ fn field_i32_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let Some(node) = direct_child(ctx, parent, name)? else {
         return Ok(default);
     };
-    let text = node.text().unwrap_or_default().trim();
+    let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field i32 untyped text trim")?;
     if ctx.eq_ignore_ascii_case(text, "true", "Rhino field i32 untyped case equality")? || ctx.eq_ignore_ascii_case(text, "t", "Rhino field i32 untyped case equality")? {
         Ok(1)
     } else {
@@ -954,7 +954,7 @@ fn field_f64_untyped(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let Some(node) = direct_child(ctx, parent, name)? else {
         return Ok(default);
     };
-    let text = node.text().unwrap_or_default().trim();
+    let text = ctx.trim_text(node.text().unwrap_or_default(), "Rhino field f64 untyped text trim")?;
     Ok(text.parse::<f64>()
         .ok()
         .and_then(FiniteReal::new)
@@ -969,7 +969,7 @@ fn field_cap_type(ctx: &cadmpeg_core::decode::DecodeContext<'_>, parent: roxmltr
     if !ctx.eq_ignore_ascii_case(kind, "string", "Rhino field cap type case equality")? {
         return Ok(CapType::None);
     }
-    Ok(match node.text().unwrap_or_default().trim() {
+    Ok(match ctx.trim_text(node.text().unwrap_or_default(), "Rhino field cap type text trim")? {
         "flat" => CapType::Flat,
         "box" => CapType::Box,
         "dome" => CapType::Dome,

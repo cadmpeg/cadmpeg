@@ -175,7 +175,7 @@ fn split_separates_the_schema_name_from_the_object_identifier() {
     ];
     for (identifier, expected) in cases {
         assert_eq!(
-            split_schema_identifier(identifier),
+            split_schema_identifier(&cadmpeg_test_support::service_decode_context(), identifier).unwrap(),
             expected,
             "{identifier}"
         );
@@ -217,7 +217,8 @@ fn schema_identifier_iteration_refusal_stays_error() {
 
     let input = "AP242 { iso 39 }";
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Admit the input-byte trim before refusing the character traversal.
+    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(input.len());
     let result = crate::test_support::with_policy_context(input.as_bytes(), &policy, |_, ctx| {
         AdmittedSchemaIdentifier::admit(ctx, input.to_owned())
     });
@@ -237,4 +238,41 @@ fn schema_oid_words_preserve_unicode_whitespace_and_byte_slices() {
             .expect("byte offsets fit the input");
         assert_eq!(actual, expected, "{value:?}");
     }
+}
+
+#[test]
+fn schema_identifier_trim_preserves_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = split_schema_identifier(&ctx, " AP242 ").unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("schema trim must preserve the refusal"); };
+    assert_eq!(refusal.operation, "STEP schema identifier trim");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}
+
+#[test]
+fn schema_identifier_trailing_name_trim_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP schema identifier name trailing trim", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = split_schema_identifier(&ctx, " AP242 { 1 2 } ").map(|_| ());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn schema_identifier_admission_trim_preserves_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = AdmittedSchemaIdentifier::admit(&ctx, " AP242 ".to_owned()).unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("schema admission must preserve trim refusal"); };
+    assert_eq!(refusal.operation, "STEP schema identifier trim");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

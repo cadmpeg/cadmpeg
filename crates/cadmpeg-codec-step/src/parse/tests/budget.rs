@@ -1160,3 +1160,46 @@ fn parser_bounds_aggregate_anchor_materialization() {
                 && limit.additional > limit.limit - limit.used
     ));
 }
+
+#[test]
+fn declared_schema_identifier_trim_preserves_refusal() {
+    let (exchange, _) = crate::test_support::with_service_context(EXTENDED_HEADER_SOURCE, crate::parse::parse_inner).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP declared schema identifier trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy).unwrap();
+        let result = super::super::validate_header(exchange.header(), &ctx).map(|_| ()).map_err(|error| match error {
+            super::super::ValidationError::Resource(error) => error,
+            super::super::ValidationError::Invalid(message) => panic!("valid header returned {message}"),
+        });
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn schema_name_match_trim_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP schema name match trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::schema_identifier_matches(&[String::from(" AP242 ")], " AP242 ", &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}
+
+#[test]
+fn matching_schema_identifier_trim_preserves_refusal() {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP matching schema identifier trim", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::schema_identifier_matches(&[String::from(" AP242 ")], " AP242 ", &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
+}

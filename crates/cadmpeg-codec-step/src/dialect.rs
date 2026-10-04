@@ -206,14 +206,14 @@ impl StepDialect {
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
     ///   numeric object identifier reach the same place, through the same call.
     fn from_schema_identifier(ctx: &DecodeContext<'_>, identifier: &str, object_identifier: Option<&[u64]>) -> Result<Self, CodecError> {
-        let Some((name, object_identifier_text)) = split_schema_identifier(identifier) else { return Ok(Self::Unknown); };
+        let Some((name, object_identifier_text)) = split_schema_identifier(ctx, identifier)? else { return Ok(Self::Unknown); };
         let ap242_name = Part21Dialect::Ap242.schema_identifier();
         if ctx.eq_ignore_ascii_case(name, ap242_name, "STEP schema identifier case equality")? {
             if object_identifier_text.is_none() { return Ok(Self::Part21(Part21Dialect::Ap242)); }
             return Ok(Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21));
         }
         for row in [Part21Dialect::Schema(StepSchema::Ap203Edition1), Part21Dialect::Schema(StepSchema::Ap203Edition2), Part21Dialect::Schema(StepSchema::Ap214)] {
-            if let Some((candidate, _)) = split_schema_identifier(row.schema_identifier()) {
+            if let Some((candidate, _)) = split_schema_identifier(ctx, row.schema_identifier())? {
                 if ctx.eq_ignore_ascii_case(name, candidate, "STEP schema identifier case equality")? { return Ok(Self::Part21(row)); }
             }
         }
@@ -268,7 +268,7 @@ impl StepDialect {
                 ctx.copy_retained_text(identifier, "step_dialect_declared_text")?,
                 "step_dialect_declared_entries",
             )?;
-            if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
+            if let Some((_, Some(arcs))) = split_schema_identifier(ctx, identifier)? {
                 ctx.insert_btree_map(
                     &mut declared,
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),

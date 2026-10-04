@@ -39,12 +39,29 @@ fn dimension_category_case_equality_preserves_refusal() {
 
 #[test]
 fn datum_target_form_case_equality_preserves_refusal() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP datum target form case equality", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let result = super::super::datum_target_form("POINT", &ctx).map(|_| ());
+        if let Err(CodecError::ResourceLimit(refusal)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+        }
+        result
+    });
+    let CodecError::ResourceLimit(refusal) = error else { panic!("comparison must preserve its refusal"); };
+    assert_eq!(refusal.operation, "STEP datum target form case equality");
+}
+
+#[test]
+fn datum_target_form_trim_preserves_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let error = super::super::datum_target_form("POINT", &ctx).unwrap_err();
-    let CodecError::ResourceLimit(refusal) = error else { panic!("datum target classification must return the refusal"); };
-    assert_eq!(refusal.operation, "STEP datum target form case equality");
+    let error = super::super::datum_target_form(" POINT ", &ctx).unwrap_err();
+    let CodecError::ResourceLimit(refusal) = error else { panic!("datum form trim must return the refusal"); };
+    assert_eq!(refusal.operation, "STEP datum target form trim");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

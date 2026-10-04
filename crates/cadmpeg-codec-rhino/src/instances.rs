@@ -1247,7 +1247,7 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let Some(path) = NonBlankString::for_decode(ctx, path.trim(), "validate nonblank text")
+        let Some(path) = NonBlankString::for_decode(ctx, ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?, "validate nonblank text")
             .map_err(cadmpeg_core::CodecError::from)?
         else {
             continue;
