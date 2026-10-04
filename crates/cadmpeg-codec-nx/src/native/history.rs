@@ -455,7 +455,11 @@ pub(crate) fn active_feature_closure_for_decode(
         ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
         pending.push(resolved);
     }
-    while let Some((_, feature)) = pending.pop() {
+    loop {
+        ctx.charge_work(1, "NX active feature closure traversal")?;
+        let Some((_, feature)) = pending.pop() else {
+            break;
+        };
         for dependency in &feature.dependencies {
             ctx.charge_work(
                 u64_from_index(features.len()),
@@ -711,6 +715,34 @@ mod tests {
         assert!(
             matches!(closure_refusal_for_limit(ResourceDimension::WorkUnits), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
         );
+    }
+
+    #[test]
+    fn active_feature_closure_refuses_work_limit_at_pending_pop() {
+        let body = BodyId::mint("test:model:entity#body").unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.features.push(history_feature(
+            "synthetic:test:id#writer",
+            0,
+            Vec::new(),
+            vec![body.clone()],
+            BTreeMap::new(),
+            false,
+        ));
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX active feature closure traversal",
+            |ctx| active_feature_closure_for_decode(ctx, &ir, std::slice::from_ref(&body)),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "NX active feature closure traversal"
+                    && limit.used == limit.limit
+                    && limit.additional == 1
+        ));
     }
 
     #[test]

@@ -81,6 +81,78 @@ fn geometry_route_refuses_work_limit() {
     ));
 }
 
+#[test]
+fn unknown_carrier_reachability_pass_refuses_session_work_limit() {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let error = super::prune_unreferenced_unknown_carriers(ctx, &mut ir)
+                .expect_err("the first unknown-carrier pass needs work");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "nx unknown carrier reachability pass"
+            ));
+        },
+    );
+}
+
+#[test]
+fn inactive_geometry_reachability_pass_refuses_session_work_limit() {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let error = super::prune_inactive_geometry(ctx, &mut ir)
+                .expect_err("the first active-geometry pass needs work");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "nx active geometry reachability pass"
+            ));
+        },
+    );
+}
+
+#[test]
+fn geometry_carrier_mapping_pass_refuses_session_work_limit() {
+    let bytes = crate::test_support::test_prt::prt_with_partition(
+        &crate::test_support::test_streams::topology_partition_stream(),
+    );
+    let error = crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |scan_ctx| {
+            let scan = crate::decode::scan(
+                scan_ctx,
+                cadmpeg_core::decode::View::over_retained(&bytes),
+            )
+            .expect("valid topology container");
+            let (dialects, _) = crate::dialect::classify_layers(scan_ctx, &scan)
+                .expect("classified topology input")
+                .into_report_parts();
+            crate::test_support::resource_refusal_at(
+                &bytes,
+                ResourceDimension::WorkUnits,
+                "nx geometry carrier mapping pass",
+                |ctx| super::try_decode_geometry(ctx, &scan, &dialects, &[], &[], &mut 0).map(|_| ()),
+            )
+        },
+    );
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "nx geometry carrier mapping pass"
+    ));
+}
+
 fn preview_stream() -> crate::parasolid::Stream {
     crate::parasolid::Stream {
         file_offset: 0,

@@ -300,3 +300,59 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         }
     });
 }
+
+#[test]
+fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::scalar::NonNegativeReal;
+
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+        super::quadratic_paraboloid_surface()
+    else {
+        unreachable!("the fixture is a NURBS surface");
+    };
+    let surfaces = [
+        SurfaceId::mint("nx:test:surface#quadratic-first").expect("identity grammar"),
+        SurfaceId::mint("nx:test:surface#quadratic-second").expect("identity grammar"),
+    ];
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.surfaces.extend(surfaces.iter().cloned().map(|id| Surface {
+        id,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        source_object: None,
+    }));
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.0, 1.0),
+        )
+        .expect("finite line pcurve"),
+    );
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx coincident pcurve interval probe",
+        |ctx| {
+            crate::decode::pcurves::coincident_pcurve_pair(
+                ctx,
+                &ir,
+                [&surfaces[0], &surfaces[1]],
+                [&pcurve, &pcurve],
+                [0.0, 1.0],
+                NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
+            )
+            .map(|_| ())
+            .map_err(Into::into)
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "nx coincident pcurve interval probe"
+    ));
+}

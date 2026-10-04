@@ -1123,7 +1123,11 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
         None
     );
     assert_eq!(
-        super::expression_parameter_names(expressions[0].expression).collect::<Vec<_>>(),
+        crate::test_support::with_decode_context(|ctx| {
+            super::expression_parameter_names(ctx, expressions[0].expression)
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .unwrap(),
         vec!["p2", "p7_radius"]
     );
 }
@@ -1641,3 +1645,171 @@ mod material_catalog_admission;
 mod record_area_admission;
 
 mod expression_graph;
+
+fn assert_om_work_refusal(error: cadmpeg_core::CodecError, operation: &str) {
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn nx_xml_root_element_lookup_refuses_named_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    const XML: &str = "<root/>";
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX XML root element traversal",
+        |ctx| {
+            let admitted = ctx.parse_xml(XML, "decode XML tree")?;
+            let Some(root) = super::xml_root_element(ctx, admitted.document())? else {
+                return Ok(false);
+            };
+            Ok(root.has_tag_name("root"))
+        },
+    );
+    assert_om_work_refusal(error, "NX XML root element traversal");
+}
+
+#[test]
+fn nx_xml_attribute_lookup_refuses_named_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    const XML: &str = "<root item=\"value\"/>";
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX XML attribute lookup",
+        |ctx| {
+            let admitted = ctx.parse_xml(XML, "decode XML tree")?;
+            let Some(root) = super::xml_root_element(ctx, admitted.document())? else {
+                return Ok(false);
+            };
+            let value = super::xml_attribute(ctx, root, &["item"])?;
+            Ok(value == Some("value"))
+        },
+    );
+    assert_om_work_refusal(error, "NX XML attribute lookup");
+}
+
+#[test]
+fn nx_xml_attribute_lookup_preserves_local_names_and_fallbacks() {
+    const XML: &str = r#"<root xmlns:n="urn:test" n:item="namespaced" item="plain" fallback="backup"/>"#;
+    crate::test_support::with_decode_context(|ctx| {
+        let admitted = ctx.parse_xml(XML, "decode XML tree")?;
+        let root = super::xml_root_element(ctx, admitted.document())?.expect("XML root");
+        assert_eq!(super::xml_attribute(ctx, root, &["item", "fallback"])? , Some("namespaced"));
+        assert_eq!(super::xml_attribute(ctx, root, &["missing", "fallback"])? , Some("backup"));
+        assert_eq!(super::xml_attribute(ctx, root, &["missing"])? , None);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    }).expect("admitted XML lookup");
+}
+
+#[test]
+fn nx_xml_attribute_name_comparison_refuses_named_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    const XML: &str = "<root item=\"value\"/>";
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX XML attribute name comparison",
+        |ctx| {
+            let admitted = ctx.parse_xml(XML, "decode XML tree")?;
+            let Some(root) = super::xml_root_element(ctx, admitted.document())? else {
+                return Ok(false);
+            };
+            let value = super::xml_attribute(ctx, root, &["item"])?;
+            Ok(value == Some("value"))
+        },
+    );
+    assert_om_work_refusal(error, "NX XML attribute name comparison");
+}
+
+#[test]
+fn nx_object_record_graph_stack_probe_refuses_named_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let record: &[u8] = &[];
+    let records = [record];
+    let references = [Vec::new()];
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX object record graph stack traversal",
+        |ctx| {
+            let mut work = 1024usize;
+            super::stable_object_record_graph_identity(
+                ctx,
+                "entry",
+                &records,
+                &references,
+                0,
+                &mut work,
+            )
+        },
+    );
+    assert_om_work_refusal(error, "NX object record graph stack traversal");
+}
+
+#[test]
+fn nx_control_handle_pair_work_loops_refuse_named_sites() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use crate::om::reference_value::DirectReference;
+
+    let reference = |ordinal: u32, source_offset: u64| super::DataBlockControlReference {
+        id: format!("reference#{ordinal}"),
+        data_block: "block#0".into(),
+        ordinal,
+        reference: DirectReference::PersistentHandle(ordinal + 100),
+        source_offset,
+    };
+    let references = [reference(0, 10), reference(1, 15)];
+
+    for operation in [
+        "NX control handle pair outer run scan",
+        "NX control handle pair adjacent reference probe",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| super::data_block_control_handle_pairs(ctx, &references),
+        );
+        assert_om_work_refusal(error, operation);
+    }
+}
+
+#[test]
+fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use crate::om::reference_value::{DirectReference, RecordReference};
+
+    let reference = |ordinal: u32, source_offset: u64| super::ObjectReference {
+        id: format!("reference#{ordinal}"),
+        record: "record#0".into(),
+        object_id: 7,
+        ordinal,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
+        source_entry: "om".into(),
+        source_offset,
+    };
+    let references = [reference(0, 10), reference(1, 15)];
+
+    for operation in [
+        "NX object record handle pair outer run scan",
+        "NX object record handle pair adjacent reference probe",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| super::object_record_handle_pairs(ctx, &references),
+        );
+        assert_om_work_refusal(error, operation);
+    }
+}

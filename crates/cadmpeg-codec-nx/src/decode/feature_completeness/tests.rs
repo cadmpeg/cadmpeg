@@ -1993,4 +1993,6 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
 
 mod numeric;
 
+mod resource_limits;
+
 mod shells;

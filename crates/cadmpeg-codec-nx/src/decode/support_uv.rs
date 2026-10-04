@@ -937,6 +937,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
         BTreeMap::<ProceduralCurveId, [Option<cadmpeg_ir::geometry::SupportPcurve>; 2]>::new();
     let mut lane_geometry_exhausted = false;
     loop {
+        ctx.charge_work(1, "nx support UV completion wave pass")?;
         let before = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
         if support_uv_budget_exhausted(support_budget) {
             break;
@@ -3204,6 +3205,40 @@ mod tests {
                     if limit.dimension == ResourceDimension::Codec("nx adaptive geometry work")
             ));
         });
+    }
+
+    #[test]
+    fn support_uv_completion_refuses_first_wave_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let ir = CadIr::empty();
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "nx support UV completion wave pass",
+            |ctx| {
+                let support_budget = ctx.work_budget(10);
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                let mut ir = ir.clone();
+                let mut endpoint_witnesses = BTreeMap::new();
+
+                complete_support_uv_with_budget_and_endpoint_witnesses(
+                    ctx,
+                    &mut ir,
+                    &[],
+                    (&support_budget, &geometry_budget),
+                    (&support_budget, &geometry_budget),
+                    &mut endpoint_witnesses,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "nx support UV completion wave pass"
+        ));
     }
 
     #[test]

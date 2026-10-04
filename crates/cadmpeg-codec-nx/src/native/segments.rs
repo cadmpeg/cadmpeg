@@ -791,7 +791,11 @@ pub(super) fn body_alias_roots(
             "NX segment alias traversal",
         )?;
         pending.push(identity);
-        while let Some(member) = pending.pop() {
+        loop {
+            ctx.charge_work(1, "walk NX segment alias pending queue")?;
+            let Some(member) = pending.pop() else {
+                break;
+            };
             if !component_reservation.with_storage(|| {
                 ctx.insert_btree_set(&mut component, member, "NX segment alias component")
             })? {
@@ -2772,5 +2776,33 @@ mod tests {
             .expect("admitted terminal body lineage"),
             Some([20, 30].into_iter().collect())
         );
+    }
+
+    #[test]
+    fn body_alias_roots_refuses_work_limit_at_pending_pop() {
+        let bindings = [super::SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: crate::parasolid::StreamKind::Partition,
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "walk NX segment alias pending queue",
+            |ctx| super::body_alias_roots(ctx, &bindings),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "walk NX segment alias pending queue"
+                    && limit.used == limit.limit
+                    && limit.additional == 1
+        ));
     }
 }
