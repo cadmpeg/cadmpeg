@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cross-record curve and surface dependencies used by model evaluation.
 
-use std::fmt;
-
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
+use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
@@ -122,20 +120,6 @@ struct Frame<'a, 'session> {
     _depth: DepthGuard<'session>,
 }
 
-struct CyclePath<'stack, 'a, 'session> {
-    stack: &'stack [Frame<'a, 'session>],
-    child: &'a str,
-}
-
-impl fmt::Display for CyclePath<'_, '_, '_> {
-    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for frame in self.stack {
-            write!(out, "{} -> ", frame.node)?;
-        }
-        out.write_str(self.child)
-    }
-}
-
 #[derive(Clone, Copy)]
 enum Visit {
     Unseen,
@@ -242,20 +226,27 @@ fn walk_cycles(
             match node.visit {
                 Visit::Complete => {}
                 Visit::Active(start_index) => {
-                    ctx.charge_work(u64_from_index(stack.len() - start_index), "cycle path walk")?;
+                    let frames = ctx.admit_iter(&stack[start_index..], "cycle path walk")?;
+                    let mut message = ctx.format_retained(
+                        format_args!("malformed curve/surface reference cycle: "),
+                        "cycle finding message",
+                    )?;
+                    for frame in frames {
+                        ctx.append_formatted_retained(
+                            &mut message,
+                            format_args!("{} -> ", frame.node),
+                            "cycle finding message",
+                        )?;
+                    }
+                    ctx.append_formatted_retained(
+                        &mut message,
+                        format_args!("{child}"),
+                        "cycle finding message",
+                    )?;
                     let finding = Finding {
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
-                        message: ctx.format_retained(
-                            format_args!(
-                                "malformed curve/surface reference cycle: {}",
-                                CyclePath {
-                                    stack: &stack[start_index..],
-                                    child
-                                }
-                            ),
-                            "cycle finding message",
-                        )?,
+                        message,
                         entity: Some(ctx.copy_retained_text(child, "cycle finding identity")?),
                     };
                     if !emit(finding)? {
