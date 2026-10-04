@@ -714,7 +714,10 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                for scale in ctx.admit_iter(&scales[..], "topology validation scan")?.copied() {
+                for scale in ctx
+                    .admit_iter(&scales[..], "topology validation scan")?
+                    .copied()
+                {
                     check_curve(&scale.path, findings)?;
                     for curve in &scale.auxiliaries {
                         ctx.charge_work(1, "topology validation scan")?;
@@ -783,7 +786,10 @@ pub(super) fn check_references(
                     }
                 }
                 check_curve(&construction.tail_curve, findings)?;
-                for scale in ctx.admit_iter(&scales[..], "topology validation scan")?.copied() {
+                for scale in ctx
+                    .admit_iter(&scales[..], "topology validation scan")?
+                    .copied()
+                {
                     check_curve(&scale.path, findings)?;
                     for curve in &scale.auxiliaries {
                         ctx.charge_work(1, "topology validation scan")?;
@@ -905,7 +911,9 @@ pub(super) fn check_references(
                         }
                     }
                 }
-                for formula in ctx.admit_iter(&construction.formulas[..], "topology validation scan")? {
+                for formula in
+                    ctx.admit_iter(&construction.formulas[..], "topology validation scan")?
+                {
                     for variable in formula.variables() {
                         ctx.charge_work(1, "topology validation scan")?;
                         check_law_curves(ctx, variable, ids, procedural, findings)?;
@@ -1047,38 +1055,84 @@ pub(super) fn check_references(
                 }
                 ctx.charge_work(1, "compound loft base path scan")?;
                 let base_path = construction.base_path();
-                for curve in ctx.admit_iter(base_path.path.as_slice(), "topology validation scan")? {
+                for curve in
+                    ctx.admit_iter(base_path.path.as_slice(), "topology validation scan")?
+                {
                     if ids.curves(curve.id.as_str(), ctx)?.is_none() {
-                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.id.as_str())?;
+                        ref_error(
+                            ctx,
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            curve.id.as_str(),
+                        )?;
                     }
                 }
                 for curve in ctx.admit_iter(&base_path.auxiliaries, "topology validation scan")? {
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
+                        ref_error(
+                            ctx,
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            curve.as_str(),
+                        )?;
                     }
                 }
-                for entry in ctx.admit_iter(construction.entries(), "compound loft path entry scan")? {
-                    for curve in ctx.admit_iter(entry.path.path.as_slice(), "topology validation scan")? {
+                for entry in
+                    ctx.admit_iter(construction.entries(), "compound loft path entry scan")?
+                {
+                    for curve in
+                        ctx.admit_iter(entry.path.path.as_slice(), "topology validation scan")?
+                    {
                         if ids.curves(curve.id.as_str(), ctx)?.is_none() {
-                            ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.id.as_str())?;
+                            ref_error(
+                                ctx,
+                                findings,
+                                procedural.id.as_str(),
+                                "curve",
+                                curve.id.as_str(),
+                            )?;
                         }
                     }
-                    for curve in ctx.admit_iter(&entry.path.auxiliaries, "topology validation scan")? {
+                    for curve in
+                        ctx.admit_iter(&entry.path.auxiliaries, "topology validation scan")?
+                    {
                         if ids.curves(curve.as_str(), ctx)?.is_none() {
-                            ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
+                            ref_error(
+                                ctx,
+                                findings,
+                                procedural.id.as_str(),
+                                "curve",
+                                curve.as_str(),
+                            )?;
                         }
                     }
                 }
-                if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } = construction.direction() {
+                if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
+                    construction.direction()
+                {
                     ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
+                        ref_error(
+                            ctx,
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            curve.as_str(),
+                        )?;
                     }
                 }
                 if let Some(curve) = construction.tail().curve() {
                     ctx.charge_work(1, "topology validation scan")?;
                     if ids.curves(curve.as_str(), ctx)?.is_none() {
-                        ref_error(ctx, findings, procedural.id.as_str(), "curve", curve.as_str())?;
+                        ref_error(
+                            ctx,
+                            findings,
+                            procedural.id.as_str(),
+                            "curve",
+                            curve.as_str(),
+                        )?;
                     }
                 }
             }
@@ -1281,7 +1335,10 @@ pub(super) fn check_references(
                             Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?
                         }
                     };
-                    for formula in ctx.admit_iter(&formulas[..], "topology validation scan")?.copied() {
+                    for formula in ctx
+                        .admit_iter(&formulas[..], "topology validation scan")?
+                        .copied()
+                    {
                         for variable in formula.variables() {
                             ctx.charge_work(1, "topology validation scan")?;
                             check_law_curves(ctx, variable, ids, procedural, findings)?;
@@ -2052,7 +2109,10 @@ pub(super) fn check_references(
                 ),
             )?;
         }
-        for dependency in ctx.admit_iter(parameter.dependencies.as_slice(), "topology validation scan")? {
+        for dependency in ctx.admit_iter(
+            parameter.dependencies.as_slice(),
+            "topology validation scan",
+        )? {
             let Some((owner, ordinal)) = parameters.get(ctx, dependency.as_str())? else {
                 ref_error(
                     ctx,
@@ -2122,15 +2182,15 @@ pub(super) fn check_references(
         ctx.charge_work(1, "topology validation scan")?;
         for profile in ctx.admit_iter(&sketch.profiles[..], "sketch profile group scan")? {
             for entity_use in ctx.admit_iter(profile, "topology validation scan")? {
-            if !sketch_entities.contains(ctx, entity_use.entity.as_str())? {
-                ref_error(
-                    ctx,
-                    findings,
-                    sketch.id.as_str(),
-                    "sketch entity",
-                    entity_use.entity.as_str(),
-                )?;
-            }
+                if !sketch_entities.contains(ctx, entity_use.entity.as_str())? {
+                    ref_error(
+                        ctx,
+                        findings,
+                        sketch.id.as_str(),
+                        "sketch entity",
+                        entity_use.entity.as_str(),
+                    )?;
+                }
             }
         }
     }
@@ -2188,10 +2248,9 @@ pub(super) fn check_references(
             }
             Definition::CircularPattern { pattern } => {
                 constraint_entities.extend(&[pattern.center()], |entity| *entity)?;
-                for instance in ctx.admit_iter(
-                    pattern.instances(),
-                    "constraint circular instance scan",
-                )? {
+                for instance in
+                    ctx.admit_iter(pattern.instances(), "constraint circular instance scan")?
+                {
                     constraint_entities.extend(&instance.entities, |entity| entity)?;
                 }
                 None
@@ -2250,16 +2309,19 @@ pub(super) fn check_references(
             }
             Definition::SameCoordinate { relation } => {
                 constraint_entities.extend(
-                    &[locus_entity(relation.first()), locus_entity(relation.second())],
+                    &[
+                        locus_entity(relation.first()),
+                        locus_entity(relation.second()),
+                    ],
                     |entity| *entity,
                 )?;
                 None
             }
             Definition::TangentLoci { first, second } => {
-                constraint_entities.extend(
-                    &[locus_entity(first), locus_entity(second)],
-                    |entity| *entity,
-                )?;
+                constraint_entities
+                    .extend(&[locus_entity(first), locus_entity(second)], |entity| {
+                        *entity
+                    })?;
                 None
             }
             Definition::PointSymmetric {
@@ -2268,7 +2330,11 @@ pub(super) fn check_references(
                 center,
             } => {
                 constraint_entities.extend(
-                    &[locus_entity(first), locus_entity(second), locus_entity(center)],
+                    &[
+                        locus_entity(first),
+                        locus_entity(second),
+                        locus_entity(center),
+                    ],
                     |entity| *entity,
                 )?;
                 None
@@ -2282,10 +2348,10 @@ pub(super) fn check_references(
                 None
             }
             Definition::MidpointCoordinate { first, second, .. } => {
-                constraint_entities.extend(
-                    &[locus_entity(first), locus_entity(second)],
-                    |entity| *entity,
-                )?;
+                constraint_entities
+                    .extend(&[locus_entity(first), locus_entity(second)], |entity| {
+                        *entity
+                    })?;
                 None
             }
             Definition::AtIntersection {
@@ -2293,17 +2359,15 @@ pub(super) fn check_references(
                 first,
                 second,
             } => {
-                constraint_entities.extend(&[locus_entity(point), first, second], |entity| *entity)?;
+                constraint_entities
+                    .extend(&[locus_entity(point), first, second], |entity| *entity)?;
                 None
             }
             Definition::Offset {
                 pairs, parameter, ..
             } => {
                 for pair in ctx.admit_iter(pairs, "constraint offset pair scan")? {
-                    constraint_entities.extend(
-                        &[&pair.source, &pair.result],
-                        |entity| *entity,
-                    )?;
+                    constraint_entities.extend(&[&pair.source, &pair.result], |entity| *entity)?;
                 }
                 parameter.as_ref().map(|parameter| parameter.id.as_str())
             }
@@ -2349,10 +2413,10 @@ pub(super) fn check_references(
                 second,
                 parameter,
             } => {
-                constraint_entities.extend(
-                    &[locus_entity(first), locus_entity(second)],
-                    |entity| *entity,
-                )?;
+                constraint_entities
+                    .extend(&[locus_entity(first), locus_entity(second)], |entity| {
+                        *entity
+                    })?;
                 Some(parameter.as_str())
             }
             Definition::PolarDistance {
@@ -2361,10 +2425,10 @@ pub(super) fn check_references(
                 distance_parameter: None,
                 ..
             } => {
-                constraint_entities.extend(
-                    &[locus_entity(first), locus_entity(second)],
-                    |entity| *entity,
-                )?;
+                constraint_entities
+                    .extend(&[locus_entity(first), locus_entity(second)], |entity| {
+                        *entity
+                    })?;
                 None
             }
             Definition::DistanceLociValue {
@@ -2373,10 +2437,10 @@ pub(super) fn check_references(
                 parameter: None,
                 ..
             } => {
-                constraint_entities.extend(
-                    &[locus_entity(first), locus_entity(second)],
-                    |entity| *entity,
-                )?;
+                constraint_entities
+                    .extend(&[locus_entity(first), locus_entity(second)], |entity| {
+                        *entity
+                    })?;
                 None
             }
             Definition::AngleDifference { .. } => None,
@@ -2404,10 +2468,10 @@ pub(super) fn check_references(
                         | Measurement::Horizontal { first, second }
                         | Measurement::Vertical { first, second } => (first, second),
                     };
-                    constraint_entities.extend(
-                        &[locus_entity(first), locus_entity(second)],
-                        |entity| *entity,
-                    )?;
+                    constraint_entities
+                        .extend(&[locus_entity(first), locus_entity(second)], |entity| {
+                            *entity
+                        })?;
                 }
                 Some(parameter.as_str())
             }
@@ -2475,7 +2539,10 @@ pub(super) fn check_references(
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
-        for entity in ctx.admit_iter(&constraint_entities[..], "topology validation scan")?.copied() {
+        for entity in ctx
+            .admit_iter(&constraint_entities[..], "topology validation scan")?
+            .copied()
+        {
             if !sketch_entities.contains(ctx, entity.as_str())? {
                 ref_error(
                     ctx,
@@ -2519,32 +2586,31 @@ pub(super) fn check_references(
             }
         }
         if let Definition::RectangularPattern { pattern } = constraint.definition.kind() {
-            for direction in ctx.admit_iter(
-                pattern.directions(),
-                "constraint pattern direction scan",
-            )? {
-            for parameter in [
-                direction
-                    .distance
-                    .as_ref()
-                    .map(crate::sketches::SketchPatternDistance::parameter),
-                direction.count_parameter.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
+            for direction in
+                ctx.admit_iter(pattern.directions(), "constraint pattern direction scan")?
             {
-                ctx.charge_work(1, "topology validation scan")?;
-                if !parameters.contains(ctx, parameter.as_str())? {
-                    ref_error(
-                        ctx,
-                        findings,
-                        constraint.id.as_str(),
-                        "parameter",
-                        parameter.as_str(),
-                    )?;
+                for parameter in [
+                    direction
+                        .distance
+                        .as_ref()
+                        .map(crate::sketches::SketchPatternDistance::parameter),
+                    direction.count_parameter.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    ctx.charge_work(1, "topology validation scan")?;
+                    if !parameters.contains(ctx, parameter.as_str())? {
+                        ref_error(
+                            ctx,
+                            findings,
+                            constraint.id.as_str(),
+                            "parameter",
+                            parameter.as_str(),
+                        )?;
+                    }
                 }
             }
-        }
         }
         if let Definition::CircularPattern { pattern } = constraint.definition.kind() {
             for parameter in [pattern.angle_parameter(), pattern.count_parameter()]
@@ -2755,7 +2821,9 @@ fn check_feature_references(
                     feature.as_str(),
                 )?;
             }
-            for dependency in ctx.admit_iter(state.dependencies.as_slice(), "topology validation scan")? {
+            for dependency in
+                ctx.admit_iter(state.dependencies.as_slice(), "topology validation scan")?
+            {
                 match features.get(ctx, dependency.as_str())? {
                     None => ref_error(
                         ctx,
@@ -2786,7 +2854,10 @@ fn check_feature_references(
                 }
             }
             let references = regeneration_references(ctx, state.definition.operation())?;
-            for reference in ctx.admit_iter(&references[..], "topology validation scan")?.copied() {
+            for reference in ctx
+                .admit_iter(&references[..], "topology validation scan")?
+                .copied()
+            {
                 match features.get(ctx, reference.as_str())? {
                     None => ref_error(
                         ctx,
@@ -2870,7 +2941,10 @@ fn check_feature_references(
         Ok(())
     })?;
     let spatial_sketch_entity_owners = BorrowedIdentities::build(ctx, |add| {
-        for entity in ctx.admit_iter(&ir.model.spatial_sketch_entities, "spatial sketch entity owner scan")? {
+        for entity in ctx.admit_iter(
+            &ir.model.spatial_sketch_entities,
+            "spatial sketch entity owner scan",
+        )? {
             let (identity, value) = (entity.id().as_str(), entity.sketch.as_str());
             add(identity, value)?;
         }
@@ -2979,7 +3053,10 @@ fn check_feature_references(
         Ok(())
     })?;
     let input_topologies = BorrowedIdentities::build(ctx, |add| {
-        for state in ctx.admit_iter(&ir.model.feature_input_topologies, "input topology identity scan")? {
+        for state in ctx.admit_iter(
+            &ir.model.feature_input_topologies,
+            "input topology identity scan",
+        )? {
             let (identity, value) = (state.id.as_str(), state);
             add(identity, value)?;
         }
@@ -3032,7 +3109,10 @@ fn check_feature_references(
         }
     }
     let result_topologies_by_feature = BorrowedIdentities::build(ctx, |add| {
-        for state in ctx.admit_iter(&ir.model.feature_result_topologies, "result topology owner scan")? {
+        for state in ctx.admit_iter(
+            &ir.model.feature_result_topologies,
+            "result topology owner scan",
+        )? {
             let (identity, value) = (state.output_of.as_str(), state);
             add(identity, value)?;
         }
@@ -3051,7 +3131,9 @@ fn check_feature_references(
                 format_args!("design repeats feature ordinal {}", feature.ordinal),
             )?;
         }
-        for dependency in ctx.admit_iter(feature.dependencies.as_slice(), "topology validation scan")? {
+        for dependency in
+            ctx.admit_iter(feature.dependencies.as_slice(), "topology validation scan")?
+        {
             match features.get(ctx, dependency.as_str())? {
                 None => ref_error(
                     ctx,
@@ -3201,7 +3283,9 @@ fn check_feature_references(
             FeatureOperation::SewBodies { bodies, .. } => body_selections.push(bodies)?,
             FeatureOperation::BaseFeature { bodies } => body_selections.push(bodies)?,
             FeatureOperation::MeshImport { tessellations } => {
-                for tessellation in ctx.admit_iter(tessellations.as_slice(), "topology validation scan")? {
+                for tessellation in
+                    ctx.admit_iter(tessellations.as_slice(), "topology validation scan")?
+                {
                     if ids.tessellations(tessellation, ctx)?.is_none() {
                         ref_error(
                             ctx,
@@ -3292,7 +3376,10 @@ fn check_feature_references(
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges)?,
             FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(
-                    construction.axis().and_then(|axis| axis.reference.as_ref()).as_slice(),
+                    construction
+                        .axis()
+                        .and_then(|axis| axis.reference.as_ref())
+                        .as_slice(),
                     |path| *path,
                 )?;
             }
@@ -3343,7 +3430,7 @@ fn check_feature_references(
                 match guidance {
                     crate::features::LoftGuidance::Guides(guides) => {
                         paths.extend(guides, |guide| guide)?;
-                    },
+                    }
                     crate::features::LoftGuidance::Centerline(centerline) => {
                         paths.push(centerline)?;
                     }
@@ -3528,7 +3615,7 @@ fn check_feature_references(
             }
             FeatureOperation::Hole { face, .. } => {
                 face_selections.extend(face.as_slice(), |face| face)?;
-            },
+            }
             FeatureOperation::Pattern { seeds, pattern } => {
                 collect_pattern_paths(ctx, pattern, &mut paths)?;
                 for seed in seeds {
@@ -3586,7 +3673,9 @@ fn check_feature_references(
                         PatternSeed::Faces(selection) => face_selections.push(selection)?,
                         PatternSeed::Bodies(selection) => body_selections.push(selection)?,
                         PatternSeed::Occurrences(occurrences) => {
-                            for occurrence in ctx.admit_iter(occurrences.as_slice(), "topology validation scan")? {
+                            for occurrence in
+                                ctx.admit_iter(occurrences.as_slice(), "topology validation scan")?
+                            {
                                 if !super::scans::any(
                                     ctx,
                                     ir.model.occurrences.iter(),
@@ -3799,7 +3888,10 @@ fn check_feature_references(
                         }
                     }
                 }
-                for plane in ctx.admit_iter(&plane_references[..], "topology validation scan")?.copied() {
+                for plane in ctx
+                    .admit_iter(&plane_references[..], "topology validation scan")?
+                    .copied()
+                {
                     match plane {
                         DatumPlaneReference::Feature { feature: reference } => {
                             match feature_records.get(ctx, reference.as_str())? {
@@ -4048,7 +4140,10 @@ fn check_feature_references(
             }
         }
         let definition_profiles = definition_profiles(ctx, definition)?;
-        for profile in ctx.admit_iter(&definition_profiles[..], "topology validation scan")?.copied() {
+        for profile in ctx
+            .admit_iter(&definition_profiles[..], "topology validation scan")?
+            .copied()
+        {
             match profile {
                 PlanarProfileRef::Faces(faces) => check_ids(
                     ctx,
@@ -4145,7 +4240,10 @@ fn check_feature_references(
             }
         }
         drop(definition_profiles);
-        for path in ctx.admit_iter(&paths[..], "topology validation scan")?.copied() {
+        for path in ctx
+            .admit_iter(&paths[..], "topology validation scan")?
+            .copied()
+        {
             match path {
                 PathRef::Edges(edges) => check_ids(
                     ctx,
@@ -4208,7 +4306,10 @@ fn check_feature_references(
         }
         drop(paths);
         let terminations = definition_terminations(ctx, definition)?;
-        for termination in ctx.admit_iter(&terminations[..], "topology validation scan")?.copied() {
+        for termination in ctx
+            .admit_iter(&terminations[..], "topology validation scan")?
+            .copied()
+        {
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.face()
             {
@@ -4238,7 +4339,10 @@ fn check_feature_references(
             }
         }
         drop(terminations);
-        for (selection, consumer) in ctx.admit_iter(&vertex_selections[..], "topology validation scan")?.copied() {
+        for (selection, consumer) in ctx
+            .admit_iter(&vertex_selections[..], "topology validation scan")?
+            .copied()
+        {
             match selection {
                 crate::features::VertexSelection::Generated { vertex, .. } => {
                     if features
@@ -4284,8 +4388,8 @@ fn check_feature_references(
                     findings,
                     &feature.id,
                     (state, std::slice::from_ref(vertex)),
-                crate::ids::HistoricalVertexId::as_str,
-                "vertex",
+                    crate::ids::HistoricalVertexId::as_str,
+                    "vertex",
                     &input_topologies,
                     |topology| {
                         Scratch::filter_map(
@@ -4303,7 +4407,10 @@ fn check_feature_references(
             }
         }
         drop(vertex_selections);
-        for selection in ctx.admit_iter(&edge_selections[..], "topology validation scan")?.copied() {
+        for selection in ctx
+            .admit_iter(&edge_selections[..], "topology validation scan")?
+            .copied()
+        {
             let historical = match selection {
                 EdgeSelection::Historical { state, edges, .. } => Some((state, edges.as_slice())),
                 EdgeSelection::HistoricalPartial { state, edges, .. } => {
@@ -4380,7 +4487,10 @@ fn check_feature_references(
             }
         }
         drop(edge_selections);
-        for selection in ctx.admit_iter(&face_selections[..], "topology validation scan")?.copied() {
+        for selection in ctx
+            .admit_iter(&face_selections[..], "topology validation scan")?
+            .copied()
+        {
             let historical = match selection {
                 FaceSelection::Historical { state, faces, .. } => Some((state, faces.as_slice())),
                 FaceSelection::HistoricalPartial { state, faces, .. } => {
@@ -4457,7 +4567,10 @@ fn check_feature_references(
             }
         }
         drop(face_selections);
-        for selection in ctx.admit_iter(&body_selections[..], "topology validation scan")?.copied() {
+        for selection in ctx
+            .admit_iter(&body_selections[..], "topology validation scan")?
+            .copied()
+        {
             match selection {
                 BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
                     check_ids(
@@ -4667,35 +4780,34 @@ fn regeneration_references<'ctx, 'a>(
         crate::features::FeatureOperation::DatumPoint {
             construction: Some(construction),
             ..
-        } => {
-            match construction.as_ref() {
-                crate::features::DatumPointConstruction::ThreePlaneIntersection { planes } => {
-                    for plane in ctx.admit_iter(planes.as_ref(), "regeneration reference scan")? {
-                        if let DatumPlaneReference::Feature { feature } = plane {
-                            references.insert_unique(feature.as_str(), feature)?;
-                        }
+        } => match construction.as_ref() {
+            crate::features::DatumPointConstruction::ThreePlaneIntersection { planes } => {
+                for plane in ctx.admit_iter(planes.as_ref(), "regeneration reference scan")? {
+                    if let DatumPlaneReference::Feature { feature } = plane {
+                        references.insert_unique(feature.as_str(), feature)?;
                     }
                 }
-                crate::features::DatumPointConstruction::EdgePlaneIntersection {
-                    plane: DatumPlaneReference::Feature { feature }, ..
-                } => {
-                    ctx.charge_work(1, "regeneration reference scan")?;
-                    references.insert_unique(feature.as_str(), feature)?;
-                }
-                crate::features::DatumPointConstruction::Vertex {
-                    vertex: crate::features::VertexSelection::Generated { vertex, .. },
-                } => {
-                    ctx.charge_work(1, "regeneration reference scan")?;
-                    references.insert_unique(vertex.feature.as_str(), &vertex.feature)?;
-                }
-                crate::features::DatumPointConstruction::CircleCenter { .. }
-                | crate::features::DatumPointConstruction::TwoEdgeIntersection { .. }
-                | crate::features::DatumPointConstruction::Vertex { .. }
-                | crate::features::DatumPointConstruction::SketchPoint { .. }
-                | crate::features::DatumPointConstruction::EdgePlaneIntersection { .. }
-                | crate::features::DatumPointConstruction::DistanceOnEdge { .. } => {}
             }
-        }
+            crate::features::DatumPointConstruction::EdgePlaneIntersection {
+                plane: DatumPlaneReference::Feature { feature },
+                ..
+            } => {
+                ctx.charge_work(1, "regeneration reference scan")?;
+                references.insert_unique(feature.as_str(), feature)?;
+            }
+            crate::features::DatumPointConstruction::Vertex {
+                vertex: crate::features::VertexSelection::Generated { vertex, .. },
+            } => {
+                ctx.charge_work(1, "regeneration reference scan")?;
+                references.insert_unique(vertex.feature.as_str(), &vertex.feature)?;
+            }
+            crate::features::DatumPointConstruction::CircleCenter { .. }
+            | crate::features::DatumPointConstruction::TwoEdgeIntersection { .. }
+            | crate::features::DatumPointConstruction::Vertex { .. }
+            | crate::features::DatumPointConstruction::SketchPoint { .. }
+            | crate::features::DatumPointConstruction::EdgePlaneIntersection { .. }
+            | crate::features::DatumPointConstruction::DistanceOnEdge { .. } => {}
+        },
         crate::features::FeatureOperation::DatumThreePointPlane { points, .. } => {
             for point in ctx.admit_iter(&points[..], "regeneration point filter scan")? {
                 if let crate::features::VertexSelection::Generated { vertex, .. } = point {
@@ -4726,7 +4838,10 @@ fn regeneration_references<'ctx, 'a>(
         _ => {}
     }
     let terminations = definition_terminations(ctx, definition)?;
-    for termination in ctx.admit_iter(&terminations[..], "regeneration termination scan")?.copied() {
+    for termination in ctx
+        .admit_iter(&terminations[..], "regeneration termination scan")?
+        .copied()
+    {
         if let Some(crate::features::VertexSelection::Generated { vertex, .. }) =
             termination.vertex()
         {
@@ -4735,7 +4850,10 @@ fn regeneration_references<'ctx, 'a>(
     }
     drop(terminations);
     let profiles = definition_profiles(ctx, definition)?;
-    for profile in ctx.admit_iter(&profiles[..], "topology validation scan")?.copied() {
+    for profile in ctx
+        .admit_iter(&profiles[..], "topology validation scan")?
+        .copied()
+    {
         match profile {
             crate::features::PlanarProfileRef::Feature(feature) => {
                 references.insert_unique(feature.as_str(), feature)?;
@@ -4751,10 +4869,7 @@ fn regeneration_references<'ctx, 'a>(
     drop(profiles);
     let mut ordered =
         Scratch::filter_map(ctx, references.values(), |reference| Ok(Some(*reference)))?;
-    ordered.stable_sort_by(
-        |reference| *reference,
-        Ord::cmp,
-    )?;
+    ordered.stable_sort_by(|reference| *reference, Ord::cmp)?;
     Ok(ordered)
 }
 
@@ -4888,7 +5003,10 @@ fn definition_terminations<'ctx, 'a>(
                 ) => terminations.push(TerminationRef::Angular(termination))?,
                 Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
                     terminations.extend(
-                        &[TerminationRef::Angular(first), TerminationRef::Angular(second)],
+                        &[
+                            TerminationRef::Angular(first),
+                            TerminationRef::Angular(second),
+                        ],
                         |termination| *termination,
                     )?;
                 }
@@ -4913,9 +5031,10 @@ fn check_configuration_state_closure(
         return Ok(());
     }
     let states = BorrowedIdentities::build(ctx, |add| {
-        for (feature, state) in
-            ctx.admit_iter(&configuration.feature_states, "configuration state index scan")?
-        {
+        for (feature, state) in ctx.admit_iter(
+            &configuration.feature_states,
+            "configuration state index scan",
+        )? {
             add(feature.as_str(), state)?;
         }
         Ok(())
@@ -5120,7 +5239,10 @@ fn check_feature_sketch_references(
         Ok(())
     })?;
     let spatial_sketch_entity_owners = BorrowedIdentities::build(ctx, |add| {
-        for entity in ctx.admit_iter(&ir.model.spatial_sketch_entities, "spatial sketch entity owner scan")? {
+        for entity in ctx.admit_iter(
+            &ir.model.spatial_sketch_entities,
+            "spatial sketch entity owner scan",
+        )? {
             let (identity, value) = (entity.id().as_str(), entity.sketch.as_str());
             add(identity, value)?;
         }
@@ -5292,17 +5414,27 @@ fn check_feature_sketch_references(
             }
             FeatureOperation::Rib { construction, .. } => {
                 profiles.extend(
-                    construction.profile.as_ref().map(ProfileReference::Planar).as_slice(),
+                    construction
+                        .profile
+                        .as_ref()
+                        .map(ProfileReference::Planar)
+                        .as_slice(),
                     |profile| *profile,
                 )?;
             }
             FeatureOperation::Revolve { construction, .. } => {
                 profiles.extend(
-                    construction.profile().map(ProfileReference::Planar).as_slice(),
+                    construction
+                        .profile()
+                        .map(ProfileReference::Planar)
+                        .as_slice(),
                     |profile| *profile,
                 )?;
                 paths.extend(
-                    construction.axis().and_then(|axis| axis.reference.as_ref()).as_slice(),
+                    construction
+                        .axis()
+                        .and_then(|axis| axis.reference.as_ref())
+                        .as_slice(),
                     |path| *path,
                 )?;
             }
@@ -5358,7 +5490,7 @@ fn check_feature_sketch_references(
                 match guidance {
                     crate::features::LoftGuidance::Guides(guides) => {
                         paths.extend(guides, |guide| guide)?;
-                    },
+                    }
                     crate::features::LoftGuidance::Centerline(centerline) => {
                         paths.push(centerline)?;
                     }
@@ -5369,7 +5501,10 @@ fn check_feature_sketch_references(
             }
             _ => {}
         }
-        for profile in ctx.admit_iter(&profiles[..], "topology validation scan")?.copied() {
+        for profile in ctx
+            .admit_iter(&profiles[..], "topology validation scan")?
+            .copied()
+        {
             let (sketch, sketch_kind, defined_sketches) = match profile {
                 ProfileReference::SpatialSketchProfiles { sketch, .. }
                 | ProfileReference::SpatialSketchSelection { sketch, .. } => {
@@ -5535,7 +5670,10 @@ fn check_feature_sketch_references(
             }
         }
         drop(profiles);
-        for path in ctx.admit_iter(&paths[..], "topology validation scan")?.copied() {
+        for path in ctx
+            .admit_iter(&paths[..], "topology validation scan")?
+            .copied()
+        {
             if let PathRef::SketchCurves { sketch, curves } = path {
                 let invalid = super::scans::any(ctx, curves.iter(), |curve| {
                     Ok::<_, CodecError>({

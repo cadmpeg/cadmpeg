@@ -387,9 +387,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let point = |position| {
-            analytic_geometry(SketchGeometryDefinition::Point { position })
-        };
+        let point = |position| analytic_geometry(SketchGeometryDefinition::Point { position });
         let origin = point(Point2::new(0.0, -0.0));
         let signed_zero_origin = point(Point2::new(-0.0, 0.0));
         let displaced_point = point(Point2::new(0.0, 1.0));
@@ -402,18 +400,8 @@ mod tests {
         let line_value = line(start, end);
         let same_line = line(start, end);
         assert!(geometry_equal(&ctx, &line_value, &same_line).unwrap());
-        assert!(!geometry_equal(
-            &ctx,
-            &line_value,
-            &line(Point2::new(-2.0, 0.0), end),
-        )
-        .unwrap());
-        assert!(!geometry_equal(
-            &ctx,
-            &line_value,
-            &line(start, Point2::new(2.0, 4.0)),
-        )
-        .unwrap());
+        assert!(!geometry_equal(&ctx, &line_value, &line(Point2::new(-2.0, 0.0), end),).unwrap());
+        assert!(!geometry_equal(&ctx, &line_value, &line(start, Point2::new(2.0, 4.0)),).unwrap());
 
         let reference_line = |origin, direction| {
             analytic_geometry(SketchGeometryDefinition::ReferenceLine { origin, direction })
@@ -454,12 +442,9 @@ mod tests {
         };
         let circle_value = circle(center, 2.0);
         assert!(geometry_equal(&ctx, &circle_value, &circle(center, 2.0)).unwrap());
-        assert!(!geometry_equal(
-            &ctx,
-            &circle_value,
-            &circle(Point2::new(2.0, 2.0), 2.0),
-        )
-        .unwrap());
+        assert!(
+            !geometry_equal(&ctx, &circle_value, &circle(Point2::new(2.0, 2.0), 2.0),).unwrap()
+        );
         assert!(!geometry_equal(&ctx, &circle_value, &circle(center, 3.0)).unwrap());
 
         let arc = |center, radius, start_angle, end_angle| {
@@ -543,12 +528,9 @@ mod tests {
             ),
         )
         .unwrap());
-        assert!(!geometry_equal(
-            &ctx,
-            &ellipse_value,
-            &ellipse(center, 0.25, 4.0, 2.0, None),
-        )
-        .unwrap());
+        assert!(
+            !geometry_equal(&ctx, &ellipse_value, &ellipse(center, 0.25, 4.0, 2.0, None),).unwrap()
+        );
 
         let hyperbola = |center, major_angle, major_radius, minor_radius, bounds| {
             analytic_geometry(SketchGeometryDefinition::Hyperbola {
@@ -569,20 +551,8 @@ mod tests {
         .unwrap());
         assert!(geometry_equal(
             &ctx,
-            &hyperbola(
-                center,
-                0.25,
-                4.0,
-                2.0,
-                Some([-0.0, 2.0]),
-            ),
-            &hyperbola(
-                center,
-                0.25,
-                4.0,
-                2.0,
-                Some([0.0, 2.0]),
-            ),
+            &hyperbola(center, 0.25, 4.0, 2.0, Some([-0.0, 2.0]),),
+            &hyperbola(center, 0.25, 4.0, 2.0, Some([0.0, 2.0]),),
         )
         .unwrap());
         assert!(!geometry_equal(
@@ -662,12 +632,9 @@ mod tests {
             &parabola(center, 0.25, 2.0, Some([-1.0, 1.5])),
         )
         .unwrap());
-        assert!(!geometry_equal(
-            &ctx,
-            &parabola_value,
-            &parabola(center, 0.25, 2.0, None),
-        )
-        .unwrap());
+        assert!(
+            !geometry_equal(&ctx, &parabola_value, &parabola(center, 0.25, 2.0, None),).unwrap()
+        );
 
         assert!(!geometry_equal(&ctx, &circle_value, &arc_value).unwrap());
         assert!(!geometry_equal(&ctx, &ellipse_value, &hyperbola_value).unwrap());

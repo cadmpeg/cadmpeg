@@ -57,10 +57,8 @@ fn parameter_uniqueness_admits_only_visited_candidates() {
     // The total is four source slots, three scratch copies, and four visited comparisons.
     policy.limits.max_work_units = 11;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let values = super::super::unique(&ctx, &[1.0, 2.0, 3.0, 1.0], |value| {
-        FiniteReal::new(*value)
-    })
-    .unwrap();
+    let values =
+        super::super::unique(&ctx, &[1.0, 2.0, 3.0, 1.0], |value| FiniteReal::new(*value)).unwrap();
     assert_eq!(
         values.iter().map(|value| value.get()).collect::<Vec<_>>(),
         [1.0, 2.0, 3.0]

@@ -87,10 +87,7 @@ fn surface_dependencies<'a>(
             }
         }
         ProceduralSurfaceDefinition::VariableBlend(payload) => {
-            let sides = ctx.admit_iter(
-                &payload.construction().sides,
-                "cycle dependency scan",
-            )?;
+            let sides = ctx.admit_iter(&payload.construction().sides, "cycle dependency scan")?;
             ctx.collect_vec(
                 sides.filter_map(|side| {
                     side.surface
