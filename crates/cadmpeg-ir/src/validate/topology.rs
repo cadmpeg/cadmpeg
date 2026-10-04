@@ -1335,10 +1335,7 @@ pub(super) fn check_references(
                             Scratch::filter_map(ctx, [formula], |formula| Ok(Some(formula)))?
                         }
                     };
-                    for formula in ctx
-                        .admit_iter(&formulas[..], "topology validation scan")?
-                        .copied()
-                    {
+                    for formula in ctx.admit_iter(&formulas[..], "topology validation scan")? {
                         for variable in formula.variables() {
                             ctx.charge_work(1, "topology validation scan")?;
                             check_law_curves(ctx, variable, ids, procedural, findings)?;
@@ -2539,10 +2536,7 @@ pub(super) fn check_references(
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
-        for entity in ctx
-            .admit_iter(&constraint_entities[..], "topology validation scan")?
-            .copied()
-        {
+        for entity in ctx.admit_iter(&constraint_entities[..], "topology validation scan")? {
             if !sketch_entities.contains(ctx, entity.as_str())? {
                 ref_error(
                     ctx,
@@ -2854,10 +2848,7 @@ fn check_feature_references(
                 }
             }
             let references = regeneration_references(ctx, state.definition.operation())?;
-            for reference in ctx
-                .admit_iter(&references[..], "topology validation scan")?
-                .copied()
-            {
+            for reference in ctx.admit_iter(&references[..], "topology validation scan")? {
                 match features.get(ctx, reference.as_str())? {
                     None => ref_error(
                         ctx,
@@ -4157,8 +4148,7 @@ fn check_feature_references(
                     check_historical_members(
                         ctx,
                         findings,
-                        &feature.id,
-                        (state, faces.as_slice()),
+                        (&feature.id, state, faces.as_slice()),
                         crate::ids::HistoricalFaceId::as_str,
                         "profile face",
                         &input_topologies,
@@ -4282,8 +4272,7 @@ fn check_feature_references(
                 PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(
                     ctx,
                     findings,
-                    &feature.id,
-                    (state, edges.as_slice()),
+                    (&feature.id, state, edges.as_slice()),
                     crate::ids::HistoricalEdgeId::as_str,
                     "path edge",
                     &input_topologies,
@@ -4386,8 +4375,7 @@ fn check_feature_references(
                 } => check_historical_members(
                     ctx,
                     findings,
-                    &feature.id,
-                    (state, std::slice::from_ref(vertex)),
+                    (&feature.id, state, std::slice::from_ref(vertex)),
                     crate::ids::HistoricalVertexId::as_str,
                     "vertex",
                     &input_topologies,
@@ -4422,8 +4410,7 @@ fn check_feature_references(
                 check_historical_members(
                     ctx,
                     findings,
-                    &feature.id,
-                    (state, selected),
+                    (&feature.id, state, selected),
                     crate::ids::HistoricalEdgeId::as_str,
                     "edge",
                     &input_topologies,
@@ -4502,8 +4489,7 @@ fn check_feature_references(
                 check_historical_members(
                     ctx,
                     findings,
-                    &feature.id,
-                    (state, selected),
+                    (&feature.id, state, selected),
                     crate::ids::HistoricalFaceId::as_str,
                     "face",
                     &input_topologies,
@@ -4600,8 +4586,7 @@ fn check_feature_references(
                     check_historical_members(
                         ctx,
                         findings,
-                        &feature.id,
-                        (state, bodies.as_slice()),
+                        (&feature.id, state, bodies.as_slice()),
                         crate::ids::HistoricalBodyId::as_str,
                         "body",
                         &input_topologies,
@@ -4621,8 +4606,7 @@ fn check_feature_references(
                     check_historical_members(
                         ctx,
                         findings,
-                        &feature.id,
-                        (state, members.iter().as_slice()),
+                        (&feature.id, state, members.iter().as_slice()),
                         |member| member.body().as_str(),
                         "body",
                         &input_topologies,
@@ -4699,8 +4683,11 @@ impl fmt::Display for PlaneCyclePath<'_, '_> {
 fn check_historical_members<'ctx, 'a, 'selected, T, F, M>(
     ctx: &'ctx DecodeContext<'_>,
     findings: &mut Vec<Finding>,
-    feature: &crate::features::FeatureId,
-    selection: (&crate::ids::FeatureInputTopologyId, &'selected [T]),
+    selection: (
+        &crate::features::FeatureId,
+        &crate::ids::FeatureInputTopologyId,
+        &'selected [T],
+    ),
     selected_id: F,
     kind: &str,
     states: &BorrowedIdentities<'_, 'a, &'a crate::features::FeatureInputTopology>,
@@ -4712,7 +4699,7 @@ where
         &'a crate::features::FeatureInputTopology,
     ) -> Result<Scratch<'ctx, &'a str>, CodecError>,
 {
-    let (state_id, selected) = selection;
+    let (feature, state_id, selected) = selection;
     let Some(state) = states.get(ctx, state_id.as_str())? else {
         ref_error(
             ctx,
@@ -4741,7 +4728,7 @@ where
     let available = BorrowedIdentities::build(ctx, |add| {
         let available_members = members(state)?;
         for id in ctx.admit_iter(&available_members[..], "historical member scan")? {
-            add(*id, ())?;
+            add(id, ())?;
         }
         drop(available_members);
         Ok(())
