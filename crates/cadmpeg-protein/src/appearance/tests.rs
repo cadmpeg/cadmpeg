@@ -37,6 +37,17 @@ fn texture_for_test(
     super::texture_asset(&ctx, record)
 }
 
+fn distance_for_test(
+    record: &crate::DecodedRecord,
+    suffix: &str,
+) -> Result<Option<cadmpeg_ir::scalar::Length>, super::DistanceError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("service root");
+    super::distance_property(&ctx, record, suffix).expect("service admission")
+}
+
 /// The three length tags of the Distance quantity class each convert to
 /// the IR's millimetres. `0x200e` is millimetre, not centimetre.
 #[test]
@@ -44,7 +55,7 @@ fn distance_tags_convert_to_millimetres() {
     for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)] {
         let record = distance_record(unit, value);
         assert_eq!(
-            super::distance_property(&record, "Depth")
+            distance_for_test(&record, "Depth")
                 .map(|value| value.map(cadmpeg_ir::scalar::Length::get)),
             Ok(Some(expected))
         );
@@ -57,7 +68,7 @@ fn distance_tags_convert_to_millimetres() {
 fn a_non_length_distance_tag_yields_no_value() {
     let record = distance_record(0x0002_1008, 1.0);
     assert_eq!(
-        super::distance_property(&record, "Depth"),
+        distance_for_test(&record, "Depth"),
         Err(super::DistanceError::UnknownUnit(0x0002_1008))
     );
 }
@@ -96,7 +107,7 @@ fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
         };
         let record = distance_record(unit, value.get());
         assert_eq!(
-            super::distance_property(&record, "Depth"),
+            distance_for_test(&record, "Depth"),
             Err(super::DistanceError::NonFinite)
         );
     }
