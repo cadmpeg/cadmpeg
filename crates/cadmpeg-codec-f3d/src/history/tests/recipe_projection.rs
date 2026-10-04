@@ -59,7 +59,7 @@ fn projection_caches_end_after_history_consumers() {
     discard_projection_caches(&ctx, &mut histories).expect("projection cache budget");
 
     let state = &histories[0].states[0];
-    assert!(histories[0].projection_finalized());
+    assert!(histories[0].projection_finalized(&ctx).expect("history finalization budget"));
     assert!(state.entity_versions.is_empty());
     assert!(!state.record_table_complete());
     assert!(state.topology().is_none());
@@ -77,7 +77,9 @@ fn projection_caches_end_after_history_consumers() {
         )
         .expect("store native history");
     native = crate::native::F3dNative::load(&namespace).expect("load native history");
-    assert!(native.asm_histories[0].projection_finalized());
+    assert!(native.asm_histories[0]
+        .projection_finalized(&ctx)
+        .expect("history finalization budget"));
 }
 
 #[test]
@@ -186,8 +188,12 @@ fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
         "states": []
     });
     let history: AsmHistory = serde_json::from_value(document).unwrap();
-    assert!(!history.projection_finalized());
-    assert!(!crate::history::projection_was_finalized(
-        std::slice::from_ref(&history)
-    ));
+    assert!(!crate::test_support::with_decode_context(|decode_ctx| {
+        history.projection_finalized(decode_ctx)
+    })
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(|decode_ctx| {
+        crate::history::projection_was_finalized(decode_ctx, std::slice::from_ref(&history))
+    })
+    .unwrap());
 }

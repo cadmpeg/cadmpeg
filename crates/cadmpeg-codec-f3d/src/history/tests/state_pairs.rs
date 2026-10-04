@@ -168,15 +168,26 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         states: vec![state(id, current, Some(2)), state(id, 2, None)],
     };
     let histories = [history("first", 7), history("second", 9)];
-    let (resolved, current, previous) =
-        unique_history_state_pair(&histories, 9, 2).expect("state-local pair");
+    let (resolved, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 9, 2)
+    })
+    .unwrap()
+    .expect("state-local pair");
     assert_eq!(resolved.id, "second");
     assert_eq!(current.state_id, 9);
     assert_eq!(previous.state_id, 2);
-    assert!(unique_history_state(&histories, 2).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state(decode_ctx, &histories, 2)
+    })
+    .unwrap()
+    .is_none());
 
     let duplicate_pair = [history("first", 9), history("second", 9)];
-    assert!(unique_history_state_pair(&duplicate_pair, 9, 2).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &duplicate_pair, 9, 2)
+    })
+    .unwrap()
+    .is_none());
 
     let indirect = AsmHistory {
         id: "indirect".into(),
@@ -193,8 +204,11 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         ..history("direct", 23)
     };
     let histories = [indirect, direct];
-    let (resolved, _, _) = unique_history_state_pair(&histories, 23, 11)
-        .expect("direct transition takes precedence over a reachable pair");
+    let (resolved, _, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 23, 11)
+    })
+    .unwrap()
+    .expect("direct transition takes precedence over a reachable pair");
     assert_eq!(resolved.id, "direct");
 }
 
@@ -292,8 +306,11 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     .unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
-        bound_scope_history(&scope.id, &bindings, &histories)
-            .expect("scope binding resolves one history")
+        crate::test_support::with_decode_context(|decode_ctx| {
+            bound_scope_history(decode_ctx, &scope.id, &bindings, &histories)
+        })
+        .unwrap()
+        .expect("scope binding resolves one history")
             .id,
         histories[1].id
     );
@@ -390,13 +407,19 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         ],
     };
     let histories = [history];
-    let (resolved, current, previous) =
-        unique_history_state_pair(&histories, 10, 6).expect("raw direct state pair");
+    let (resolved, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 10, 6)
+    })
+    .unwrap()
+    .expect("raw direct state pair");
     assert_eq!(resolved.id, "history");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 6);
-    let (_, current, previous) =
-        unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
+    let (_, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 10, 4)
+    })
+    .unwrap()
+    .expect("raw reachable state pair");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 4);
     let mut omitted_predecessor = crate::records::feature::scope::DesignParameterScope::empty(
@@ -410,7 +433,10 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     assert_eq!(
-        effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            effective_scope_previous_history_state_id(decode_ctx, &omitted_predecessor, &histories)
+        })
+        .unwrap(),
         Some(6)
     );
 
@@ -450,7 +476,10 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         records: Default::default(),
         topology: Default::default(),
     });
-    assert!(unique_history_state_pair(&[inconsistent], 10, 6).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &[inconsistent], 10, 6).map(|pair| pair.is_none())
+    })
+    .unwrap());
 }
 
 use crate::history_records::{
@@ -1105,8 +1134,11 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
     let bindings = HashMap::from([("scope".into(), "history-b".into())]);
 
     let (selected, state, previous) =
-        bound_history_state_pair("scope", 11, 9, &bindings, &histories)
-            .expect("scope-bound repeated state pair");
+        crate::test_support::with_decode_context(|decode_ctx| {
+            bound_history_state_pair(decode_ctx, "scope", 11, 9, &bindings, &histories)
+        })
+        .unwrap()
+        .expect("scope-bound repeated state pair");
     assert_eq!(selected.id, "history-b");
     assert_eq!(state.parent, "history-b");
     assert_eq!(previous.parent, "history-b");

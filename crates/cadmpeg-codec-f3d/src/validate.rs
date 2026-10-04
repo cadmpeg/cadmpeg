@@ -4392,13 +4392,13 @@ fn valid_vertex_recipe(
                 .iter()
                 .flat_map(|history| &history.states)
                 .filter(|state| state.state_id == state_id);
-            states.next().is_some_and(|state| {
-                states.next().is_none()
-                    && state.topology().map_or_else(
-                        || history::projection_was_finalized(&native.asm_histories),
-                        |topology| topology.vertices.contains(&vertex_slot),
-                    )
-            })
+            match states.next() {
+                Some(state) if states.next().is_none() => match state.topology() {
+                    Some(topology) => topology.vertices.contains(&vertex_slot),
+                    None => history::projection_was_finalized(ctx.decode, &native.asm_histories)?,
+                },
+                _ => false,
+            }
         }
     };
     Ok(vertex.record_index() == record_index
@@ -6706,7 +6706,7 @@ fn validate_extrude_selection_members(
             &native.design_body_bindings,
             &native.asm_histories,
         )?;
-        let history_matches = if history::projection_was_finalized(&native.asm_histories) {
+        let history_matches = if history::projection_was_finalized(ctx.decode, &native.asm_histories)? {
             if let Some(binding) = member.historical.as_ref() {
                 ctx.decode
                     .collect_hash_set(
@@ -6939,7 +6939,7 @@ fn validate_edge_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(decode, &native.asm_histories)?;
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let (mut expected_edge_operands, _expected_edge_operands_storage) =
@@ -7257,7 +7257,7 @@ fn validate_face_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(ctx.decode, &native.asm_histories)?;
     let face_groups_by_index = (ctx.decode).collect_hash_map(
         native
             .design_construction_operand_groups

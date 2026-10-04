@@ -3636,8 +3636,8 @@ fn selected_historical_face_selection(
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
-        scope, histories
-    ));
+        ctx, scope, histories
+    )?);
     let stream = or_none!(native_stream(&scope.id));
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return Ok(None);
@@ -3694,17 +3694,22 @@ fn project_face_selection(
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
     let historical = if let Some(previous_state_id) =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)
+        crate::history::effective_scope_previous_history_state_id(ctx, scope, histories)?
     {
-        let updated_face_slots = scope
-            .history_state_id()
-            .and_then(|state_id| {
-                crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
-            })
-            .and_then(|(_, state, _)| state.transition.as_ref())
-            .map_or(&[][..], |transition| {
-                transition.topology.faces.updated.as_slice()
-            });
+        let updated_face_slots = match scope.history_state_id() {
+            Some(state_id) => match crate::history::unique_history_state_pair(
+                ctx,
+                histories,
+                state_id,
+                previous_state_id,
+            )? {
+                Some((_, state, _)) => state.transition.as_ref().map_or(&[][..], |transition| {
+                    transition.topology.faces.updated.as_slice()
+                }),
+                None => &[][..],
+            },
+            None => &[][..],
+        };
         if let Some(selection) = resolved_historical_face_group(
             ctx,
             scope,
@@ -3877,8 +3882,8 @@ fn resolved_split_face_path(
     let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
-        scope, histories
-    ));
+        ctx, scope, histories
+    )?);
     let stream = or_none!(native_stream(&scope.id));
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
     let feature_key = crate::design::identity::identity_key(feature.as_str())?;
@@ -4630,7 +4635,7 @@ fn project_hem(
         groups,
         edge_operands,
         edge_identity_operands,
-        crate::history::effective_scope_previous_history_state_id(scope, histories),
+        crate::history::effective_scope_previous_history_state_id(ctx, scope, histories)?,
         &crate::design::identity::neutral_feature_id(ctx, scope)?,
         ctx,
     )?;
@@ -4642,7 +4647,7 @@ fn project_hem(
     })) {
         Some(operand) => crate::design::edge_resolve::resolved_hem_edge_slot(
             operand,
-            crate::history::effective_scope_previous_history_state_id(scope, histories),
+            crate::history::effective_scope_previous_history_state_id(ctx, scope, histories)?,
             ctx,
         )?,
         None => None,
