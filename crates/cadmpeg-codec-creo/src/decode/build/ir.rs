@@ -520,7 +520,10 @@ fn admitted_display_strips<V>(
             count.min(remaining.len()),
             "creo display tessellation strip vertices",
         )?;
-        for _ in 0..count {
+        for _ in ctx.admit_iter(
+            &(0..count),
+            "creo display strip vertex traversal",
+        )? {
             let Some(vertex) = remaining.next() else {
                 return Ok(None);
             };

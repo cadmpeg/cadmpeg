@@ -296,7 +296,7 @@ fn solve_section_coordinates_with_derived_constraints(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("creo section solver pass count", u64::MAX, u64::MAX)
         })?;
-    for _ in 0..max_passes {
+    for _ in ctx.admit_iter(&(0..max_passes), "creo section solver pass scan")? {
         let mut appended = false;
         if append_point_on_line_equations(
             ctx,

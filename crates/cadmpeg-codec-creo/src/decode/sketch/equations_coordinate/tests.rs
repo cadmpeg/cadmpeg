@@ -5,6 +5,8 @@ use super::{SectionCoordinateVariable, SectionEqualLengthConstraint, SectionEqua
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use std::collections::BTreeMap;
 
+mod range_admission;
+
 #[test]
 fn section_component_loops_refuse_before_traversal() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];

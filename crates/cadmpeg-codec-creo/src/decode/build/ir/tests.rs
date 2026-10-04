@@ -1177,3 +1177,71 @@ fn placed_plane_duplicate_comparison_refuses_before_identity_search() {
     }).expect("duplicate plane transfer");
     assert_eq!(ir.model.surfaces.len(), 1);
 }
+
+#[test]
+fn display_strip_vertex_range_refuses_after_collection_and_admits_at_service() {
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+
+    let arena = DecodeArena::new();
+    let mut work_policy = DecodePolicy::service();
+    work_policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &work_policy)
+        .expect("empty root admitted");
+    let error = match super::admitted_display_strips(&ctx, vec![0_u8, 1, 2], &[3]) {
+        Err(error) => error,
+        Ok(_) => panic!("three vertex visits exceed the work limit"),
+    };
+    let CodecError::ResourceLimit(resource) = error else {
+        panic!("expected a work limit refusal");
+    };
+    assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(resource.operation, "creo display strip vertex traversal");
+    assert_eq!(resource.used, 1);
+    assert_eq!(resource.additional, 3);
+
+    let mut first_storage_policy = DecodePolicy::service();
+    first_storage_policy.limits.max_work_units = 0;
+    first_storage_policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &first_storage_policy)
+        .expect("empty root admitted");
+    let error = match super::admitted_display_strips(&ctx, vec![0_u8, 1, 2], &[3]) {
+        Err(error) => error,
+        Ok(_) => panic!("strip-row storage exceeds the collection limit"),
+    };
+    let CodecError::ResourceLimit(resource) = error else {
+        panic!("expected a collection limit refusal");
+    };
+    assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(resource.operation, "creo display tessellation strip rows");
+
+    let mut run_storage_policy = DecodePolicy::service();
+    run_storage_policy.limits.max_work_units = 1;
+    run_storage_policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &run_storage_policy)
+        .expect("empty root admitted");
+    let error = match super::admitted_display_strips(&ctx, vec![0_u8, 1, 2], &[3]) {
+        Err(error) => error,
+        Ok(_) => panic!("run storage exceeds the collection limit"),
+    };
+    let CodecError::ResourceLimit(resource) = error else {
+        panic!("expected a collection limit refusal");
+    };
+    assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(resource.operation, "creo display tessellation strip vertices");
+
+    let strips = crate::decode::with_test_decode_ctx(|ctx| {
+        super::admitted_display_strips(ctx, vec![0_u8, 1, 2], &[3])
+    })
+    .expect("service work admission")
+    .expect("three vertices form one strip");
+    assert_eq!(strips.as_slice().len(), 1);
+    assert_eq!(strips.as_slice()[0].vertices(), &[0, 1, 2]);
+
+    let incomplete = crate::decode::with_test_decode_ctx(|ctx| {
+        super::admitted_display_strips(ctx, vec![0_u8, 1], &[3])
+    })
+    .expect("service work admission");
+    assert!(incomplete.is_none());
+}
