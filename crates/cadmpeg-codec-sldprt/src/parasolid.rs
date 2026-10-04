@@ -186,8 +186,7 @@ fn stream_payload_present(
     payload: &[u8],
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "compare Parasolid stream candidates";
-    let bytes = streams
-        .iter()
+    let bytes = ctx.admit_iter(&streams[..], "scan SLDPRT stream_payload_present values")?
         .try_fold(
             cadmpeg_core::decode::u64_from_index(streams.len()),
             |bytes, known| {
@@ -198,7 +197,7 @@ fn stream_payload_present(
         )
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(bytes, OPERATION)?;
-    Ok(streams.iter().any(|known| known.payload == payload))
+    Ok(ctx.admit_iter(&streams[..], "scan SLDPRT stream_payload_present values")?.any(|known| known.payload == payload))
 }
 
 fn has_wrapped_prefix(payload: &[u8]) -> bool {
@@ -266,7 +265,7 @@ fn chained_wrapped_stream(
         let Some(remaining) = payload.get(frame_at..section_end) else {
             return Ok(None);
         };
-        if remaining.iter().all(|byte| *byte == 0) {
+        if ctx.admit_iter(&remaining[..], "scan SLDPRT chained_wrapped_stream values")?.all(|byte| *byte == 0) {
             break;
         }
         if remaining.len() < WRAPPED_FRAME_HEADER_LEN {
@@ -419,7 +418,7 @@ fn direct_stream_headers(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<(usize, StreamHeader)>, CodecError> {
     let mut headers = Vec::new();
-    for (start, bytes) in payload.windows(4).enumerate() {
+    for (start, bytes) in ctx.admit_iter(payload, "scan Parasolid stream header windows")?.windows(std::num::NonZeroUsize::new(4).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).enumerate() {
         if bytes != b"PS\0\0" {
             continue;
         }
@@ -554,14 +553,14 @@ fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
 }
 
 /// Test whether the description identifies a partition or deltas body stream.
-pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
+pub(crate) fn is_body_stream(ctx: &DecodeContext<'_>, header: &StreamHeader) -> Result<bool, CodecError> {
     let bytes = header.description.as_bytes();
-    bytes
-        .windows(9)
+    Ok(ctx.admit_iter(bytes, "scan Parasolid partition description")?
+        .windows(std::num::NonZeroUsize::new(9).ok_or_else(|| CodecError::malformed("zero partition description width"))?)
         .any(|part| part.eq_ignore_ascii_case(b"partition"))
-        || bytes
-            .windows(6)
-            .any(|part| part.eq_ignore_ascii_case(b"deltas"))
+        || ctx.admit_iter(bytes, "scan Parasolid deltas description")?
+            .windows(std::num::NonZeroUsize::new(6).ok_or_else(|| CodecError::malformed("zero deltas description width"))?)
+            .any(|part| part.eq_ignore_ascii_case(b"deltas")))
 }
 
 /// Decode the unique counted XYZ polyline carried by a classified mesh stream.

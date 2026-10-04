@@ -101,7 +101,7 @@ where
     K: Ord + cadmpeg_core::decode::cost::DecodeCost,
 {
     let mut copy = BTreeMap::new();
-    for (name, value) in properties {
+    for (name, value) in ctx.admit_iter(properties, "scan SLDPRT properties values")? {
         ctx.insert_btree_map(
             &mut copy,
             key(ctx, name)?,
@@ -130,7 +130,7 @@ fn clone_feature_content(
     content: &[FeatureContent],
 ) -> Result<Vec<FeatureContent>, CodecError> {
     let mut copy = Vec::new();
-    for item in content {
+    for item in ctx.admit_iter(content, operation)? {
         let text = match item {
             FeatureContent::Dimension(value) => {
                 FeatureContent::Dimension(copy_history_text(ctx, value)?)
@@ -152,7 +152,7 @@ fn clone_history_content(
     content: &[HistoryContent],
 ) -> Result<Vec<HistoryContent>, CodecError> {
     let mut copy = Vec::new();
-    for item in content {
+    for item in ctx.admit_iter(content, operation)? {
         let text = match item {
             HistoryContent::Configuration(value) => {
                 HistoryContent::Configuration(copy_history_text(ctx, value)?)
@@ -185,7 +185,7 @@ fn clone_history_feature(
         None => None,
     };
     let mut dimension_properties = BTreeMap::new();
-    for (name, properties) in &feature.dimension_properties {
+    for (name, properties) in ctx.admit_iter(&feature.dimension_properties, "scan SLDPRT clone_history_feature values")? {
         ctx.insert_btree_map(
             &mut dimension_properties,
             copy_history_text(ctx, name)?,
@@ -264,13 +264,13 @@ impl CloneCharged for FeatureHistory {
         #[cfg(test)]
         FEATURE_HISTORY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         let mut configurations = Vec::new();
-        for configuration in &self.configurations {
+        for configuration in ctx.admit_iter(&self.configurations, "scan SLDPRT clone_charged values")? {
             let item = clone_history_configuration(ctx, operation, configuration)?;
             ctx.reserve_vec(&mut configurations, 1, operation)?;
             configurations.push(item);
         }
         let mut features = Vec::new();
-        for feature in &self.features {
+        for feature in ctx.admit_iter(&self.features, "scan SLDPRT clone_charged values")? {
             let item = clone_history_feature(ctx, operation, feature)?;
             ctx.reserve_vec(&mut features, 1, operation)?;
             features.push(item);
@@ -301,7 +301,7 @@ pub(crate) fn clone_histories_charged(
     operation: &'static str,
 ) -> Result<Vec<FeatureHistory>, CodecError> {
     let mut copy = Vec::new();
-    for history in histories {
+    for history in ctx.admit_iter(histories, operation)? {
         let item = history.clone_charged(ctx, operation)?;
         ctx.reserve_vec(&mut copy, 1, operation)?;
         copy.push(item);

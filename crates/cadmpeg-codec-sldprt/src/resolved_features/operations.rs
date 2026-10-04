@@ -634,7 +634,7 @@ pub(crate) fn enrich_history_split_lines(
                 })?,
                 "resolve SLDPRT split-line source",
             )?;
-            let Some(tool) = split_line_source_sketch(feature, &history.features) else {
+            let Some(tool) = split_line_source_sketch(ctx, feature, &history.features)? else {
                 continue;
             };
             let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
@@ -679,25 +679,27 @@ pub(crate) fn enrich_history_split_lines(
     Ok(())
 }
 
-fn split_line_source_sketch<'a>(
+fn split_line_source_sketch<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     history_features: &'a [Feature],
-) -> Option<&'a Feature> {
+) -> Result<Option<&'a Feature>, cadmpeg_core::CodecError> {
     if feature.parameters.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let source = feature.source_value()?;
-    let mut candidates = history_features.iter().filter(|candidate| {
-        candidate.parent == feature.parent
-            && classify(candidate) == Some(FeatureClass::Sketch)
+    let source = match feature.source_value() { Some(value) => value, None => return Ok(None) };
+    let mut tool = None;
+    for candidate in history_features.iter() {
+        if candidate.parent == feature.parent
+            && classify(ctx, candidate)? == Some(FeatureClass::Sketch)
             && candidate.input_class.as_deref() == Some("moProfileFeature_c")
             && candidate.parameters == feature.parameters
-            && candidate
-                .source_value()
-                .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
-    });
-    let tool = candidates.next()?;
-    candidates.next().is_none().then_some(tool)
+            && candidate.source_value().is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
+        {
+            if tool.is_some() { return Ok(None); }
+            tool = Some(candidate);
+        }
+    }
+    Ok(tool)
 }
 
 #[cfg(test)]

@@ -229,7 +229,7 @@ fn curve_rows<T: Copy>(
 ) -> Result<Vec<Vec<T>>, CodecError> {
     let mut rows = Vec::new();
     ctx.reserve_vec(&mut rows, values.len() / width, operation)?;
-    for values in values.chunks(width) {
+    for values in ctx.admit_iter(values, "scan Parasolid sweep rows")?.chunks(std::num::NonZeroUsize::new(width).ok_or_else(|| CodecError::malformed("zero sweep row width"))?) {
         let mut row = Vec::new();
         ctx.reserve_vec(&mut row, values.len(), operation)?;
         row.extend_from_slice(values);

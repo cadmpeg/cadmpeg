@@ -129,8 +129,7 @@ fn definition_candidates(
             continue;
         };
         if text.is_empty()
-            || text
-                .iter()
+            || ctx.admit_iter(&text[..], "scan SLDPRT definition_candidates values")?
                 .any(|byte| !byte.is_ascii() || !byte.is_ascii_graphic())
         {
             continue;
@@ -193,14 +192,14 @@ fn definitions(
     buf: &[u8],
 ) -> Result<HashMap<u16, &'static str>, cadmpeg_core::CodecError> {
     let definitions = definition_table(ctx, buf)?;
-    let admitted = definitions.values().filter(|name| name.is_some()).count();
+    let admitted = ctx.admit_iter(&definitions, "scan SLDPRT definitions map values")?.map(|(_, value)| value).filter(|name| name.is_some()).count();
     let mut supported = HashMap::new();
     ctx.reserve_map(
         &mut supported,
         admitted,
         "collect Parasolid supported definitions",
     )?;
-    for (node, family) in definitions {
+    for (&node, family) in ctx.admit_iter(&definitions, "scan Parasolid attribute definition families")? {
         let Some(family) = family else {
             continue;
         };
@@ -349,7 +348,7 @@ pub(super) fn scan(
     buf: &[u8],
 ) -> Result<Vec<RawFaceAtom>, cadmpeg_core::CodecError> {
     let definitions = definitions(ctx, buf)?;
-    if !definitions.values().any(|name| *name == ATOM_ID) {
+    if !ctx.admit_iter(&definitions, "scan SLDPRT scan map values")?.map(|(_, value)| value).any(|name| *name == ATOM_ID) {
         return Ok(Vec::new());
     }
     let lists = integer_lists(ctx, buf)?;
@@ -437,7 +436,7 @@ pub(super) fn scan_body_modifiers(
     buf: &[u8],
 ) -> Result<Vec<BodyModifier>, cadmpeg_core::CodecError> {
     let definitions = definitions(ctx, buf)?;
-    if !definitions.values().any(|name| *name == LAST_BODY_MODIFIER) {
+    if !ctx.admit_iter(&definitions, "scan SLDPRT scan_body_modifiers map values")?.map(|(_, value)| value).any(|name| *name == LAST_BODY_MODIFIER) {
         return Ok(Vec::new());
     }
     let lists = integer_lists(ctx, buf)?;

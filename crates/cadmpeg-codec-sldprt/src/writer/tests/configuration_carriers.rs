@@ -113,7 +113,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
             "{section} must have one partition"
         );
     }
-    let selected = container::select_active_parasolid_site(&scan).expect("unique active solid");
+    let selected = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("unique active solid");
     assert_eq!(selected.name(), "Contents/Config-1-Partition");
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
@@ -139,11 +139,11 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
 
-    assert!(container::first_solidworks_envelope([payload.as_slice()]).is_some());
+    assert!(container::first_solidworks_envelope(&cadmpeg_test_support::service_decode_context(), [payload.as_slice()]).unwrap().is_some());
     let patched = super::super::patch_active_configuration_xml(&payload, "New")
         .unwrap()
         .expect("the UTF-16 envelope is recognized");
-    let envelope = container::first_solidworks_envelope([patched.as_slice()])
+    let envelope = container::first_solidworks_envelope(&cadmpeg_test_support::service_decode_context(), [patched.as_slice()]).unwrap()
         .expect("the rewritten envelope remains recognizable");
     assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
     assert_eq!(envelope.configuration_name.as_deref(), Some("New"));
@@ -503,7 +503,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .any(|block| { block.section.name() == Some("Contents/Config-1-Partition") }));
     assert_eq!(container::active_configuration_index(&scan), Some(1));
     assert_eq!(
-        container::select_active_parasolid_site(&scan)
+        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap()
             .unwrap()
             .name(),
         "Contents/Config-1-Partition"
@@ -591,7 +591,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .any(|block| { block.section.name() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
-        container::select_active_parasolid_site(&scan)
+        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap()
             .unwrap()
             .name(),
         "Contents/Config-5-Partition"

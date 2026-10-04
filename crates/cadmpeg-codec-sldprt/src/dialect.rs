@@ -138,7 +138,7 @@ impl LayerClassification {
             ctx.reserve_vec(losses, 1, "append SLDPRT dialect losses")?;
             losses.push(loss);
         }
-        for loss in &self.losses {
+        for loss in ctx.admit_iter(&self.losses, "scan SLDPRT append_losses values")? {
             let message = ctx.format_retained(
                 format_args!("{}", loss.message),
                 "copy SLDPRT dialect collision loss",
@@ -164,12 +164,12 @@ pub(crate) fn classify_layers(
     scan: &ContainerScan<'_>,
 ) -> Result<LayerClassification, CodecError> {
     let mut kernels = Vec::new();
-    for section in scan.sections() {
+    for section in scan.sections(ctx)? {
         let (site_prefix, site_ordinal) = match section {
             Section::Block(block) => ("block", cadmpeg_core::decode::u64_from_index(block.offset)),
             Section::Compound(stream) => ("compound", u64::from(stream.directory_id)),
         };
-        for stream in section.ps_streams() {
+        for stream in ctx.admit_iter(section.ps_streams(), "scan SLDPRT topology members")? {
             // A nameless section states its absence by omission: the site
             // key and the stream offset already separate two of them.
             let carrier = match section.name() {

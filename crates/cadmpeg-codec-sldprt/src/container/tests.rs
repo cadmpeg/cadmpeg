@@ -363,12 +363,28 @@ fn empty_block_name_is_anonymous_but_has_offset_owner() {
 }
 
 #[test]
+fn section_traversal_refusal_reaches_partition_selection() {
+    let source = synthetic_sldprt();
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        container::select_active_parasolid_site(&ctx, &scan),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan SLDPRT block sections"
+    ));
+}
+
+#[test]
 fn parasolid_partition_selection_withholds_ambiguous_sites() {
     let source = sldprt_with_colliding_sites();
     let scan = crate::test_support::container::scan(&source);
 
-    assert!(container::has_parasolid_body_stream(&scan));
-    assert!(container::select_active_parasolid_site(&scan).is_none());
+    assert!(container::has_parasolid_body_stream(&cadmpeg_test_support::service_decode_context(), &scan).unwrap());
+    assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
 }
 
 #[test]
@@ -397,7 +413,7 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
     )
     .unwrap();
 
-    let site = container::select_active_parasolid_site(&scan).expect("compound partition");
+    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("compound partition");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
     assert_eq!(site.site_key(), "compound@7");
     assert!(matches!(site.section, container::Section::Compound(_)));
@@ -418,7 +434,7 @@ fn parasolid_partition_selection_uses_explicit_active_source_index() {
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    let site = container::select_active_parasolid_site(&scan).expect("explicit active partition");
+    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("explicit active partition");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
     assert!(site.header.description.contains("partition"));
 }
@@ -447,7 +463,7 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
         Some("Second")
     );
     assert_eq!(container::active_configuration_index(&scan), Some(1));
-    let site = container::select_active_parasolid_site(&scan).expect("manifest selects a site");
+    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("manifest selects a site");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
@@ -463,7 +479,7 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
     let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(1));
-    let site = container::select_active_parasolid_site(&scan).expect("UTF-16 manifest");
+    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("UTF-16 manifest");
     assert_eq!(site.name(), "Contents/Config-1-Partition");
 }
 
@@ -483,7 +499,7 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
     let scan = crate::test_support::container::scan(&source);
 
     assert_eq!(container::active_configuration_index(&scan), Some(0));
-    let site = container::select_active_parasolid_site(&scan).expect("explicit source index");
+    let site = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().expect("explicit source index");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
 }
 
@@ -498,7 +514,7 @@ fn non_unique_manifest_activity_does_not_select_one_of_multiple_partitions() {
         let scan = crate::test_support::container::scan(&source);
         assert_eq!(container::manifest_active_configuration(&scan), None);
         assert_eq!(container::active_configuration_index(&scan), None);
-        assert!(container::select_active_parasolid_site(&scan).is_none());
+        assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
     }
 }
 
@@ -514,7 +530,7 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
     assert_eq!(container::active_configuration_index(&scan), None);
-    assert!(container::select_active_parasolid_site(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
 }
 
 #[test]
@@ -527,8 +543,8 @@ fn parasolid_partition_selection_never_uses_a_deltas_section() {
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    assert!(container::has_parasolid_body_stream(&scan));
-    assert!(container::select_active_parasolid_site(&scan).is_none());
+    assert!(container::has_parasolid_body_stream(&cadmpeg_test_support::service_decode_context(), &scan).unwrap());
+    assert!(container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &scan).unwrap().is_none());
 }
 
 #[test]
@@ -831,7 +847,7 @@ fn specified_empty_native_block_remains_a_named_semantic_section() {
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.blocks[0].comp_sz, 2);
     assert!(scan.blocks[0].payload.is_empty());
-    let sections: Vec<_> = scan.sections().collect();
+    let sections: Vec<_> = scan.sections(&cadmpeg_test_support::service_decode_context()).unwrap().collect();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].name(), Some("Contents/Empty"));
     assert!(sections[0].payload().is_empty());
@@ -897,4 +913,20 @@ fn present_unknown_native_version_preserves_declared_value() {
     let scan = crate::test_support::container::scan(&source);
     assert_eq!(scan.version, 0x1234_5678);
     assert!(scan.blocks.is_empty());
+}
+
+#[test]
+fn first_solidworks_envelope_propagates_resource_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = container::first_solidworks_envelope(
+        &ctx,
+        [b"<swSolidWorks swVersion=\"34000\"/>".as_slice()],
+    ).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected the caller's resource refusal");
+    };
+    assert_eq!(ctx.resource_refusal(), Some(limit));
 }

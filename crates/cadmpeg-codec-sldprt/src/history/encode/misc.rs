@@ -35,7 +35,7 @@ pub(super) struct HelixDefinition<'a> {
     pub(super) construction_style: Option<&'a HelixConstructionStyle>,
 }
 
-impl NeutralFeatureEncoder<'_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_, '_> {
     pub(super) fn encode_tree_node(
         &self,
         role: FeatureTreeNodeRole,
@@ -83,7 +83,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let Some(record) =
-                existing.filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
+                (match existing { Some(record) if classify(self.ctx, record)? == Some(FeatureClass::CosmeticThread) => Some(record), _ => None })
             else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} adds a cosmetic thread",
@@ -190,7 +190,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            require_same_family(
+            require_same_family(self.ctx, 
                 existing,
                 &feature.id,
                 &["EquationDrivenCurve", "EquationCurve"],
@@ -257,7 +257,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(
+            require_same_family(self.ctx, 
                 existing,
                 &feature.id,
                 &["ProjectedCurve", "ProjectionCurve"],
@@ -315,7 +315,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            require_same_family(existing, &feature.id, &["CompositeCurve"])?;
+            require_same_family(self.ctx, existing, &feature.id, &["CompositeCurve"])?;
             let segments = segments
                 .iter()
                 .map(|segment| {
@@ -387,7 +387,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            if existing.is_some_and(|record| !is_helix(record)) {
+            if match existing { Some(record) => !is_helix(self.ctx, record)?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id
@@ -457,7 +457,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !is_helix(record) || axis_native_ref != record.id {
+            if !is_helix(self.ctx, record)? || axis_native_ref != record.id {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes its native helix axis",
                     feature.id

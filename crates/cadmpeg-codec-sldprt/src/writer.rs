@@ -86,7 +86,7 @@ pub(crate) fn write_semantic_with_records(
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
     let retained_partition =
-        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+        retained_partition(&digest_ctx, &normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_name_changes =
         crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -218,7 +218,7 @@ pub(crate) fn write_semantic_with_records(
     if !ir.model.tessellations.is_empty() {
         sections.push((
             "Contents/DisplayLists".into(),
-            tessellation_payload(ir, length_scale)?,
+            tessellation_payload(&digest_ctx, ir, length_scale)?,
         ));
     }
     for (index, history) in native
@@ -250,7 +250,7 @@ pub(crate) fn write_semantic_with_records(
             resolved_feature_payload(lane, histories, &feature_input_renames)?,
         ));
     }
-    let opaque = opaque_blocks(
+    let opaque = opaque_blocks(&digest_ctx, 
         ir,
         retained_records,
         annotations,
@@ -258,8 +258,9 @@ pub(crate) fn write_semantic_with_records(
         retain_native_brep,
     )?;
     let document_envelope = crate::container::first_solidworks_envelope(
+        &digest_ctx,
         opaque.iter().map(|(_, payload)| payload.as_slice()),
-    );
+    )?;
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
@@ -508,6 +509,7 @@ fn retained_cache_cells(
 /// synthesized rather than decoded, or decoded by a binary that named the
 /// attribute differently — has no partition to replay and is written out in full.
 fn retained_partition(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
@@ -524,32 +526,32 @@ fn retained_partition(
     let Some(scan) = source_scan else {
         return Ok(None);
     };
-    let Some(site) = crate::container::select_active_parasolid_site(scan) else {
+    let Some(site) = crate::container::select_active_parasolid_site(ctx, scan)? else {
         return Ok(None);
     };
     let original_section = site.name();
     let section = native
-        .and_then(|native| remapped_partition_section(ir, native, &original_section))
+        .map(|native| remapped_partition_section(ctx, ir, native, &original_section)).transpose()?.flatten()
         .unwrap_or(original_section);
     Ok(Some((section, site.section.payload().to_vec())))
 }
 
-fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) -> Option<String> {
-    let old_index = crate::container::configuration_index(section)?;
-    let native_id = native
+fn remapped_partition_section(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, native: &SldprtNative, section: &str) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let old_index = match crate::container::configuration_index(ctx, section)? { Some(value) => value, None => return Ok(None) };
+    let native_id = match native
         .feature_histories
         .iter()
         .flat_map(|history| &history.configurations)
-        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok())?
+        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok()) { Some(value) => value, None => return Ok(None) }
         .id
         .as_str();
-    let new_index = ir
+    let new_index = match match ir
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))?
-        .source_index?;
-    Some(format!("Contents/Config-{new_index}-Partition"))
+        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id)) { Some(value) => value, None => return Ok(None) }
+        .source_index { Some(value) => value, None => return Ok(None) };
+    Ok(Some(format!("Contents/Config-{new_index}-Partition")))
 }
 
 fn outer_header(records: &[SourceRecord<'_>]) -> [u8; 8] {
@@ -956,7 +958,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
-fn opaque_blocks(
+fn opaque_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
@@ -980,13 +982,12 @@ fn opaque_blocks(
             if generated_partitions.contains(section) {
                 return None;
             }
-            if lower.ends_with("-partition")
-                && native
-                    .as_ref()
-                    .and_then(|native| remapped_partition_section(ir, native, section))
-                    .is_some_and(|remapped| generated_partitions.contains(&remapped))
-            {
-                return None;
+            if lower.ends_with("-partition") {
+                let remapped = match native.as_ref().map(|native| remapped_partition_section(ctx, ir, native, section)).transpose() {
+                    Ok(remapped) => remapped.flatten(),
+                    Err(error) => return Some(Err(error)),
+                };
+                if remapped.is_some_and(|remapped| generated_partitions.contains(&remapped)) { return None; }
             }
             if lower.contains("deltas") && !retain_native_brep {
                 return None;
@@ -1687,7 +1688,7 @@ fn metadata_attributes<'ir>(
     ir: &'ir CadIr,
 ) -> Result<Vec<&'ir cadmpeg_ir::attributes::SourceAttribute>, CodecError> {
     let mut positioned = Vec::new();
-    for attribute in &ir.model.attributes {
+    for attribute in ctx.admit_iter(&ir.model.attributes, "scan SLDPRT metadata_attributes values")? {
         let work = cadmpeg_core::decode::u64_from_index(attribute.id.as_str().len())
             .checked_mul(2)
             .and_then(|bytes| bytes.checked_add(8))
@@ -1948,9 +1949,8 @@ pub(crate) fn validate_feature_graph(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
-    if features
-        .iter()
-        .any(|feature| !valid_xml_name(&feature.xml_tag))
+    if ctx.admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
+        .try_fold(false, |invalid, feature| Ok::<_, CodecError>(invalid || !valid_xml_name(ctx, &feature.xml_tag)?))?
     {
         return Err(CodecError::Malformed(
             "invalid feature XML element name".into(),
@@ -1964,15 +1964,14 @@ pub(crate) fn validate_feature_graph(
         }
     }
     if by_id.len()
-        != features
-            .iter()
+        != ctx.admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
             .filter(|feature| feature.source_id.is_some())
             .count()
     {
         return Err(CodecError::Malformed("duplicate feature source id".into()));
     }
     let mut by_record = HashMap::new();
-    for feature in features {
+    for feature in ctx.admit_iter(features, "scan SLDPRT validate_feature_graph values")? {
         ctx.insert_hash_map(
             &mut by_record,
             feature.id.as_str(),
@@ -1983,7 +1982,7 @@ pub(crate) fn validate_feature_graph(
     if by_record.len() != features.len() {
         return Err(CodecError::Malformed("duplicate feature record id".into()));
     }
-    for feature in features {
+    for feature in ctx.admit_iter(features, "scan SLDPRT validate_feature_graph values")? {
         let mut seen = HashSet::new();
         let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
@@ -2126,7 +2125,7 @@ fn xml_text(out: &mut String, value: &str) {
     }
 }
 
-fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+fn tessellation_payload(ctx: &DecodeContext<'_>, ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
     type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
@@ -2187,7 +2186,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
         if !auxiliary.is_empty()
-            && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
+            && !crate::tessellation::auxiliary_channels_are_consistent(ctx, &strip_lengths, auxiliary)?
         {
             return Err(CodecError::InvalidInput(
                 "tessellation channels: the SLDPRT display-list table carries exactly three \
@@ -2396,7 +2395,7 @@ fn body_material<'ir>(
     ir: &'ir CadIr,
 ) -> Result<Option<(&'ir str, Color)>, CodecError> {
     let mut appearances = HashMap::new();
-    for appearance in &ir.model.appearances {
+    for appearance in ctx.admit_iter(&ir.model.appearances, "scan SLDPRT body_material values")? {
         let work = cadmpeg_core::decode::u64_from_index(appearances.len())
             .checked_add(2)
             .and_then(|count| {

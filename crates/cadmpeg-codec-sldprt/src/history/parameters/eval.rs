@@ -100,7 +100,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             cadmpeg_core::decode::u64_from_index(self.input.len() - self.offset),
             "parse SLDPRT parameter literal",
         )?;
-        if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) {
+        if let Some(value) = parse_parameter_literal(self.ctx, &self.input[self.offset..])? {
             return Ok(value);
         }
         let value = self.comparison()?;
@@ -232,7 +232,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         };
         match token {
             Token::Quoted(token) => referenced(token.as_str()),
-            Token::Bare(token) => match parse_parameter_literal(token.as_str()) {
+            Token::Bare(token) => match parse_parameter_literal(self.ctx, token.as_str())? {
                 Some(value) => Ok(value),
                 None => referenced(token.as_str()),
             },

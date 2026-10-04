@@ -38,7 +38,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         br#"<Keywords><CoordinateSystem Name="Fixture" Type="ReferenceCoordinateSystem" id="28" Origin="1mm,2mm,3mm" XAxis="1,0,0" YAxis="0,1,0" ZAxis="0,0,1"/></Keywords>"#,
     ));
     let source_partition =
-        container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
+        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
             .unwrap()
             .section
             .payload()
@@ -94,7 +94,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     )
     .unwrap();
     let output_scan = crate::test_support::container::scan(&encoded);
-    let output_partition = container::select_active_parasolid_site(&output_scan)
+    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
         .unwrap()
         .section
         .payload();

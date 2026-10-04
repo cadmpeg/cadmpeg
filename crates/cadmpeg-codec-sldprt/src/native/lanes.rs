@@ -10,7 +10,7 @@ pub(super) fn admit(
     native: &SldprtNative,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for lane in &native.feature_input_lanes {
+    for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT admit values").map_err(cadmpeg_core::CodecError::from)? {
         if !crate::resolved_features::names::class_declarations_match(
             &lane.native_payload,
             &lane.id,
@@ -40,16 +40,17 @@ pub(super) fn admit(
             )
         {
             let characters = || {
-                std::char::decode_utf16(crate::resolved_features::names::utf16_units(
-                    expected_units,
-                ))
+                let units = ctx.admit_iter(expected_units, "scan SLDPRT native validation name units")?
+                    .chunks(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero UTF-16 unit width"))?)
+                    .filter_map(|unit| cadmpeg_core::decode::View::u16_le_at(unit, 0));
+                Ok::<_, cadmpeg_core::CodecError>(std::char::decode_utf16(units))
             };
-            let length = characters().fold(0usize, |length, character| {
-                length + character.map_or(0, char::len_utf8)
-            });
+            let length = characters()?.try_fold(0usize, |length, character| {
+                length.checked_add(character.map_or(0, char::len_utf8))
+            }).ok_or_else(|| ctx.refuse_codec_limit("decode SLDPRT native validation name", u64::MAX, u64::MAX))?;
             let (mut expected, _reservation) =
                 ctx.scoped_string(length, "decode SLDPRT native validation name")?;
-            expected.extend(characters().filter_map(Result::ok));
+            expected.extend(characters()?.filter_map(Result::ok));
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                     "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
                     lane.id, actual.value, expected
@@ -106,9 +107,8 @@ pub(super) fn admit(
             &expected_lane.scalars,
         ) {
             let mismatch =
-                lane.scalars
-                    .iter()
-                    .zip(&expected_lane.scalars)
+                ctx.admit_iter(&lane.scalars[..], "scan SLDPRT admit values").map_err(cadmpeg_core::CodecError::from)?
+                    .zip(ctx.admit_iter(&expected_lane.scalars, "scan SLDPRT expected lane scalars").map_err(cadmpeg_core::CodecError::from)?)
                     .find(|(actual, expected)| {
                         !crate::resolved_features::scalars::scalar_indices_match(
                             std::slice::from_ref(actual),
@@ -156,9 +156,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
 ) -> Result<ExpectedLanes<'a, 'ctx>, cadmpeg_ir::NativeConvertError> {
     let (pairs, storage) =
         ctx.with_scoped_storage("validate SLDPRT expected lane copies", || {
-            let primary_count = native
-                .feature_input_lanes
-                .iter()
+            let primary_count = ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected primary lanes").map_err(cadmpeg_core::CodecError::from)?
                 .filter(|lane| !is_supplemental_config_lane(lane))
                 .count();
             let mut expected_primary_lanes = Vec::new();
@@ -167,9 +165,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
                 primary_count,
                 "validate SLDPRT expected primary lanes",
             )?;
-            for lane in native
-                .feature_input_lanes
-                .iter()
+            for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected primary lanes").map_err(cadmpeg_core::CodecError::from)?
                 .filter(|lane| !is_supplemental_config_lane(lane))
             {
                 expected_primary_lanes
@@ -182,9 +178,7 @@ pub(crate) fn expected_lanes_charged<'a, 'ctx>(
                 supplemental_count,
                 "validate SLDPRT expected supplemental lanes",
             )?;
-            for lane in native
-                .feature_input_lanes
-                .iter()
+            for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected supplemental lanes").map_err(cadmpeg_core::CodecError::from)?
                 .filter(|lane| is_supplemental_config_lane(lane))
             {
                 expected_supplemental_lanes.push(
@@ -258,9 +252,7 @@ fn expected_lane_pairs_impl<'a>(
         &mut expected_supplemental_lanes,
     )?;
     for (expected_lane, actual_lane) in expected_supplemental_lanes.iter_mut().zip(
-        native
-            .feature_input_lanes
-            .iter()
+        ctx.admit_iter(&native.feature_input_lanes[..], "scan SLDPRT expected_lane_pairs_impl values").map_err(cadmpeg_core::CodecError::from)?
             .filter(|lane| is_supplemental_config_lane(lane)),
     ) {
         // Detached supplemental objects acquire owners before later projection
@@ -287,15 +279,11 @@ fn expected_lane_pairs_impl<'a>(
         }
         finalize_lane_bindings(ctx, &native.feature_histories, expected_lane)?;
     }
-    Ok(native
-        .feature_input_lanes
-        .iter()
+    Ok(ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected primary lanes").map_err(cadmpeg_core::CodecError::from)?
         .filter(|lane| !is_supplemental_config_lane(lane))
         .zip(expected_primary_lanes)
         .chain(
-            native
-                .feature_input_lanes
-                .iter()
+            ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT expected supplemental lanes").map_err(cadmpeg_core::CodecError::from)?
                 .filter(|lane| is_supplemental_config_lane(lane))
                 .zip(expected_supplemental_lanes),
         ))

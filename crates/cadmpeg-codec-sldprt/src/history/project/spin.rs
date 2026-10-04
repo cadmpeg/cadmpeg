@@ -295,33 +295,18 @@ pub(super) fn project_revolve(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
-    ctx.charge_work(
-        u64_from_index(feature.content.len()),
-        "scan SLDPRT revolve dimension order",
-    )?;
-    if feature
-        .properties
-        .get("EndCondition")
-        .is_some_and(|condition| condition == "TwoSided")
-    {
-        ctx.charge_work(
-            u64_from_index(feature.content.len()),
-            "scan SLDPRT revolve dimension order",
-        )?;
-    }
-    let ordered_angle = |ordinal| {
-        feature
-            .content
-            .iter()
+    let ordered_angle = |ordinal| -> Result<Option<cadmpeg_ir::scalar::PositiveAngle>, CodecError> {
+        Ok(
+        ctx.admit_iter(&feature.content[..], "scan SLDPRT project_revolve values")?
             .filter_map(|content| match content {
                 FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
                 FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
             })
             .filter_map(|value| parse_positive_angle_rad(value))
-            .nth(ordinal)
+            .nth(ordinal))
     };
-    let angle = |name, ordinal| {
-        feature
+    let angle = |name, ordinal| -> Result<_, CodecError> {
+        let value = feature
             .parameters
             .get(name)
             .or_else(|| match name {
@@ -329,18 +314,18 @@ pub(super) fn project_revolve(
                 "Angle2" => feature.parameters.get("D2"),
                 _ => None,
             })
-            .and_then(|value| parse_positive_angle_rad(value))
-            .or_else(|| ordered_angle(ordinal))
+            .and_then(|value| parse_positive_angle_rad(value));
+        match value { Some(value) => Ok(Some(value)), None => ordered_angle(ordinal) }
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
-        None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {
+        None | Some("OneSided") => angle("Angle", 0)?.map(|angle| RevolveExtent::OneSided {
             termination: AngularTermination::Angle { angle },
         }),
-        Some("Symmetric") => angle("Angle", 0).map(|angle| RevolveExtent::Symmetric {
+        Some("Symmetric") => angle("Angle", 0)?.map(|angle| RevolveExtent::Symmetric {
             termination: AngularTermination::Angle { angle },
         }),
-        Some("TwoSided") => angle("Angle", 0)
-            .zip(angle("Angle2", 1))
+        Some("TwoSided") => angle("Angle", 0)?
+            .zip(angle("Angle2", 1)?)
             .map(|(first, second)| RevolveExtent::TwoSided {
                 first: AngularTermination::Angle { angle: first },
                 second: AngularTermination::Angle { angle: second },

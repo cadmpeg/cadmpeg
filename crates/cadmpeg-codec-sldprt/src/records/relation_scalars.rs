@@ -173,13 +173,8 @@ fn admit_member(
     refs: &[String],
     id: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(refs.len()),
-        "measure SLDPRT relation scalar comparisons",
-    )?;
     let length = cadmpeg_core::decode::u64_from_index(id.len());
-    let work = refs
-        .iter()
+    let work = ctx.admit_iter(&refs[..], "scan SLDPRT admit_member values")?
         .try_fold(length, |work, member| {
             work.checked_add(length)?
                 .checked_add(cadmpeg_core::decode::u64_from_index(member.len()))?
@@ -216,11 +211,10 @@ impl RelationScalarsWire {
     ) -> Result<RelationScalars, cadmpeg_core::CodecError> {
         const OPERATION: &str = "admit SLDPRT relation scalar membership";
         let count = cadmpeg_core::decode::u64_from_index(self.scalar_refs.len());
-        ctx.charge_work(count, OPERATION)?;
+        let total = ctx.admit_iter(&self.scalar_refs, OPERATION)?.try_fold(0u64, |sum, id| {
+            sum.checked_add(cadmpeg_core::decode::u64_from_index(id.len()))
+        }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
         let work = (|| {
-            let total = self.scalar_refs.iter().try_fold(0u64, |sum, id| {
-                sum.checked_add(cadmpeg_core::decode::u64_from_index(id.len()))
-            })?;
             let mut work = count.checked_mul(total)?;
             if count != 0 {
                 work =

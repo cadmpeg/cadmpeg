@@ -229,7 +229,7 @@ fn chart_candidates(
                 interior_points.push(point);
             }
         }
-        if !extended && first == last && interior_points.iter().all(|point| *point == first) {
+        if !extended && first == last && ctx.admit_iter(&interior_points[..], "scan SLDPRT chart_candidates values")?.all(|point| *point == first) {
             continue;
         }
         ctx.push_vec(
@@ -355,8 +355,7 @@ fn uv_at(
             values.push(value);
         }
     }
-    Ok(values
-        .iter()
+    Ok(ctx.admit_iter(&values[..], "scan SLDPRT uv_at values")?
         .all(|value| value.is_finite())
         .then_some((attr, UvRecord { width, values })))
 }
@@ -416,9 +415,7 @@ fn solved_curve(
         ctx.collection_vec(point_count, "construct intersection chart parameters")?;
     parameters.push(parameter);
     let mut previous = chart.endpoints[0];
-    for &point in chart
-        .interior_points
-        .iter()
+    for &point in ctx.admit_iter(&chart.interior_points, "scan Parasolid intersection chart points")?
         .chain(std::iter::once(&chart.endpoints[1]))
     {
         parameter += distance(previous, point) * chart.base_scale;
@@ -429,9 +426,9 @@ fn solved_curve(
     points.push(start);
     points.extend(chart.interior_points.iter().copied());
     points.push(end);
-    let reversed = if parameters.windows(2).all(|pair| pair[0] < pair[1]) {
+    let reversed = if ctx.admit_iter(&parameters, "scan Parasolid intersection parameter order")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).all(|pair| pair[0] < pair[1]) {
         false
-    } else if parameters.windows(2).all(|pair| pair[0] > pair[1]) {
+    } else if ctx.admit_iter(&parameters, "scan Parasolid intersection parameter order")?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?).all(|pair| pair[0] > pair[1]) {
         parameters.reverse();
         points.reverse();
         true
@@ -519,13 +516,15 @@ fn solved_support_uv(
 }
 
 fn nearest_term(
+    ctx: &DecodeContext<'_>,
     records: &HashMap<u16, Vec<[f64; 3]>>,
     attr: u16,
     endpoint: [f64; 3],
-) -> Option<([f64; 3], f64)> {
-    records
-        .get(&attr)?
-        .iter()
+) -> Result<Option<([f64; 3], f64)>, CodecError> {
+    let Some(points) = records.get(&attr) else {
+        return Ok(None);
+    };
+    Ok(ctx.admit_iter(points, "scan Parasolid intersection terminators")?
         .copied()
         .fold(None, |best, point| {
             let candidate = (point, distance(point, endpoint));
@@ -533,7 +532,7 @@ fn nearest_term(
                 Some(best) if best.1 <= candidate.1 => Some(best),
                 _ => Some(candidate),
             }
-        })
+        }))
 }
 
 /// Scan intersection carriers whose referenced chart and terminators resolve,
@@ -583,12 +582,12 @@ pub(super) fn scan_intersection_carriers(
         let mut chart_refusal = crate::lane_refusal::LaneRefusals::new();
         let mut selected: Option<SolvedChart> = None;
         let mut ambiguous = false;
-        for chart in candidates {
+        for chart in ctx.admit_iter(candidates, "scan Parasolid intersection chart candidates")? {
             let [first, last] = chart.endpoints;
-            let Some((start, start_distance)) = nearest_term(&terms, start_ref, first) else {
+            let Some((start, start_distance)) = nearest_term(ctx, &terms, start_ref, first)? else {
                 continue;
             };
-            let Some((end, end_distance)) = nearest_term(&terms, end_ref, last) else {
+            let Some((end, end_distance)) = nearest_term(ctx, &terms, end_ref, last)? else {
                 continue;
             };
             let endpoint_displacement = start_distance + end_distance;

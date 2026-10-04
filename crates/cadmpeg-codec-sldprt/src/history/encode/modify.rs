@@ -20,7 +20,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
-impl NeutralFeatureEncoder<'_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_, '_> {
     pub(super) fn encode_fillet(
         &self,
         groups: &[FilletGroup],
@@ -45,7 +45,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_fillet(record)) {
+            if match existing { Some(record) => !is_fillet(self.ctx, record)?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
@@ -57,8 +57,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let positional_radius = parameters.contains_key("D1")
                 && !parameters.contains_key("Radius")
                 && !parameters
-                    .keys()
-                    .any(|name| indexed_name(name.as_str(), "Radius"));
+                    .keys().try_fold(false, |found, name| { Ok::<_, cadmpeg_core::CodecError>(found || ( indexed_name(self.ctx, name.as_str(), "Radius")? )) })?;
             match radius {
                 RadiusSpec::Unresolved { .. } => {
                     if existing.is_none() {
@@ -71,11 +70,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 RadiusSpec::Constant { radius } => {
                     let radius = (*radius).into();
 
-                    parameters.retain(|name, _| {
-                        name.as_str() != "Radius"
-                            && !indexed_name(name.as_str(), "Radius")
-                            && !indexed_name(name.as_str(), "Position")
-                    });
+                    parameters = parameters.into_iter().filter_map(|(name, value)| {
+                        let keep = (|| -> Result<bool, CodecError> {
+                            Ok(name.as_str() != "Radius"
+                                && !indexed_name(self.ctx, name.as_str(), "Radius")?
+                                && !indexed_name(self.ctx, name.as_str(), "Position")?)
+                        })();
+                        match keep {
+                            Ok(true) => Some(Ok((name, value))),
+                            Ok(false) => None,
+                            Err(error) => Some(Err(error)),
+                        }
+                    }).collect::<Result<_, CodecError>>()?;
                     let key = if positional_radius {
                         cadmpeg_core::nonblank_literal!("D1")
                     } else {
@@ -102,11 +108,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
                 RadiusSpec::Variable { points } => {
-                    parameters.retain(|name, _| {
-                        name.as_str() != "Radius"
-                            && !indexed_name(name.as_str(), "Radius")
-                            && !indexed_name(name.as_str(), "Position")
-                    });
+                    parameters = parameters.into_iter().filter_map(|(name, value)| {
+                        let keep = (|| -> Result<bool, CodecError> {
+                            Ok(name.as_str() != "Radius"
+                                && !indexed_name(self.ctx, name.as_str(), "Radius")?
+                                && !indexed_name(self.ctx, name.as_str(), "Position")?)
+                        })();
+                        match keep {
+                            Ok(true) => Some(Ok((name, value))),
+                            Ok(false) => None,
+                            Err(error) => Some(Err(error)),
+                        }
+                    }).collect::<Result<_, CodecError>>()?;
                     if positional_radius {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} changes positional fillet form",
@@ -183,7 +196,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_chamfer(record)) {
+            if match existing { Some(record) => !is_chamfer(self.ctx, record)?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
@@ -355,10 +368,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if existing.is_some_and(|record| {
-                !feature_family(record, "Combine")
+            if match existing { Some(record) => {
+                !feature_family(self.ctx, record, "Combine")?
                     && !feature_input_class(record, NativeClassKind::Combine)
-            }) || keep_tools
+            }, None => false } || keep_tools
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
@@ -403,7 +416,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
+            require_same_family(self.ctx, existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
             let targets = body_selection_value(targets).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no surface-cut target bodies",
@@ -512,7 +525,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let unsupported = existing.is_some_and(|record| !feature_family(record, "DeleteFace"));
+            let unsupported = match existing { Some(record) => !feature_family(self.ctx, record, "DeleteFace")?, None => false };
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported delete-face semantics",
@@ -540,7 +553,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let unsupported = existing.is_some_and(|record| !feature_family(record, "ReplaceFace"));
+            let unsupported = match existing { Some(record) => !feature_family(self.ctx, record, "ReplaceFace")?, None => false };
             let (Some(targets), Some(replacements), false) = (
                 face_selection_value(targets),
                 face_selection_value(replacements),
@@ -575,7 +588,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let unsupported = existing.is_some_and(|record| !feature_family(record, "MoveFace"));
+            let unsupported = match existing { Some(record) => !feature_family(self.ctx, record, "MoveFace")?, None => false };
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported move-face semantics",
@@ -658,7 +671,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            require_same_family(existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
+            require_same_family(self.ctx, existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
             let Some(translation) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 translation.x,
                 translation.y,
@@ -722,7 +735,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces);
-            if existing.is_some_and(|record| !feature_family(record, "Dome")) {
+            if match existing { Some(record) => !feature_family(self.ctx, record, "Dome")?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported dome semantics",
                     feature.id
@@ -780,7 +793,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if existing.is_some_and(|record| !feature_family(record, "Flex")) {
+            if match existing { Some(record) => !feature_family(self.ctx, record, "Flex")?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported flex semantics",
                     feature.id
@@ -861,7 +874,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let selection = body_selection_value(bodies);
-            if existing.is_some_and(|record| !feature_family(record, "Scale")) {
+            if match existing { Some(record) => !feature_family(self.ctx, record, "Scale")?, None => false } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported scale semantics",
                     feature.id

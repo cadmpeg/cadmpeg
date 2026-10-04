@@ -226,7 +226,7 @@ pub(super) fn scan_carriers(
                     "probe SLDPRT analytic carrier",
                 )?;
             }
-            if let Some(c) = parse_carrier(body, i) {
+            if let Some(c) = parse_carrier(ctx, body, i)? {
                 out.insert(ctx, c)?;
             }
         }

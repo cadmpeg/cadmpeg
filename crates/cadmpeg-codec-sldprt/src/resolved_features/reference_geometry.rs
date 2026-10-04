@@ -168,7 +168,7 @@ pub(crate) fn enrich_history_reference_planes(
                 index,
                 "index SLDPRT reference plane features",
             )?;
-            if classify(feature) == Some(FeatureClass::ReferencePlane)
+            if classify(ctx, feature)? == Some(FeatureClass::ReferencePlane)
                 && !reference_sources.contains(&source)
             {
                 ctx.insert_hash_set(
@@ -216,8 +216,8 @@ pub(crate) fn enrich_history_reference_planes(
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
-            if classify(feature) != Some(FeatureClass::ReferencePlane)
-                || principal_plane_with_siblings(feature, &histories[history_index].features)
+            if classify(ctx, feature)? != Some(FeatureClass::ReferencePlane)
+                || principal_plane_with_siblings(ctx, feature, &histories[history_index].features)?
                     .is_some()
                 || feature.properties.contains_key("Origin")
                 || feature.properties.contains_key("Normal")
@@ -539,7 +539,7 @@ pub(crate) fn enrich_history_reference_planes(
     let mut frames_by_reference = Vec::new();
     for (history_index, history) in histories.iter().enumerate() {
         for (feature_index, feature) in history.features.iter().enumerate() {
-            let Some(plane) = principal_plane_with_siblings(feature, &history.features) else {
+            let Some(plane) = principal_plane_with_siblings(ctx, feature, &history.features)? else {
                 continue;
             };
             let reference = retained_plane_frame_source(ctx, feature)?;
@@ -578,18 +578,24 @@ pub(crate) fn enrich_history_reference_planes(
             let selected = select_reference_plane_frame_source(
                 frames_by_reference
                     .iter()
-                    .filter(|(_, candidate_index, candidate)| {
+                    .filter_map(|(source, candidate_index, candidate)| {
+                        let matches = (|| -> Result<bool, CodecError> { Ok(
                         candidate_index.0 == index.0
                             && (candidate_index.1 < index.1
-                                || principal_plane_with_siblings(
+                                || principal_plane_with_siblings(ctx, 
                                     &histories[candidate_index.0].features[candidate_index.1],
                                     &histories[candidate_index.0].features,
-                                )
+                                )?
                                 .is_some())
                             && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
-                    })
-                    .map(|(source, _, _)| source.as_str()),
-            );
+                        ) })();
+                        match matches {
+                            Ok(true) => Some(Ok(source.as_str())),
+                            Ok(false) => None,
+                            Err(error) => Some(Err(error)),
+                        }
+                    }),
+            )?;
             if let Some(source) = selected {
                 ctx.reserve_vec(&mut sources, 1, "collect SLDPRT inferred plane sources")?;
                 sources.push(source);
@@ -642,8 +648,8 @@ pub(crate) fn enrich_history_reference_planes(
                     candidate_index.0 == index.0
                         && offset_plane_reference_frame_matches(*candidate, frame, distance.get())
                 })
-                .map(|(source, _, _)| source.as_str()),
-        ) {
+                .map(|(source, _, _)| Ok(source.as_str())),
+        )? {
             let source = ctx.format_retained(
                 format_args!("{source}"),
                 "retain SLDPRT offset plane source",
@@ -1670,13 +1676,14 @@ fn coordinate_system_frame_key(
 }
 
 fn select_reference_plane_frame_source<'a>(
-    candidates: impl Iterator<Item = &'a str>,
-) -> Option<&'a str> {
+    candidates: impl Iterator<Item = Result<&'a str, CodecError>>,
+) -> Result<Option<&'a str>, CodecError> {
     let mut candidates = candidates;
-    let source = candidates.next()?;
-    candidates
-        .all(|candidate| candidate == source)
-        .then_some(source)
+    let Some(source) = candidates.next().transpose()? else { return Ok(None); };
+    for candidate in candidates {
+        if candidate? != source { return Ok(None); }
+    }
+    Ok(Some(source))
 }
 
 fn offset_plane_reference_frame_matches(

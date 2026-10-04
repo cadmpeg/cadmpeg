@@ -104,7 +104,7 @@ fn first_solidworks_envelope_selects_the_written_dialect() {
         ),
     ];
     let declaration =
-        crate::container::first_solidworks_envelope(sections.iter().map(|(_, payload)| *payload))
+        crate::container::first_solidworks_envelope(&cadmpeg_test_support::service_decode_context(), sections.iter().map(|(_, payload)| *payload)).unwrap()
             .and_then(|envelope| envelope.sw_version);
     let dialect = crate::dialect::SldprtDialect::from_declaration(declaration.as_deref());
 

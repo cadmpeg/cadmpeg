@@ -59,7 +59,7 @@ fn draft_operands(
     object_start: usize,
     object_end: usize,
 ) -> Result<Option<DraftOperands>, CodecError> {
-    if classify(feature) != Some(FeatureClass::Draft) || object_start >= object_end {
+    if classify(ctx, feature)? != Some(FeatureClass::Draft) || object_start >= object_end {
         return Ok(None);
     }
     if let Some(operands) = declared_draft_operands(ctx, lane, object_start, object_end)? {

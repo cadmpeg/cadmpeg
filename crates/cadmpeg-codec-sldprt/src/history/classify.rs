@@ -32,7 +32,7 @@ fn is_attribute_definition(feature: &Feature) -> bool {
         && !feature.name.is_empty()
 }
 
-pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
+pub(crate) fn is_history_metadata_record(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature, features: &[Feature]) -> Result<bool, cadmpeg_core::CodecError> {
     if is_custom_property(feature)
         || is_semantic_note(feature)
         || is_attribute_definition(feature)
@@ -41,24 +41,24 @@ pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]
             Some("moAlignGroup_c" | "moAttribute_c" | "moConfigCommentsFolder_c")
         )
     {
-        return true;
+        return Ok(true);
     }
-    feature.input_class.is_none()
+    Ok(feature.input_class.is_none()
         && feature.source_id == Some(FeatureSource::Reserved)
         && !feature.name.is_empty()
-        && features.iter().any(|candidate| {
+        && ctx.admit_iter(features, "scan SLDPRT metadata candidates")?.any(|candidate| {
             candidate.input_class.as_deref() == Some("moAttribute_c")
                 && candidate.name.starts_with(&feature.name)
-        })
+        }))
 }
 
-pub(super) fn feature_tree_node_role(
+pub(super) fn feature_tree_node_role(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     history_features: &[Feature],
-) -> Option<FeatureTreeNodeRole> {
-    reserved_feature_tree_node_role(feature, history_features)
+) -> Result<Option<FeatureTreeNodeRole>, cadmpeg_core::CodecError> {
+    Ok(reserved_feature_tree_node_role(ctx, feature, history_features)?
         .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node())
-        .or_else(|| equation_container_role(feature))
+        .or_else(|| equation_container_role(feature)))
 }
 
 /// Keywords operation-family token of the equations container.
@@ -75,16 +75,16 @@ fn equation_container_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
     .then_some(FeatureTreeNodeRole::Equations)
 }
 
-fn reserved_feature_tree_node_role(
+fn reserved_feature_tree_node_role(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     history_features: &[Feature],
-) -> Option<FeatureTreeNodeRole> {
-    let layout = feature_manager_layout(history_features)?;
+) -> Result<Option<FeatureTreeNodeRole>, cadmpeg_core::CodecError> {
+    let layout = match feature_manager_layout(ctx, history_features)? { Some(value) => value, None => return Ok(None) };
     if !classless_builtin_node(feature) {
-        return None;
+        return Ok(None);
     }
-    let source = feature.source_id?.value();
-    match (layout, feature.xml_tag.as_str(), source) {
+    let source = match feature.source_id { Some(value) => value, None => return Ok(None) }.value();
+    Ok(match (layout, feature.xml_tag.as_str(), source) {
         (FeatureManagerLayout::Current, tag, Some(1)) if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::Annotations)
         }
@@ -153,23 +153,23 @@ fn reserved_feature_tree_node_role(
         }
         (_, tag, _)
             if tag.eq_ignore_ascii_case("Feature")
-                && repeated_builtin_node_kind(
+                && repeated_builtin_node_kind(ctx, 
                     feature,
                     history_features,
                     layout,
                     FeatureTreeNodeRole::AmbientLight,
-                ) =>
+                )? =>
         {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
         (_, tag, _)
             if tag.eq_ignore_ascii_case("Feature")
-                && repeated_builtin_node_kind(
+                && repeated_builtin_node_kind(ctx, 
                     feature,
                     history_features,
                     layout,
                     FeatureTreeNodeRole::DirectionalLight,
-                ) =>
+                )? =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
@@ -178,7 +178,7 @@ fn reserved_feature_tree_node_role(
         }
         (_, _, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
         _ => None,
-    }
+    })
 }
 
 pub(super) fn classless_builtin_node(feature: &Feature) -> bool {
@@ -217,22 +217,24 @@ enum FeatureManagerLayout {
     Current,
 }
 
-fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> {
-    let matches_roster = |roster: &[(u32, &str)]| {
-        roster.iter().all(|(source, class)| {
-            let mut matches = features.iter().filter(|feature| {
+fn feature_manager_layout(ctx: &cadmpeg_core::decode::DecodeContext<'_>, features: &[Feature]) -> Result<Option<FeatureManagerLayout>, cadmpeg_core::CodecError> {
+    let matches_roster = |roster: &[(u32, &str)]| -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.admit_iter(roster, "scan SLDPRT builtin class roster")?.try_fold(true, |matches, (source, class)| {
+            if !matches { return Ok(false); }
+            let mut matches = ctx.admit_iter(features, "scan SLDPRT builtin feature roster")?.filter(|feature| {
                 feature.source_value() == Some(*source)
                     && feature.input_class.as_deref() == Some(*class)
             });
-            matches.next().is_some() && matches.next().is_none()
+            Ok(matches.next().is_some() && matches.next().is_none())
         })
     };
-    let matches_builtin_sources = |sources: &[u32]| {
-        sources.iter().all(|source| {
-            let mut matches = features.iter().filter(|feature| {
+    let matches_builtin_sources = |sources: &[u32]| -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.admit_iter(sources, "scan SLDPRT builtin source roster")?.try_fold(true, |matches, source| {
+            if !matches { return Ok(false); }
+            let mut matches = ctx.admit_iter(features, "scan SLDPRT builtin feature roster")?.filter(|feature| {
                 feature.source_value() == Some(*source) && classless_or_scene_builtin_node(feature)
             });
-            matches.next().is_some() && matches.next().is_none()
+            Ok(matches.next().is_some() && matches.next().is_none())
         })
     };
     let legacy = matches_roster(&[
@@ -241,51 +243,50 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
         (10, "moSolidBodyFolder_c"),
         (12, "moDocsFolder_c"),
         (13, "moCommentsFolder_c"),
-    ]);
+    ])?;
     let current = matches_roster(&[
         (7, "moDocsFolder_c"),
         (8, "moCommentsFolder_c"),
         (9, "moSolidBodyFolder_c"),
         (10, "moSurfaceBodyFolder_c"),
-    ]);
+    ])?;
     let default_frame = matches_roster(&[
         (1, "moDetailCabinet_c"),
         (2, "moRefPlane_c"),
         (3, "moRefPlane_c"),
         (4, "moRefPlane_c"),
         (5, "moOriginProfileFeature_c"),
-    ]);
+    ])?;
     let origin_at_six = matches_roster(&[
         (1, "moDetailCabinet_c"),
         (3, "moRefPlane_c"),
         (4, "moRefPlane_c"),
         (5, "moRefPlane_c"),
         (6, "moOriginProfileFeature_c"),
-    ]) && matches_builtin_sources(&[2, 7, 8])
+    ])? && matches_builtin_sources(&[2, 7, 8])?
         && !legacy;
-    let lights_at_six = default_frame && matches_builtin_sources(&[6, 7, 8]);
+    let lights_at_six = default_frame && matches_builtin_sources(&[6, 7, 8])?;
     let folders_at_seven = default_frame
-        && matches_roster(&[(7, "moSolidBodyFolder_c"), (8, "moSurfaceBodyFolder_c")])
-        && matches_builtin_sources(&[6, 10, 11, 12]);
-    let mut layouts = [
+        && matches_roster(&[(7, "moSolidBodyFolder_c"), (8, "moSurfaceBodyFolder_c")])?
+        && matches_builtin_sources(&[6, 10, 11, 12])?;
+    let layouts = [
         (origin_at_six, FeatureManagerLayout::OriginAtSix),
         (lights_at_six, FeatureManagerLayout::LightsAtSix),
         (folders_at_seven, FeatureManagerLayout::FoldersAtSeven),
         (legacy, FeatureManagerLayout::Legacy),
         (current, FeatureManagerLayout::Current),
-    ]
-    .into_iter()
-    .filter_map(|(matches, layout)| matches.then_some(layout));
-    let layout = layouts.next()?;
-    layouts.next().is_none().then_some(layout)
+    ];
+    let mut layouts = ctx.admit_iter(&layouts, "scan SLDPRT feature manager layouts")?.copied().filter_map(|(matches, layout)| matches.then_some(layout));
+    let layout = match layouts.next() { Some(value) => value, None => return Ok(None) };
+    Ok(layouts.next().is_none().then_some(layout))
 }
 
-fn repeated_builtin_node_kind(
+fn repeated_builtin_node_kind(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     features: &[Feature],
     layout: FeatureManagerLayout,
     role: FeatureTreeNodeRole,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let reserved_source = match (layout, role) {
         (
             FeatureManagerLayout::OriginAtSix | FeatureManagerLayout::LightsAtSix,
@@ -301,15 +302,15 @@ fn repeated_builtin_node_kind(
         (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::DirectionalLight) => 8,
         (FeatureManagerLayout::Current, FeatureTreeNodeRole::AmbientLight) => 12,
         (FeatureManagerLayout::Current, FeatureTreeNodeRole::DirectionalLight) => 13,
-        _ => return false,
+        _ => return Ok(false),
     };
-    let mut anchors = features.iter().filter(|candidate| {
+    let mut anchors = ctx.admit_iter(features, "scan SLDPRT builtin node anchors")?.filter(|candidate| {
         candidate.source_value() == Some(reserved_source) && classless_builtin_node(candidate)
     });
     let Some(anchor) = anchors.next() else {
-        return false;
+        return Ok(false);
     };
-    anchors.next().is_none() && !anchor.kind.is_empty() && feature.kind == anchor.kind
+    Ok(anchors.next().is_none() && !anchor.kind.is_empty() && feature.kind == anchor.kind)
 }
 
 fn empty_feature_tree_node(feature: &Feature) -> bool {
@@ -320,28 +321,27 @@ fn empty_feature_tree_node(feature: &Feature) -> bool {
         && feature.content.is_empty()
 }
 
-pub(super) fn feature_family(feature: &Feature, family: &str) -> bool {
-    feature.xml_tag.eq_ignore_ascii_case(family)
+pub(super) fn feature_family(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature, family: &str) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(feature.xml_tag.eq_ignore_ascii_case(family)
         || feature.kind.eq_ignore_ascii_case(family)
-        || classify_type_token(family)
-            .or_else(|| classify_xml_element(family))
-            .is_some_and(|expected| classify(feature) == Some(expected))
+        || match classify_type_token(family)
+            .or_else(|| classify_xml_element(family)) { Some(expected) => classify(ctx, feature)? == Some(expected), None => false })
 }
 
 pub(super) fn feature_input_class(feature: &Feature, class: NativeClassKind) -> bool {
     feature.input_class.as_deref().map(native_object_class) == Some(class)
 }
 
-pub(super) fn is_fillet(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Fillet)
+pub(super) fn is_fillet(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(classify(ctx, feature)? == Some(FeatureClass::Fillet))
 }
 
-pub(super) fn is_chamfer(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Chamfer)
+pub(super) fn is_chamfer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(classify(ctx, feature)? == Some(FeatureClass::Chamfer))
 }
 
-pub(super) fn is_extrude(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Extrude)
+pub(super) fn is_extrude(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(classify(ctx, feature)? == Some(FeatureClass::Extrude))
 }
 
 pub(super) fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
@@ -353,24 +353,24 @@ pub(super) fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
         .or_else(|| extrude_op(&feature.kind))
 }
 
-pub(super) fn is_offset_plane(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::ReferencePlane)
+pub(super) fn is_offset_plane(ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &Feature) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(classify(ctx, feature)? == Some(FeatureClass::ReferencePlane)
         && feature
             .parameters
             .get("D1")
             .and_then(|value| parse_dimension_length_mm(value))
-            .is_some()
+            .is_some())
 }
 
-pub(super) fn principal_plane_in_history(
+pub(super) fn principal_plane_in_history(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     feature: &Feature,
     features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
-) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+) -> Result<Option<cadmpeg_ir::features::PrincipalPlane>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::PrincipalPlane;
 
-    if let Some(plane) = principal_plane_with_siblings(feature, history_features) {
-        return Some(plane);
+    if let Some(plane) = principal_plane_with_siblings(ctx, feature, history_features)? {
+        return Ok(Some(plane));
     }
     let legacy_shape = |record: &Feature| {
         record.input_class.is_none()
@@ -388,12 +388,12 @@ pub(super) fn principal_plane_in_history(
             && front.kind == top.kind
             && front.kind == right.kind
         {
-            return match feature.source_value() {
+            return Ok(match feature.source_value() {
                 Some(2) => Some(PrincipalPlane::Front),
                 Some(3) => Some(PrincipalPlane::Top),
                 Some(4) => Some(PrincipalPlane::Right),
                 _ => None,
-            };
+            });
         }
     }
 
@@ -432,16 +432,16 @@ pub(super) fn principal_plane_in_history(
         }
         Some([front, top, right])
     });
-    let [front, top, right] = triplets.next()?;
+    let [front, top, right] = match triplets.next() { Some(value) => value, None => return Ok(None) };
     if triplets.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    match feature.id.as_str() {
+    Ok(match feature.id.as_str() {
         id if id == front.id => Some(PrincipalPlane::Front),
         id if id == top.id => Some(PrincipalPlane::Top),
         id if id == right.id => Some(PrincipalPlane::Right),
         _ => None,
-    }
+    })
 }
 
 pub(super) fn extrude_op(kind: &str) -> Option<BooleanOp> {
@@ -480,8 +480,9 @@ pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
     }
 }
 
-pub(super) fn indexed_name(name: &str, prefix: &str) -> bool {
-    name.strip_prefix(prefix).is_some_and(|suffix| {
-        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+pub(super) fn indexed_name(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str, prefix: &str) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(match name.strip_prefix(prefix) {
+        Some(suffix) => !suffix.is_empty() && ctx.admit_iter(suffix.as_bytes(), "scan SLDPRT indexed name digits")?.all(u8::is_ascii_digit),
+        None => false,
     })
 }

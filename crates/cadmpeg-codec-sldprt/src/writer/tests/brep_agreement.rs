@@ -248,7 +248,7 @@ fn native_extrusion_edit_without_source_image_is_refused() {
 fn parameter_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let source_partition =
-        container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
+        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
             .unwrap()
             .section
             .payload()
@@ -262,7 +262,7 @@ fn parameter_name_edit_keeps_retained_brep() {
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
-    let output_partition = container::select_active_parasolid_site(&output_scan)
+    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
         .unwrap()
         .section
         .payload();
@@ -273,7 +273,7 @@ fn parameter_name_edit_keeps_retained_brep() {
 fn feature_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let source_partition =
-        container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
+        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
             .unwrap()
             .section
             .payload()
@@ -287,7 +287,7 @@ fn feature_name_edit_keeps_retained_brep() {
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
-    let output_partition = container::select_active_parasolid_site(&output_scan)
+    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
         .unwrap()
         .section
         .payload();
@@ -298,7 +298,7 @@ fn feature_name_edit_keeps_retained_brep() {
 fn native_feature_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let source_partition =
-        container::select_active_parasolid_site(&crate::test_support::container::scan(&source))
+        container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &crate::test_support::container::scan(&source)).unwrap()
             .unwrap()
             .section
             .payload()
@@ -314,7 +314,7 @@ fn native_feature_name_edit_keeps_retained_brep() {
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     let output_scan = crate::test_support::container::scan(&output);
-    let output_partition = container::select_active_parasolid_site(&output_scan)
+    let output_partition = container::select_active_parasolid_site(&cadmpeg_test_support::service_decode_context(), &output_scan).unwrap()
         .unwrap()
         .section
         .payload();

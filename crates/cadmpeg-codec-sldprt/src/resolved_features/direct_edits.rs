@@ -195,7 +195,7 @@ pub(crate) fn enrich_history_move_face_translations(
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
-            if classify(feature) != Some(FeatureClass::MoveFace)
+            if classify(ctx, feature)? != Some(FeatureClass::MoveFace)
                 || feature.properties.contains_key("Mode")
                 || feature.properties.contains_key("Direction")
             {
@@ -356,7 +356,7 @@ pub(crate) fn enrich_history_move_body_translations(
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
-            if classify(feature) != Some(FeatureClass::MoveBody)
+            if classify(ctx, feature)? != Some(FeatureClass::MoveBody)
                 || feature.properties.contains_key("Translation")
             {
                 continue;

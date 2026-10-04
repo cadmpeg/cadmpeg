@@ -179,10 +179,7 @@ fn append_tessellation_losses(
     ir: &CadIr,
     report: &mut DecodeBody,
 ) -> Result<(), CodecError> {
-    let unresolved = ir
-        .model
-        .tessellations
-        .iter()
+    let unresolved = ctx.admit_iter(&ir.model.tessellations[..], "scan SLDPRT append_tessellation_losses values")?
         .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
         .count();
     if unresolved > 0 {
@@ -201,8 +198,7 @@ fn decode_result(
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    let source_image = unknowns
-        .iter()
+    let source_image = ctx.admit_iter(&unknowns[..], "scan SLDPRT decode_result values")?
         .position(|record| record.id().as_str() == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns, ctx)?;
@@ -218,12 +214,13 @@ fn decode_result(
 }
 
 fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    ctx: &DecodeContext<'_>,
     pattern: &cadmpeg_ir::features::patterns::PatternKind<C>,
     incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
-) -> bool {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::features::patterns::{PatternScaleCenter, PatternTransform};
 
-    match pattern.definition() {
+    Ok(match pattern.definition() {
         cadmpeg_ir::features::patterns::PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
@@ -232,11 +229,9 @@ fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
         PatternTransform::CircularAngles { .. } => false,
         PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
         PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
-        PatternTransform::Composite { stages } => stages
-            .stages()
-            .iter()
-            .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path)),
-    }
+        PatternTransform::Composite { stages } => ctx.admit_iter(stages.stages(), "scan SLDPRT composite pattern stages")?
+            .try_fold(false, |incomplete, stage| Ok::<_, CodecError>(incomplete || incomplete_pattern(ctx, &stage.pattern, incomplete_path)?))?,
+    })
 }
 
 fn incomplete_binder_target(
@@ -488,10 +483,7 @@ fn append_design_losses(
         },
     };
 
-    let active_configurations = ir
-        .model
-        .configurations
-        .iter()
+    let active_configurations = ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?
         .filter(|configuration| configuration.active)
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
@@ -504,26 +496,23 @@ fn append_design_losses(
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
+        .map(|section| crate::container::configuration_index(ctx, section)).transpose()?.flatten()
         .and_then(|index| u32::try_from(index).ok());
-    let active_partition_mismatch = active_partition.filter(|active_partition| {
-        ir.model
-            .configurations
-            .iter()
-            .find(|configuration| configuration.active)
-            .is_some_and(|configuration| {
-                configuration.source_index.as_ref() != Some(active_partition)
-            })
-    });
+    let active_partition_mismatch = match active_partition {
+        Some(active_partition) => {
+            ctx.admit_iter(&ir.model.configurations, "find SLDPRT active geometry configuration")?
+                .find(|configuration| configuration.active)
+                .filter(|configuration| configuration.source_index.as_ref() != Some(&active_partition))
+                .map(|_| active_partition)
+        }
+        None => None,
+    };
     if let Some(active_partition) = active_partition_mismatch {
         push_report_loss(ctx, report, SldprtLossCode::ConfigActivePartitionMismatch.note(format!(
                 "active configuration identity does not resolve to active geometry partition {active_partition}."
             )))?;
     }
-    let inferred_configurations = ir
-        .model
-        .configurations
-        .iter()
+    let inferred_configurations = ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?
         .filter(|configuration| configuration.native_ref.is_none())
         .count();
     if inferred_configurations > 0 {
@@ -553,8 +542,7 @@ fn append_design_losses(
             .filter_map(|configuration| configuration.source_index),
         "count SLDPRT configuration source indices",
     )?;
-    let ambiguous_configuration_sources = configuration_source_counts
-        .values()
+    let ambiguous_configuration_sources = ctx.admit_iter(&configuration_source_counts, "scan SLDPRT append_design_losses map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
@@ -563,10 +551,7 @@ fn append_design_losses(
                 "{ambiguous_configuration_sources} configuration record(s) share non-unique geometry partition identities."
             )))?;
     }
-    let empty_configuration_names = ir
-        .model
-        .configurations
-        .iter()
+    let empty_configuration_names = ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?
         .filter(|configuration| configuration.name.as_deref().is_none_or(str::is_empty))
         .count();
     let configuration_ordinal_counts = count_keys(
@@ -586,13 +571,11 @@ fn append_design_losses(
             .filter(|name| !name.is_empty()),
         "count SLDPRT configuration names",
     )?;
-    let ambiguous_configuration_names = configuration_name_counts
-        .values()
+    let ambiguous_configuration_names = ctx.admit_iter(&configuration_name_counts, "scan SLDPRT append_design_losses map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
-    let ambiguous_configuration_ordinals = configuration_ordinal_counts
-        .values()
+    let ambiguous_configuration_ordinals = ctx.admit_iter(&configuration_ordinal_counts, "scan SLDPRT append_design_losses map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
@@ -610,7 +593,7 @@ fn append_design_losses(
         "index SLDPRT model body IDs",
     )?;
     let mut incoherent_configuration_bodies = 0;
-    for configuration in &ir.model.configurations {
+    for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT append_design_losses values")? {
         if has_incoherent_refs(
             ctx,
             configuration.bodies.as_deref().unwrap_or_default(),
@@ -620,10 +603,7 @@ fn append_design_losses(
             incoherent_configuration_bodies += 1;
         }
     }
-    let unresolved_configuration_bodies = ir
-        .model
-        .configurations
-        .iter()
+    let unresolved_configuration_bodies = ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?
         .filter(|configuration| configuration.bodies.is_none())
         .count();
     if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
@@ -642,32 +622,26 @@ fn append_design_losses(
         ir.model.parameters.iter().map(|parameter| &parameter.id),
         "index SLDPRT parameter IDs",
     )?;
-    let incomplete_configuration_feature_snapshots = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| {
-            !configuration_source_needs_update(ir, configuration)
-                && (configuration.feature_states.len() != feature_ids.len()
-                    || configuration
-                        .feature_states
-                        .keys()
-                        .any(|feature| !feature_ids.contains(feature)))
-        })
-        .count();
-    let incomplete_configuration_parameter_snapshots = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| {
-            !configuration_source_needs_update(ir, configuration)
-                && (configuration.parameter_values.len() != parameter_ids.len()
-                    || configuration
-                        .parameter_values
-                        .keys()
-                        .any(|parameter| !parameter_ids.contains(parameter)))
-        })
-        .count();
+    let mut incomplete_configuration_feature_snapshots = 0;
+    for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration feature snapshots")? {
+        if !configuration_source_needs_update(ir, configuration)
+            && (configuration.feature_states.len() != feature_ids.len()
+                || ctx.admit_iter(&configuration.feature_states, "scan SLDPRT configuration feature snapshot keys")?
+                    .any(|(feature, _)| !feature_ids.contains(feature)))
+        {
+            incomplete_configuration_feature_snapshots += 1;
+        }
+    }
+    let mut incomplete_configuration_parameter_snapshots = 0;
+    for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration parameter snapshots")? {
+        if !configuration_source_needs_update(ir, configuration)
+            && (configuration.parameter_values.len() != parameter_ids.len()
+                || ctx.admit_iter(&configuration.parameter_values, "scan SLDPRT configuration parameter snapshot keys")?
+                    .any(|(parameter, _)| !parameter_ids.contains(parameter)))
+        {
+            incomplete_configuration_parameter_snapshots += 1;
+        }
+    }
     if incomplete_configuration_feature_snapshots > 0
         || incomplete_configuration_parameter_snapshots > 0
     {
@@ -675,38 +649,30 @@ fn append_design_losses(
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )))?;
     }
-    let incoherent_configuration_suppression = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| {
-            configuration.feature_states.iter().any(|(id, state)| {
-                !feature_ids.contains(id)
-                    || (configuration.active
-                        && ir
-                            .model
-                            .features
-                            .iter()
-                            .find(|feature| feature.id == *id)
-                            .is_some_and(|feature| {
-                                feature.suppressed.is_some_and(|suppressed| {
-                                    suppressed != state.evaluation.is_suppressed()
-                                })
-                            }))
-            })
-        })
-        .count();
-    let incoherent_configuration_overrides = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| {
-            configuration
-                .parameter_overrides
-                .keys()
-                .any(|parameter| !parameter_ids.contains(parameter))
-        })
-        .count();
+    let mut incoherent_configuration_suppression = 0;
+    for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration suppression snapshots")? {
+        let mut incoherent = false;
+        for (id, state) in ctx.admit_iter(&configuration.feature_states, "scan SLDPRT configuration suppression members")? {
+            if !feature_ids.contains(id)
+                || (configuration.active
+                    && ctx.admit_iter(&ir.model.features, "find SLDPRT configuration suppression feature")?
+                        .find(|feature| feature.id == *id)
+                        .is_some_and(|feature| feature.suppressed.is_some_and(|suppressed| {
+                            suppressed != state.evaluation.is_suppressed()
+                        })))
+            {
+                incoherent = true;
+                break;
+            }
+        }
+        incoherent_configuration_suppression += usize::from(incoherent);
+    }
+    let mut incoherent_configuration_overrides = 0;
+    for configuration in ctx.admit_iter(&ir.model.configurations, "scan SLDPRT configuration override snapshots")? {
+        let incoherent = ctx.admit_iter(&configuration.parameter_overrides, "scan SLDPRT configuration override keys")?
+            .any(|(parameter, _)| !parameter_ids.contains(parameter));
+        incoherent_configuration_overrides += usize::from(incoherent);
+    }
     if incoherent_configuration_suppression > 0 || incoherent_configuration_overrides > 0 {
         push_report_loss(ctx, report, SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
             "{incoherent_configuration_suppression} configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; {incoherent_configuration_overrides} configuration(s) reference missing parameter overrides."
@@ -715,7 +681,7 @@ fn append_design_losses(
 
     let mut lookup_storage = ctx.reserve_scoped(0, "SLDPRT design parameter lookup storage")?;
     let mut feature_names = HashMap::new();
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "scan SLDPRT append_design_losses values")? {
         const OPERATION: &str = "index SLDPRT feature names";
 
         let Some(name) = &feature.name else {
@@ -737,7 +703,7 @@ fn append_design_losses(
         feature_names.insert(id, name);
     }
     let mut global_parameter_owners = HashSet::new();
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "scan SLDPRT append_design_losses values")? {
         const OPERATION: &str = "index SLDPRT global parameter owners";
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
@@ -757,18 +723,13 @@ fn append_design_losses(
         .map_err(CodecError::malformed)?;
         global_parameter_owners.insert(id);
     }
-    let incomplete_parameters = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
+    let incomplete_parameters = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let parameter = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             parameter.value.is_none()
                 && (ir.model.configurations.is_empty()
-                    || ir.model.configurations.iter().any(|configuration| {
+                    || ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?.any(|configuration| {
                         !configuration.parameter_values.contains_key(&parameter.id)
                     }))
-        })
-        .count();
+        } )) })?;
     let unresolved_parameter_references =
         crate::history::parameters::parameters_with_unresolved_references(
             ctx,
@@ -800,12 +761,8 @@ fn append_design_losses(
             .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal))),
         "index SLDPRT parameter positions",
     )?;
-    let invalid_parameter_dependency_order = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter.dependencies.iter().any(|dependency| {
+    let invalid_parameter_dependency_order = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let parameter = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
+            ctx.admit_iter(parameter.dependencies.as_slice(), "scan SLDPRT append_design_losses values")?.any(|dependency| {
                 let Some((owner, ordinal)) = parameter_positions.get(dependency) else {
                     return true;
                 };
@@ -824,8 +781,7 @@ fn append_design_losses(
                         dependency_owner >= consumer_owner
                     })
             })
-        })
-        .count();
+        } )) })?;
     let incoherent_parameter_dependencies =
         crate::history::parameters::parameters_with_incoherent_dependencies(
             ctx,
@@ -852,10 +808,7 @@ fn append_design_losses(
                 "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} parameter expression(s) cannot regenerate a finite typed value; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions; {incoherent_parameter_values} dependency-driven parameter(s) disagree with their evaluated expressions."
             )))?;
     }
-    let empty_parameter_names = ir
-        .model
-        .parameters
-        .iter()
+    let empty_parameter_names = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?
         .filter(|parameter| parameter.name.is_empty())
         .count();
     let parameter_name_counts = count_keys(
@@ -875,13 +828,11 @@ fn append_design_losses(
             .map(|parameter| (&parameter.owner, parameter.ordinal)),
         "count SLDPRT parameter ordinals",
     )?;
-    let duplicate_parameter_names = parameter_name_counts
-        .values()
+    let duplicate_parameter_names = ctx.admit_iter(&parameter_name_counts, "scan SLDPRT append_design_losses map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
-    let duplicate_parameter_ordinals = parameter_ordinal_counts
-        .values()
+    let duplicate_parameter_ordinals = ctx.admit_iter(&parameter_ordinal_counts, "scan SLDPRT append_design_losses map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
@@ -895,10 +846,7 @@ fn append_design_losses(
     }
 
     let mut bound_pmi = std::collections::HashSet::new();
-    for pmi in ir
-        .model
-        .parameters
-        .iter()
+    for pmi in ctx.admit_iter(&ir.model.parameters, "scan SLDPRT parameter PMI")?
         .filter_map(|parameter| parameter.pmi.as_ref())
     {
         let id = pmi.native_ref.as_str();
@@ -910,10 +858,7 @@ fn append_design_losses(
         }
         None => 0,
     };
-    let native_pmi_subtypes = ir
-        .model
-        .parameters
-        .iter()
+    let native_pmi_subtypes = ctx.admit_iter(&ir.model.parameters[..], "scan SLDPRT append_design_losses values")?
         .filter(|parameter| {
             parameter.pmi.as_ref().is_some_and(|pmi| {
                 matches!(
@@ -945,10 +890,7 @@ fn append_design_losses(
         )))?;
     }
     let feature_positions = &feature_ordinals;
-    let evaluated_feature_states = if ir
-        .model
-        .configurations
-        .iter()
+    let evaluated_feature_states = if ctx.admit_iter(&ir.model.configurations[..], "scan SLDPRT append_design_losses values")?
         .any(|configuration| !configuration.feature_states.is_empty())
     {
         charged_vec(
@@ -982,9 +924,7 @@ fn append_design_losses(
             "collect SLDPRT feature states",
         )?
     };
-    let incoherent_feature_edges = evaluated_feature_states
-        .iter()
-        .filter(|state| {
+    let incoherent_feature_edges = ctx.admit_iter(&evaluated_feature_states[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let state = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             let feature = state.feature;
             let parent_incoherent = ir.model.feature_parent(&feature.id).is_some_and(|parent| {
                 feature_positions
@@ -992,20 +932,18 @@ fn append_design_losses(
                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
             });
             parent_incoherent
-                || state.dependencies.iter().any(|dependency| {
+                || ctx.admit_iter(state.dependencies.as_slice(), "scan SLDPRT append_design_losses values")?.any(|dependency| {
                     feature_positions
                         .get(dependency)
                         .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                 })
-        })
-        .count();
+        } )) })?;
     let feature_ordinal_counts = count_keys(
         ctx,
         ir.model.features.iter().map(|feature| feature.ordinal),
         "count SLDPRT feature ordinals",
     )?;
-    let duplicate_feature_ordinals = feature_ordinal_counts
-        .values()
+    let duplicate_feature_ordinals = ctx.admit_iter(&feature_ordinal_counts, "scan SLDPRT append_design_losses map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
@@ -1030,12 +968,8 @@ fn append_design_losses(
             .map(|feature| (&feature.id, feature)),
         "index SLDPRT features by ID",
     )?;
-    let incoherent_feature_content = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature.source_content.iter().any(|content| match content {
+    let incoherent_feature_content = ctx.admit_iter(&ir.model.features[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let feature = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
+            ctx.admit_iter(&feature.source_content[..], "scan SLDPRT append_design_losses values")?.any(|content| match content {
                 FeatureSourceContent::Text(_) => false,
                 FeatureSourceContent::Parameter(parameter) => parameter_owners
                     .get(parameter)
@@ -1047,16 +981,14 @@ fn append_design_losses(
                     })
                 }
             })
-        })
-        .count();
+        } )) })?;
     if incoherent_feature_content > 0 {
         push_report_loss(ctx, report, SldprtLossCode::FeatureIncoherentContent.note(format!(
                 "{incoherent_feature_content} feature record(s) contain missing, repeated, misowned, or structurally inconsistent source-content references."
             )))?;
     }
 
-    let unresolved_output_scopes = evaluated_feature_states
-        .iter()
+    let unresolved_output_scopes = ctx.admit_iter(&evaluated_feature_states[..], "scan SLDPRT append_design_losses values")?
         .filter(|state| {
             state
                 .feature
@@ -1072,7 +1004,7 @@ fn append_design_losses(
             )))?;
     }
     let mut incoherent_feature_outputs = 0;
-    for state in &evaluated_feature_states {
+    for state in ctx.admit_iter(&evaluated_feature_states, "scan SLDPRT append_design_losses values")? {
         if has_incoherent_refs(
             ctx,
             state.outputs,
@@ -1088,19 +1020,13 @@ fn append_design_losses(
             )))?;
     }
 
-    let native_planar_constraints = ir
-        .model
-        .sketch_constraints
-        .iter()
+    let native_planar_constraints = ctx.admit_iter(&ir.model.sketch_constraints[..], "scan SLDPRT append_design_losses values")?
         .filter(|constraint| {
             !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
                 && constraint.active != Some(false)
         })
         .count();
-    let native_spatial_constraints = ir
-        .model
-        .spatial_sketch_constraints
-        .iter()
+    let native_spatial_constraints = ctx.admit_iter(&ir.model.spatial_sketch_constraints[..], "scan SLDPRT append_design_losses values")?
         .filter(|constraint| {
             !spatial_sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
         })
@@ -1112,10 +1038,7 @@ fn append_design_losses(
             )))?;
     }
 
-    let native_sketch_geometry = ir
-        .model
-        .sketch_entities
-        .iter()
+    let native_sketch_geometry = ctx.admit_iter(&ir.model.sketch_entities[..], "scan SLDPRT append_design_losses values")?
         .filter(|entity| {
             matches!(
                 *entity.geometry.definition(),
@@ -1123,9 +1046,7 @@ fn append_design_losses(
             )
         })
         .count()
-        + ir.model
-            .spatial_sketch_entities
-            .iter()
+        + ctx.admit_iter(&ir.model.spatial_sketch_entities[..], "scan SLDPRT append_design_losses values")?
             .filter(|entity| {
                 matches!(
                     *entity.geometry.definition(),
@@ -1158,8 +1079,7 @@ fn append_design_losses(
             )))?;
     }
 
-    let native_features = evaluated_feature_states
-        .iter()
+    let native_features = ctx.admit_iter(&evaluated_feature_states[..], "scan SLDPRT append_design_losses values")?
         .filter(|state| native_feature_has_operation_evidence(state))
         .count();
     if native_features > 0 {
@@ -1283,9 +1203,7 @@ fn append_design_losses(
             incomplete_angular_termination(first) || incomplete_angular_termination(second)
         }
     };
-    let incomplete_typed_features = evaluated_feature_states
-        .iter()
-        .filter(|state| {
+    let incomplete_typed_features = ctx.admit_iter(&evaluated_feature_states[..], "scan SLDPRT append_design_losses values")?.try_fold(0_usize, |count, candidate| { let state = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
             let definition = state.definition.operation();
             match definition {
             FeatureOperation::TreeNode { .. }
@@ -1300,19 +1218,13 @@ fn append_design_losses(
             FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
             FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
             FeatureOperation::MeshImport { .. } => false,
-            FeatureOperation::InsertComponent { occurrence } => !ir
-                .model
-                .occurrences
-                .iter()
+            FeatureOperation::InsertComponent { occurrence } => !ctx.admit_iter(&ir.model.occurrences[..], "scan SLDPRT append_design_losses values")?
                 .any(|candidate| candidate.id == *occurrence),
-            FeatureOperation::AssemblyJoint { joint } => !ir
-                .model
-                .assembly_joints
-                .iter()
+            FeatureOperation::AssemblyJoint { joint } => !ctx.admit_iter(&ir.model.assembly_joints[..], "scan SLDPRT append_design_losses values")?
                 .any(|candidate| candidate.id == *joint),
             FeatureOperation::ReferenceImage { asset, .. }
             | FeatureOperation::Decal { asset, .. } => {
-                !ir.model.assets.iter().any(|candidate| candidate.id == *asset)
+                !ctx.admit_iter(&ir.model.assets[..], "scan SLDPRT append_design_losses values")?.any(|candidate| candidate.id == *asset)
             }
             FeatureOperation::StoredGeometry {} => state.outputs.is_empty(),
             FeatureOperation::ExtractBody { source } => incomplete_body_selection(source),
@@ -1398,7 +1310,7 @@ fn append_design_losses(
                     || bidirectional.is_none()
             }
             FeatureOperation::CompositeCurve { segments, .. } => {
-                segments.is_empty() || segments.iter().any(incomplete_path)
+                segments.is_empty() || ctx.admit_iter(&segments[..], "scan SLDPRT append_design_losses values")?.any(incomplete_path)
             }
             FeatureOperation::HelixNativeAxis { .. } => true,
             FeatureOperation::Wrap {
@@ -1478,17 +1390,15 @@ fn append_design_losses(
                 construction,
             } => {
                 sources.is_empty()
-                    || sources.iter().any(|source| {
+                    || ctx.admit_iter(&sources[..], "scan SLDPRT append_design_losses values")?.try_fold(false, |found, source| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
                         incomplete_binder_target(
                             &source.target,
                             feature_positions,
                             state.feature.ordinal,
                             state.dependencies,
-                        ) || source
-                            .subelements
-                            .iter()
+                        ) || ctx.admit_iter(&source.subelements[..], "scan SLDPRT append_design_losses values")?
                             .any(|subelement| subelement.as_str().trim().is_empty())
-                    })
+                    } )) })?
                     || matches!(
                         construction,
                         cadmpeg_ir::features::BinderConstruction::Shape { .. }
@@ -1514,14 +1424,14 @@ fn append_design_losses(
                 ..
             } => {
                 sections.len() < 2
-                    || sections.iter().any(|section| match section {
+                    || ctx.admit_iter(&sections[..], "scan SLDPRT append_design_losses values")?.any(|section| match section {
                         cadmpeg_ir::features::LoftSection::Profile(profile) => incomplete_profile(profile),
                         cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Native(_)) => true,
                         cadmpeg_ir::features::LoftSection::Point(_) => false,
                     })
                     || match guidance {
                         cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
-                            guides.iter().any(incomplete_path)
+                            ctx.admit_iter(&guides[..], "scan SLDPRT append_design_losses values")?.any(incomplete_path)
                         }
                         cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
                             incomplete_path(centerline)
@@ -1549,14 +1459,14 @@ fn append_design_losses(
             FeatureOperation::SheetMetalHem { .. } => true,
             FeatureOperation::Fillet { groups } => {
                 groups.is_empty()
-                    || groups.iter().any(|group| {
+                    || ctx.admit_iter(&groups[..], "scan SLDPRT append_design_losses values")?.any(|group| {
                         incomplete_edge_selection(&group.edges)
                             || group.radius.is_unresolved()
                     })
             }
             FeatureOperation::FullRoundFillet { groups } => {
                 groups.is_empty()
-                    || groups.iter().any(|group| {
+                    || ctx.admit_iter(&groups[..], "scan SLDPRT append_design_losses values")?.any(|group| {
                         incomplete_face_selection(group.center_faces())
                             || matches!(
                                 group.side_one_faces(),
@@ -1580,7 +1490,7 @@ fn append_design_losses(
                             )
                     })
             }
-            FeatureOperation::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
+            FeatureOperation::Chamfer { groups, .. } => groups.is_empty() || ctx.admit_iter(&groups[..], "scan SLDPRT append_design_losses values")?.any(|group| {
                 incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
             }),
             FeatureOperation::FaceBlend {
@@ -1840,7 +1750,7 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
             }
             FeatureOperation::Pattern { seeds, pattern } => {
                 seeds.is_empty()
-                    || seeds.iter().any(|seed| match seed {
+                    || ctx.admit_iter(&seeds[..], "scan SLDPRT append_design_losses values")?.any(|seed| match seed {
                         cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
                         cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                             incomplete_face_selection(faces)
@@ -1852,22 +1762,20 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
                             occurrences.is_empty()
                         }
                     })
-                    || incomplete_pattern(pattern, &incomplete_path)
+                    || incomplete_pattern(ctx, pattern, &incomplete_path)?
             }
             FeatureOperation::Native { .. } => false,
             // Unresolved construction retained as native.
             FeatureOperation::Unresolved { .. } => true,
             }
-        })
-        .count();
+        } )) })?;
     if incomplete_typed_features > 0 {
         push_report_loss(ctx, report, SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
             "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
         )))?;
     }
 
-    let unresolved_body_modes = evaluated_feature_states
-        .iter()
+    let unresolved_body_modes = ctx.admit_iter(&evaluated_feature_states[..], "scan SLDPRT append_design_losses values")?
         .filter(|state| {
             matches!(
                 state.definition,
@@ -1946,46 +1854,32 @@ fn unbound_feature_input_operation_objects(
         }),
         "count SLDPRT named feature-input bindings",
     )?;
-    Ok(native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| {
-            lane.classes
-                .iter()
-                .filter(|class| class.role() == FeatureInputClassRole::Feature)
-                .filter_map(move |class| {
-                    let name_offset = class.offset + 6 + u64_from_index(class.name.len());
-                    lane.names
-                        .iter()
-                        .find(|name| name.offset == name_offset)
-                        .map(|name| (lane, class, name))
-                })
-        })
-        .filter(|(lane, class, name)| {
-            let source_bound = name.object_id.and_then(ObjectId::value).is_some_and(|id| {
+    let mut count = 0_usize;
+    for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT unbound operation lanes")? {
+        for class in ctx.admit_iter(&lane.classes, "scan SLDPRT unbound operation classes")?.filter(|class| class.role() == FeatureInputClassRole::Feature) {
+            let name_offset = class.offset + 6 + u64_from_index(class.name.len());
+            let Some(name) = ctx.admit_iter(&lane.names, "find SLDPRT unbound operation object name")?.find(|name| name.offset == name_offset) else { continue; };
+            let source_bound = match name.object_id.and_then(ObjectId::value) { Some(id) => {
                 source_counts.get(&id).copied() == Some(1)
                     && (binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
-                        || native_object_class(&class.name)
-                            .feature()
-                            .is_some_and(|expected| {
-                                native
-                                    .feature_histories
-                                    .iter()
-                                    .flat_map(|history| &history.features)
-                                    .any(|feature| {
-                                        feature.source_value() == Some(id)
-                                            && feature.input_class.is_none()
-                                            && classify(feature) == Some(expected)
-                                    })
-                            }))
-            });
+                        || match native_object_class(&class.name)
+                            .feature() { Some(expected) => {
+                                ctx.admit_iter(&native.feature_histories, "scan SLDPRT unbound_feature_input_operation_objects values")?
+                                    .try_fold(false, |found, history| {
+                                        if found { return Ok::<_, cadmpeg_core::CodecError>(true); }
+                                        ctx.admit_iter(&history.features, "scan SLDPRT unbound history feature classes")?
+                                            .try_fold(false, |found, feature| Ok::<_, cadmpeg_core::CodecError>(found || feature.source_value() == Some(id) && feature.input_class.is_none() && classify(ctx, feature)? == Some(expected)))
+                                    })?
+                            }, None => false })
+            }, None => false };
             let name_bound = named_binding_counts
                 .get(&(lane.id.as_str(), name.id.as_str(), class.name.as_str()))
                 .copied()
                 == Some(1);
-            !(source_bound || name_bound)
-        })
-        .count())
+            count += usize::from(!(source_bound || name_bound));
+        }
+    }
+    Ok(count)
 }
 
 fn unprojected_sketch_relation_records(
@@ -2044,7 +1938,7 @@ fn unprojected_sketch_relation_records(
     )?;
 
     let mut total = 0;
-    for lane in &native.feature_input_lanes {
+    for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT unprojected_sketch_relation_records values")? {
         let markers_by_id = charged_hash_map(
             ctx,
             lane.sketch_entities
@@ -2052,31 +1946,25 @@ fn unprojected_sketch_relation_records(
                 .map(|marker| (marker.id(), marker)),
             "index SLDPRT sketch relation markers",
         )?;
-        let instances = lane
-            .relation_instances
-            .iter()
+        let instances = ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT unprojected_sketch_relation_records values")?
             .filter(|relation| {
                 sketch_feature_refs.contains(relation.feature_ref.as_str())
                     && owned_instances.contains_key(&relation.id)
                     && !projected.contains(relation.id.as_str())
             })
             .count();
-        let bindings = lane
-            .relation_bindings
-            .iter()
-            .filter(|binding| {
+        let bindings = ctx.admit_iter(&lane.relation_bindings[..], "scan SLDPRT unprojected_sketch_relation_records values")?.try_fold(0_usize, |count, candidate| { let binding = &candidate; Ok::<_, cadmpeg_core::CodecError>(count + usize::from( {
                 binding
                     .feature_ref
                     .as_deref()
                     .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
-                    && !lane.relation_instances.iter().any(|relation| {
+                    && !ctx.admit_iter(&lane.relation_instances[..], "scan SLDPRT unprojected_sketch_relation_records values")?.any(|relation| {
                         relation.class_ref == binding.class_ref
                             && relation.scalar_refs().contains(&binding.scalar_ref)
                     })
-            })
-            .count();
+            } )) })?;
         let mut markers = 0;
-        for marker in &lane.sketch_entities {
+        for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT unprojected_sketch_relation_records values")? {
             if marker
                 .feature_ref
                 .as_deref()
@@ -2102,7 +1990,7 @@ fn multiply_projected_sketch_relation_records(
     native: &crate::native::SldprtNative,
 ) -> Result<usize, CodecError> {
     let mut native_relation_ids = HashSet::new();
-    for lane in &native.feature_input_lanes {
+    for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT multiply_projected_sketch_relation_records values")? {
         let markers_by_id = charged_hash_map(
             ctx,
             lane.sketch_entities
@@ -2110,7 +1998,7 @@ fn multiply_projected_sketch_relation_records(
                 .map(|marker| (marker.id(), marker)),
             "index SLDPRT sketch relation markers",
         )?;
-        for relation in &lane.relation_instances {
+        for relation in ctx.admit_iter(&lane.relation_instances, "scan SLDPRT multiply_projected_sketch_relation_records values")? {
             insert_charged_set(
                 ctx,
                 &mut native_relation_ids,
@@ -2118,7 +2006,7 @@ fn multiply_projected_sketch_relation_records(
                 "index SLDPRT native relation IDs",
             )?;
         }
-        for marker in &lane.sketch_entities {
+        for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT multiply_projected_sketch_relation_records values")? {
             if crate::resolved_features::typed_relations::marker_owns_constraint(
                 ctx,
                 marker,
@@ -2160,8 +2048,7 @@ fn multiply_projected_sketch_relation_records(
             .filter(|native_ref| native_relation_ids.contains(native_ref)),
         "count SLDPRT relation projections",
     )?;
-    Ok(projection_counts
-        .values()
+    Ok(ctx.admit_iter(&projection_counts, "scan SLDPRT multiply_projected_sketch_relation_records map values")?.map(|(_, value)| value)
         .filter(|count| **count > 1)
         .count())
 }
@@ -2216,7 +2103,7 @@ fn conflicting_display_reference(
     write!(&mut message, "{table_index}")
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     message.push_str("] (");
-    for (position, source) in candidates.iter().enumerate() {
+    for (position, source) in ctx.admit_iter(candidates, "scan SLDPRT conflicting_display_reference values")?.enumerate() {
         if position > 0 {
             message.push_str(", ");
         }
@@ -2277,7 +2164,7 @@ fn appearance_assignment_loss_message(
             add(&mut bytes, "; ".len())?;
         }
         add(&mut bytes, CONFLICT_PREFIX.len())?;
-        for (position, conflict) in conflicts.iter().enumerate() {
+        for (position, conflict) in ctx.admit_iter(conflicts, "scan SLDPRT appearance_assignment_loss_message values")?.enumerate() {
             add(&mut bytes, conflict.len())?;
             if position > 0 {
                 add(&mut bytes, "; ".len())?;
@@ -2303,7 +2190,7 @@ fn appearance_assignment_loss_message(
             message.push_str("; ");
         }
         message.push_str(CONFLICT_PREFIX);
-        for (position, conflict) in conflicts.iter().enumerate() {
+        for (position, conflict) in ctx.admit_iter(conflicts, "scan SLDPRT appearance_assignment_loss_message values")?.enumerate() {
             if position > 0 {
                 message.push_str("; ");
             }
@@ -2320,15 +2207,15 @@ fn active_body_streams<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Result<Vec<ActiveParasolidSite<'a>>, CodecError> {
     let mut streams = Vec::new();
-    for section in scan.sections() {
+    for section in scan.sections(ctx)? {
         let name = section.name().unwrap_or("");
         if contains_ascii_case_insensitive(name, "ghost")
             || contains_ascii_case_insensitive(name, "resolvedfeatures")
         {
             continue;
         }
-        for stream in section.ps_streams() {
-            if !crate::parasolid::is_body_stream(&stream.header) {
+        for stream in ctx.admit_iter(section.ps_streams(), "scan SLDPRT topology members")? {
+            if !crate::parasolid::is_body_stream(ctx, &stream.header)? {
                 continue;
             }
             ctx.reserve_vec(&mut streams, 1, "collect SLDPRT body streams")?;
@@ -2372,7 +2259,7 @@ fn try_decode_brep(
     classification: &crate::dialect::LayerClassification,
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-    for (index, stream) in streams.iter().enumerate() {
+    for (index, stream) in ctx.admit_iter(streams, "scan SLDPRT try_decode_brep values")?.enumerate() {
         ctx.push_btree_group(
             &mut sites,
             stream.site_key(),
@@ -2382,11 +2269,11 @@ fn try_decode_brep(
         )?;
     }
     let mut decoded_sites = Vec::new();
-    for (site, indices) in &sites {
+    for (site, indices) in ctx.admit_iter(&sites, "scan SLDPRT try_decode_brep values")? {
         let first = indices[0];
         let mut bodies = Vec::new();
         ctx.reserve_vec(&mut bodies, indices.len(), "collect SLDPRT site bodies")?;
-        for index in indices {
+        for index in ctx.admit_iter(indices, "scan SLDPRT indices values")? {
             bodies.push((streams[*index].payload, streams[*index].header));
         }
         let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
@@ -2396,7 +2283,7 @@ fn try_decode_brep(
     if decoded_sites.is_empty() {
         return Ok(None);
     }
-    let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
+    let active_site = container::select_active_parasolid_site(ctx, scan)?.map(|site| site.site_key());
     let resolved_active_site = active_site
         .as_ref()
         .and_then(|active| decoded_sites.iter().position(|(site, _, _)| site == active));
@@ -2404,10 +2291,10 @@ fn try_decode_brep(
     // accumulator. All site identities are qualified below.
     let selected_site = resolved_active_site.unwrap_or(0);
     let selected_is_empty_model = decoded_sites[selected_site].2.stats.source_entity_records == 0
-        && sites[&decoded_sites[selected_site].0].iter().any(|index| {
+        && ctx.admit_iter(&sites[&decoded_sites[selected_site].0], "scan SLDPRT selected site body streams")?.any(|index| {
             contains_ascii_case_insensitive(&streams[*index].header.description, "partition")
         })
-        && sites[&decoded_sites[selected_site].0].iter().any(|index| {
+        && ctx.admit_iter(&sites[&decoded_sites[selected_site].0], "scan SLDPRT selected site body streams")?.any(|index| {
             contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
         });
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
@@ -2418,21 +2305,21 @@ fn try_decode_brep(
             return Ok(None);
         }
     } else {
-        let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
+        let any_site_has_geometry = ctx.admit_iter(&decoded_sites[..], "scan SLDPRT try_decode_brep values")?.any(|(_, _, decoded)| {
             !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
         });
-        let any_empty_model = decoded_sites.iter().any(|(site, _, decoded)| {
+        let any_empty_model = ctx.admit_iter(&decoded_sites, "scan SLDPRT empty model sites")?.try_fold(false, |found, (site, _, decoded)| { Ok::<_, cadmpeg_core::CodecError>(found || ( {
             decoded.stats.source_entity_records == 0
-                && sites[site].iter().any(|index| {
+                && ctx.admit_iter(&sites[site][..], "scan SLDPRT try_decode_brep values")?.any(|index| {
                     contains_ascii_case_insensitive(
                         &streams[*index].header.description,
                         "partition",
                     )
                 })
-                && sites[site].iter().any(|index| {
+                && ctx.admit_iter(&sites[site][..], "scan SLDPRT try_decode_brep values")?.any(|index| {
                     contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
                 })
-        });
+        } )) })?;
         if !any_site_has_geometry && !any_empty_model {
             return Ok(None);
         }
@@ -2478,7 +2365,7 @@ fn try_decode_brep(
     }
     bind_opaque_geometry(ctx, &mut decoded, &streams[selected].section.native_id())?;
     let mut configuration_bodies = Vec::new();
-    if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
+    if let Some(index) = configuration_index(ctx, streams[selected].source_stream().as_str())? {
         ctx.reserve_vec(
             &mut configuration_bodies,
             1,
@@ -2489,7 +2376,7 @@ fn try_decode_brep(
     for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(ctx, &site)?;
         bind_opaque_geometry(ctx, &mut alternate, &streams[first].section.native_id())?;
-        if let Some(index) = configuration_index(streams[first].source_stream().as_str()) {
+        if let Some(index) = configuration_index(ctx, streams[first].source_stream().as_str())? {
             ctx.reserve_vec(
                 &mut configuration_bodies,
                 1,
@@ -2525,7 +2412,7 @@ fn copy_body_ids(
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
     let mut ids = Vec::new();
     ctx.reserve_vec(&mut ids, bodies.len(), "collect SLDPRT body IDs")?;
-    for body in bodies {
+    for body in ctx.admit_iter(bodies, "scan SLDPRT copy_body_ids values")? {
         let value = copy_retained_string(ctx, body.id.as_str(), "retain SLDPRT body ID")?;
         let id = cadmpeg_ir::ids::BodyId::mint(value)
             .map_err(|_| CodecError::Malformed("invalid admitted SLDPRT body ID".into()))?;
@@ -2652,7 +2539,7 @@ fn ensure_display_appearance(
     section_ordinal: usize,
     annotations: &mut Annotations,
 ) -> Result<AppearanceId, CodecError> {
-    if let Some(existing) = ir.model.appearances.iter().find(|appearance| {
+    if let Some(existing) = ctx.admit_iter(&ir.model.appearances[..], "scan SLDPRT ensure_display_appearance values")?.find(|appearance| {
         appearance.name.as_deref() == Some(definition.name.as_str())
             && appearance.base_color == Some(definition.color)
     }) {
@@ -2744,9 +2631,9 @@ fn build_geometry_ir(
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let mut display_sections = Vec::new();
     let mut display_summary = crate::tessellation::Summary::default();
-    for section in scan.sections() {
+    for section in scan.sections(ctx)? {
         let faces = crate::tessellation::section_display_faces(ctx, section)?;
-        let summary = crate::tessellation::summary_for_faces(&faces);
+        let summary = crate::tessellation::summary_for_faces(ctx, &faces)?;
         display_summary.vertices += summary.vertices;
         display_summary.triangles += summary.triangles;
         ctx.reserve_vec(&mut display_sections, 1, "collect SLDPRT display sections")?;
@@ -3059,7 +2946,7 @@ fn build_geometry_ir(
         face_identities.len(),
         "collect SLDPRT face producers",
     )?;
-    for (target, identity) in &face_identities {
+    for (target, identity) in ctx.admit_iter(&face_identities, "scan SLDPRT build_geometry_ir values")? {
         face_producers.push((
             copy_retained_string(ctx, target.as_str(), "retain SLDPRT face producer ID")?,
             identity.feature_source_id.value(),
@@ -3071,9 +2958,7 @@ fn build_geometry_ir(
         })?,
         "count SLDPRT body modifiers",
     )?;
-    let modifier_count = brep
-        .body_modifiers
-        .iter()
+    let modifier_count = ctx.admit_iter(&brep.body_modifiers[..], "scan SLDPRT build_geometry_ir values")?
         .filter(|modifier| modifier.target.is_some())
         .count();
     let mut body_modifiers = Vec::new();
@@ -3239,7 +3124,7 @@ fn build_geometry_ir(
         &all_lanes,
         &face_identities,
     )?;
-    mark_active_configuration(&mut ir);
+    mark_active_configuration(ctx, &mut ir)?;
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         ctx,
         &mut ir.model.features,
@@ -3334,10 +3219,7 @@ fn build_geometry_ir(
             "00_53_color",
             Exactness::ByteExact,
         )?;
-        if !ir
-            .model
-            .appearances
-            .iter()
+        if !ctx.admit_iter(&ir.model.appearances[..], "scan SLDPRT build_geometry_ir values")?
             .any(|appearance| appearance.id == id)
         {
             ctx.reserve_vec(&mut ir.model.appearances, 1, "admit SLDPRT face appearance")?;
@@ -3368,10 +3250,7 @@ fn build_geometry_ir(
                     "SLDPRT colour target is not an identity: {error}"
                 ))
             })?;
-            if !ir
-                .model
-                .appearance_bindings
-                .iter()
+            if !ctx.admit_iter(&ir.model.appearance_bindings[..], "scan SLDPRT build_geometry_ir values")?
                 .any(|binding| binding.id == binding_id)
             {
                 ctx.reserve_vec(
@@ -3439,7 +3318,7 @@ fn build_geometry_ir(
             continue;
         }
         let display_stream = display.source_stream();
-        for (table_index, face) in display_faces.iter().enumerate() {
+        for (table_index, face) in ctx.admit_iter(&display_faces, "scan SLDPRT build_geometry_ir values")?.enumerate() {
             let candidates = charged_btree_set(
                 ctx,
                 face.surface_references
@@ -3484,7 +3363,7 @@ fn build_geometry_ir(
                 display.ordinal(),
                 table_index
             );
-            if let Some(identity) = display_face.persistent_surface_identity() {
+            if let Some(identity) = display_face.persistent_surface_identity(ctx)? {
                 let mut trailing_fields = Vec::new();
                 ctx.reserve_vec(
                     &mut trailing_fields,
@@ -3640,7 +3519,7 @@ fn build_geometry_ir(
             &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
             source_block.offset,
         );
-        if unknowns.iter().any(|record| record.id() == &id) {
+        if ctx.admit_iter(&unknowns[..], "scan SLDPRT build_geometry_ir values")?.any(|record| record.id() == &id) {
             continue;
         }
         crate::annotations::note(
@@ -3686,7 +3565,7 @@ fn build_geometry_ir(
         ));
     }
     let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
-    for surface in &ir.model.surfaces {
+    for surface in ctx.admit_iter(&ir.model.surfaces, "scan SLDPRT build_geometry_ir values")? {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: Some(record),
         }) = &surface.geometry
@@ -3694,7 +3573,7 @@ fn build_geometry_ir(
             add_opaque_link(ctx, &mut opaque_links, record.as_str(), surface.id.as_str())?;
         }
     }
-    for curve in &ir.model.curves {
+    for curve in ctx.admit_iter(&ir.model.curves, "scan SLDPRT build_geometry_ir values")? {
         if let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
             record: Some(record),
         }) = &curve.geometry
@@ -3796,7 +3675,7 @@ fn source_meta(
         cadmpeg_core::nonblank_literal!("compound_stream_count"),
         scan.compound_streams.len().to_string(),
     );
-    if let Some(site) = container::select_active_parasolid_site(scan) {
+    if let Some(site) = container::select_active_parasolid_site(ctx, scan)? {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
             copy_retained_string(
@@ -3838,8 +3717,7 @@ fn add_preview_metadata(
 ) -> Result<(), CodecError> {
     let mut png_index = 0;
     let mut bmp_index = 0;
-    for section in scan.sections() {
-        ctx.charge_work(1, "scan SLDPRT preview metadata")?;
+    for section in scan.sections(ctx)? {
         let payload = section.payload();
         match container::payload_family(ctx, payload, "classify SLDPRT preview payload")? {
             container::PayloadFamily::PngPreview => {
@@ -3948,7 +3826,7 @@ fn add_solidworks_xml_metadata(
                 copy_retained_string(ctx, value, "retain SLDPRT configuration name")?,
             );
         }
-        for (key, value) in &envelope.configuration_attributes {
+        for (key, value) in ctx.admit_iter(&envelope.configuration_attributes, "scan SLDPRT add_solidworks_xml_metadata values")? {
             let name = copy_retained_string(ctx, key, "retain SLDPRT configuration key")?;
             let name = cadmpeg_core::text::NonBlankString::for_decode(
                 ctx,
@@ -4130,7 +4008,7 @@ fn build_metadata_ir(
     );
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
 
-    if let Some(site) = container::select_active_parasolid_site(scan) {
+    if let Some(site) = container::select_active_parasolid_site(ctx, scan)? {
         let id = site.section.native_id();
         let offset = match site.section {
             container::Section::Block(block) => u64_from_index(block.offset),
@@ -4516,8 +4394,8 @@ fn build_metadata_ir(
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
-    bind_active_configuration_partition(&mut ir);
-    mark_active_configuration(&mut ir);
+    bind_active_configuration_partition(ctx, &mut ir)?;
+    mark_active_configuration(ctx, &mut ir)?;
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(ctx, &mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
@@ -4646,14 +4524,13 @@ fn parameter_identity_lanes<'a>(
     lanes: &'a [crate::records::FeatureInputLane],
 ) -> Result<Vec<&'a crate::records::FeatureInputLane>, CodecError> {
     let eligible = || {
-        lanes
-            .iter()
-            .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
+        Ok::<_, CodecError>(ctx.admit_iter(lanes, "scan SLDPRT eligible parameter identity lanes")?
+            .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane)))
     };
-    let has_global = eligible().any(|lane| lane.configuration.is_none());
-    let single_scoped = !has_global && eligible().count() == 1;
+    let has_global = eligible()?.any(|lane| lane.configuration.is_none());
+    let single_scoped = !has_global && eligible()?.count() == 1;
     let mut selected = Vec::new();
-    for lane in eligible() {
+    for lane in eligible()? {
         if (has_global && lane.configuration.is_none())
             || (single_scoped && lane.configuration.is_some())
         {
@@ -4712,7 +4589,7 @@ fn complete_resolved_configuration_parameter_snapshots(
     Ok(())
 }
 
-fn mark_active_configuration(ir: &mut CadIr) {
+fn mark_active_configuration(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
     let active_name = ir
         .source
         .as_ref()
@@ -4722,7 +4599,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section));
+        .map(|section| crate::container::configuration_index(ctx, section)).transpose()?.flatten();
     let by_name = active_name.and_then(|name| {
         let mut matches = ir
             .model
@@ -4756,6 +4633,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
         configuration.active = selected == Some(position);
     }
+    Ok(())
 }
 
 fn snapshot_active_configuration(
@@ -4808,14 +4686,7 @@ fn snapshot_active_configuration(
             "snapshot SLDPRT configuration parameter",
         )?;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
-        FEATURE_SNAPSHOT,
-    )?;
-    let key_bytes = ir
-        .model
-        .features
-        .iter()
+    let key_bytes = ctx.admit_iter(&ir.model.features[..], "scan SLDPRT snapshot_active_configuration values")?
         .try_fold(0u64, |bytes, feature| {
             bytes.checked_add(cadmpeg_core::decode::u64_from_index(
                 feature.id.as_str().len(),
@@ -4823,7 +4694,7 @@ fn snapshot_active_configuration(
         })
         .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?;
     let mut feature_states = BTreeMap::new();
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "scan SLDPRT snapshot_active_configuration values")? {
         ctx.charge_work(
             key_bytes
                 .checked_add(cadmpeg_core::decode::u64_from_index(
@@ -4888,11 +4759,9 @@ fn sync_active_configuration_resolutions(
     }
     let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
     let configuration = &mut configurations[configuration_index];
-    for feature in features
-        .iter()
+    for feature in ctx.admit_iter(features, "scan SLDPRT active configuration holes")?
         .filter(|feature| feature.suppressed != Some(true))
     {
-        ctx.charge_work(1, "scan SLDPRT active configuration holes")?;
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Hole {
                 placements: resolved_placements,
@@ -5026,7 +4895,7 @@ fn sync_active_configuration_resolutions(
     }
     let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
     let configuration = &mut configurations[configuration_index];
-    for feature in features {
+    for feature in ctx.admit_iter(features, "scan SLDPRT features values")? {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::CosmeticThread {
                 face: resolved_face,
@@ -5072,7 +4941,7 @@ fn sync_active_configuration_resolutions(
                 .try_clone_for_decode(ctx, "copy SLDPRT resolved cosmetic thread face")?;
         }
     }
-    for feature in features {
+    for feature in ctx.admit_iter(features, "scan SLDPRT features values")? {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
                 reference:
@@ -5107,8 +4976,7 @@ fn sync_active_configuration_resolutions(
             });
         }
     }
-    for feature in features {
-        ctx.charge_work(1, "scan SLDPRT active configuration patterns")?;
+    for feature in ctx.admit_iter(features, "scan SLDPRT active configuration patterns")? {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Pattern {
                 seeds: resolved_seeds,
@@ -5191,13 +5059,9 @@ fn assign_configuration_bodies(
     }
 
     let mut source_counts = BTreeMap::<u32, usize>::new();
-    for source_index in ir
-        .model
-        .configurations
-        .iter()
+    for source_index in ctx.admit_iter(&ir.model.configurations, "count SLDPRT configuration sources")?
         .filter_map(|configuration| configuration.source_index)
     {
-        ctx.charge_work(1, "count SLDPRT configuration sources")?;
         if let Some(count) = source_counts.get_mut(&source_index) {
             *count += 1;
         } else {
@@ -5220,7 +5084,7 @@ fn assign_configuration_bodies(
             )?);
         }
     }
-    if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
+    if let Some((active_index, position)) = bind_active_configuration_partition(ctx, ir)? {
         if let Some(bodies) = partition_map.remove(&active_index) {
             ir.model.configurations[position].bodies = Some(
                 cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx)?,
@@ -5286,7 +5150,7 @@ fn assign_configuration_bodies(
 
 /// Bind the active configuration's partition identity from the two native
 /// selectors, without inferring body membership.
-fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
+fn bind_active_configuration_partition(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &mut CadIr) -> Result<Option<(u32, usize)>, cadmpeg_core::CodecError> {
     let active_name = ir
         .source
         .as_ref()
@@ -5295,10 +5159,10 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
+        .map(|section| crate::container::configuration_index(ctx, section)).transpose()?.flatten()
         .and_then(|index| u32::try_from(index).ok());
     let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
-        return None;
+        return Ok(None);
     };
     let mut matches = ir
         .model
@@ -5310,14 +5174,11 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
                 && configuration.name.as_deref() == Some(active_name.as_str())
         })
         .map(|(position, _)| position);
-    let position = matches.next()?;
-    let source_identity_available = !ir
-        .model
-        .configurations
-        .iter()
+    let position = match matches.next() { Some(value) => value, None => return Ok(None) };
+    let source_identity_available = !ctx.admit_iter(&ir.model.configurations, "scan SLDPRT partition configuration identities")?
         .any(|configuration| configuration.source_index == Some(active_index));
     if matches.next().is_some() || !source_identity_available {
-        return None;
+        return Ok(None);
     }
 
     // The container's active block and the native configuration name
@@ -5325,7 +5186,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
     // decoded body list. Body membership remains unresolved until a decoded
     // partition supplies its body identities.
     ir.model.configurations[position].source_index = Some(active_index);
-    Some((active_index, position))
+    Ok(Some((active_index, position)))
 }
 
 fn stamp_configuration_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
@@ -5396,15 +5257,9 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             brep_hash,
         );
     }
-    let has_swobjects_semantics = ir
-        .model
-        .attributes
-        .iter()
+    let has_swobjects_semantics = ctx.admit_iter(&ir.model.attributes[..], "scan SLDPRT stamp_local_digests values")?
         .any(|attribute| attribute.id.as_str().starts_with("sldprt:metadata:"))
-        || ir
-            .model
-            .appearances
-            .iter()
+        || ctx.admit_iter(&ir.model.appearances[..], "scan SLDPRT stamp_local_digests values")?
             .any(|appearance| appearance.schema.as_deref() == Some("moVisualProperties_c"));
     if has_swobjects_semantics {
         match (
@@ -5525,37 +5380,21 @@ fn brep_local_sha256_in_place(
 ) -> Result<String, CodecError> {
     use std::mem::take;
 
-    let comparisons = ir
-        .model
-        .appearance_bindings
-        .len()
-        .checked_mul(ir.model.appearances.len())
-        .and_then(|pairs| pairs.checked_add(ir.model.appearance_bindings.len()))
-        .and_then(|count| count.checked_add(ir.model.appearances.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(
-        u64::try_from(comparisons).map_err(|_| {
-            ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX)
-        })?,
-        "filter SLDPRT digest appearances",
-    )?;
     let appearance_partition = digest_partition::DigestPartition::prepare(
         ctx,
         &mut ir.model.appearances,
         |appearance| {
-            ir.model.appearance_bindings.iter().any(|binding| {
+            Ok(ctx.admit_iter(&ir.model.appearance_bindings, "scan SLDPRT digest appearance bindings")?.any(|binding| {
                 matches!(binding.target, AppearanceTarget::Face(_))
                     && binding.appearance == appearance.id
-            })
+            }))
         },
         "partition SLDPRT digest appearances",
     )?;
     let binding_partition = digest_partition::DigestPartition::prepare(
         ctx,
         &mut ir.model.appearance_bindings,
-        |binding| matches!(binding.target, AppearanceTarget::Face(_)),
+        |binding| Ok(matches!(binding.target, AppearanceTarget::Face(_))),
         "partition SLDPRT digest bindings",
     )?;
     let mut saved_body_display = Vec::new();
@@ -5810,11 +5649,15 @@ fn brep_partition_sha256(
         .appearance_bindings
         .retain(|binding| matches!(binding.target, AppearanceTarget::Face(_)));
     let bindings = &normalized.model.appearance_bindings;
+    let mut refusal = None;
     normalized.model.appearances.retain(|appearance| {
-        bindings
-            .iter()
-            .any(|binding| binding.appearance == appearance.id)
+        if refusal.is_some() { return true; }
+        match ctx.admit_iter(bindings, "scan SLDPRT digest partition appearance bindings") {
+            Ok(mut bindings) => bindings.any(|binding| binding.appearance == appearance.id),
+            Err(error) => { refusal = Some(CodecError::from(error)); true },
+        }
     });
+    if let Some(error) = refusal { return (Err(error), normalized.model); }
     (
         cadmpeg_ir::hash::canonical_json_sha256(ctx, &normalized, "hash SLDPRT BREP partition")
             .map_err(Into::into),
@@ -5877,14 +5720,10 @@ fn build_container_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-    let parasolid_sources = scan
-        .blocks
-        .iter()
+    let parasolid_sources = ctx.admit_iter(&scan.blocks[..], "scan SLDPRT build_container_report values")?
         .filter(|b| b.family == container::PayloadFamily::Parasolid)
         .count()
-        + scan
-            .compound_streams
-            .iter()
+        + ctx.admit_iter(&scan.compound_streams[..], "scan SLDPRT build_container_report values")?
             .filter(|stream| !stream.ps_streams.is_empty())
             .count();
     let payload_sources = scan.blocks.len() + scan.compound_streams.len();
@@ -5907,7 +5746,7 @@ fn build_container_report(
         ),
     ];
 
-    if !container::has_parasolid_body_stream(scan) {
+    if !container::has_parasolid_body_stream(ctx, scan)? {
         ctx.reserve_vec(&mut losses, 1, "append SLDPRT container loss")?;
         losses.push(
             SldprtLossCode::ContainerNoParasolidStream.note(
@@ -5937,16 +5776,12 @@ fn append_swift_pmi_losses(
     if unsupported.is_empty() {
         return Ok(());
     }
-    let scan_work = cadmpeg_core::decode::u64_from_index(unsupported.len())
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(scan_work, OPERATION)?;
-    let count = unsupported.values().try_fold(0usize, |sum, value| {
+    let count = ctx.admit_iter(&unsupported, "scan SLDPRT append_swift_pmi_losses map values")?.map(|(_, value)| value).try_fold(0usize, |sum, value| {
         sum.checked_add(*value)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
     })?;
     let mut classes_len = 0usize;
-    for (index, (class, class_count)) in unsupported.iter().enumerate() {
+    for (index, (class, class_count)) in ctx.admit_iter(&unsupported, "scan SLDPRT append_swift_pmi_losses values")?.enumerate() {
         let digits = if *class_count == 0 {
             1
         } else {
@@ -5965,7 +5800,7 @@ fn append_swift_pmi_losses(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     let (mut classes, _reservation) = ctx.scoped_string(classes_len, OPERATION)?;
-    for (index, (class, class_count)) in unsupported.iter().enumerate() {
+    for (index, (class, class_count)) in ctx.admit_iter(&unsupported, "scan SLDPRT append_swift_pmi_losses values")?.enumerate() {
         if index > 0 {
             classes.push_str(", ");
         }

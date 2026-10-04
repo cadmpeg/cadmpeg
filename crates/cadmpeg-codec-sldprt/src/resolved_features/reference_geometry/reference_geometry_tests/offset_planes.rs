@@ -144,15 +144,15 @@ fn typed_offset_plane_reference_requires_one_known_plane_target() {
 #[test]
 fn frame_only_offset_plane_reference_requires_one_unique_source() {
     assert_eq!(
-        select_reference_plane_frame_source(["derived", "principal", "older"].into_iter(),),
+        select_reference_plane_frame_source(["derived", "principal", "older"].into_iter().map(Ok),).unwrap(),
         None
     );
     assert_eq!(
-        select_reference_plane_frame_source(["same", "same"].into_iter()),
+        select_reference_plane_frame_source(["same", "same"].into_iter().map(Ok)).unwrap(),
         Some("same")
     );
     assert_eq!(
-        select_reference_plane_frame_source(["first", "second"].into_iter()),
+        select_reference_plane_frame_source(["first", "second"].into_iter().map(Ok)).unwrap(),
         None
     );
 }
@@ -160,15 +160,15 @@ fn frame_only_offset_plane_reference_requires_one_unique_source() {
 #[test]
 fn frame_only_offset_plane_reference_does_not_use_feature_order() {
     assert_eq!(
-        select_reference_plane_frame_source(["older", "latest", "latest"].into_iter(),),
+        select_reference_plane_frame_source(["older", "latest", "latest"].into_iter().map(Ok),).unwrap(),
         None
     );
     assert_eq!(
-        select_reference_plane_frame_source(["source", "source"].into_iter()),
+        select_reference_plane_frame_source(["source", "source"].into_iter().map(Ok)).unwrap(),
         Some("source")
     );
     assert_eq!(
-        select_reference_plane_frame_source(["first", "second"].into_iter()),
+        select_reference_plane_frame_source(["first", "second"].into_iter().map(Ok)).unwrap(),
         None
     );
 }

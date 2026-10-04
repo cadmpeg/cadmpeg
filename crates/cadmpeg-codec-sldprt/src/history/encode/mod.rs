@@ -31,7 +31,8 @@ pub(super) struct NeutralFeatureEncoding {
     pub(super) properties: BTreeMap<NonBlankString, String>,
 }
 
-pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
+pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source, 'arena> {
+    pub(super) ctx: &'context cadmpeg_core::decode::DecodeContext<'arena>,
     pub(super) feature: &'context cadmpeg_ir::features::Feature,
     pub(super) existing: Option<&'context Feature>,
     pub(super) principal_planes_by_record:
@@ -45,7 +46,7 @@ pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
         &'context HashMap<String, HashSet<cadmpeg_core::text::NonBlankString>>,
 }
 
-impl NeutralFeatureEncoder<'_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_, '_> {
     pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         match self.feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::TreeNode { role, children }) => {

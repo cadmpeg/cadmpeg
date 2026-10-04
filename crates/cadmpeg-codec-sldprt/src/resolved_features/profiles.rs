@@ -2671,10 +2671,10 @@ pub(crate) fn project_sketch_block_profiles(
             let mut objects = Vec::new();
             for (ordinal, feature) in history.features.iter().enumerate() {
                 if let Some(name) = feature_object_name(feature, lane) {
-                    if !crate::history::classify::is_history_metadata_record(
+                    if !crate::history::classify::is_history_metadata_record(ctx, 
                         feature,
                         &history.features,
-                    ) {
+                    )? {
                         ctx.reserve_vec(
                             &mut objects,
                             1,

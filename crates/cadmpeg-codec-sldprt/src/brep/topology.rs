@@ -755,16 +755,16 @@ fn loop_is_owned(record: &Loop, bridges: &HashMap<u16, Bridge>) -> bool {
 /// and loop-head membership provide additional confirmation. No field is a
 /// byte-position discriminator.
 fn coedge_evidence<'a>(
+    ctx: &DecodeContext<'_>,
     candidate: &Coedge,
     loops: &'a [Loop],
     bridges: &HashMap<u16, Bridge>,
     vertex_uses: &'a HashMap<u16, VertexUse>,
     edge_candidates: &'a CandidateMap<EdgeUse>,
     coedge_candidates: &CandidateMap<Coedge>,
-) -> CoedgeEvidence<'a> {
+) -> Result<CoedgeEvidence<'a>, CodecError> {
     let owner = candidate.refs[1];
-    let owner_evidence = loops
-        .iter()
+    let owner_evidence = ctx.admit_iter(loops, "scan Parasolid coedge owner evidence")?
         .rev()
         .find(|loop_| loop_.attr == owner)
         .filter(|loop_| owner != 0 && loop_is_owned(loop_, bridges));
@@ -780,28 +780,27 @@ fn coedge_evidence<'a>(
         .get(&next)
         .filter(|_| next != 0)
         .map(|candidates| {
-            candidates
-                .iter()
-                .any(|next_candidate| next_candidate.refs[1] == owner)
-        });
+            Ok::<_, CodecError>(ctx.admit_iter(candidates, "scan Parasolid coedge successor evidence")?
+                .any(|next_candidate| next_candidate.refs[1] == owner))
+        }).transpose()?;
     let previous = candidate.refs[2];
     let previous_valid = previous == 0
-        || coedge_candidates.get(&previous).is_some_and(|candidates| {
-            candidates.iter().any(|previous_candidate| {
+        || match coedge_candidates.get(&previous) { Some(candidates) => {
+            ctx.admit_iter(candidates, "scan Parasolid coedge predecessor evidence")?.any(|previous_candidate| {
                 previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
             })
-        });
-    let loop_head_valid = loops.iter().rev().any(|loop_| {
+        }, None => false };
+    let loop_head_valid = ctx.admit_iter(loops, "scan Parasolid coedge loop head evidence")?.rev().any(|loop_| {
         loop_.attr == owner && loop_is_owned(loop_, bridges) && loop_.refs[1] == candidate.attr
     });
-    CoedgeEvidence {
+    Ok(CoedgeEvidence {
         owner: owner_evidence,
         start: start_evidence,
         edge: edge_evidence,
         next_owner: next_owner_valid,
         previous: previous_valid,
         loop_head: loop_head_valid,
-    }
+    })
 }
 
 fn evidence_dominates(left: CoedgeEvidence<'_>, right: CoedgeEvidence<'_>) -> bool {
@@ -830,23 +829,20 @@ fn select_coedge(
         candidates.len(),
         "collect Parasolid coedge evidence",
     )?;
-    for candidate in candidates {
+    for candidate in ctx.admit_iter(candidates, "scan SLDPRT select_coedge values")? {
         evidence.push(coedge_evidence(
+            ctx,
             candidate,
             loops,
             bridges,
             vertex_uses,
             edge_candidates,
             coedge_candidates,
-        ));
+        )?);
     }
     let mut maximal = Vec::new();
-    let comparisons = u64::try_from(candidates.len()).map_err(|_| {
-        ctx.refuse_codec_limit("compare Parasolid coedge evidence", u64::MAX - 1, u64::MAX)
-    })?;
     for index in 0..candidates.len() {
-        ctx.charge_work(comparisons, "compare Parasolid coedge evidence")?;
-        if !evidence.iter().enumerate().any(|(other, other_evidence)| {
+        if !ctx.admit_iter(&evidence[..], "scan SLDPRT select_coedge values")?.enumerate().any(|(other, other_evidence)| {
             other != index && evidence_dominates(*other_evidence, evidence[index])
         }) {
             ctx.reserve_vec(&mut maximal, 1, "collect maximal Parasolid coedges")?;
@@ -1058,7 +1054,7 @@ fn scan_with_point_framing(
         i += 1;
     }
 
-    for candidates in coedge_candidates.values() {
+    for candidates in ctx.admit_iter(&coedge_candidates, "scan SLDPRT scan_with_point_framing map values")?.map(|(_, value)| value) {
         if let Some(record) = select_coedge(
             ctx,
             candidates,

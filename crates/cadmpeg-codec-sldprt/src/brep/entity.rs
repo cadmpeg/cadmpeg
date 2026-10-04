@@ -204,7 +204,7 @@ fn linked_colors(
     entities: &[EntityRecord],
 ) -> Result<HashMap<(u16, u16), Vec<FramedColor>>, cadmpeg_core::CodecError> {
     let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
-    for parent in entities {
+    for parent in ctx.admit_iter(entities, "scan SLDPRT linked_colors values")? {
         let mut linked_faces = HashSet::new();
         ctx.reserve_set(
             &mut linked_faces,
@@ -226,7 +226,7 @@ fn linked_colors(
                 offset: at,
                 parent_seq: parent.seq,
             };
-            for face_attr in linked_faces.iter().copied().filter(|attr| *attr > 1) {
+            for face_attr in ctx.admit_iter(&linked_faces, "scan SLDPRT linked_colors values")?.copied().filter(|attr| *attr > 1) {
                 let key = (face_attr, color_attr);
                 ctx.push_hash_group(
                     &mut colors,
@@ -242,19 +242,25 @@ fn linked_colors(
     Ok(colors)
 }
 
-fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
-    let current_seq = candidates
+fn current_linked_color(
+    ctx: &DecodeContext<'_>,
+    candidates: &[FramedColor],
+) -> Result<Option<FramedColor>, cadmpeg_core::CodecError> {
+    let Some(current_seq) = candidates
         .iter()
         .map(|candidate| candidate.parent_seq)
-        .max()?;
-    let mut current = candidates
-        .iter()
+        .max() else {
+        return Ok(None);
+    };
+    let mut current = ctx.admit_iter(candidates, "scan current Parasolid linked colors")?
         .copied()
         .filter(|candidate| candidate.parent_seq == current_seq);
-    let first = current.next()?;
-    current
+    let Some(first) = current.next() else {
+        return Ok(None);
+    };
+    Ok(current
         .all(|candidate| candidate.color == first.color)
-        .then_some(first)
+        .then_some(first))
 }
 
 /// Scan non-topology entity metadata without interpreting attribute chains as
@@ -295,7 +301,7 @@ pub(crate) fn scan_metadata(
         });
         let framed = if let Some(color_attr) = linked_attr {
             match linked_colors.get(&(face.attr, color_attr)) {
-                Some(candidates) => match current_linked_color(candidates) {
+                Some(candidates) => match current_linked_color(ctx, candidates)? {
                     Some(color) => Some((color_attr, color)),
                     None => {
                         unresolved_face_colors += 1;

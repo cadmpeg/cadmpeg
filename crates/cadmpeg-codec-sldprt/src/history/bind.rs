@@ -90,14 +90,15 @@ pub(crate) fn bind_unique_sketch_feature(
     histories: &[FeatureHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, "index SLDPRT native sketch features")?;
-        ctx.insert_hash_map(
-            &mut native_features,
-            feature.id.as_str(),
-            feature,
-            "index SLDPRT native sketch features",
-        )?;
+    for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
+        for feature in ctx.admit_iter(&history.features, "index SLDPRT native sketch features")? {
+            ctx.insert_hash_map(
+                &mut native_features,
+                feature.id.as_str(),
+                feature,
+                "index SLDPRT native sketch features",
+            )?;
+            }
     }
     let mut feature_indices = Vec::new();
     for (index, feature) in features.iter().enumerate() {
@@ -111,18 +112,11 @@ pub(crate) fn bind_unique_sketch_feature(
         }
     }
     let mut bindings = Vec::new();
-    for index in &feature_indices {
+    for index in ctx.admit_iter(&feature_indices, "scan SLDPRT sketch feature candidates")? {
         let Some(name) = features[*index].name.as_deref() else {
             continue;
         };
-        ctx.charge_work(
-            u64::try_from(feature_indices.len()).map_err(|_| {
-                ctx.refuse_codec_limit("match SLDPRT sketch feature names", u64::MAX - 1, u64::MAX)
-            })?,
-            "match SLDPRT sketch feature names",
-        )?;
-        if feature_indices
-            .iter()
+        if ctx.admit_iter(&feature_indices[..], "scan SLDPRT bind_unique_sketch_feature values")?
             .filter(|other| features[**other].name.as_deref() == Some(name))
             .count()
             != 1
@@ -171,7 +165,7 @@ pub(crate) fn bind_unique_sketch_feature(
             }
         }
     }
-    for binding in &bindings {
+    for binding in ctx.admit_iter(&bindings, "scan SLDPRT bind_unique_sketch_feature values")? {
         features[binding.index]
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -181,7 +175,7 @@ pub(crate) fn bind_unique_sketch_feature(
             }));
     }
     let mut aliases = Vec::new();
-    for index in &feature_indices {
+    for index in ctx.admit_iter(&feature_indices, "scan SLDPRT bind_unique_sketch_feature values")? {
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch:
                 cadmpeg_ir::features::SketchFeatureBinding::Unresolved
@@ -191,10 +185,8 @@ pub(crate) fn bind_unique_sketch_feature(
         else {
             continue;
         };
-        let Some(base_name) = features[*index]
-            .name
-            .as_deref()
-            .and_then(sketch_alias_base_name)
+        let Some(base_name) = features[*index].name.as_deref()
+            .map(|name| sketch_alias_base_name(ctx, name)).transpose()?.flatten()
         else {
             continue;
         };
@@ -254,7 +246,7 @@ pub(crate) fn bind_unique_sketch_feature(
             })?,
             "match SLDPRT bound sketch aliases",
         )?;
-        let Some(binding) = bindings.iter().find(|binding| binding.index == base_index) else {
+        let Some(binding) = ctx.admit_iter(&bindings[..], "scan SLDPRT bind_unique_sketch_feature values")?.find(|binding| binding.index == base_index) else {
             continue;
         };
         let sketch = copy_binding_sketch_id(ctx, &binding.sketch)?;
@@ -305,11 +297,15 @@ pub(crate) fn bind_unique_sketch_feature(
     Ok(())
 }
 
-fn sketch_alias_base_name(name: &str) -> Option<&str> {
-    let (base, suffix) = name.rsplit_once('<')?;
-    let ordinal = suffix.strip_suffix('>')?;
-    (!base.is_empty() && !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()))
-        .then_some(base)
+fn sketch_alias_base_name<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &'a str) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
+    let Some((base, suffix)) = name.rsplit_once('<') else {
+        return Ok(None);
+    };
+    let Some(ordinal) = suffix.strip_suffix('>') else {
+        return Ok(None);
+    };
+    Ok((!base.is_empty() && !ordinal.is_empty() && ctx.admit_iter(ordinal.as_bytes(), "scan SLDPRT sketch alias ordinal")?.all(|byte| byte.is_ascii_digit()))
+        .then_some(base))
 }
 
 /// Assign stable neutral regeneration ordinals with every structural parent and
@@ -355,14 +351,13 @@ fn regeneration_order(
         "sldprt feature regeneration indegree",
     )?;
     let mut tree_parent_by_child = HashMap::new();
-    for feature in features {
+    for feature in ctx.admit_iter(features, "scan SLDPRT regeneration_order values")? {
         let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
             feature.evaluation.definition()
         else {
             continue;
         };
-        for child in children {
-            ctx.charge_work(1, "index SLDPRT feature tree parents")?;
+        for child in ctx.admit_iter(&children[..], "index SLDPRT feature tree parents")? {
             ctx.insert_hash_map(
                 &mut tree_parent_by_child,
                 child,
@@ -381,10 +376,9 @@ fn regeneration_order(
             "index SLDPRT feature regeneration IDs",
         )?;
     }
-    for (consumer, feature) in features.iter().enumerate() {
+    for (consumer, feature) in ctx.admit_iter(features, "scan SLDPRT regeneration_order values")?.enumerate() {
         let mut predecessors = HashSet::new();
-        for predecessor in &feature.dependencies {
-            ctx.charge_work(1, "collect SLDPRT feature predecessors")?;
+        for predecessor in ctx.admit_iter(feature.dependencies.as_slice(), "collect SLDPRT feature predecessors")? {
             add_regeneration_predecessor(ctx, &mut predecessors, predecessor)?;
         }
         if let Some(parent) = tree_parent_by_child.get(&feature.id) {
@@ -401,8 +395,7 @@ fn regeneration_order(
             for configuration in &model.configurations {
                 ctx.charge_work(1, "scan SLDPRT configuration feature dependencies")?;
                 if let Some(state) = configuration.feature_states.get(&feature.id) {
-                    for dependency in &state.dependencies {
-                        ctx.charge_work(1, "scan SLDPRT configuration feature dependencies")?;
+                    for dependency in ctx.admit_iter(state.dependencies.as_slice(), "scan SLDPRT configuration feature dependencies")? {
                         add_regeneration_predecessor(ctx, &mut predecessors, dependency)?;
                     }
                 }
@@ -423,7 +416,7 @@ fn regeneration_order(
         }
     }
     let mut ready = std::collections::BTreeSet::new();
-    for (index, feature) in features.iter().enumerate() {
+    for (index, feature) in ctx.admit_iter(features, "scan SLDPRT regeneration_order values")?.enumerate() {
         if indegree[index] == 0 {
             ctx.insert_btree_set(
                 &mut ready,
@@ -442,7 +435,7 @@ fn regeneration_order(
         ctx.charge_work(1, "sort SLDPRT feature regeneration order")?;
         let index = item.2;
         order.push(index);
-        for &consumer in &outgoing[index] {
+        for &consumer in ctx.admit_iter(&outgoing[index], "scan SLDPRT regeneration_order values")? {
             indegree[consumer] -= 1;
             if indegree[consumer] == 0 {
                 let feature = &features[consumer];
@@ -465,7 +458,7 @@ fn assign_regeneration_ordinals(
     features: &mut [cadmpeg_ir::features::Feature],
     order: Vec<usize>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (ordinal, index) in order.into_iter().enumerate() {
+    for (ordinal, index) in ctx.admit_iter(&order, "scan SLDPRT regeneration ordinal order")?.copied().enumerate() {
         features[index].ordinal = u64::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit(
                 "number SLDPRT feature regeneration order",
@@ -578,20 +571,10 @@ pub(crate) fn derive_feature_outputs(
         body_modifiers,
     } = sources;
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
-    for history in histories {
+    for history in ctx.admit_iter(histories, "scan SLDPRT derive_feature_outputs values")? {
         let mut ordinal = 0_u32;
-        for record in &history.features {
-            ctx.charge_work(
-                u64::try_from(history.features.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "classify SLDPRT body modifier ordinals",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?,
-                "classify SLDPRT body modifier ordinals",
-            )?;
-            if is_history_metadata_record(record, &history.features) {
+        for record in ctx.admit_iter(&history.features, "scan SLDPRT derive_feature_outputs values")? {
+            if is_history_metadata_record(ctx, record, &history.features)? {
                 continue;
             }
             ctx.charge_work(1, "index SLDPRT body modifier ordinals")?;
@@ -617,7 +600,7 @@ pub(crate) fn derive_feature_outputs(
             }
         }
     }
-    for (body, ordinal) in body_modifiers {
+    for (body, ordinal) in ctx.admit_iter(body_modifiers, "scan SLDPRT body_modifiers values")? {
         let Some(Some(native_ref)) = feature_ids_by_ordinal.get(ordinal) else {
             continue;
         };
@@ -651,7 +634,7 @@ pub(crate) fn derive_feature_outputs(
                         )
                     })?;
                 ctx.reserve_vec(&mut outputs, count, "collect SLDPRT body modifier outputs")?;
-                for output in feature.evaluation.outputs() {
+                for output in ctx.admit_iter(feature.evaluation.outputs(), "scan SLDPRT topology members")? {
                     outputs.push(copy_output_body_id(ctx, output.as_str())?);
                 }
                 outputs.push(body);
@@ -668,8 +651,7 @@ pub(crate) fn derive_feature_outputs(
     }
     let owners = face_owner_bodies(ctx, faces, shells, regions)?;
     let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
-    for (face, source_id) in face_producers {
-        ctx.charge_work(1, "collect SLDPRT produced bodies")?;
+    for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
         let Some(body) = owners.get(face.as_str()) else {
             continue;
         };
@@ -688,9 +670,8 @@ pub(crate) fn derive_feature_outputs(
             continue;
         };
         let mut source_id = None;
-        'histories: for history in histories {
-            for record in &history.features {
-                ctx.charge_work(1, "match SLDPRT feature output source")?;
+        'histories: for history in ctx.admit_iter(histories, "scan SLDPRT feature output histories")? {
+            for record in ctx.admit_iter(&history.features, "match SLDPRT feature output source")? {
                 if record.id == native_ref {
                     source_id = record.source_value();
                     break 'histories;
@@ -703,7 +684,7 @@ pub(crate) fn derive_feature_outputs(
         if let Some(bodies) = produced.get(&source_id) {
             let mut outputs = Vec::new();
             ctx.reserve_vec(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
-            for body in bodies {
+            for body in ctx.admit_iter(bodies, "scan SLDPRT bodies values")? {
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }
             feature
