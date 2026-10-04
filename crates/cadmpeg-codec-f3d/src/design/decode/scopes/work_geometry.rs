@@ -4,10 +4,10 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_indexed_header_at;
+use super::shared_frames::find_reference_frame;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
@@ -42,21 +42,17 @@ pub(super) fn exact_work_plane_frame(
     scope: &DesignParameterScope,
 ) -> Result<Option<ScopePlacementFrame>, cadmpeg_core::CodecError> {
     let mut candidate = None;
-    for record_index in admit_reference_values(
+    let ambiguous = find_reference_frame(
         ctx,
+        records,
         scope.reference_members(),
-        "scan F3D work-plane reference members",
-    )? {
-        for (start, paired) in records.frames(ctx, *record_index)? {
-            let Some(frame) = work_plane_frame_at(bytes, start, paired) else {
-                continue;
-            };
-            if candidate.replace(frame).is_some() {
-                return Ok(None);
-            }
-        }
-    }
-    Ok(candidate)
+        |start, paired| {
+            Ok(work_plane_frame_at(bytes, start, paired)
+                .is_some_and(|frame| candidate.replace(frame).is_some()))
+        },
+        "scan F3D work-plane reference frames",
+    )?;
+    Ok(candidate.filter(|_| !ambiguous))
 }
 
 /// The work-plane placement of the frame from `start` to its paired header at
@@ -235,7 +231,7 @@ fn exact_two_point_work_axis_construction(
         scope.reference_members().values_array()?;
     let (axis_start, axis_paired) = records.only_frame(*axis_record_index)?;
     if axis_paired.checked_sub(axis_start)? != 232
-        || bytes.get(axis_start + 11..axis_start + 21) != Some(&[0; 10])
+        || !zeros_at::<10>(bytes, axis_start + 11)
         || View::u32_le_at(bytes, axis_start + 21)? != 8
         || View::u32_le_at(bytes, axis_start + 118)? != 2
     {
@@ -259,7 +255,7 @@ fn exact_two_point_work_axis_construction(
         let reference_at = axis_start + 122 + ordinal * 11;
         if bytes.get(reference_at) != Some(&1)
             || View::u32_le_at(bytes, reference_at + 1)? != *expected
-            || bytes.get(reference_at + 5..reference_at + 11) != Some(&[0; 6])
+            || !zeros_at::<6>(bytes, reference_at + 5)
         {
             return None;
         }
@@ -268,8 +264,7 @@ fn exact_two_point_work_axis_construction(
     let mut point_offsets = [0; 2];
     for (ordinal, record_index) in point_record_indices.iter().enumerate() {
         let (start, paired) = records.only_frame(*record_index)?;
-        if paired.checked_sub(start)? != 197 || bytes.get(start + 11..start + 42) != Some(&[0; 31])
-        {
+        if paired.checked_sub(start)? != 197 || !zeros_at::<31>(bytes, start + 11) {
             return None;
         }
         let point = f64s_at::<3>(bytes, start + 42)?;
@@ -362,7 +357,7 @@ fn exact_direct_work_axis_construction(
     {
         return None;
     }
-    if bytes.get(carrier_start + 11..carrier_start + 21) != Some(&[0; 10])
+    if !zeros_at::<10>(bytes, carrier_start + 11)
         || View::u32_le_at(bytes, carrier_start + value_count_offset)? != 8
         || View::u32_le_at(bytes, carrier_start + reference_count_offset)? != 6
         || View::u32_le_at(bytes, carrier_start + reference_preamble_offset)? != 1
@@ -409,23 +404,20 @@ pub(super) fn exact_joint_origin_frame(
         return Ok(None);
     }
     let mut candidate = None;
-    for record_index in admit_reference_values(
+    let rejected = find_reference_frame(
         ctx,
+        records,
         scope.reference_members(),
-        "scan F3D joint-origin reference members",
-    )? {
-        for (start, paired) in records.frames(ctx, *record_index)? {
-            let frame = match joint_origin_frame_at(bytes, start, paired) {
-                JointOriginFrame::Placement(frame) => frame,
-                JointOriginFrame::Other => continue,
-                JointOriginFrame::Malformed => return Ok(None),
-            };
-            if candidate.replace(frame).is_some() {
-                return Ok(None);
-            }
-        }
-    }
-    Ok(candidate)
+        |start, paired| {
+            Ok(match joint_origin_frame_at(bytes, start, paired) {
+                JointOriginFrame::Placement(frame) => candidate.replace(frame).is_some(),
+                JointOriginFrame::Other => false,
+                JointOriginFrame::Malformed => true,
+            })
+        },
+        "scan F3D joint-origin reference frames",
+    )?;
+    Ok(candidate.filter(|_| !rejected))
 }
 
 enum JointOriginFrame {

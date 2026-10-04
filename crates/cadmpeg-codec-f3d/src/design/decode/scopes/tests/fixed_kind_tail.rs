@@ -54,30 +54,33 @@ fn surface_boundary_edges_refuse_collection_limit() {
 
 #[test]
 fn surface_offset_face_groups_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let (bytes, scope, transform) = fixed_kind_frames();
     let probe = |bytes: &[u8], scope: &DesignParameterScope| {
         let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        for (limit, operation) in [
-            // The operand group first admits one member and one trailing
-            // reference; both auxiliary references are absent.
-            (2, "f3d surface offset covered reference"),
-            (3, "f3d surface offset covered reference"),
-            (4, "f3d surface offset face group"),
+        let covered_slots = u64_from_index(scope.reference_members().len());
+        // The covered-reference table holds one slot per scope reference; each
+        // accepted face group then takes one output slot.
+        for (operation, additional) in [
+            ("track F3D surface offset covered references", covered_slots),
+            ("f3d surface offset face group", 1),
         ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = crate::design::decode::scopes::surfaces::exact_surface_offset_operation(
-                &ctx, bytes, &records, scope,
-            )
-            .unwrap_err();
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::CollectionItems,
+                operation,
+                0,
+                |ctx| {
+                    crate::design::decode::scopes::surfaces::exact_surface_offset_operation(
+                        ctx, bytes, &records, scope,
+                    )
+                },
+            );
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation)
+                    && failure.operation == operation
+                    && failure.additional == additional)
             );
         }
     };
@@ -129,7 +132,7 @@ fn joint_origin_reference_member_admission_refusal_propagates() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D joint-origin reference members",
+        "scan F3D joint-origin reference frames",
         0,
         |ctx| exact_joint_origin_frame(ctx, &bytes, &records, &scope),
     );
@@ -137,7 +140,7 @@ fn joint_origin_reference_member_admission_refusal_propagates() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "scan F3D joint-origin reference members"
+                && refusal.operation == "scan F3D joint-origin reference frames"
                 && refusal.additional == 1
     ));
 }
@@ -216,13 +219,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.frame_length(), u64_from_index(paired_at));
     assert_eq!(scope.paired_class_tag.as_str(), "261");
     assert_eq!(scope.paired_byte_offset(), u64_from_index(paired_at));
-    let discovered =
-        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        )
-        .unwrap()
+    let discovered = super::scope_candidate_headers(&bytes)
         .into_iter()
         .filter_map(|header| {
             parse_parameter_scope(

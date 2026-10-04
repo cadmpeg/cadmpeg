@@ -1280,29 +1280,6 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     };
 
     let to_face_bytes = make_bytes(true, &TO_FACE_REFERENCES);
-    let refusal = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D legacy extrude reference members",
-        0,
-        |ctx| {
-            super::super::exact_extrude_prologue(
-                ctx,
-                &to_face_bytes,
-                0,
-                481,
-                "415",
-                "265",
-                to_face_layout::REFERENCE_COUNT,
-                &TO_FACE_REFERENCES,
-            )
-        },
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "scan F3D legacy extrude reference members"
-    ));
     let to_face = parse(&to_face_bytes);
     assert_eq!(to_face.frame_length(), 481);
     assert_eq!(to_face.reference_count_offset(), 278);
@@ -1332,31 +1309,6 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     assert_eq!(side_extent_discriminator_offsets, [107, 274]);
     assert_eq!(extent, DesignExtrudeExtent::OneSidedToFace);
     assert!(direction_reversed);
-
-    let contains_refusal = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "search F3D class-415 first-side offset reference",
-        0,
-        |ctx| {
-            super::super::exact_extrude_prologue(
-                ctx,
-                &to_face_bytes,
-                0,
-                481,
-                "415",
-                "265",
-                to_face_layout::REFERENCE_COUNT,
-                &TO_FACE_REFERENCES,
-            )
-        },
-    );
-    assert!(matches!(
-        contains_refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "search F3D class-415 first-side offset reference"
-                && limit.additional == 1
-    ));
 
     let distance = parse(&make_bytes(false, &DISTANCE_REFERENCES));
     assert_eq!(distance.frame_length(), 449);

@@ -247,7 +247,7 @@ fn work_plane_reference_member_admission_refusal_propagates() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D work-plane reference members",
+        "scan F3D work-plane reference frames",
         0,
         |ctx| exact_work_plane_frame(ctx, &bytes, &records, &scope),
     );
@@ -255,7 +255,7 @@ fn work_plane_reference_member_admission_refusal_propagates() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "scan F3D work-plane reference members"
+                && refusal.operation == "scan F3D work-plane reference frames"
                 && refusal.additional == 1
     ));
 }

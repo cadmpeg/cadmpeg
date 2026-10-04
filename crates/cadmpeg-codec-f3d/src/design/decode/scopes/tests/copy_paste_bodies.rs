@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-
 #[test]
 fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let headers =
-        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &records,
-        )
-        .unwrap()
+    let headers = super::scope_candidate_headers(&bytes)
         .into_iter()
         .filter(|header| header.record_index == 1_400)
         .collect::<Vec<_>>();
@@ -79,15 +71,10 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-    )
-    .unwrap()
-    .into_iter()
-    .find(|header| header.record_index == 1_400)
-    .unwrap();
+    let header = super::scope_candidate_headers(&bytes)
+        .into_iter()
+        .find(|header| header.record_index == 1_400)
+        .unwrap();
     let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
@@ -99,9 +86,8 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
     .unwrap()
     .unwrap();
     for (cap, operation) in [
-        (0, "f3d CopyPasteBodies operands"),
-        (1, "f3d CopyPasteBodies bodies"),
-        (2, "index F3D copied body suffixes"),
+        (0, "f3d CopyPasteBodies bodies"),
+        (1, "index F3D copied body suffixes"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -128,18 +114,12 @@ fn design_scope_reference_vectors_refuse_each_limit() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-    )
-    .unwrap()
-    .into_iter()
-    .find(|header| header.record_index == 1_400)
-    .unwrap();
+    let header = super::scope_candidate_headers(&bytes)
+        .into_iter()
+        .find(|header| header.record_index == 1_400)
+        .unwrap();
     for operation in [
         "f3d Design scope reference members",
-        "f3d Design scope reference offsets",
         "f3d Design scope located references",
     ] {
         let error = crate::test_support::resource_refusal_at(
@@ -185,15 +165,10 @@ fn copy_paste_body_scans_propagate_work_refusals() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-    )
-    .unwrap()
-    .into_iter()
-    .find(|header| header.record_index == 1_400)
-    .unwrap();
+    let header = super::scope_candidate_headers(&bytes)
+        .into_iter()
+        .find(|header| header.record_index == 1_400)
+        .unwrap();
     let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
@@ -205,125 +180,56 @@ fn copy_paste_body_scans_propagate_work_refusals() {
     .unwrap()
     .unwrap();
 
-    for (operation, additional) in [
-        ("scan F3D CopyPasteBodies located scope references", 2),
-        ("validate F3D copied-body reference padding", 10),
-        ("scan F3D CopyPasteBodies operands", 1),
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            operation,
-            0,
-            |ctx| {
-                crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
-                    ctx, &bytes, &records, &scope,
-                )
-                .map(|_| ())
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == operation
-                    && refusal.additional == additional
-        ));
-    }
+    let operation = "scan F3D CopyPasteBodies scope references";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+                ctx, &bytes, &records, &scope,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == operation
+                && refusal.additional == 2
+    ));
 }
 
 #[test]
-fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
+fn design_scope_kind_scan_refuses_temporary_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-    )
-    .unwrap()
-    .into_iter()
-    .find(|header| header.record_index == 1_400)
-    .unwrap();
-    let kind_len = u64_from_index("CopyPasteBodies".len());
-    for (materialized_cap, retained_cap, dimension, operation) in [
-        (
-            Some(0),
-            None,
-            ResourceDimension::MaterializedBytes,
-            "f3d Design temporary UTF-16 text",
-        ),
-        (
-            None,
-            Some(0),
-            ResourceDimension::RetainedBytes,
-            "f3d Design UTF-16 text",
-        ),
-        (
-            None,
-            Some(kind_len),
-            ResourceDimension::RetainedBytes,
-            "f3d Design scope kind storage",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        if let Some(cap) = materialized_cap {
-            policy.limits.max_materialized_bytes = cap;
-        }
-        if let Some(cap) = retained_cap {
-            policy.limits.max_retained_bytes = cap;
-        }
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
-            &ctx,
-            &bytes,
-            &records,
-            header.record_index,
-            &header.class_tag,
-            header.byte_offset,
-        );
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation
-        ));
-    }
-}
-
-#[test]
-fn design_scope_candidate_headers_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, _) =
-        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let header = super::scope_candidate_headers(&bytes)
+        .into_iter()
+        .find(|header| header.record_index == 1_400)
+        .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-        &ctx, &bytes, &records,
+    let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &ctx,
+        &bytes,
+        &records,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
     );
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d Design scope candidate headers"
+            if failure.dimension == ResourceDimension::MaterializedBytes
+                && failure.operation == "f3d Design temporary UTF-16 text"
     ));
-    assert!(
-        !crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &records,
-        )
-        .unwrap()
-        .is_empty()
-    );
 }
 
 #[test]
