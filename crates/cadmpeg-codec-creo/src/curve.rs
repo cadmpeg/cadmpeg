@@ -1320,7 +1320,7 @@ fn curve_equation_prohibited_constructs(
                 {
                     let mut name =
                         ctx.copy_retained_text(name, "creo prohibited construct names")?;
-                    name.make_ascii_lowercase();
+                    ctx.make_ascii_lowercase(&mut name, "creo prohibited function case fold")?;
                     ctx.insert_btree_set(&mut prohibited, name, "creo prohibited construct nodes")?;
                 }
                 continue;
