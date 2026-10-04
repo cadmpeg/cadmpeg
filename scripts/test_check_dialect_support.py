@@ -100,10 +100,11 @@ class SupportCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
+            (root / "crates" / "cadmpeg-registry" / "docs").mkdir(parents=True)
             if identity is not None:
-                (root / "docs" / "dialects.toml").write_text(identity, encoding="utf-8")
+                (root / "crates" / "cadmpeg-registry" / "docs" / "dialects.toml").write_text(identity, encoding="utf-8")
             if support is not None:
-                (root / "docs" / "dialect-support.toml").write_text(support, encoding="utf-8")
+                (root / "crates" / "cadmpeg-registry" / "docs" / "dialect-support.toml").write_text(support, encoding="utf-8")
             if evaluations is not None:
                 (root / "docs" / "evaluations.toml").write_text(evaluations, encoding="utf-8")
             tree = dict(files) if files else {FIXTURE: "demo bytes"}
@@ -588,9 +589,9 @@ class TestCommittedRegistries(unittest.TestCase):
     def test_every_identity_row_is_covered(self):
         import tomllib
 
-        with (REPO / "docs" / "dialects.toml").open("rb") as handle:
+        with (REPO / "crates" / "cadmpeg-registry" / "docs" / "dialects.toml").open("rb") as handle:
             identity = tomllib.load(handle)
-        with (REPO / "docs" / "dialect-support.toml").open("rb") as handle:
+        with (REPO / "crates" / "cadmpeg-registry" / "docs" / "dialect-support.toml").open("rb") as handle:
             support = tomllib.load(handle)
         self.assertEqual(
             {row["id"] for row in identity["dialect"]},
@@ -607,7 +608,8 @@ class TestCommittedRegistries(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "docs").mkdir()
-            (root / "docs" / "dialect-support.toml").write_text("nonsense = =\n", encoding="utf-8")
+            (root / "crates" / "cadmpeg-registry" / "docs").mkdir(parents=True)
+            (root / "crates" / "cadmpeg-registry" / "docs" / "dialect-support.toml").write_text("nonsense = =\n", encoding="utf-8")
             with contextlib.redirect_stderr(io.StringIO()) as err:
                 code = checker.main([str(root)])
         self.assertEqual(code, 1)

@@ -4117,7 +4117,6 @@
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "applications": "5d08166b7d951f605f23469416dced370a67f8bcbc3ed5a7df1dc4202e5b3ae7",
-          "attachments": "bf32de5aca6dc270713ed01561b780b9d15382d37b5fa2b6f41f896026e7e862",
           "byte_coverage": "4dcb2878738b6cf90ea1d82d393a9fdf905f4f0ee35ad44ee9faf414fbf8c2cd",
           "carrier_census": "147c6dc0f6c52fb287bc431cb8451c904e4a9e6834b24a996e86a6b776197264",
           "design_census": "a7f1a87f62897a0cd530a881acb52e097f226fa6ae6716eeb15dd839768489cf",
@@ -4133,13 +4132,1921 @@
           "logical_ledger": "e03436648d6aaba26da78369af3eb429888be486cf9fe471cc0a470c80b47b91",
           "objects": "7f5516ab6aeacf480daa637f2a55385da027fe4286895c9f780e01ad728d46cf",
           "physical_ledger": "ec48754bb38cce1eae0fadb0feb642edf9e3fb3c64d0ddea81268bd121cced2f",
-          "product_nodes": "e48de23aadba919067d7f87b58eacb17111d7e10deade9f410079db9d56ee2b9",
           "properties": "4520c3c7fa85a5a4ec1f4a3c443a9b3e870efad00e37b36831420c0c2eed3787",
           "shape_payloads": "8424ca604da8f344245b9dbc196fe7fe3db65cff0a2b91447545a4ff7ea086c7",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
-      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
+      "__arena_values": {
+        "fcstd": {
+          "attachments": [
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Assembly",
+              "map_mode": null,
+              "object": "fcstd:native:object#Assembly",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#BracketOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#BracketOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#BracketPrototype",
+              "map_mode": null,
+              "object": "fcstd:native:object#BracketPrototype",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#ExternalOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#ExternalOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#GroundBracket",
+              "map_mode": null,
+              "object": "fcstd:native:object#GroundBracket",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#NestedBracketOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#NestedBracketOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#OccurrenceGroup",
+              "map_mode": null,
+              "object": "fcstd:native:object#OccurrenceGroup",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Origin",
+              "map_mode": null,
+              "object": "fcstd:native:object#Origin",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Origin001",
+              "map_mode": null,
+              "object": "fcstd:native:object#Origin001",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray_i0",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray_i0",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray_i1",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray_i1",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  2.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinArray_i2",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinArray_i2",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  2.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  1.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  6.0
+                ],
+                [
+                  -1.0,
+                  0.0,
+                  2.220446049250313e-16,
+                  3.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinOccurrence",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinOccurrence",
+              "offset": null,
+              "placement": [
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  1.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  6.0
+                ],
+                [
+                  -1.0,
+                  0.0,
+                  2.220446049250313e-16,
+                  3.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#PinPrototype",
+              "map_mode": null,
+              "object": "fcstd:native:object#PinPrototype",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#XY_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#XY_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  -1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#XZ_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#XZ_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  -1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#X_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#X_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#YZ_Plane",
+              "map_mode": null,
+              "object": "fcstd:native:object#YZ_Plane",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Y_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#Y_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  0.0,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  -2.220446049250313e-16,
+                  1.0000000000000002,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            },
+            {
+              "effective_frame": [
+                [
+                  0.0,
+                  -1.0000000000000002,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  -1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#Z_Axis",
+              "map_mode": null,
+              "object": "fcstd:native:object#Z_Axis",
+              "offset": null,
+              "placement": [
+                [
+                  0.0,
+                  -1.0000000000000002,
+                  -2.220446049250313e-16,
+                  0.0
+                ],
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  -1.0000000000000002,
+                  0.0
+                ],
+                [
+                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            }
+          ],
+          "product_nodes": [
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#Assembly",
+              "kind": "part",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [
+                "fcstd:native:object#BracketOccurrence",
+                "fcstd:native:object#PinOccurrence",
+                "fcstd:native:object#OccurrenceGroup",
+                "fcstd:native:object#RevoluteJoint",
+                "fcstd:native:object#GroundBracket"
+              ],
+              "object": "fcstd:native:object#Assembly",
+              "placement_property": "fcstd:native:property#Assembly:Placement",
+              "prototype": null,
+              "scale": null
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#BracketOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#BracketOccurrence",
+              "placement_property": "fcstd:native:property#BracketOccurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#BracketPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": "external_component.FCStd",
+              "external_document_attribute": "file",
+              "id": "fcstd:native:product#ExternalOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  40.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#ExternalOccurrence",
+              "placement_property": "fcstd:native:property#ExternalOccurrence:LinkPlacement",
+              "prototype": "ExternalPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#NestedBracketOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#NestedBracketOccurrence",
+              "placement_property": "fcstd:native:property#NestedBracketOccurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#BracketOccurrence",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [
+                "fcstd:native:object#NestedBracketOccurrence",
+                "fcstd:native:object#PinArray",
+                "fcstd:native:object#ExternalOccurrence"
+              ],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#OccurrenceGroup",
+              "kind": "link_group",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#OccurrenceGroup",
+              "placement_property": "fcstd:native:property#OccurrenceGroup:Placement",
+              "prototype": null,
+              "scale": null
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 3,
+              "element_objects": [
+                "fcstd:native:object#PinArray_i0",
+                "fcstd:native:object#PinArray_i1",
+                "fcstd:native:object#PinArray_i2"
+              ],
+              "element_scales": [
+                [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                [
+                  1.0,
+                  1.25,
+                  1.0
+                ],
+                [
+                  1.0,
+                  1.5,
+                  1.0
+                ]
+              ],
+              "element_transforms": [
+                [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    10.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    20.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ]
+              ],
+              "element_visibility": [
+                true,
+                true,
+                true
+              ],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray",
+              "placement_property": "fcstd:native:property#PinArray:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray_i0",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray_i0",
+              "placement_property": "fcstd:native:property#PinArray_i0:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray_i1",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray_i1",
+              "placement_property": "fcstd:native:property#PinArray_i1:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinArray_i2",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  2.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinArray_i2",
+              "placement_property": "fcstd:native:property#PinArray_i2:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": false,
+              "copy_on_change": "0",
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": false,
+              "element_count": 0,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PinOccurrence",
+              "kind": "occurrence",
+              "link_transform": true,
+              "linked_subelements": [],
+              "local_transform": [
+                [
+                  2.220446049250313e-16,
+                  0.0,
+                  1.0,
+                  20.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  6.0
+                ],
+                [
+                  -1.0,
+                  0.0,
+                  2.220446049250313e-16,
+                  3.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "members": [],
+              "object": "fcstd:native:object#PinOccurrence",
+              "placement_property": "fcstd:native:property#PinOccurrence:LinkPlacement",
+              "prototype": "fcstd:native:object#PinPrototype",
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "claim_child": null,
+              "copy_on_change": null,
+              "copy_on_change_group": null,
+              "copy_on_change_source": null,
+              "copy_on_change_touched": null,
+              "element_count": null,
+              "element_objects": [],
+              "element_scales": [],
+              "element_transforms": [],
+              "element_visibility": [],
+              "external_document": null,
+              "external_document_attribute": null,
+              "id": "fcstd:native:product#PrototypeGroup",
+              "kind": "group",
+              "link_transform": null,
+              "linked_subelements": [],
+              "local_transform": null,
+              "members": [
+                "fcstd:native:object#BracketPrototype",
+                "fcstd:native:object#PinPrototype"
+              ],
+              "object": "fcstd:native:object#PrototypeGroup",
+              "placement_property": null,
+              "prototype": null,
+              "scale": null
+            }
+          ]
+        }
+      },
+      "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
     "source": {
       "attributes": {
