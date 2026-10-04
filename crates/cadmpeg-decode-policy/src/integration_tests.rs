@@ -198,6 +198,7 @@ fn check_fixture(name: &str) {
             | "parser_zstd"
             | "reader_callbacks"
             | "unicode_case"
+            | "work_integer_ranges"
     ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
@@ -253,7 +254,7 @@ fn check_fixture(name: &str) {
             "{actual}"
         );
     }
-    if name == "replacement_forms" {
+    if matches!(name, "replacement_forms" | "work_integer_ranges") {
         let source = std::fs::read_to_string(&path).expect("replacement fixture source");
         for (index, line) in source.lines().enumerate() {
             if let Some(method) = line.trim().strip_prefix("// replacement: ") {
@@ -903,6 +904,11 @@ fn generic_candidate_substitutions() {
 #[test]
 fn admitted_iteration_work() {
     check_fixture("work_admitted");
+}
+
+#[test]
+fn integer_range_loops_require_admitted_sources() {
+    check_fixture("work_integer_ranges");
 }
 
 #[test]
