@@ -168,19 +168,33 @@ impl DecodeCost for ExternalDocument {
 
 impl ExternalDocument {
     /// Construct a path reference, or Missing when the path is blank.
-    pub fn path(ctx: &cadmpeg_core::decode::DecodeContext<'_>, path: impl cadmpeg_core::decode::text::TextSource) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(match NonBlankString::for_decode(ctx, path, "validate external document path")? {
-            Some(path) => Self::Path { path },
-            None => Self::Missing {},
-        })
+    pub fn path(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        path: impl cadmpeg_core::decode::text::TextSource,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(
+            match NonBlankString::for_decode(ctx, path, "validate external document path")? {
+                Some(path) => Self::Path { path },
+                None => Self::Missing {},
+            },
+        )
     }
 
     /// Construct a document reference, or Missing when its identity is blank.
-    pub fn document_id(ctx: &cadmpeg_core::decode::DecodeContext<'_>, document_id: impl cadmpeg_core::decode::text::TextSource) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(match NonBlankString::for_decode(ctx, document_id, "validate external document identity")? {
-            Some(document_id) => Self::DocumentId { document_id },
-            None => Self::Missing {},
-        })
+    pub fn document_id(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        document_id: impl cadmpeg_core::decode::text::TextSource,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(
+            match NonBlankString::for_decode(
+                ctx,
+                document_id,
+                "validate external document identity",
+            )? {
+                Some(document_id) => Self::DocumentId { document_id },
+                None => Self::Missing {},
+            },
+        )
     }
 }
 
@@ -570,10 +584,7 @@ impl DecodeCost for CopyOnChange {
     ) -> Result<u64, cadmpeg_core::CodecError> {
         (
             &self.policy,
-            (
-                self.source.as_ref(),
-                (self.group.as_ref(), self.touched),
-            ),
+            (self.source.as_ref(), (self.group.as_ref(), self.touched)),
         )
             .decode_cost(ctx, operation)
     }
@@ -686,7 +697,11 @@ mod tests {
 
     #[test]
     fn an_external_document_states_its_resolution_and_carries_one_identity() {
-        let path = ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "parts/widget.FCStd").unwrap();
+        let path = ExternalDocument::path(
+            &cadmpeg_test_support::service_decode_context(),
+            "parts/widget.FCStd",
+        )
+        .unwrap();
         let path_wire = serde_json::to_value(&path).unwrap();
         assert_eq!(
             path_wire,
@@ -700,7 +715,11 @@ mod tests {
             path
         );
 
-        let document_id = ExternalDocument::document_id(&cadmpeg_test_support::service_decode_context(), "document-7").unwrap();
+        let document_id = ExternalDocument::document_id(
+            &cadmpeg_test_support::service_decode_context(),
+            "document-7",
+        )
+        .unwrap();
         let document_id_wire = serde_json::to_value(&document_id).unwrap();
         assert_eq!(
             document_id_wire,
@@ -712,8 +731,15 @@ mod tests {
         );
 
         let missing = ExternalDocument::Missing {};
-        assert_eq!(ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "").unwrap(), missing);
-        assert_eq!(ExternalDocument::document_id(&cadmpeg_test_support::service_decode_context(), "").unwrap(), missing);
+        assert_eq!(
+            ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "").unwrap(),
+            missing
+        );
+        assert_eq!(
+            ExternalDocument::document_id(&cadmpeg_test_support::service_decode_context(), "")
+                .unwrap(),
+            missing
+        );
         let missing_wire = serde_json::to_value(&missing).unwrap();
         assert_eq!(missing_wire, serde_json::json!({"resolution": "missing"}));
         assert_eq!(
@@ -774,7 +800,11 @@ mod tests {
         );
 
         let external = JointOperand::external(
-            ExternalDocument::path(&cadmpeg_test_support::service_decode_context(), "parts/widget.FCStd").unwrap(),
+            ExternalDocument::path(
+                &cadmpeg_test_support::service_decode_context(),
+                "parts/widget.FCStd",
+            )
+            .unwrap(),
             "Body1",
             Vec::new(),
         );
@@ -1742,7 +1772,13 @@ mod nonblank_literal_tests {
     #[test]
     fn a_formatted_literal_keeps_its_non_blank_prefix() {
         assert_eq!(
-            cadmpeg_core::nonblank_literal!(&cadmpeg_test_support::service_decode_context(), "sldprt:marker-relation:{}", 34).unwrap().as_str(),
+            cadmpeg_core::nonblank_literal!(
+                &cadmpeg_test_support::service_decode_context(),
+                "sldprt:marker-relation:{}",
+                34
+            )
+            .unwrap()
+            .as_str(),
             "sldprt:marker-relation:34"
         );
         assert_eq!(cadmpeg_core::nonblank_literal!("d6").as_str(), "d6");

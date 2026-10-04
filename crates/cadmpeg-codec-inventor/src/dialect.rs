@@ -173,7 +173,9 @@ impl DialectRecovery {
         container: &InventorContainer<'_>,
     ) -> Result<Self, CodecError> {
         let mut schemas = Vec::new();
-        for descriptor in ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")? {
+        for descriptor in
+            ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")?
+        {
             if let Some(schema) = DatabaseDescriptor::declared_schema(descriptor) {
                 ctx.push_vec(&mut schemas, schema, "collect Inventor dialect schemas")?;
             }
@@ -186,9 +188,15 @@ impl DialectRecovery {
         )?;
         ctx.dedup_vec(&mut schemas, "deduplicate Inventor dialect declarations")?;
         let mut unframed_schemas = Vec::new();
-        for descriptor in ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")? {
+        for descriptor in
+            ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")?
+        {
             if let DatabaseState::Unframed { schema, .. } = &descriptor.state {
-                ctx.push_vec(&mut unframed_schemas, *schema, "collect Inventor unframed dialect schemas")?;
+                ctx.push_vec(
+                    &mut unframed_schemas,
+                    *schema,
+                    "collect Inventor unframed dialect schemas",
+                )?;
             }
         }
         ctx.sort_unstable_by_key(
@@ -197,11 +205,18 @@ impl DialectRecovery {
             Ord::cmp,
             "Inventor unframed dialect schema sort",
         )?;
-        ctx.dedup_vec(&mut unframed_schemas, "deduplicate Inventor dialect declarations")?;
+        ctx.dedup_vec(
+            &mut unframed_schemas,
+            "deduplicate Inventor dialect declarations",
+        )?;
         let mut meta_streams = Vec::new();
         for segment in ctx.admit_iter(&container.rse.segments, "visit Inventor dialect items")? {
             if let Some(declaration) = segment.meta.declaration(ctx)? {
-                ctx.push_vec(&mut meta_streams, declaration, "collect Inventor dialect metadata declarations")?;
+                ctx.push_vec(
+                    &mut meta_streams,
+                    declaration,
+                    "collect Inventor dialect metadata declarations",
+                )?;
             }
         }
         ctx.stable_sort_by(
@@ -210,7 +225,10 @@ impl DialectRecovery {
             Ord::cmp,
             "Inventor dialect metadata sort",
         )?;
-        ctx.dedup_vec(&mut meta_streams, "deduplicate Inventor dialect declarations")?;
+        ctx.dedup_vec(
+            &mut meta_streams,
+            "deduplicate Inventor dialect declarations",
+        )?;
         let mut unframed_meta_streams = Vec::new();
         for segment in ctx.admit_iter(&container.rse.segments, "visit Inventor dialect items")? {
             if let crate::rse::SegmentMetaState::Malformed {
@@ -218,10 +236,17 @@ impl DialectRecovery {
                 ..
             } = &segment.meta
             {
-                ctx.push_vec(&mut unframed_meta_streams, MetaStreamDeclaration {
-                    marker: ctx.copy_retained_text(&declared.marker, "retain Inventor unframed dialect marker")?,
-                    version: declared.version,
-                }, "collect Inventor unframed dialect metadata")?;
+                ctx.push_vec(
+                    &mut unframed_meta_streams,
+                    MetaStreamDeclaration {
+                        marker: ctx.copy_retained_text(
+                            &declared.marker,
+                            "retain Inventor unframed dialect marker",
+                        )?,
+                        version: declared.version,
+                    },
+                    "collect Inventor unframed dialect metadata",
+                )?;
             }
         }
         ctx.stable_sort_by(
@@ -230,7 +255,10 @@ impl DialectRecovery {
             Ord::cmp,
             "Inventor unframed dialect metadata sort",
         )?;
-        ctx.dedup_vec(&mut unframed_meta_streams, "deduplicate Inventor dialect declarations")?;
+        ctx.dedup_vec(
+            &mut unframed_meta_streams,
+            "deduplicate Inventor dialect declarations",
+        )?;
         Ok(Self {
             cfb_major_version: container.snapshot.major_version(),
             schemas,
@@ -243,10 +271,15 @@ impl DialectRecovery {
     /// Evaluate identity and admission once from the parsed facts.
     pub(crate) fn classify(&self, ctx: &DecodeContext<'_>) -> Result<DialectMatch, CodecError> {
         let identity_verified = !self.schemas.is_empty()
-            && ctx.admit_iter(&self.schemas, "classify Inventor schema declarations")?
+            && ctx
+                .admit_iter(&self.schemas, "classify Inventor schema declarations")?
                 .all(|schema| *schema == RseSchema::SCHEMA_31)
             && !self.meta_streams.is_empty()
-            && ctx.admit_iter(&self.meta_streams, "classify Inventor metadata declarations")?
+            && ctx
+                .admit_iter(
+                    &self.meta_streams,
+                    "classify Inventor metadata declarations",
+                )?
                 .all(MetaStreamDeclaration::is_verified);
         let framing_verified =
             self.unframed_schemas.is_empty() && self.unframed_meta_streams.is_empty();
@@ -294,7 +327,10 @@ impl DialectRecovery {
                     ctx,
                     &self.meta_streams,
                     |declared| {
-                        ctx.copy_retained_text(&declared.marker, "retain Inventor metadata marker declaration part")
+                        ctx.copy_retained_text(
+                            &declared.marker,
+                            "retain Inventor metadata marker declaration part",
+                        )
                         .map(Some)
                     },
                     "visit Inventor metadata declarations",
@@ -469,21 +505,20 @@ impl DialectRecovery {
         }
         ctx.join_retained(&reasons, "; ", "retain Inventor joined dialect reasons")
         })?;
-        Ok(
-            InventorLossCode::SourceDialectUnverified.note(ctx,
-                format_args!(
-            "{}; this decode applied the only Inventor grammars this codec implements — RSe \
+        Ok(InventorLossCode::SourceDialectUnverified.note(
+            ctx,
+            format_args!(
+                "{}; this decode applied the only Inventor grammars this codec implements — RSe \
              database schema {} and RSe segment metadata marker {:?} version {} — to those \
              streams, and what they did not frame is reported as an unavailable stream with its \
              own issue record",
-            joined_reasons,
-            RseSchema::SCHEMA_31.value(),
-            MetaStreamDeclaration::VERIFIED_MARKER,
-            MetaStreamDeclaration::VERIFIED_VERSION
-        ),
-                "retain Inventor dialect loss message",
-            )?,
-        )
+                joined_reasons,
+                RseSchema::SCHEMA_31.value(),
+                MetaStreamDeclaration::VERIFIED_MARKER,
+                MetaStreamDeclaration::VERIFIED_VERSION
+            ),
+            "retain Inventor dialect loss message",
+        )?)
     }
 }
 
@@ -552,7 +587,10 @@ fn kernel_layer_for_state(
     match state {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => Ok(Some(kernel_layer(ctx, carrier.family, header)?)),
-            Err(_) => Ok(Some(cadmpeg_asm::dialect::classify(ctx, cadmpeg_asm::dialect::KernelHeaderRef::Unknown)?)),
+            Err(_) => Ok(Some(cadmpeg_asm::dialect::classify(
+                ctx,
+                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+            )?)),
         },
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => Ok(None),
     }
@@ -576,7 +614,9 @@ pub(crate) fn layers(
                         "duplicate Inventor dialect layer: {rejected:?}"
                     ))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => {
+                    CodecError::ResourceLimit(limit)
+                }
             })?;
     }
     Ok(layers)

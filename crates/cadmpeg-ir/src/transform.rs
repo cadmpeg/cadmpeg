@@ -158,7 +158,8 @@ pub struct Transform {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for Transform {
-    const FIXED_BYTES: Option<u64> = <[[f64; 4]; 3] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+    const FIXED_BYTES: Option<u64> =
+        <[[f64; 4]; 3] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
 
     fn decode_cost(
         &self,

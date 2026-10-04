@@ -6,8 +6,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 use super::{
-    admit_container_entries, classify, find_summary_entry,
-    insert_attribute, summary_note, InventorContainer,
+    admit_container_entries, classify, find_summary_entry, insert_attribute, summary_note,
+    InventorContainer,
 };
 use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
@@ -54,7 +54,11 @@ fn container_summary_attribute_refuses_before_insert() {
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("service context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
-    let mut entries = snapshot.container_entries(&setup, |entry| classify(&setup, entry).expect("classification")).expect("summary admission");
+    let mut entries = snapshot
+        .container_entries(&setup, |entry| {
+            classify(&setup, entry).expect("classification")
+        })
+        .expect("summary admission");
     let entry = entries.first_mut().expect("fixture entry");
     insert_attribute(&setup, entry, "test", format_args!("value")).expect("service attribute");
     assert_eq!(entry.attributes["test"], "value");
@@ -99,7 +103,11 @@ fn container_summary_search_refuses_work_limit_before_scan() {
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("service context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
-    let mut entries = snapshot.container_entries(&setup, |entry| classify(&setup, entry).expect("classification")).expect("summary admission");
+    let mut entries = snapshot
+        .container_entries(&setup, |entry| {
+            classify(&setup, entry).expect("classification")
+        })
+        .expect("summary admission");
     assert!(
         find_summary_entry(&setup, &mut entries, snapshot.entries()[0].directory_id())
             .expect("service search")
@@ -162,7 +170,8 @@ fn container_summary_loss_slot_refuses_before_loss_construction() {
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    ctx.reserve_vec(&mut losses, 1, "collect Inventor summary loss").expect("admitted loss slot");
+    ctx.reserve_vec(&mut losses, 1, "collect Inventor summary loss")
+        .expect("admitted loss slot");
 }
 
 #[test]

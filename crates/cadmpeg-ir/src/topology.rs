@@ -1181,7 +1181,8 @@ impl From<IncreasingParameterInterval> for ParameterInterval {
 pub struct IncreasingParameterInterval([f64; 2]);
 
 impl cadmpeg_core::decode::cost::DecodeCost for IncreasingParameterInterval {
-    const FIXED_BYTES: Option<u64> = <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+    const FIXED_BYTES: Option<u64> =
+        <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
 
     fn decode_cost(
         &self,

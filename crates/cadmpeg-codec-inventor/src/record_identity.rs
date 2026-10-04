@@ -94,12 +94,7 @@ impl RecordIdentity {
             format_args!("{}-{}", self.segment_token, self.record_ordinal),
             "Inventor record identity key",
         )?;
-        try_identity_key(
-            ctx,
-            key,
-            "validate Inventor record identity key",
-            None,
-        )
+        try_identity_key(ctx, key, "validate Inventor record identity key", None)
     }
 }
 
@@ -242,10 +237,7 @@ impl<T: RecordPayload + Serialize> Serialize for Located<T> {
 }
 
 impl<T: RecordPayload> LocatedWire<T> {
-    pub(crate) fn into_record(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Located<T>, CodecError> {
+    pub(crate) fn into_record(self, ctx: &DecodeContext<'_>) -> Result<Located<T>, CodecError> {
         let segment_token_text = self.segment_token;
         let segment_token = try_identity_key(
             ctx,
@@ -253,17 +245,14 @@ impl<T: RecordPayload> LocatedWire<T> {
             "validate Inventor PmDc segment token",
             Some("segment_token"),
         )?;
-        let record = Located::new(
-            self.value,
-            self.type_id,
-            segment_token,
-            self.record_ordinal,
-        );
+        let record = Located::new(self.value, self.type_id, segment_token, self.record_ordinal);
         let (expected_id, _expected_id_storage) =
-            ctx.with_scoped_storage("validate Inventor PmDc record identity", || {
-                record.id(ctx)
-            })?;
-        if !ctx.equal(&self.id, &expected_id, "validate Inventor PmDc record identity")? {
+            ctx.with_scoped_storage("validate Inventor PmDc record identity", || record.id(ctx))?;
+        if !ctx.equal(
+            &self.id,
+            &expected_id,
+            "validate Inventor PmDc record identity",
+        )? {
             return Err(CodecError::Malformed(
                 "id disagrees with segment_token or record_ordinal".into(),
             ));

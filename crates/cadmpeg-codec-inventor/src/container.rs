@@ -54,7 +54,10 @@ impl<'a> InventorContainer<'a> {
             CompoundEntry::Storage(_) => ContainerRole::Storage,
             CompoundEntry::Stream(_) => ContainerRole::Stream,
         })?;
-        for (index, source) in ctx.admit_iter(self.snapshot.entries(), "classify Inventor summary entries")?.enumerate() {
+        for (index, source) in ctx
+            .admit_iter(self.snapshot.entries(), "classify Inventor summary entries")?
+            .enumerate()
+        {
             entries[index].role = classify(ctx, source)?;
         }
         for segment in ctx.admit_iter(&self.rse.segments, "visit Inventor summary segments")? {
@@ -141,15 +144,19 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let mut recovery_storage = ctx.reserve_scoped(0, "collect Inventor dialect declarations")?;
-        let recovery = recovery_storage.with_storage(|| crate::dialect::DialectRecovery::of(ctx, self))?;
+        let mut recovery_storage =
+            ctx.reserve_scoped(0, "collect Inventor dialect declarations")?;
+        let recovery =
+            recovery_storage.with_storage(|| crate::dialect::DialectRecovery::of(ctx, self))?;
         let matched = recovery.classify(ctx)?;
         let mut losses = Vec::new();
         if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched, &recovery)? {
             ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
         }
         let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
-        if let Some(kernel) = dialects.iter().find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        if let Some(kernel) = dialects
+            .iter()
+            .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         {
             if let Some(loss) = crate::dialect::kernel_dialect_loss(ctx, kernel)? {
                 ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
@@ -229,8 +236,10 @@ fn find_summary_entry<'a>(
     for entry in entries {
         ctx.charge_work(1, "find Inventor summary entry")?;
         let matches = match entry.attributes.get("directory_id") {
-            Some(value) => ctx.parse_text::<u32>(value, "parse Inventor summary directory id")?
-                == Ok(directory_id),
+            Some(value) => {
+                ctx.parse_text::<u32>(value, "parse Inventor summary directory id")?
+                    == Ok(directory_id)
+            }
             None => false,
         };
         if matches {
@@ -248,7 +257,12 @@ fn insert_attribute(
 ) -> Result<(), CodecError> {
     let key = ctx.copy_retained_text(key, "retain Inventor summary attribute key")?;
     let value = ctx.format_retained(value, "retain Inventor summary attribute value")?;
-    ctx.insert_btree_map(&mut entry.attributes, key, value, "collect Inventor summary attribute")?;
+    ctx.insert_btree_map(
+        &mut entry.attributes,
+        key,
+        value,
+        "collect Inventor summary attribute",
+    )?;
     Ok(())
 }
 
@@ -264,7 +278,12 @@ pub(crate) fn has_inventor_evidence(
         }
     }
     for path in ctx.admit_iter(paths, "visit Inventor directory corroboration")? {
-        if ctx.eq_ignore_ascii_case(path, "RSeStorage/RSeSegInfo", "Inventor directory corroboration")? || database_band(ctx, path)?.is_some() {
+        if ctx.eq_ignore_ascii_case(
+            path,
+            "RSeStorage/RSeSegInfo",
+            "Inventor directory corroboration",
+        )? || database_band(ctx, path)?.is_some()
+        {
             return Ok(has_storage);
         }
     }
@@ -279,16 +298,26 @@ fn classify(ctx: &DecodeContext<'_>, entry: &CompoundEntry) -> Result<ContainerR
     if database_band(ctx, path)?.is_some() {
         return Ok(ContainerRole::RseDatabase);
     }
-    if ctx.eq_ignore_ascii_case(path, "RSeStorage/RSeSegInfo", "classify Inventor entry path")? {
+    if ctx.eq_ignore_ascii_case(
+        path,
+        "RSeStorage/RSeSegInfo",
+        "classify Inventor entry path",
+    )? {
         return Ok(ContainerRole::RseSegmentRegistry);
     }
-    if ctx.eq_ignore_ascii_case(path, "RSeStorage/RSeDbRevisionInfo", "classify Inventor entry path")? {
+    if ctx.eq_ignore_ascii_case(
+        path,
+        "RSeStorage/RSeDbRevisionInfo",
+        "classify Inventor entry path",
+    )? {
         return Ok(ContainerRole::RseRevisionTable);
     }
     if ctx.eq_ignore_ascii_case(path, "Protein", "classify Inventor entry path")? {
         return Ok(ContainerRole::Protein);
     }
-    if ctx.eq_ignore_ascii_case(path, "UFRxDoc", "classify Inventor entry path")? || is_reference_file(ctx, path)? {
+    if ctx.eq_ignore_ascii_case(path, "UFRxDoc", "classify Inventor entry path")?
+        || is_reference_file(ctx, path)?
+    {
         return Ok(ContainerRole::ExternalReference);
     }
     if let Some(name) = direct_rse_child(ctx, path)? {
@@ -307,10 +336,19 @@ fn classify(ctx: &DecodeContext<'_>, entry: &CompoundEntry) -> Result<ContainerR
 
 fn is_reference_file(ctx: &DecodeContext<'_>, path: &str) -> Result<bool, CodecError> {
     let mut components = path.split('/');
-    let Some(storage) = components.next() else { return Ok(false); };
-    if !ctx.eq_ignore_ascii_case(storage, "RSeStorage", "match Inventor reference storage")? { return Ok(false); }
-    let Some(directory) = components.next() else { return Ok(false); };
-    Ok(ctx.eq_ignore_ascii_case(directory, "RefdFiles", "match Inventor reference directory")? && components.next().is_some())
+    let Some(storage) = components.next() else {
+        return Ok(false);
+    };
+    if !ctx.eq_ignore_ascii_case(storage, "RSeStorage", "match Inventor reference storage")? {
+        return Ok(false);
+    }
+    let Some(directory) = components.next() else {
+        return Ok(false);
+    };
+    Ok(
+        ctx.eq_ignore_ascii_case(directory, "RefdFiles", "match Inventor reference directory")?
+            && components.next().is_some(),
+    )
 }
 
 #[cfg(test)]

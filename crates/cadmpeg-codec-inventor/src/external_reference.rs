@@ -140,16 +140,10 @@ pub(crate) fn parse<'a>(
                     detail,
                 }
             }
-            Err(error) => {
-                UfrxState::Malformed {
-                    stream: stream.id(),
-                    detail: crate::issue_detail(
-                        ctx,
-                        error,
-                        "retain Inventor malformed UFRx detail",
-                    )?,
-                }
-            }
+            Err(error) => UfrxState::Malformed {
+                stream: stream.id(),
+                detail: crate::issue_detail(ctx, error, "retain Inventor malformed UFRx detail")?,
+            },
         },
     )
 }
@@ -1096,7 +1090,8 @@ mod tests {
             .expect("synthetic compound file fits policy");
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("synthetic compound file parses");
         snapshot
-            .stream(&ctx, "RSeStorage/RSeSegInfo").expect("lookup admission")
+            .stream(&ctx, "RSeStorage/RSeSegInfo")
+            .expect("lookup admission")
             .expect("validated stream entry")
             .id()
     }

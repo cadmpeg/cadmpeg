@@ -592,8 +592,8 @@ where
     order.extend(0..converted.len());
     ctx.sort_unstable_by_key(
         &mut order,
-            |value| (converted[*value].id(), *value),
-            Ord::cmp,
+        |value| (converted[*value].id(), *value),
+        Ord::cmp,
         operation,
     )
     .map_err(|error| E::from(NativeConvertError::Resource(error)))?;

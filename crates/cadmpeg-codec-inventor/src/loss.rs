@@ -253,7 +253,12 @@ impl InventorLossCode {
     ///
     /// The structured code is `inventor/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
-    pub(crate) fn note(self, ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>, operation: &'static str) -> Result<LossNote, CodecError> {
+    pub(crate) fn note(
+        self,
+        ctx: &DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<LossNote, CodecError> {
         let kind = self.kind(ctx)?;
         let message = ctx.format_retained(message, operation)?;
         Ok(LossNote::new(kind, message).with_severity(self.severity()))
@@ -331,9 +336,12 @@ mod tests {
     fn note_takes_severity_from_the_code() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         for code in InventorLossCode::ALL {
-            let note = code.note(&ctx, format_args!("x"), "retain Inventor loss test message").expect("loss note fits test budget");
+            let note = code
+                .note(&ctx, format_args!("x"), "retain Inventor loss test message")
+                .expect("loss note fits test budget");
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert_eq!(note.code.namespace(), "inventor");

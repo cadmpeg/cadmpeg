@@ -26,7 +26,11 @@ pub enum RadiusForm {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for RadiusForm {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Constant => (0_u8,).decode_cost(ctx, operation),
             Self::Chordal => (1_u8,).decode_cost(ctx, operation),
@@ -76,12 +80,19 @@ pub enum RadiusSpec {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for RadiusSpec {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved { form } => (0_u8, form).decode_cost(ctx, operation),
             Self::Constant { radius } => (1_u8, radius).decode_cost(ctx, operation),
             Self::Chordal { chord_length } => (2_u8, chord_length).decode_cost(ctx, operation),
-            Self::Asymmetric { offset_one, offset_two } => (3_u8, offset_one, offset_two).decode_cost(ctx, operation),
+            Self::Asymmetric {
+                offset_one,
+                offset_two,
+            } => (3_u8, offset_one, offset_two).decode_cost(ctx, operation),
             Self::Variable { points } => (4_u8, points).decode_cost(ctx, operation),
         }
     }
@@ -122,7 +133,11 @@ pub struct FilletGroup {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for FilletGroup {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.edges, &self.radius, &self.tangency_weight).decode_cost(ctx, operation)
     }
 }
@@ -140,7 +155,11 @@ pub struct FullRoundFilletGroup {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for FullRoundFilletGroup {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.center, &self.side_one, &self.side_two).decode_cost(ctx, operation)
     }
 }
@@ -226,7 +245,11 @@ pub enum FullRoundSideSelection {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for FullRoundSideSelection {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Automatic => (0_u8,).decode_cost(ctx, operation),
             Self::Explicit(value) => (1_u8, value).decode_cost(ctx, operation),
@@ -247,7 +270,11 @@ pub struct ChamferGroup {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ChamferGroup {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.edges, &self.spec).decode_cost(ctx, operation)
     }
 }
@@ -273,7 +300,11 @@ pub enum VariableRadiiMapError<E> {
 pub struct VariableRadii(Vec<VariableRadius<Fraction, NonNegativeLength>>);
 
 impl cadmpeg_core::decode::cost::DecodeCost for VariableRadii {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         self.0.decode_cost(ctx, operation)
     }
 }
@@ -346,8 +377,7 @@ impl VariableRadii {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
     ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
-        Self(ctx.copy_slice(&self.0, "IR variable radius copy")?)
-            .try_map_radii_owned(ctx, map)
+        Self(ctx.copy_slice(&self.0, "IR variable radius copy")?).try_map_radii_owned(ctx, map)
     }
     /// Map owned radii in place through the caller's work budget.
     /// Refused candidates are consumed; no sample collection is copied.
@@ -401,8 +431,14 @@ pub struct VariableRadius<P = f64, L = Length> {
     pub radius: L,
 }
 
-impl<P: cadmpeg_core::decode::cost::DecodeCost, L: cadmpeg_core::decode::cost::DecodeCost> cadmpeg_core::decode::cost::DecodeCost for VariableRadius<P, L> {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+impl<P: cadmpeg_core::decode::cost::DecodeCost, L: cadmpeg_core::decode::cost::DecodeCost>
+    cadmpeg_core::decode::cost::DecodeCost for VariableRadius<P, L>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.parameter, &self.radius).decode_cost(ctx, operation)
     }
 }
@@ -433,7 +469,11 @@ pub enum ChamferForm {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ChamferForm {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Distance => (0_u8,).decode_cost(ctx, operation),
             Self::TwoDistances => (1_u8,).decode_cost(ctx, operation),
@@ -479,12 +519,20 @@ pub enum ChamferSpec {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ChamferSpec {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::Unresolved { form } => (0_u8, form).decode_cost(ctx, operation),
             Self::Distance { distance } => (1_u8, distance).decode_cost(ctx, operation),
-            Self::TwoDistances { first, second } => (2_u8, first, second).decode_cost(ctx, operation),
-            Self::DistanceAngle { distance, angle } => (3_u8, distance, angle).decode_cost(ctx, operation),
+            Self::TwoDistances { first, second } => {
+                (2_u8, first, second).decode_cost(ctx, operation)
+            }
+            Self::DistanceAngle { distance, angle } => {
+                (3_u8, distance, angle).decode_cost(ctx, operation)
+            }
         }
     }
 }
