@@ -431,6 +431,7 @@ pub(crate) fn text_source_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id::D
         && matches!(
             tcx.def_path_str(trait_id).as_str(),
             "cadmpeg_core::decode::text::TextSource" | "decode::text::TextSource"
+                | "cadmpeg_core::decode::text::QuerySource" | "decode::text::QuerySource"
         )
 }
 
