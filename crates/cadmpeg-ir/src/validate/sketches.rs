@@ -1624,6 +1624,7 @@ pub(super) fn check_sketches(
                 )?;
             }
         }
+        drop(loci);
         if let Constraint::Offset {
             pairs, distance, ..
         } = constraint.definition.kind()

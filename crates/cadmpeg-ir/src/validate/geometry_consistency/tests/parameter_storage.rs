@@ -51,6 +51,25 @@ fn parameter_uniqueness_admits_source_before_projection_and_comparison_before_st
 }
 
 #[test]
+fn parameter_uniqueness_admits_only_visited_candidates() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The total is four source slots, three scratch copies, and four visited comparisons.
+    policy.limits.max_work_units = 11;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let values = super::super::unique(&ctx, &[1.0, 2.0, 3.0, 1.0], |value| {
+        FiniteReal::new(*value)
+    })
+    .unwrap();
+    assert_eq!(
+        values.iter().map(|value| value.get()).collect::<Vec<_>>(),
+        [1.0, 2.0, 3.0]
+    );
+    drop(values);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn parameter_pairs_preserve_first_and_later_admission_refusals() {
     for (dimension, cap) in [
         (ResourceDimension::MaterializedBytes, 0),

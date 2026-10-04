@@ -1150,14 +1150,11 @@ fn unique<'ctx, T>(
         let Some(value) = project(value) else {
             continue;
         };
-        let mut present = false;
-        for candidate in unique.iter() {
-            ctx.charge_work(1, "parameter uniqueness comparison")?;
-            if *candidate == value {
-                present = true;
-                break;
-            }
-        }
+        let present = ctx.any_by(
+            &unique[..],
+            |candidate| Ok(*candidate == value),
+            "parameter uniqueness comparison",
+        )?;
         if !present {
             unique.push(value)?;
         }
