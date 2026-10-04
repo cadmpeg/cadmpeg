@@ -223,6 +223,18 @@ fn fallback_attribute_name_keeps_class_prefix() {
 }
 
 #[test]
+fn topology_attribute_class_separator_refusal_propagates() {
+    let error = crate::test_support::resource_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX Parasolid attribute class separator",
+        |ctx| topology_attribute_name(ctx, None, Some("CLASS"), "84", 7),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX Parasolid attribute class separator" && limit.additional == 1));
+}
+
+#[test]
 fn fallback_attribute_name_refuses_retained_limit() {
     let error = fallback_attribute_name_with_limit(|policy| policy.limits.max_retained_bytes = 0)
         .unwrap_err();
@@ -727,6 +739,22 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         value_record: "double-record".into(),
         inflated_offset: 200,
     };
+
+    let error = crate::test_support::resource_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX Parasolid attribute field separator",
+        |ctx| {
+            let mut reservation = ctx.reserve_scoped(0, "test Parasolid attribute names")?;
+            ParasolidAttributeNameIndex::new(
+                ctx, &mut reservation,
+                std::slice::from_ref(&class_use), std::slice::from_ref(&definition),
+                std::slice::from_ref(&field_use), &[],
+            )?.field_name(ctx, &reference, "double-use")
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX Parasolid attribute field separator" && limit.additional == 1));
 
     assert_eq!(
         attribute_field_name(

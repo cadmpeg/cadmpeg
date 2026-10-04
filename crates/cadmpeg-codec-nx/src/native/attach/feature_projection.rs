@@ -193,7 +193,9 @@ pub(super) fn selection_indices_native<T>(
     }
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(
-            length.checked_sub(PREFIX.len()).ok_or_else(|| {
+            length.checked_sub(PREFIX.len())
+                .and_then(|bytes| bytes.checked_sub(if count == 0 { 0 } else { count - 1 }))
+                .ok_or_else(|| {
                 ctx.refuse_codec_limit("NX body selection indices", 0, 1)
             })?,
         ),
@@ -204,7 +206,7 @@ pub(super) fn selection_indices_native<T>(
     for (ordinal, index) in ctx.admit_iter(first, "NX selection leading index")?.copied()
         .chain(ctx.admit_iter(indices, "NX selection index text traversal")?.map(value)).enumerate() {
         if ordinal != 0 {
-            text.push(',');
+            ctx.push_retained_char(&mut text, ',', "NX body selection separator")?;
         }
         std::fmt::write(&mut text, format_args!("{index}")).map_err(|_| {
             CodecError::InvalidInput("NX body selection index formatting failed".to_string())

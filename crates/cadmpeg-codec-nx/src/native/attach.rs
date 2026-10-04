@@ -6838,7 +6838,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
             })?;
         let mut name = ctx.retained_string(name_len, "NX Parasolid attribute field name")?;
         ctx.append_retained(&mut name, definition.name.as_str(), "NX admitted text append")?;
-        name.push('.');
+        ctx.push_retained_char(&mut name, '.', "NX Parasolid attribute field separator")?;
         ctx.append_retained(&mut name, &field_name, "NX admitted text append")?;
         Ok(Some(name))
     }
@@ -6884,7 +6884,9 @@ fn topology_attribute_name(
         })?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(
-            name_len.checked_sub(class_name.map_or(0, str::len)).ok_or_else(|| {
+            name_len.checked_sub(class_name.map_or(0, str::len))
+                .and_then(|bytes| bytes.checked_sub(usize::from(class_name.is_some())))
+                .ok_or_else(|| {
                 ctx.refuse_codec_limit("NX Parasolid attribute fallback name", 0, 1)
             })?,
         ),
@@ -6893,7 +6895,7 @@ fn topology_attribute_name(
     let mut name = ctx.retained_string(name_len, "NX Parasolid attribute fallback name")?;
     if let Some(class_name) = class_name {
         ctx.append_retained(&mut name, class_name, "NX Parasolid attribute fallback name")?;
-        name.push('.');
+        ctx.push_retained_char(&mut name, '.', "NX Parasolid attribute class separator")?;
     }
     std::fmt::Write::write_fmt(
         &mut name,
