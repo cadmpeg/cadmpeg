@@ -1543,7 +1543,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     .expect("test decode context");
 
     let bytes = synthetic_cyl_spl_sur_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();

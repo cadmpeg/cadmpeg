@@ -654,7 +654,7 @@ fn bind_complete_record_tables(
     width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
+    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(ctx, bytes)? else {
         return Ok(false);
     };
     let active_limit =
