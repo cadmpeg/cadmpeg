@@ -160,9 +160,11 @@ pub(crate) enum ScalarLane {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ScalarLane {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Value(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation),
+            Self::DimensionDriven | Self::Undefined => Ok(1),
+        }
     }
 }
 
@@ -191,18 +193,11 @@ pub(crate) enum VariableType {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for VariableType {
-    const FIXED_BYTES: Option<u64> =
-        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()));
-    fn decode_cost(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Unknown(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value.0), ctx, operation),
+            Self::Dimension | Self::U | Self::V | Self::Radius | Self::Parameter | Self::Selector | Self::Result | Self::Auxiliary => Ok(1),
+        }
     }
 }
 
@@ -452,9 +447,11 @@ pub(crate) enum FeatureSegmentKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for FeatureSegmentKind {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Line(ends) | Self::Arc(ends) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, ends), ctx, operation),
+            Self::Point(point) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, point), ctx, operation),
+        }
     }
 }
 
@@ -727,9 +724,11 @@ pub(crate) enum TrimEntityKind {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for TrimEntityKind {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Line => Ok(1),
+            Self::Arc { center_vertex } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, center_vertex), ctx, operation),
+        }
     }
 }
 
@@ -1844,9 +1843,11 @@ pub(crate) enum DefinitionIdentity {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DefinitionIdentity {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Parsed { schema_id, owner_feature_id } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, &(schema_id, owner_feature_id)), ctx, operation),
+            Self::BoundOwner { schema_id, owner_feature_id } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, &(schema_id, owner_feature_id)), ctx, operation),
+        }
     }
 }
 
@@ -9890,6 +9891,7 @@ fn positional_replay_definitions_deduplication_refuses_work() {
             && resource.operation == "creo positional replay definitions starts deduplication"));
 }
 
+    mod cost;
 }
 
 #[cfg(test)]

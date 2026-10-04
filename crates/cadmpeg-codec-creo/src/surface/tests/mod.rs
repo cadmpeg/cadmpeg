@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 mod contours;
+mod cost;
 mod dump;
 mod inline;
 mod planes;

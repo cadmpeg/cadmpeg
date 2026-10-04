@@ -23,6 +23,13 @@ pub(crate) enum Side {
     One,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for Side {
+    const FIXED_BYTES: Option<u64> = Some(1);
+    fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
+        Ok(1)
+    }
+}
+
 impl Side {
     /// The opposite side of this curve.
     pub(crate) const fn flip(self) -> Self {
@@ -67,18 +74,9 @@ pub(crate) struct HalfEdgeId {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for HalfEdgeId {
-    const FIXED_BYTES: Option<u64> =
-        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()));
-    fn decode_cost(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            Self,
-        >()))
+    const FIXED_BYTES: Option<u64> = Some(5);
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.curve_id, &self.side), ctx, operation)
     }
 }
 

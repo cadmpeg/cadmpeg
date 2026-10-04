@@ -56,6 +56,15 @@ pub(crate) enum SurfaceKind {
     Extrusion(ExtrusionVariant),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SurfaceKind {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Extrusion(variant) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, variant), ctx, operation),
+            Self::Plane | Self::Cylinder | Self::Cone | Self::TorusOrSphere | Self::Spline | Self::Fillet => Ok(1),
+        }
+    }
+}
+
 
 
 impl SurfaceKind {
@@ -101,6 +110,13 @@ pub(crate) enum ExtrusionVariant {
     TabulatedCylinder,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ExtrusionVariant {
+    const FIXED_BYTES: Option<u64> = Some(1);
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(1)
+    }
+}
+
 /// Admitted surface-row boundary codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BoundaryType {
@@ -109,6 +125,13 @@ pub(crate) enum BoundaryType {
     Code06,
     Code08,
     CodeF6,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for BoundaryType {
+    const FIXED_BYTES: Option<u64> = Some(1);
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(1)
+    }
 }
 
 
@@ -162,9 +185,11 @@ pub(crate) struct SurfaceRow {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SurfaceRow {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &((&self.id, &self.kind, &self.feature_id, &self.reversed),
+                (&self.boundary_type, &self.next_surface, &self.offset)), ctx, operation,
+        )
     }
 }
 
@@ -2552,9 +2577,10 @@ pub(crate) struct OutlinePlane {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for OutlinePlane {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.surface_id, &self.origin, self.normal(), self.u_axis(), &self.offset), ctx, operation,
+        )
     }
 }
 

@@ -1176,3 +1176,18 @@ fn topology_successor_and_open_tail_walks_refuse_work() {
 }
 
 mod work_admission;
+
+#[test]
+fn half_edge_id_cost_excludes_struct_padding() {
+    use cadmpeg_core::decode::cost::DecodeCost;
+    with_service_context(|ctx| {
+        // Four identifier bytes and one side tag exclude struct padding.
+        for side in [super::Side::Zero, super::Side::One] {
+            assert_eq!(side.decode_cost(ctx, "half-edge side cost").expect("side cost"), 1);
+            for curve_id in [0, 7, u32::MAX] {
+                assert_eq!(HalfEdgeId { curve_id, side }.decode_cost(ctx, "half-edge id cost").expect("id cost"), 5);
+            }
+        }
+        assert_eq!(<HalfEdgeId as DecodeCost>::FIXED_BYTES, Some(5));
+    });
+}
