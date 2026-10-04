@@ -1765,19 +1765,20 @@ pub(crate) fn decode_entity_headers(
             }
             // The first header of the index that forms a container names the
             // sketch.
-            let mut container = None;
-            for &start in ctx.admit_iter(offsets, "scan F3D legacy sketch candidate headers")? {
-                if let Some(members) = parse_legacy_sketch_container_members(
-                    ctx,
-                    bytes,
-                    start,
-                    entity_suffix,
-                    &records,
-                )? {
-                    container = Some((start, members));
-                    break;
-                }
-            }
+            let container = ctx.find_map(
+                offsets,
+                |&start| {
+                    Ok(parse_legacy_sketch_container_members(
+                        ctx,
+                        bytes,
+                        start,
+                        entity_suffix,
+                        &records,
+                    )?
+                    .map(|members| (start, members)))
+                },
+                "scan F3D legacy sketch candidate headers",
+            )?;
             let Some((start, members)) = container else {
                 continue;
             };
