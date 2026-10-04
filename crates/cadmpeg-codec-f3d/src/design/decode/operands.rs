@@ -1757,17 +1757,32 @@ pub(crate) fn edge_operand_candidate_faces(
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let mut faces = tags
-        .iter()
-        .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.design_references.contains(&design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(id) => Some(id.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let mut faces = ctx.try_collect_vec(
+        ctx.admit_iter(tags, "scan F3D edge operand candidate tags")?
+            .filter_map(|tag| {
+                if !owner_id.is_none_or(|owner_id| {
+                    crate::ids::same_native_occurrence(&tag.id, owner_id)
+                }) {
+                    return None;
+                }
+                match ctx.contains(
+                    &tag.design_references,
+                    &design_reference,
+                    "find F3D edge operand candidate design reference",
+                ) {
+                    Ok(false) => None,
+                    Err(error) => Some(Err(error)),
+                    Ok(true) => match &tag.target {
+                        AttributeTarget::Face(id) => Some(id.try_clone_for_decode(
+                            ctx,
+                            "f3d operand face candidate ID",
+                        )),
+                        _ => None,
+                    },
+                }
+            }),
+        "collect F3D edge operand candidate faces",
+    )?;
     ctx.stable_sort_by(
         &mut faces,
         |value| value.as_str(),
