@@ -302,10 +302,16 @@ fn topology_bound_face_points(
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for (vertex_id, point) in ctx.admit_iter(solved_vertices, "creo topology-bound solved vertices")? {
-        if std::num::NonZeroU32::new(*vertex_id)
-            .and_then(|id| vertex_faces.get(&id))
-            .is_some_and(|faces| faces.contains(&face_id))
-        {
+        let incident_faces = if let Some(id) = std::num::NonZeroU32::new(*vertex_id) {
+            ctx.get_btree_map(
+                vertex_faces,
+                &id,
+                "creo topology-bound vertex face lookup",
+            )?
+        } else {
+            None
+        };
+        if incident_faces.is_some_and(|faces| faces.contains(&face_id)) {
             ctx.reserve_vec(&mut points, 1, "creo topology-bound face points")?;
             points.push(*point);
         }
