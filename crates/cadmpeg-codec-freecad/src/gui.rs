@@ -255,7 +255,7 @@ pub(crate) fn transfer(
         "SchemaVersion",
         "schemaVersion",
     )?;
-    let admission = schema::classify(schema_declaration.as_deref());
+    let admission = schema::classify(ctx, schema_declaration.as_deref())?;
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ctx,
