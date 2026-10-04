@@ -24,8 +24,7 @@ fn retained_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
-    copy.push_str(text);
+    ctx.append_retained(&mut copy, text, operation)?;
     Ok(copy)
 }
 
@@ -57,14 +56,10 @@ fn index_brep<'a, T, K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     mut entry: impl FnMut(&'a T) -> (K, V),
 ) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
     let operation = "index SLDPRT sketch B-rep records";
-    let count = u64::try_from(values.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(count, operation)?;
     let mut index = HashMap::new();
-    ctx.reserve_map(&mut index, values.len(), operation)?;
-    for value in values {
+    for value in ctx.admit_iter(values, operation)? {
         let (key, record) = entry(value);
-        index.insert(key, record);
+        ctx.insert_hash_map(&mut index, key, record, operation)?;
     }
     Ok(index)
 }
@@ -85,7 +80,17 @@ pub(crate) fn sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
-    for source in scan.sections() {
+    for source in ctx
+        .admit_iter(&scan.blocks, "project SLDPRT resolved-feature sections")?
+        .map(crate::container::Section::Block)
+        .chain(
+            ctx.admit_iter(
+                &scan.compound_streams,
+                "project SLDPRT resolved-feature sections",
+            )?
+            .map(crate::container::Section::Compound),
+        )
+    {
         let Some(section) = source.name() else {
             continue;
         };
@@ -97,7 +102,10 @@ pub(crate) fn sketches(
             "sldprt:feature-input:resolved-features#{}",
             source.ordinal()
         );
-        for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
+        for (stream_ordinal, stream) in ctx
+            .admit_iter(source.ps_streams(), "project SLDPRT section streams")?
+            .enumerate()
+        {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
             let configuration = configuration(ctx, section)?;
@@ -147,6 +155,8 @@ fn project_brep(
     entities: &mut Vec<SketchEntity>,
     constraints: &mut Vec<SketchConstraint>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT sketch_projection temporary storage")?;
+
     let BrepSketchSource {
         block_offset,
         stream_ordinal,
@@ -156,21 +166,24 @@ fn project_brep(
         configuration,
         native_ref,
     } = *source;
-    let surfaces = index_brep(ctx, &brep.surfaces, |surface| {
+    let surfaces = temporary_storage.with_storage(|| index_brep(ctx, &brep.surfaces, |surface| {
         (&surface.id, &surface.geometry)
-    })?;
-    let loops = index_brep(ctx, &brep.loops, |loop_| (&loop_.id, loop_))?;
-    let coedges = index_brep(ctx, &brep.coedges, |coedge| (&coedge.id, coedge))?;
-    let edges = index_brep(ctx, &brep.edges, |edge| (&edge.id, edge))?;
-    let vertices = index_brep(ctx, &brep.vertices, |vertex| (&vertex.id, &vertex.point))?;
-    let points = index_brep(ctx, &brep.points, |point| {
+    }))?;
+    let loops = temporary_storage.with_storage(|| index_brep(ctx, &brep.loops, |loop_| (&loop_.id, loop_)))?;
+    let coedges = temporary_storage.with_storage(|| index_brep(ctx, &brep.coedges, |coedge| (&coedge.id, coedge)))?;
+    let edges = temporary_storage.with_storage(|| index_brep(ctx, &brep.edges, |edge| (&edge.id, edge)))?;
+    let vertices = temporary_storage.with_storage(|| index_brep(ctx, &brep.vertices, |vertex| (&vertex.id, &vertex.point)))?;
+    let points = temporary_storage.with_storage(|| index_brep(ctx, &brep.points, |point| {
         (&point.id, point.position().get())
-    })?;
-    let curves = index_brep(ctx, &brep.curves, |curve| (&curve.id, &curve.geometry))?;
+    }))?;
+    let curves = temporary_storage.with_storage(|| index_brep(ctx, &brep.curves, |curve| (&curve.id, &curve.geometry)))?;
 
-    for (face_ordinal, face) in brep.faces.iter().enumerate() {
+    for (face_ordinal, face) in ctx
+        .admit_iter(&brep.faces, "project SLDPRT B-rep faces")?
+        .enumerate()
+    {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
-            surfaces.get(&face.surface).copied()
+            ctx.get_hash_map(&surfaces, &face.surface, "resolve SLDPRT sketch_projection keys")?.copied()
         else {
             continue;
         };
@@ -192,28 +205,39 @@ fn project_brep(
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
         let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
-        for loop_id in &face.loops {
-            let Some(loop_) = loops.get(loop_id) else {
+        let (outer, inner): (&[cadmpeg_ir::ids::LoopId], &[cadmpeg_ir::ids::LoopId]) = match &face.loops {
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => (&[], loops.as_slice()),
+            cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => (std::slice::from_ref(outer), inner.as_slice()),
+        };
+        for loop_id in ctx.admit_iter(outer, "project SLDPRT outer face loops")?
+            .chain(ctx.admit_iter(inner, "project SLDPRT inner face loops")?) {
+            let Some(loop_) = ctx.get_hash_map(&loops, loop_id, "resolve SLDPRT sketch_projection keys")? else {
                 continue;
             };
             let mut profile = Vec::new();
-            for coedge_id in loop_.coedges() {
-                let Some(coedge) = coedges.get(coedge_id) else {
+            for coedge_id in
+                ctx.admit_iter(loop_.coedges(), "project SLDPRT loop coedges")?
+            {
+                let Some(coedge) = ctx.get_hash_map(&coedges, coedge_id, "resolve SLDPRT sketch_projection keys")? else {
                     continue;
                 };
-                let Some(edge) = edges.get(&coedge.edge) else {
+                let Some(edge) = ctx.get_hash_map(&edges, &coedge.edge, "resolve SLDPRT sketch_projection keys")? else {
                     continue;
                 };
                 for vertex_id in [&edge.start, &edge.end] {
-                    ctx.insert_hash_set(
+                    temporary_storage.with_storage(|| ctx.insert_hash_set(
                         &mut used_vertices,
                         vertex_id,
                         "collect SLDPRT sketch used vertices",
-                    )?;
+                    ))?;
                 }
-                let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
+                let entity_id = if let Some(id) = ctx.get_hash_map(&edge_entities, &edge.id, "resolve SLDPRT sketch_projection keys")? {
                     let id = retained_text(ctx, id.as_str(), "retain SLDPRT sketch entity ID")?;
-                    SketchEntityId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?
+                    {
+            let identity_text = id;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity_text.len()), "validate SLDPRT sketch_projection identity")?;
+            SketchEntityId::mint(identity_text)
+        }.map_err(cadmpeg_core::CodecError::malformed)?
                 } else {
                     let Ok(id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
@@ -236,8 +260,8 @@ fn project_brep(
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
                         let operation = "retain SLDPRT sketch edge refusal";
-                        let message_len = edge_refusals
-                            .iter()
+                        let _message_len = ctx
+                            .admit_iter(&edge_refusals, "measure SLDPRT edge refusal text")?
                             .try_fold(0usize, |len, record| len.checked_add(record.len()))
                             .and_then(|len| {
                                 (edge_refusals.len() - 1)
@@ -248,22 +272,25 @@ fn project_brep(
                                 ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                             })?;
                         let mut message = String::new();
-                        ctx.try_reserve_retained_text(&mut message, message_len, operation)?;
-                        for (index, record) in edge_refusals.iter().enumerate() {
+
+                        for (index, record) in ctx
+                            .admit_iter(&edge_refusals, "format SLDPRT edge refusal text")?
+                            .enumerate()
+                        {
                             if index != 0 {
-                                message.push_str("; ");
+                                ctx.append_retained(&mut message, "; ", operation)?;
                             }
-                            message.push_str(record);
+                            ctx.append_retained(&mut message, record, operation)?;
                         }
                         return Err(cadmpeg_core::CodecError::Malformed(message));
                     }
                     let Some(geometry) = projected else {
                         continue;
                     };
-                    let Some(start_point) = vertices.get(&edge.start) else {
+                    let Some(start_point) = ctx.get_hash_map(&vertices, &edge.start, "resolve SLDPRT sketch_projection keys")? else {
                         continue;
                     };
-                    let Some(end_point) = vertices.get(&edge.end) else {
+                    let Some(end_point) = ctx.get_hash_map(&vertices, &edge.end, "resolve SLDPRT sketch_projection keys")? else {
                         continue;
                     };
                     crate::annotations::note(
@@ -303,17 +330,25 @@ fn project_brep(
                             "retain SLDPRT sketch edge endpoint",
                         )?);
                     }
-                    let entity_id = SketchEntityId::mint(retained_text(
+                    let entity_id = {
+            let identity_text = retained_text(
                         ctx,
                         id.as_str(),
                         "retain SLDPRT sketch entity ID",
-                    )?)
+                    )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity_text.len()), "validate SLDPRT sketch_projection identity")?;
+            SketchEntityId::mint(identity_text)
+        }
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                    let entity_sketch_id = SketchId::mint(retained_text(
+                    let entity_sketch_id = {
+            let identity_text = retained_text(
                         ctx,
                         sketch_id.as_str(),
                         "retain SLDPRT entity sketch ID",
-                    )?)
+                    )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity_text.len()), "validate SLDPRT sketch_projection identity")?;
+            SketchId::mint(identity_text)
+        }
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                     ctx.reserve_vec(entities, 1, "collect SLDPRT sketch edge entities")?;
                     entities.push(
@@ -322,17 +357,21 @@ fn project_brep(
                             .with_geometry_ref(geometry_ref)
                             .with_endpoint_refs(endpoint_refs),
                     );
-                    ctx.reserve_map(&mut edge_entities, 1, "index SLDPRT sketch edge entities")?;
-                    let index_id = SketchEntityId::mint(retained_text(
+
+                    let index_id = temporary_storage.with_storage(|| {
+            let identity_text = retained_text(
                         ctx,
                         id.as_str(),
                         "retain SLDPRT indexed sketch entity ID",
-                    )?)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-                    edge_entities.insert(&edge.id, index_id);
+                    )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity_text.len()), "validate SLDPRT sketch_projection identity")?;
+            SketchEntityId::mint(identity_text)
+                    .map_err(cadmpeg_core::CodecError::malformed)
+                    })?;
+                    temporary_storage.with_storage(|| ctx.insert_hash_map(&mut edge_entities, &edge.id, index_id, "resolve SLDPRT sketch_projection keys"))?;
                     id
                 };
-                if edge.curve().is_some() || edge.start != edge.end {
+                if edge.curve().is_some() || !ctx.equal(&edge.start, &edge.end, "compare SLDPRT projected edge endpoints")? {
                     ctx.reserve_vec(&mut profile, 1, "collect SLDPRT sketch profile uses")?;
                     profile.push(SketchEntityUse {
                         entity: entity_id,
@@ -346,20 +385,24 @@ fn project_brep(
                 profiles.push(profile);
             }
         }
-        for vertex in &brep.vertices {
-            if used_vertices.contains(&vertex.id) {
+        for vertex in ctx.admit_iter(&brep.vertices, "project SLDPRT sketch vertices")? {
+            if ctx.contains_hash_set(&used_vertices, &vertex.id, "resolve SLDPRT sketch_projection keys")? {
                 continue;
             }
-            let Some(position) = points.get(&vertex.point) else {
+            let Some(position) = ctx.get_hash_map(&points, &vertex.point, "resolve SLDPRT sketch_projection keys")? else {
                 continue;
             };
+            let mut owned_entity_count = 0usize;
+            for entity in ctx.admit_iter(&entities[..], "count SLDPRT sketch entities")? {
+                if ctx.equal(&entity.sketch, &sketch_id, "compare SLDPRT sketch entity ownership")? {
+                    owned_entity_count = owned_entity_count.checked_add(1).ok_or_else(||
+                        ctx.refuse_codec_limit("count SLDPRT sketch entities", u64::MAX - 1, u64::MAX))?;
+                }
+            }
+            let entity_ordinal = edge_entities.len().checked_add(owned_entity_count).ok_or_else(||
+                ctx.refuse_codec_limit("count SLDPRT sketch entities", u64::MAX - 1, u64::MAX))?;
             let Ok(id) = SketchEntityId::mint(format!(
-                "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
-                edge_entities.len()
-                    + entities
-                        .iter()
-                        .filter(|entity| entity.sketch == sketch_id)
-                        .count()
+                "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{entity_ordinal}"
             )) else {
                 continue;
             };
@@ -377,11 +420,15 @@ fn project_brep(
                 "feature_input_profile_point",
                 Exactness::Derived,
             )?;
-            let entity_sketch_id = SketchId::mint(retained_text(
+            let entity_sketch_id = {
+            let identity_text = retained_text(
                 ctx,
                 sketch_id.as_str(),
                 "retain SLDPRT point sketch ID",
-            )?)
+            )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(identity_text.len()), "validate SLDPRT sketch_projection identity")?;
+            SketchId::mint(identity_text)
+        }
             .map_err(cadmpeg_core::CodecError::malformed)?;
             let native_vertex_ref = retained_format(
                 ctx,
@@ -409,8 +456,15 @@ fn project_brep(
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
             continue;
         };
-        if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
-            continue;
+        if profiles.is_empty() {
+            let mut present = false;
+            for entity in ctx.admit_iter(&entities[..], "check SLDPRT sketch entities")? {
+                if ctx.equal(&entity.sketch, &sketch_id, "compare SLDPRT sketch ownership")? {
+                    present = true;
+                    break;
+                }
+            }
+            if !present { continue; }
         }
         crate::annotations::note(
             ctx,
@@ -460,54 +514,49 @@ fn orient_closed_profile_by_topology(
     profile: &mut [SketchEntityUse],
     entities: &[SketchEntity],
 ) -> Result<(), cadmpeg_core::CodecError> {
+let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT sketch_projection temporary storage")?;
+
     if profile.len() < 2 {
         return Ok(());
     }
-    let entities = index_brep(ctx, entities, |entity| (entity.id(), entity))?;
+    let entities = temporary_storage.with_storage(|| index_brep(ctx, entities, |entity| (entity.id(), entity)))?;
     let mut orientations = Vec::new();
-    ctx.reserve_vec(
-        &mut orientations,
-        profile.len(),
-        "collect SLDPRT sketch profile orientations",
-    )?;
-    for (index, use_) in profile.iter().enumerate() {
-        let Some(current) = entities.get(&use_.entity) else {
+    for (index, use_) in ctx
+        .admit_iter(&*profile, "orient SLDPRT sketch profile")?
+        .enumerate()
+    {
+        let Some(current) = ctx.get_hash_map(&entities, &use_.entity, "resolve SLDPRT sketch_projection keys")? else {
             return Ok(());
         };
-        let Some(next) = entities.get(&profile[(index + 1) % profile.len()].entity) else {
+        let Some(next) = ctx.get_hash_map(&entities, &profile[(index + 1) % profile.len()].entity, "resolve SLDPRT sketch_projection keys")? else {
             return Ok(());
         };
         let [start, end] = current.endpoint_refs.as_slice() else {
             return Ok(());
         };
         let operation = "compare SLDPRT profile endpoint incidence";
-        let comparisons = current
-            .endpoint_refs
-            .len()
-            .checked_mul(next.endpoint_refs.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(
-            u64::try_from(comparisons)
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-            operation,
-        )?;
-        let mut shared = current
-            .endpoint_refs
-            .iter()
-            .filter(|endpoint| next.endpoint_refs.contains(endpoint));
-        let Some(first) = shared.next() else {
-            return Ok(());
-        };
-        if shared.next().is_some() {
-            return Ok(());
+        let mut shared = None;
+        for endpoint in ctx.admit_iter(&current.endpoint_refs, operation)? {
+            if ctx.contains(&next.endpoint_refs, endpoint, operation)? {
+                if shared.is_some() { return Ok(()); }
+                shared = Some(endpoint);
+            }
         }
-        orientations.push(if first == end {
+        let Some(first) = shared else { return Ok(()); };
+        let reversed = if ctx.equal(first, end, operation)? {
             false
-        } else if first == start {
+        } else if ctx.equal(first, start, operation)? {
             true
         } else {
             return Ok(());
-        });
+        };
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut orientations,
+                reversed,
+                "collect SLDPRT sketch profile orientations",
+            )
+        })?;
     }
     for (use_, reversed) in profile.iter_mut().zip(orientations) {
         use_.reversed = reversed;

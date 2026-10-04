@@ -2036,12 +2036,12 @@ fn unprojected_sketch_relation_records(
             ),
         "index SLDPRT projected sketch relations",
     )?;
-    let owned_instances = crate::resolved_features::relation_geometry::owned_relation_parameters(
+    let (owned_instances, _ownership_storage) = ctx.with_scoped_storage("SLDPRT relation ownership index", || crate::resolved_features::relation_geometry::owned_relation_parameters(
         ctx,
         &ir.model.features,
         &ir.model.parameters,
-        &native.feature_input_lanes,
-    )?;
+        native.feature_input_lanes.as_slice(),
+    ))?;
 
     let mut total = 0;
     for lane in &native.feature_input_lanes {

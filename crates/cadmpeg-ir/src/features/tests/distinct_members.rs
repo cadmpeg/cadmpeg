@@ -75,6 +75,13 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
             self.0 == other.0
         }
     }
+    impl cadmpeg_core::decode::cost::DecodeCost for Counted {
+        // One value byte and the pointed-to u64 comparison counter.
+        const FIXED_BYTES: Option<u64> = Some(9);
+        fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
+            Ok(9)
+        }
+    }
     for allowance in 0..=2 {
         let comparisons = Rc::new(Cell::new(0));
         let mut members = DistinctMembers(vec![
@@ -82,7 +89,8 @@ fn member_insert_admits_only_the_comparisons_it_performs() {
             Counted(2, comparisons.clone()),
         ]);
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowance;
+        // Each comparison visits one slot and measures two nine-byte operands.
+        policy.limits.max_work_units = allowance * 19;
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
@@ -146,4 +154,26 @@ fn member_iterator_reconstruction_uses_the_shared_insertion_algorithm() {
     assert_eq!(members.as_slice(), [2, 1]);
     members.extend([1, 3, 2]);
     assert_eq!(members.as_slice(), [2, 1, 3]);
+}
+
+#[test]
+fn member_insert_refuses_variable_text_comparison_before_mutation() {
+    use cadmpeg_core::decode::ResourceFailure;
+    let original = "a variable length decoded member".to_owned();
+    let mut members = DistinctMembers(vec![original.clone()]);
+    let mut policy = DecodePolicy::service();
+    // Admit the first slot; the variable text comparison exceeds the remaining work.
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = members.insert(&ctx, "other".to_owned(), "compare variable members").unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal required"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.reason, ResourceFailure::BudgetExceeded);
+    assert_eq!(limit.used, 1);
+    assert_eq!(limit.additional, cadmpeg_core::decode::u64_from_index(original.len()));
+    assert_eq!(limit.limit, 1);
+    assert_eq!(limit.operation, "compare variable members");
+    assert_eq!(members.as_slice(), &[original]);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
 }

@@ -881,6 +881,19 @@ pub(crate) struct FeatureInputComponentPathEntry {
     pub(crate) local_id: Option<u32>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputComponentPathEntry {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.instance, self.type_signature, self.local_id), ctx, operation,
+        )
+    }
+}
+
+
 /// A declared sketch-relation family and its attached scalar record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputRelationBinding {
@@ -1063,6 +1076,22 @@ pub(crate) struct FeatureInputReference {
     /// Local object index carried by the cell.
     pub(crate) object_index: u16,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputReference {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &((self.id.as_str(), self.parent.as_str(), self.feature_ref.as_deref(), self.ordinal),
+              (self.offset, self.kind, self.class_ref.as_deref(), self.object_index)),
+            ctx,
+            operation,
+        )
+    }
+}
+
 
 /// One serialized UTF-16 object name in a feature-input stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1323,6 +1352,21 @@ pub(crate) struct FeatureInputClass {
     pub(crate) name: String,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputClass {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.id.as_str(), self.parent.as_str(), self.ordinal, self.offset, self.name.as_str()),
+            ctx,
+            operation,
+        )
+    }
+}
+
+
 impl FeatureInputClass {
     pub(crate) fn role(&self) -> FeatureInputClassRole {
         crate::classification::native_object_class(&self.name).role()
@@ -1425,6 +1469,19 @@ pub(crate) struct SketchInputEntity {
     pub(crate) links: Option<SketchInputLinks>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputEntity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((self.id.as_str(), self.parent.as_str(), self.feature_ref.as_deref(), self.ordinal, self.offset, self.object_index),
+            (self.local_id, &self.kind, self.state_value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                self.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get), &self.links)), ctx, operation)
+    }
+}
+
+
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
 #[derive(Deserialize)]
 pub(crate) struct SketchInputEntityWire {
@@ -1484,6 +1541,19 @@ pub(crate) struct SketchInputLinks {
     selector: u16,
     entries: Vec<SketchInputLink>,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputLinks {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.selector, &self.entries), ctx, operation,
+        )
+    }
+}
+
 
 impl SketchInputLinks {
     pub(crate) fn new(selector: u16, entries: Vec<SketchInputLink>) -> Option<Self> {
@@ -1746,6 +1816,19 @@ pub(crate) struct SketchInputLink {
     pub(crate) entity_ref: String,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputLink {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.local_id, self.entity_ref.as_str()), ctx, operation,
+        )
+    }
+}
+
+
 /// Kind of sketch entity referenced by a native feature-input marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
@@ -1765,6 +1848,21 @@ pub(crate) enum SketchInputKind {
     /// A low code retained under a native handle layout, such as a slot handle.
     NativeHandle(sketch_code::LowMarkerCode),
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputKind {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Point | Self::LineOrCircle | Self::Arc | Self::ConstrainedPoint => Ok(1),
+            Self::Relation(_) | Self::NativeHandle(_) => Ok(2),
+            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, value.value()), ctx, operation),
+        }
+    }
+}
+
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

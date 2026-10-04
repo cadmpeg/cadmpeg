@@ -3,7 +3,7 @@
 use super::super::curves::SketchPlaneUAxisSource;
 use super::super::{CLASS_MARKER, NAME_MARKER};
 use super::{
-    angled_reference_plane_frame_candidates, compact_offset_plane_source,
+    for_each_angled_reference_plane_frame, compact_offset_plane_source,
     compact_reference_plane_frame, constraint_midplane_frame, constraint_reference_plane_frame,
     explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
     legacy_reference_axis_triads, matrix_reference_plane_frame,
@@ -25,6 +25,23 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
 
 const REFERENCE_POINT_NAME_END: usize = NAME_MARKER.len() + 1 + 12;
+
+fn angled_reference_plane_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Vec<(usize, (Point3, Vector3, Vector3))> {
+    let mut frames = Vec::new();
+    for_each_angled_reference_plane_frame(ctx, payload, |offset, frame| {
+        ctx.push_vec(
+            &mut frames,
+            (offset, frame),
+            "collect test angled plane frames",
+        )?;
+        Ok(true)
+    })
+    .expect("angled plane frame scan fits service policy");
+    frames
+}
 
 fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInputLane {
     let name = "Point1";
@@ -142,22 +159,26 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
 
 #[test]
 fn solved_reference_point_requires_one_complete_layout() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut lane = reference_point_lane(259, 5, [0.125, -0.25, 0.5]);
     let name = lane.names[0].clone();
     let end = lane.native_payload.len();
     assert_eq!(
-        resolved_reference_point(&lane.native_payload, &name, end),
+        resolved_reference_point(&ctx, &lane.native_payload, &name, end)
+            .expect("reference point scan fits service policy"),
         Some(Point3::new(125.0, -250.0, 500.0))
     );
     assert_eq!(
-        resolved_reference_point(&lane.native_payload, &name, end - 1),
+        resolved_reference_point(&ctx, &lane.native_payload, &name, end - 1)
+            .expect("reference point scan fits service policy"),
         None
     );
 
     lane.native_payload[REFERENCE_POINT_NAME_END + 8..REFERENCE_POINT_NAME_END + 12]
         .copy_from_slice(&2081_u32.to_le_bytes());
     assert_eq!(
-        resolved_reference_point(&lane.native_payload, &name, end),
+        resolved_reference_point(&ctx, &lane.native_payload, &name, end)
+            .expect("reference point scan fits service policy"),
         None
     );
     lane.native_payload[REFERENCE_POINT_NAME_END + 8..REFERENCE_POINT_NAME_END + 12]
@@ -165,7 +186,8 @@ fn solved_reference_point_requires_one_complete_layout() {
     lane.native_payload[REFERENCE_POINT_NAME_END + 259..REFERENCE_POINT_NAME_END + 259 + 8]
         .copy_from_slice(&f64::NAN.to_le_bytes());
     assert_eq!(
-        resolved_reference_point(&lane.native_payload, &name, end),
+        resolved_reference_point(&ctx, &lane.native_payload, &name, end)
+            .expect("reference point scan fits service policy"),
         None
     );
 
@@ -180,16 +202,19 @@ fn solved_reference_point_requires_one_complete_layout() {
     lane.native_payload[second + 24..second + 26].copy_from_slice(&5_u16.to_le_bytes());
     assert_eq!(
         resolved_reference_point(
+            &ctx,
             &lane.native_payload,
             &lane.names[0],
             lane.native_payload.len()
-        ),
+        )
+        .expect("reference point scan fits service policy"),
         None
     );
 }
 
 #[test]
 fn sketch_block_terminal_identity_carries_its_origin() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = vec![0; 100];
     payload[8..12].copy_from_slice(&[0xff; 4]);
     payload[20..26].copy_from_slice(&[0x02, 0, 0, 0, 0, 0]);
@@ -201,7 +226,8 @@ fn sketch_block_terminal_identity_carries_its_origin() {
         payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        sketch_block_record_origin(&payload, 0, payload.len()),
+        sketch_block_record_origin(&ctx, &payload, 0, payload.len())
+            .expect("sketch block identity scan fits service policy"),
         Some(Point3::new(125.0, -250.0, 0.0))
     );
 
@@ -210,7 +236,8 @@ fn sketch_block_terminal_identity_carries_its_origin() {
     payload[56..58].copy_from_slice(&17_u16.to_le_bytes());
     payload[58..75].copy_from_slice(b"moAbsolutePoint_c");
     assert_eq!(
-        sketch_block_record_origin(&payload, 0, payload.len()),
+        sketch_block_record_origin(&ctx, &payload, 0, payload.len())
+            .expect("sketch block identity scan fits service policy"),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
 }
@@ -602,6 +629,7 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
 
 #[test]
 fn intersecting_reference_axis_pair_completes_legacy_triad() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let frames = [
         Some((Point3::new(0.0, 85.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
         None,
@@ -609,7 +637,8 @@ fn intersecting_reference_axis_pair_completes_legacy_triad() {
     ];
 
     assert_eq!(
-        super::complete_reference_axis_triad(frames),
+        super::complete_reference_axis_triad(&ctx, frames)
+            .expect("reference axis triad scan fits service policy"),
         Some((
             1,
             (Point3::new(0.0, 85.0, 0.0), Vector3::new(0.0, 0.0, -1.0),),
@@ -619,13 +648,18 @@ fn intersecting_reference_axis_pair_completes_legacy_triad() {
 
 #[test]
 fn skew_reference_axes_do_not_complete_legacy_triad() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let frames = [
         Some((Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
         None,
         Some((Point3::new(0.0, 1.0, 1.0), Vector3::new(0.0, 1.0, 0.0))),
     ];
 
-    assert_eq!(super::complete_reference_axis_triad(frames), None);
+    assert_eq!(
+        super::complete_reference_axis_triad(&ctx, frames)
+            .expect("reference axis triad scan fits service policy"),
+        None
+    );
 }
 
 #[test]
@@ -1281,6 +1315,7 @@ fn midplane_constraint_marks_only_its_constructed_axis() {
 
 #[test]
 fn angled_reference_plane_requires_its_redundant_normal_and_basis() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let root = 11;
     let mut payload = vec![0; root + 121];
     let inverse_sqrt_two = std::f64::consts::FRAC_1_SQRT_2;
@@ -1302,8 +1337,9 @@ fn angled_reference_plane_requires_its_redundant_normal_and_basis() {
     }
     payload[root + 16] = 1;
     assert_eq!(
-        angled_reference_plane_frame_candidates(&payload)
-            .next()
+        angled_reference_plane_frames(&ctx, &payload)
+            .first()
+            .copied()
             .unwrap()
             .1,
         (
@@ -1314,13 +1350,12 @@ fn angled_reference_plane_requires_its_redundant_normal_and_basis() {
     );
 
     payload[root + 8..root + 16].copy_from_slice(&(-inverse_sqrt_two).to_le_bytes());
-    assert!(angled_reference_plane_frame_candidates(&payload)
-        .next()
-        .is_none());
+    assert!(angled_reference_plane_frames(&ctx, &payload).is_empty());
 }
 
 #[test]
 fn angled_reference_plane_does_not_reinterpret_a_complete_fixed_frame() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = vec![0; 153];
     for (offset, value) in [
         (24, 0.0_f64),
@@ -1341,9 +1376,7 @@ fn angled_reference_plane_does_not_reinterpret_a_complete_fixed_frame() {
     }
     payload[48] = 1;
     assert!(fixed_reference_plane_frame(&payload[..97]).is_some());
-    assert!(angled_reference_plane_frame_candidates(&payload)
-        .next()
-        .is_none());
+    assert!(angled_reference_plane_frames(&ctx, &payload).is_empty());
 }
 
 #[test]
@@ -1373,7 +1406,11 @@ fn matrix_reference_plane_uses_basis_columns() {
     }
     payload[root + 48] = 1;
     assert_eq!(
-        matrix_reference_plane_frame(&payload),
+        matrix_reference_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+        )
+        .expect("matrix plane frame scan fits service policy"),
         Some((
             Point3::new(
                 0.008_400_719_262_519_38 * 1000.0,
@@ -1386,7 +1423,14 @@ fn matrix_reference_plane_uses_basis_columns() {
     );
 
     payload[root + 113..root + 121].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(matrix_reference_plane_frame(&payload), None);
+    assert_eq!(
+        matrix_reference_plane_frame(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+        )
+        .expect("matrix plane frame scan fits service policy"),
+        None
+    );
 }
 
 #[test]
@@ -1530,9 +1574,17 @@ fn compact_offset_plane_source_requires_the_reference_record() {
         0x02, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x2d, 0x80, 0x2b, 0x80,
     ]);
-    assert_eq!(compact_offset_plane_source(&payload), Some(3));
+    assert_eq!(
+        compact_offset_plane_source(&cadmpeg_test_support::service_decode_context(), &payload)
+            .expect("compact offset plane source scan fits service policy"),
+        Some(3)
+    );
     payload[19] ^= 1;
-    assert_eq!(compact_offset_plane_source(&payload), None);
+    assert_eq!(
+        compact_offset_plane_source(&cadmpeg_test_support::service_decode_context(), &payload)
+            .expect("compact offset plane source scan fits service policy"),
+        None
+    );
 }
 #[test]
 fn ranges_overlap_orders_ends_past_usize_max_beyond_every_offset() {

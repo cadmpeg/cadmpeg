@@ -11,33 +11,43 @@ use std::collections::{HashMap, HashSet};
 use crate::records::ObjectId;
 
 /// Recognize the source-less legacy plane/origin/sketch/extrusion prefix.
-fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
+fn idless_legacy_startup_shape(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[crate::records::Feature],
+) -> Result<bool, cadmpeg_core::CodecError> {
     let [front, top, right, origin, sketch, extrusion] = records else {
-        return false;
+        return Ok(false);
     };
-    let plain = |record: &crate::records::Feature| {
-        record.input_class.is_none()
-            && record.source_id.is_none()
-            && record.tree_parent.is_none()
-            && record.xml_tag.eq_ignore_ascii_case("Feature")
-            && record.properties.is_empty()
-    };
-    [front, top, right, origin, sketch, extrusion]
+    for record in ctx.admit_iter(records, "check SLDPRT idless startup records")? {
+        if record.input_class.is_some()
+            || record.source_id.is_some()
+            || record.tree_parent.is_some()
+            || !ctx.eq_ignore_ascii_case(
+                &record.xml_tag,
+                "Feature",
+                "check SLDPRT idless startup tag",
+            )?
+            || !record.properties.is_empty()
+        {
+            return Ok(false);
+        }
+    }
+    if [front, top, right, origin]
         .into_iter()
-        .all(plain)
-        && [front, top, right, origin]
-            .into_iter()
-            .all(|record| record.parameters.is_empty())
-        && !extrusion.parameters.is_empty()
-        && !front.kind.is_empty()
-        && front.kind == top.kind
-        && front.kind == right.kind
-        && origin.kind != front.kind
-        && sketch.kind != origin.kind
-        && extrusion.kind != sketch.kind
-        && [front, top, right, origin, sketch, extrusion]
-            .windows(2)
-            .all(|pair| pair[1].ordinal == pair[0].ordinal + 1)
+        .any(|record| !record.parameters.is_empty())
+        || extrusion.parameters.is_empty()
+        || front.kind.is_empty()
+        || !ctx.equal(&front.kind, &top.kind, "compare SLDPRT startup kinds")?
+        || !ctx.equal(&front.kind, &right.kind, "compare SLDPRT startup kinds")?
+        || ctx.equal(&origin.kind, &front.kind, "compare SLDPRT startup kinds")?
+        || ctx.equal(&sketch.kind, &origin.kind, "compare SLDPRT startup kinds")?
+        || ctx.equal(&extrusion.kind, &sketch.kind, "compare SLDPRT startup kinds")?
+    {
+        return Ok(false);
+    }
+    Ok([front, top, right, origin, sketch, extrusion]
+        .windows(2)
+        .all(|pair| pair[1].ordinal == pair[0].ordinal + 1))
 }
 
 /// Bind Keywords history records to their serialized feature-input object classes.
@@ -47,38 +57,6 @@ pub(crate) fn bind_history_classes(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT history class workspace")?;
-    let source_items = lanes
-        .iter()
-        .try_fold(0usize, |count, lane| {
-            count
-                .checked_add(lane.names.len())
-                .and_then(|count| count.checked_add(lane.classes.len()))
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "validate SLDPRT history class candidates",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_collection_items(
-        u64::try_from(source_items).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "validate SLDPRT history class candidates",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?,
-        "validate SLDPRT history class candidates",
-    )?;
-    for history in histories.iter() {
-        ctx.charge_work(
-            u64::try_from(history.features.len()).map_err(|_| {
-                ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
-            })?,
-            "bind SLDPRT history classes",
-        )?;
-    }
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -86,23 +64,26 @@ pub(crate) fn bind_history_classes(
         feature.input_class = None;
     }
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT input class lanes")? {
         let names_by_offset = temporary.with_storage(|| {
-            collect_class_map(ctx, lane.names.iter().map(|name| (name.offset, name)))
+            ctx.collect_hash_map(
+                lane.names.iter().map(|name| (name.offset, name)),
+                "index SLDPRT input class names",
+            )
         })?;
-        for class in &lane.classes {
+        for class in ctx.admit_iter(&lane.classes, "scan SLDPRT lane classes")? {
             let name_offset = class.offset + 6 + u64_from_index(class.name.len());
-            let Some(name) = names_by_offset.get(&name_offset) else {
+            let Some(name) = ctx.get_hash_map(
+                &names_by_offset,
+                &name_offset,
+                "find SLDPRT class name",
+            )? else {
                 continue;
             };
             if let Some(object_id) = name.object_id.and_then(ObjectId::value) {
                 temporary.with_storage(|| {
-                    ctx.reserve_map(&mut classes_by_object, 1, "bind SLDPRT history classes")
+                    { let group = ctx.entry_hash_map(&mut classes_by_object, object_id, "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, class.name.as_str(), "bind SLDPRT history classes") }
                 })?;
-                let classes = classes_by_object.entry(object_id).or_default();
-                temporary
-                    .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
-                classes.push(&class.name);
             }
         }
     }
@@ -111,47 +92,55 @@ pub(crate) fn bind_history_classes(
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
-        let classes = feature
-            .source_value()
-            .and_then(|object_id| classes_by_object.get(&object_id));
+        let classes = match feature.source_value() {
+            Some(object_id) => ctx.get_hash_map(
+                &classes_by_object,
+                &object_id,
+                "find SLDPRT feature object classes",
+            )?,
+            None => None,
+        };
         let Some(classes) = classes else {
             continue;
         };
         let Some((&first, rest)) = classes.split_first() else {
             continue;
         };
-        if rest.iter().all(|class| *class == first) {
+        let mut one_class = true;
+        for class in ctx.admit_iter(rest, "check SLDPRT object class agreement")? {
+            if !ctx.equal(*class, first, "compare SLDPRT object classes")? {
+                one_class = false;
+                break;
+            }
+        }
+        if one_class {
             feature.input_class = Some(copy_class_text(ctx, first)?);
         }
     }
 
     let mut direct_classes_by_name = HashMap::<&str, Vec<&str>>::new();
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT direct class lanes")? {
         let names_by_offset = temporary.with_storage(|| {
-            collect_class_map(
-                ctx,
+            ctx.collect_hash_map(
                 lane.names
                     .iter()
                     .map(|name| (name.offset, name.value.as_str())),
+                "index SLDPRT direct class names",
             )
         })?;
-        for class in &lane.classes {
+        for class in ctx.admit_iter(&lane.classes, "scan SLDPRT direct lane classes")? {
             let name_offset = class.offset + 6 + u64_from_index(class.name.len());
-            let Some(name) = names_by_offset.get(&name_offset) else {
+            let Some(name) = ctx.get_hash_map(
+                &names_by_offset,
+                &name_offset,
+                "find SLDPRT direct class name",
+            )? else {
                 continue;
             };
             if class.role() != FeatureInputClassRole::Native {
                 temporary.with_storage(|| {
-                    ctx.reserve_map(
-                        &mut direct_classes_by_name,
-                        1,
-                        "bind SLDPRT history classes",
-                    )
+                    { let group = ctx.entry_hash_map(&mut direct_classes_by_name, name, "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, class.name.as_str(), "bind SLDPRT history classes") }
                 })?;
-                let classes = direct_classes_by_name.entry(name).or_default();
-                temporary
-                    .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
-                classes.push(&class.name);
             }
         }
     }
@@ -162,17 +151,29 @@ pub(crate) fn bind_history_classes(
             Ord::cmp,
             "sort SLDPRT history class names",
         )?;
-        classes.dedup();
+        ctx.dedup_vec(classes, "deduplicate SLDPRT history class names")?;
     }
     let mut history_name_counts = HashMap::<String, usize>::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        if !feature.name.is_empty() {
-            temporary.with_storage(|| {
-                ctx.reserve_map(&mut history_name_counts, 1, "bind SLDPRT history classes")
-            })?;
-            *history_name_counts
-                .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.name))?)
-                .or_default() += 1;
+    for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
+        for feature in ctx.admit_iter(&history.features, "count SLDPRT history feature names")? {
+            if !feature.name.is_empty() {
+                let name = temporary.with_storage(|| copy_class_text(ctx, &feature.name))?;
+                let entry = temporary.with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut history_name_counts,
+                        name,
+                        "count SLDPRT history feature names",
+                    )
+                })?;
+                let count = entry.or_default();
+                *count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "count SLDPRT history feature names",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            }
         }
     }
     for feature in histories
@@ -180,11 +181,20 @@ pub(crate) fn bind_history_classes(
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none() && feature.source_id.is_none())
     {
-        if history_name_counts.get(&feature.name) == Some(&1) {
-            let Some([class]) = direct_classes_by_name
-                .get(feature.name.as_str())
-                .map(Vec::as_slice)
-            else {
+        if ctx.get_hash_map(
+            &history_name_counts,
+            feature.name.as_str(),
+            "find SLDPRT history feature-name count",
+        )? == Some(&1)
+        {
+            let Some(classes) = ctx.get_hash_map(
+                &direct_classes_by_name,
+                feature.name.as_str(),
+                "find SLDPRT direct class candidates",
+            )? else {
+                continue;
+            };
+            let [class] = classes.as_slice() else {
                 continue;
             };
             feature.input_class = Some(copy_class_text(ctx, class)?);
@@ -192,16 +202,19 @@ pub(crate) fn bind_history_classes(
     }
 
     let mut cosmetic_thread_classes = HashMap::<String, Vec<String>>::new();
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT cosmetic thread lanes")? {
         let mut declared = temporary.with_storage(|| {
-            collect_class_vec(
-                ctx,
-                lane.classes
-                    .iter()
+            let classes = ctx.admit_iter(
+                &lane.classes,
+                "find SLDPRT cosmetic thread classes",
+            )?;
+            ctx.collect_vec(
+                classes
                     .filter(|class| {
                         native_object_class(&class.name) == NativeClassKind::CosmeticThread
                     })
                     .map(|class| class.name.as_str()),
+                "collect SLDPRT cosmetic thread classes",
             )
         })?;
         ctx.stable_sort_by(
@@ -210,65 +223,68 @@ pub(crate) fn bind_history_classes(
             Ord::cmp,
             "sort SLDPRT declared classes",
         )?;
-        declared.dedup();
+        ctx.dedup_vec(&mut declared, "deduplicate SLDPRT declared classes")?;
         let [class] = declared.as_slice() else {
             continue;
         };
         let direct_name_offsets = temporary.with_storage(|| {
-            collect_class_set(
-                ctx,
+            ctx.collect_hash_set(
                 lane.classes
                     .iter()
                     .map(|class| class.offset + 6 + u64_from_index(class.name.len())),
+                "collect SLDPRT direct class offsets",
             )
         })?;
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
-        for feature in histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .filter(|feature| feature.input_class.is_none())
-        {
-            let Some(name) = feature_object_name(feature, lane).filter(|name| {
-                !direct_name_offsets.contains(&name.offset)
-                    && name.object_id.and_then(ObjectId::value).is_some()
-                    && name.value == feature.name
-            }) else {
-                continue;
-            };
-            let Some(token) = usize::try_from(name.offset)
-                .ok()
-                .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
-                .filter(|token| is_class_token(*token))
-            else {
-                continue;
-            };
-            temporary
-                .with_storage(|| ctx.reserve_map(&mut groups, 1, "bind SLDPRT history classes"))?;
-            let group = groups.entry(token).or_default();
-            temporary.with_storage(|| ctx.reserve_vec(group, 1, "bind SLDPRT history classes"))?;
-            group.push(feature);
-        }
-        for features in groups.values() {
-            if features
-                .iter()
-                .all(|feature| cosmetic_thread_parameter_shape(feature))
-            {
-                for feature in features {
-                    temporary.with_storage(|| {
-                        ctx.reserve_map(
-                            &mut cosmetic_thread_classes,
-                            1,
-                            "bind SLDPRT history classes",
-                        )
-                    })?;
-                    let classes = cosmetic_thread_classes
-                        .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.id))?)
-                        .or_default();
-                    temporary.with_storage(|| {
-                        ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")
-                    })?;
-                    classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
+        for history in ctx.admit_iter(histories, "scan SLDPRT cosmetic thread histories")? {
+            for feature in ctx.admit_iter(
+                &history.features,
+                "scan SLDPRT cosmetic thread features",
+            )? {
+                if feature.input_class.is_some() {
+                    continue;
                 }
+                let Some(name) = feature_object_name(feature, lane) else {
+                    continue;
+                };
+                if ctx.contains_hash_set(
+                    &direct_name_offsets,
+                    &name.offset,
+                    "find direct SLDPRT class name offsets",
+                )? || name.object_id.and_then(ObjectId::value).is_none()
+                    || !ctx.equal(&name.value, &feature.name, "compare SLDPRT feature names")?
+                {
+                    continue;
+                }
+                let Some(token) = usize::try_from(name.offset)
+                    .ok()
+                    .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
+                    .filter(|token| is_class_token(*token))
+                else {
+                    continue;
+                };
+                temporary.with_storage(|| {
+                    { let group = ctx.entry_hash_map(&mut groups, token, "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, feature, "bind SLDPRT history classes") }
+                })?;
+            }
+        }
+        for (_, features) in ctx.admit_iter(&groups, "scan SLDPRT cosmetic thread groups")? {
+            let mut all_cosmetic_threads = true;
+            for feature in ctx.admit_iter(features, "check SLDPRT cosmetic thread group")? {
+                if !cosmetic_thread_parameter_shape(ctx, feature)? {
+                    all_cosmetic_threads = false;
+                    break;
+                }
+            }
+            if !all_cosmetic_threads {
+                continue;
+            }
+            for feature in ctx.admit_iter(features, "bind SLDPRT cosmetic thread group")? {
+                let id = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
+                let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
+                temporary.with_storage(|| {
+                    { let group = ctx.entry_hash_map(&mut cosmetic_thread_classes, id, "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, class, "bind SLDPRT history classes") }
+                })?;
             }
         }
     }
@@ -279,24 +295,34 @@ pub(crate) fn bind_history_classes(
             Ord::cmp,
             "sort SLDPRT bound classes",
         )?;
-        classes.dedup();
+        ctx.dedup_vec(classes, "deduplicate SLDPRT bound classes")?;
     }
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none())
     {
-        if let Some([class]) = cosmetic_thread_classes.get(&feature.id).map(Vec::as_slice) {
+        if let Some(classes) = ctx.get_hash_map(
+            &cosmetic_thread_classes,
+            &feature.id,
+            "find SLDPRT cosmetic thread class",
+        )? {
+            let [class] = classes.as_slice() else {
+                continue;
+            };
             feature.input_class = Some(copy_class_text(ctx, class)?);
         }
     }
 
     let mut native_startups = Vec::<[&str; 6]>::new();
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT native startup lanes")? {
         let resolved = temporary.with_storage(|| {
-            collect_class_vec(
-                ctx,
-                lane.classes.iter().filter_map(|class| {
+            let classes = ctx.admit_iter(
+                &lane.classes,
+                "find SLDPRT native startup classes",
+            )?;
+            ctx.collect_vec(
+                classes.filter_map(|class| {
                     matches!(
                         native_object_class(&class.name),
                         NativeClassKind::ReferencePlane
@@ -306,9 +332,16 @@ pub(crate) fn bind_history_classes(
                     )
                     .then_some(class.name.as_str())
                 }),
+                "collect SLDPRT native startup classes",
             )
         })?;
-        for classes in resolved.windows(4) {
+        let window_size = std::num::NonZeroUsize::new(4).ok_or_else(|| {
+            ctx.refuse_codec_limit("scan SLDPRT native startup classes", 1, 0)
+        })?;
+        for classes in ctx
+            .admit_iter(&resolved, "scan SLDPRT native startup class windows")?
+            .windows(window_size)
+        {
             let [plane, origin, sketch, extrusion] = classes else {
                 continue;
             };
@@ -318,9 +351,12 @@ pub(crate) fn bind_history_classes(
                 && native_object_class(extrusion) == NativeClassKind::Extrusion
             {
                 temporary.with_storage(|| {
-                    ctx.reserve_vec(&mut native_startups, 1, "bind SLDPRT history classes")
+                    ctx.push_vec(
+                        &mut native_startups,
+                        [plane, plane, plane, origin, sketch, extrusion],
+                        "bind SLDPRT history classes",
+                    )
                 })?;
-                native_startups.push([plane, plane, plane, origin, sketch, extrusion]);
             }
         }
     }
@@ -330,18 +366,28 @@ pub(crate) fn bind_history_classes(
         Ord::cmp,
         "sort SLDPRT native startup classes",
     )?;
-    native_startups.dedup();
+    ctx.dedup_vec(&mut native_startups, "deduplicate SLDPRT startup classes")?;
     if let [classes] = native_startups.as_slice() {
         for history in histories.iter_mut() {
-            let mut candidates = history
-                .features
-                .windows(6)
+            let window_size = std::num::NonZeroUsize::new(6).ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT idless startup features", 1, 0)
+            })?;
+            let mut first = None;
+            let mut multiple = false;
+            for (index, records) in ctx
+                .admit_iter(&history.features, "scan SLDPRT idless startup features")?
+                .windows(window_size)
                 .enumerate()
-                .filter(|(_, records)| idless_legacy_startup_shape(records))
-                .map(|(index, _)| index);
-            let first = candidates.next();
-            let second = candidates.next();
-            if let (Some(index), None) = (first, second) {
+            {
+                if idless_legacy_startup_shape(ctx, records)? {
+                    if first.is_some() {
+                        multiple = true;
+                        break;
+                    }
+                    first = Some(index);
+                }
+            }
+            if let Some(index) = first.filter(|_| !multiple) {
                 for (feature, class) in history.features[index..index + 6].iter_mut().zip(classes) {
                     feature.input_class = Some(copy_class_text(ctx, class)?);
                 }
@@ -350,17 +396,15 @@ pub(crate) fn bind_history_classes(
     }
 
     let mut classes_by_type = HashMap::<String, Vec<String>>::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        if let Some(class) = &feature.input_class {
-            temporary.with_storage(|| {
-                ctx.reserve_map(&mut classes_by_type, 1, "bind SLDPRT history classes")
-            })?;
-            let classes = classes_by_type
-                .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?)
-                .or_default();
-            temporary
-                .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
-            classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
+    for history in ctx.admit_iter(histories, "scan SLDPRT class-by-type histories")? {
+        for feature in ctx.admit_iter(&history.features, "scan SLDPRT class-by-type features")? {
+            if let Some(class) = &feature.input_class {
+                let kind = temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?;
+                let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
+                temporary.with_storage(|| {
+                    { let group = ctx.entry_hash_map(&mut classes_by_type, kind, "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, class, "bind SLDPRT history classes") }
+                })?;
+            }
         }
     }
     for classes in classes_by_type.values_mut() {
@@ -370,70 +414,107 @@ pub(crate) fn bind_history_classes(
             Ord::cmp,
             "sort SLDPRT bound classes",
         )?;
-        classes.dedup();
+        ctx.dedup_vec(classes, "deduplicate SLDPRT classes by type")?;
     }
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none())
     {
-        if let Some([class]) = classes_by_type.get(&feature.kind).map(Vec::as_slice) {
+        if let Some(classes) = ctx.get_hash_map(
+            &classes_by_type,
+            &feature.kind,
+            "find SLDPRT class by feature type",
+        )? {
+            let [class] = classes.as_slice() else {
+                continue;
+            };
             feature.input_class = Some(copy_class_text(ctx, class)?);
         }
     }
 
-    let direct_name_offsets = temporary.with_storage(|| {
-        collect_class_set(
-            ctx,
-            lanes.iter().flat_map(|lane| {
-                lane.classes.iter().map(|class| {
-                    (
-                        lane.id.as_str(),
-                        class.offset + 6 + u64_from_index(class.name.len()),
-                    )
-                })
-            }),
-        )
-    })?;
-    let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let Some(class) = &feature.input_class else {
-            continue;
-        };
-        let object_id = feature.source_value();
-        let unique_idless_name = object_id.is_none()
-            && history_name_counts.get(&feature.name) == Some(&1)
-            && lanes
-                .iter()
-                .flat_map(|lane| &lane.names)
-                .filter(|name| {
-                    name.object_id.and_then(ObjectId::value).is_some() && name.value == feature.name
-                })
-                .count()
-                == 1;
-        if object_id.is_none() && !unique_idless_name {
-            continue;
+    let mut direct_name_offsets = HashSet::new();
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT direct class lanes")? {
+        for class in ctx.admit_iter(&lane.classes, "index SLDPRT direct class names")? {
+            let offset = class.offset + 6 + u64_from_index(class.name.len());
+            temporary.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut direct_name_offsets,
+                    (lane.id.as_str(), offset),
+                    "index SLDPRT direct class names",
+                )
+            })?;
         }
-        for lane in lanes {
-            for name in lane.names.iter().filter(|name| {
-                object_id.map_or(name.value == feature.name, |object_id| {
-                    name.object_id.and_then(ObjectId::value) == Some(object_id)
-                }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
-            }) {
-                let Ok(offset) = usize::try_from(name.offset) else {
-                    continue;
-                };
-                if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
-                    temporary.with_storage(|| {
-                        ctx.reserve_map(&mut classes_by_token, 1, "bind SLDPRT history classes")
-                    })?;
-                    let classes = classes_by_token
-                        .entry((lane.id.as_str(), token))
-                        .or_default();
-                    temporary.with_storage(|| {
-                        ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")
-                    })?;
-                    classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
+    }
+    let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
+    for history in ctx.admit_iter(histories, "scan SLDPRT token-binding histories")? {
+        for feature in ctx.admit_iter(&history.features, "scan SLDPRT token-binding features")? {
+            let Some(class) = &feature.input_class else {
+                continue;
+            };
+            let object_id = feature.source_value();
+            let name_is_unique = if object_id.is_some() {
+                false
+            } else {
+                ctx.get_hash_map(
+                    &history_name_counts,
+                    feature.name.as_str(),
+                    "find SLDPRT token feature-name count",
+                )? == Some(&1)
+            };
+            let mut matching_name = false;
+            let mut duplicate_name = false;
+            if name_is_unique {
+                'lanes: for lane in ctx.admit_iter(lanes, "scan SLDPRT matching-name lanes")? {
+                    for name in ctx.admit_iter(&lane.names, "scan SLDPRT matching feature names")? {
+                        if name.object_id.and_then(ObjectId::value).is_some()
+                            && ctx.equal(
+                                &name.value,
+                                &feature.name,
+                                "compare SLDPRT matching feature names",
+                            )?
+                        {
+                            if matching_name {
+                                duplicate_name = true;
+                                break 'lanes;
+                            }
+                            matching_name = true;
+                        }
+                    }
+                }
+            }
+            let unique_idless_name = object_id.is_none() && name_is_unique && matching_name && !duplicate_name;
+            if object_id.is_none() && !unique_idless_name {
+                continue;
+            }
+            for lane in ctx.admit_iter(lanes, "scan SLDPRT token-binding lanes")? {
+                for name in ctx.admit_iter(&lane.names, "scan SLDPRT token-binding names")? {
+                    let matches_feature = match object_id {
+                        Some(object_id) => name.object_id.and_then(ObjectId::value) == Some(object_id),
+                        None => ctx.equal(
+                            &name.value,
+                            &feature.name,
+                            "compare SLDPRT token-binding names",
+                        )?,
+                    };
+                    if !matches_feature
+                        || ctx.contains_hash_set(
+                            &direct_name_offsets,
+                            &(lane.id.as_str(), name.offset),
+                            "find SLDPRT direct name offset",
+                        )?
+                    {
+                        continue;
+                    }
+                    let Ok(offset) = usize::try_from(name.offset) else {
+                        continue;
+                    };
+                    if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
+                        let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
+                        temporary.with_storage(|| {
+                            { let group = ctx.entry_hash_map(&mut classes_by_token, (lane.id.as_str(), token), "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, class, "bind SLDPRT history classes") }
+                        })?;
+                    }
                 }
             }
         }
@@ -445,7 +526,7 @@ pub(crate) fn bind_history_classes(
             Ord::cmp,
             "sort SLDPRT bound classes",
         )?;
-        classes.dedup();
+        ctx.dedup_vec(classes, "deduplicate SLDPRT token classes")?;
     }
     for feature in histories
         .iter_mut()
@@ -453,40 +534,78 @@ pub(crate) fn bind_history_classes(
         .filter(|feature| feature.input_class.is_none())
     {
         let object_id = feature.source_value();
-        let unique_idless_name = object_id.is_none()
-            && history_name_counts.get(&feature.name) == Some(&1)
-            && lanes
-                .iter()
-                .flat_map(|lane| &lane.names)
-                .filter(|name| {
-                    name.object_id.and_then(ObjectId::value).is_some() && name.value == feature.name
-                })
-                .count()
-                == 1;
+        let name_is_unique = object_id.is_none()
+            && ctx.get_hash_map(
+                &history_name_counts,
+                feature.name.as_str(),
+                "find SLDPRT fallback feature-name count",
+            )? == Some(&1);
+        let mut matching_name = false;
+        let mut duplicate_name = false;
+        if name_is_unique {
+            'lanes: for lane in ctx.admit_iter(lanes, "scan SLDPRT fallback name lanes")? {
+                for name in ctx.admit_iter(&lane.names, "scan SLDPRT fallback feature names")? {
+                    if name.object_id.and_then(ObjectId::value).is_some()
+                        && ctx.equal(
+                            &name.value,
+                            &feature.name,
+                            "compare SLDPRT fallback feature names",
+                        )?
+                    {
+                        if matching_name {
+                            duplicate_name = true;
+                            break 'lanes;
+                        }
+                        matching_name = true;
+                    }
+                }
+            }
+        }
+        let unique_idless_name = name_is_unique && matching_name && !duplicate_name;
         if object_id.is_none() && !unique_idless_name {
             continue;
         }
         let mut candidates = Vec::new();
-        for lane in lanes {
-            for name in lane.names.iter().filter(|name| {
-                object_id.map_or(name.value == feature.name, |object_id| {
-                    name.object_id.and_then(ObjectId::value) == Some(object_id)
-                }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
-            }) {
+        for lane in ctx.admit_iter(lanes, "scan SLDPRT fallback class lanes")? {
+            for name in ctx.admit_iter(&lane.names, "scan SLDPRT fallback class names")? {
+                let matches_feature = match object_id {
+                    Some(object_id) => name.object_id.and_then(ObjectId::value) == Some(object_id),
+                    None => ctx.equal(
+                        &name.value,
+                        &feature.name,
+                        "compare SLDPRT fallback class names",
+                    )?,
+                };
+                if !matches_feature
+                    || ctx.contains_hash_set(
+                        &direct_name_offsets,
+                        &(lane.id.as_str(), name.offset),
+                        "find SLDPRT fallback direct name",
+                    )?
+                {
+                    continue;
+                }
                 let Ok(offset) = usize::try_from(name.offset) else {
                     continue;
                 };
                 let Some(token) = repeated_class_token(&lane.native_payload, offset) else {
                     continue;
                 };
-                if let Some([class]) = classes_by_token
-                    .get(&(lane.id.as_str(), token))
-                    .map(Vec::as_slice)
-                {
-                    temporary.with_storage(|| {
-                        ctx.reserve_vec(&mut candidates, 1, "bind SLDPRT history classes")
-                    })?;
-                    candidates.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
+                if let Some(classes) = ctx.get_hash_map(
+                    &classes_by_token,
+                    &(lane.id.as_str(), token),
+                    "find SLDPRT fallback token class",
+                )? {
+                    if let [class] = classes.as_slice() {
+                        let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
+                        temporary.with_storage(|| {
+                            ctx.push_vec(
+                                &mut candidates,
+                                class,
+                                "bind SLDPRT history classes",
+                            )
+                        })?;
+                    }
                 }
             }
         }
@@ -496,7 +615,7 @@ pub(crate) fn bind_history_classes(
             Ord::cmp,
             "sort SLDPRT class candidates",
         )?;
-        candidates.dedup();
+        ctx.dedup_vec(&mut candidates, "deduplicate SLDPRT class candidates")?;
         if let [class] = candidates.as_slice() {
             feature.input_class = Some(copy_class_text(ctx, class)?);
         }
@@ -509,7 +628,11 @@ pub(crate) fn bind_history_classes(
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none())
     {
-        if let Some(class) = legacy_hole_bindings.get(&feature.id) {
+        if let Some(class) = ctx.get_hash_map(
+            &legacy_hole_bindings,
+            feature.id.as_str(),
+            "find SLDPRT legacy hole class",
+        )? {
             feature.input_class = Some(copy_class_text(ctx, class)?);
         }
     }
@@ -519,7 +642,7 @@ pub(crate) fn bind_history_classes(
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none())
     {
-        if let Some(class) = classless_dimension_schema_class(feature) {
+        if let Some(class) = classless_dimension_schema_class(ctx, feature)? {
             feature.input_class = Some(copy_class_text(ctx, class)?);
         }
     }
@@ -533,23 +656,35 @@ fn legacy_repeated_hole_wizard_classes(
 ) -> Result<HashMap<String, String>, cadmpeg_core::CodecError> {
     let mut by_name = HashMap::<&str, Option<&crate::records::Feature>>::new();
     let mut hole_shapes = HashSet::<&str>::new();
-    for history in histories {
-        for feature in &history.features {
+    for history in ctx.admit_iter(histories, "scan SLDPRT legacy hole histories")? {
+        for feature in ctx.admit_iter(&history.features, "index SLDPRT legacy hole features")? {
             if !feature.name.is_empty() {
-                ctx.reserve_map(&mut by_name, 1, "bind SLDPRT history classes")?;
-                by_name
-                    .entry(&feature.name)
+                ctx.entry_hash_map(
+                    &mut by_name,
+                    feature.name.as_str(),
+                    "index SLDPRT legacy hole names",
+                )?
                     .and_modify(|candidate| *candidate = None)
                     .or_insert(Some(feature));
             }
         }
-        for records in history.features.windows(3) {
+        let window_size = std::num::NonZeroUsize::new(3).ok_or_else(|| {
+            ctx.refuse_codec_limit("scan SLDPRT legacy hole windows", 1, 0)
+        })?;
+        for records in ctx
+            .admit_iter(&history.features, "scan SLDPRT legacy hole windows")?
+            .windows(window_size)
+        {
             let [operation, first_sketch, second_sketch] = records else {
                 continue;
             };
             if operation.input_class.is_none()
                 && operation.source_id.is_none()
-                && operation.xml_tag.eq_ignore_ascii_case("Feature")
+                && ctx.eq_ignore_ascii_case(
+                    &operation.xml_tag,
+                    "Feature",
+                    "check SLDPRT legacy hole operation tag",
+                )?
                 && first_sketch.ordinal == operation.ordinal + 1
                 && second_sketch.ordinal == operation.ordinal + 2
                 && [first_sketch, second_sketch].into_iter().all(|sketch| {
@@ -558,43 +693,56 @@ fn legacy_repeated_hole_wizard_classes(
                     })
                 })
             {
-                ctx.reserve_set(&mut hole_shapes, 1, "bind SLDPRT history classes")?;
-                hole_shapes.insert(operation.id.as_str());
+                ctx.insert_hash_set(
+                    &mut hole_shapes,
+                    operation.id.as_str(),
+                    "bind SLDPRT history classes",
+                )?;
             }
         }
     }
 
     let mut bindings = HashMap::new();
-    for lane in lanes {
-        let mut declared = collect_class_vec(
-            ctx,
-            lane.classes
-                .iter()
-                .filter(|class| native_object_class(&class.name) == NativeClassKind::HoleWizard)
-                .map(|class| class.name.as_str()),
-        )?;
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT legacy hole lanes")? {
+        let mut declared = {
+            let classes = ctx.admit_iter(&lane.classes, "find SLDPRT hole wizard classes")?;
+            ctx.collect_vec(
+                classes
+                    .filter(|class| native_object_class(&class.name) == NativeClassKind::HoleWizard)
+                    .map(|class| class.name.as_str()),
+                "collect SLDPRT hole wizard classes",
+            )?
+        };
         ctx.sort_unstable_by(
             &mut declared,
             |value| value,
             Ord::cmp,
             "sort SLDPRT hole wizard classes",
         )?;
-        declared.dedup();
+        ctx.dedup_vec(&mut declared, "deduplicate SLDPRT hole wizard classes")?;
         let [class] = declared.as_slice() else {
             continue;
         };
-        let direct_name_offsets = collect_class_set(
-            ctx,
+        let direct_name_offsets = ctx.collect_hash_set(
             lane.classes
                 .iter()
                 .map(|class| class.offset + 6 + u64_from_index(class.name.len())),
+            "index SLDPRT legacy direct class names",
         )?;
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
-        for name in &lane.names {
-            if direct_name_offsets.contains(&name.offset) {
+        for name in ctx.admit_iter(&lane.names, "scan SLDPRT legacy hole names")? {
+            if ctx.contains_hash_set(
+                &direct_name_offsets,
+                &name.offset,
+                "find SLDPRT legacy direct class name",
+            )? {
                 continue;
             }
-            let Some(feature) = by_name.get(name.value.as_str()).copied().flatten() else {
+            let Some(feature) = ctx
+                .get_hash_map(&by_name, name.value.as_str(), "find SLDPRT legacy hole feature")?
+                .copied()
+                .flatten()
+            else {
                 continue;
             };
             let Some(token) = usize::try_from(name.offset)
@@ -604,23 +752,30 @@ fn legacy_repeated_hole_wizard_classes(
             else {
                 continue;
             };
-            ctx.reserve_map(&mut groups, 1, "bind SLDPRT history classes")?;
-            let group = groups.entry(token).or_default();
-            ctx.reserve_vec(group, 1, "bind SLDPRT history classes")?;
-            group.push(feature);
+            { let group = ctx.entry_hash_map(&mut groups, token, "bind SLDPRT history classes")?.or_default(); ctx.push_vec(group, feature, "bind SLDPRT history classes") }?;
         }
-        for features in groups.values() {
-            if features
-                .iter()
-                .all(|feature| hole_shapes.contains(feature.id.as_str()))
-            {
-                for feature in features {
-                    ctx.reserve_map(&mut bindings, 1, "bind SLDPRT history classes")?;
-                    bindings.insert(
-                        copy_class_text(ctx, &feature.id)?,
-                        copy_class_text(ctx, class)?,
-                    );
+        for (_, features) in ctx.admit_iter(&groups, "scan SLDPRT legacy hole groups")? {
+            let mut all_hole_shapes = true;
+            for feature in ctx.admit_iter(features, "check SLDPRT legacy hole group")? {
+                if !ctx.contains_hash_set(
+                    &hole_shapes,
+                    feature.id.as_str(),
+                    "find SLDPRT legacy hole shape",
+                )? {
+                    all_hole_shapes = false;
+                    break;
                 }
+            }
+            if !all_hole_shapes {
+                continue;
+            }
+            for feature in ctx.admit_iter(features, "bind SLDPRT legacy hole group")? {
+                ctx.insert_hash_map(
+                    &mut bindings,
+                    copy_class_text(ctx, &feature.id)?,
+                    copy_class_text(ctx, class)?,
+                    "bind SLDPRT history classes",
+                )?;
             }
         }
     }
@@ -631,105 +786,121 @@ fn copy_class_text(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     text: &str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(copy_work, "bind SLDPRT history classes")?;
     ctx.format_retained(format_args!("{text}"), "bind SLDPRT history classes")
 }
 
-fn collect_class_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
+fn classless_dimension_schema_class(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    items: impl Iterator<Item = (K, V)>,
-) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
-    let mut map = HashMap::new();
-    for (key, value) in items {
-        ctx.reserve_map(&mut map, 1, "bind SLDPRT history classes")?;
-        map.insert(key, value);
-    }
-    Ok(map)
-}
-
-fn collect_class_set<T: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    items: impl Iterator<Item = T>,
-) -> Result<HashSet<T>, cadmpeg_core::CodecError> {
-    let mut set = HashSet::new();
-    for item in items {
-        ctx.reserve_set(&mut set, 1, "bind SLDPRT history classes")?;
-        set.insert(item);
-    }
-    Ok(set)
-}
-
-fn collect_class_vec<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    items: impl Iterator<Item = T>,
-) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let mut values = Vec::new();
-    for item in items {
-        ctx.reserve_vec(&mut values, 1, "bind SLDPRT history classes")?;
-        values.push(item);
-    }
-    Ok(values)
-}
-
-fn classless_dimension_schema_class(feature: &crate::records::Feature) -> Option<&'static str> {
-    if !feature.xml_tag.eq_ignore_ascii_case("Feature")
+    feature: &crate::records::Feature,
+) -> Result<Option<&'static str>, cadmpeg_core::CodecError> {
+    if !ctx.eq_ignore_ascii_case(
+        &feature.xml_tag,
+        "Feature",
+        "check SLDPRT dimension schema tag",
+    )?
         || feature.parameters.is_empty()
         || feature.content.len() != feature.parameters.len()
     {
-        return None;
+        return Ok(None);
     }
-    if feature.parameters.len() > 2
-        || !feature.parameters.keys().all(|name| {
-            feature.content.iter().filter(|content| matches!(content,
-                crate::records::FeatureContent::Dimension(candidate) if candidate == name.as_str()
-            )).count() == 1
-        })
-    {
-        return None;
+    if feature.parameters.len() > 2 {
+        return Ok(None);
     }
-    if cosmetic_thread_parameter_shape(feature) {
-        return Some("moCosmeticThread_c");
+    for (name, _) in ctx.admit_iter(
+        &feature.parameters,
+        "scan SLDPRT dimension schema parameters",
+    )? {
+        let mut occurrences = 0usize;
+        for content in ctx.admit_iter(&feature.content, "scan SLDPRT dimension schema content")? {
+            if let crate::records::FeatureContent::Dimension(candidate) = content {
+                if ctx.equal(candidate.as_str(), name.as_str(), "compare SLDPRT dimension names")? {
+                    occurrences = occurrences.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("scan SLDPRT dimension schema content", u64::MAX - 1, u64::MAX)
+                    })?;
+                }
+            }
+        }
+        if occurrences != 1 {
+            return Ok(None);
+        }
     }
-    if feature.parameters.len() == 2
-        && feature
-            .parameters
-            .keys()
-            .all(|name| matches!(name.as_str(), "D1" | "D2"))
-        && feature
-            .parameters
-            .get("D1")
-            .and_then(|value| crate::history::literals::parse_positive_dimension_length_mm(value))
-            .is_some()
-        && feature
-            .parameters
-            .get("D2")
-            .filter(|value| {
-                let value = value.trim();
-                value.ends_with("deg") || value.ends_with('°') || value.ends_with("rad")
-            })
-            .and_then(|value| crate::history::literals::parse_angle_rad(value))
-            .is_some_and(|angle| angle.get() > 0.0 && angle.get() < std::f64::consts::PI)
-    {
-        return Some("Chamfer_c");
+    if cosmetic_thread_parameter_shape(ctx, feature)? {
+        return Ok(Some("moCosmeticThread_c"));
     }
-    None
+    if feature.parameters.len() == 2 {
+        for (name, _) in ctx.admit_iter(
+            &feature.parameters,
+            "scan SLDPRT chamfer parameter names",
+        )? {
+            if !ctx.equal(name.as_str(), "D1", "compare SLDPRT chamfer parameter name")?
+                && !ctx.equal(name.as_str(), "D2", "compare SLDPRT chamfer parameter name")?
+            {
+                return Ok(None);
+            }
+        }
+        let Some(diameter) = ctx.get_btree_map(
+            &feature.parameters,
+            "D1",
+            "find SLDPRT chamfer diameter",
+        )? else {
+            return Ok(None);
+        };
+        if crate::history::literals::parse_positive_dimension_length_mm(diameter).is_none() {
+            return Ok(None);
+        }
+        let Some(angle) = ctx.get_btree_map(
+            &feature.parameters,
+            "D2",
+            "find SLDPRT chamfer angle",
+        )? else {
+            return Ok(None);
+        };
+        let trimmed_angle = ctx.trim_text(angle, "trim SLDPRT dimension angle")?;
+        if !(trimmed_angle.ends_with("deg")
+            || trimmed_angle.ends_with('°')
+            || trimmed_angle.ends_with("rad"))
+        {
+            return Ok(None);
+        }
+        if crate::history::literals::parse_angle_rad(angle).is_some_and(|angle| {
+            angle.get() > 0.0 && angle.get() < std::f64::consts::PI
+        }) {
+            return Ok(Some("Chamfer_c"));
+        }
+    }
+    Ok(None)
 }
 
-fn cosmetic_thread_parameter_shape(feature: &crate::records::Feature) -> bool {
-    feature.xml_tag.eq_ignore_ascii_case("Feature")
-        && feature
-            .parameters
-            .keys()
-            .all(|name| matches!(name.as_str(), "D1" | "D2"))
-        && feature.parameters.get("D2").is_some_and(|expression| {
-            let expression = expression.trim();
-            expression.starts_with("<MOD-DIAM>") || expression.starts_with("&lt;MOD-DIAM&gt;")
-        })
+fn cosmetic_thread_parameter_shape(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &crate::records::Feature,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if !ctx.eq_ignore_ascii_case(
+        &feature.xml_tag,
+        "Feature",
+        "check SLDPRT cosmetic thread tag",
+    )? {
+        return Ok(false);
+    }
+    for (name, _) in ctx.admit_iter(
+        &feature.parameters,
+        "scan SLDPRT cosmetic thread parameters",
+    )? {
+        if !ctx.equal(name.as_str(), "D1", "compare SLDPRT cosmetic thread parameter")?
+            && !ctx.equal(name.as_str(), "D2", "compare SLDPRT cosmetic thread parameter")?
+        {
+            return Ok(false);
+        }
+    }
+    let Some(expression) = ctx.get_btree_map(
+        &feature.parameters,
+        "D2",
+        "find SLDPRT cosmetic thread diameter",
+    )? else {
+        return Ok(false);
+    };
+    let expression = ctx.trim_text(expression, "trim SLDPRT cosmetic thread diameter")?;
+    Ok(expression.starts_with("<MOD-DIAM>") || expression.starts_with("&lt;MOD-DIAM&gt;"))
 }
 
 #[cfg(test)]
@@ -1028,13 +1199,14 @@ mod idless_history_binding_tests {
 
     #[test]
     fn exact_dimension_schemas_bind_classless_thread_and_chamfer_features() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         let mut thread = feature(1, "localized thread");
         thread
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>8".into());
         thread.content.push(FeatureContent::Dimension("D2".into()));
         assert_eq!(
-            classless_dimension_schema_class(&thread),
+            classless_dimension_schema_class(&ctx, &thread).unwrap(),
             Some("moCosmeticThread_c")
         );
 
@@ -1050,16 +1222,16 @@ mod idless_history_binding_tests {
             FeatureContent::Dimension("D2".into()),
         ]);
         assert_eq!(
-            classless_dimension_schema_class(&chamfer),
+            classless_dimension_schema_class(&ctx, &chamfer).unwrap(),
             Some("Chamfer_c")
         );
 
         chamfer
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("D2"), "1.25".into());
-        assert_eq!(classless_dimension_schema_class(&chamfer), None);
+        assert_eq!(classless_dimension_schema_class(&ctx, &chamfer).unwrap(), None);
         chamfer.content.pop();
-        assert_eq!(classless_dimension_schema_class(&chamfer), None);
+        assert_eq!(classless_dimension_schema_class(&ctx, &chamfer).unwrap(), None);
     }
 
     #[test]

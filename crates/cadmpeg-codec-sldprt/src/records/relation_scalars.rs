@@ -28,17 +28,22 @@ impl CloneCharged for RelationScalars {
 }
 
 impl RelationScalars {
-    pub(crate) fn from_scalars<'a>(
+    pub(crate) fn from_scalars<'a, S, F>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scalars: impl IntoIterator<Item = &'a FeatureInputScalar>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+        scalars: &'a S,
+        scalar_ref: F,
+    ) -> Result<Self, cadmpeg_core::CodecError>
+    where
+        S: cadmpeg_core::decode::iter_source::IterSource + ?Sized + 'a,
+        F: Fn(<S::Iter<'a> as Iterator>::Item) -> &'a FeatureInputScalar,
+    {
         let mut refs = Vec::new();
         let mut parameter = None;
         let mut display = None;
         let mut duplicate_parameter = false;
         let mut duplicate_display = false;
-        for scalar in scalars {
-            ctx.charge_work(1, "select SLDPRT relation scalar roles")?;
+        for value in ctx.admit_iter(scalars, "select SLDPRT relation scalar roles")? {
+            let scalar = scalar_ref(value);
             admit_member(ctx, &refs, &scalar.id)?;
             let index = refs.len();
             match scalar.role {
@@ -318,7 +323,8 @@ mod tests {
         }
         assert!(RelationScalars::from_scalars(
             &cadmpeg_test_support::service_decode_context(),
-            std::iter::empty()
+            &[] as &[&super::FeatureInputScalar],
+            |scalar| *scalar,
         )
         .is_err());
     }

@@ -316,7 +316,7 @@ fn roster_point_operand_uses_coordinate_point_order() {
         &markers.iter().collect::<Vec<_>>(),
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
         0,
-        |id| id == "first",
+        |id| Ok(id == "first"),
     )
     .unwrap()
     .is_none());
@@ -509,7 +509,7 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
     ];
     let resolved = resolve_scalar_operand_markers(
         &cadmpeg_test_support::service_decode_context(),
-        &markers,
+        &markers.each_ref(),
         &operands,
     )
     .unwrap();
@@ -534,7 +534,7 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
     ];
     let resolved = resolve_scalar_operand_markers(
         &cadmpeg_test_support::service_decode_context(),
-        &markers,
+        &markers.each_ref(),
         &duplicate,
     )
     .unwrap();
@@ -722,7 +722,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             &markers.iter().collect::<Vec<_>>(),
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
             10,
-            |id| id == "curve-7",
+            |id| Ok(id == "curve-7"),
         )
         .unwrap()
         .map(crate::records::SketchInputEntity::id),
@@ -759,7 +759,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
             &markers.iter().collect::<Vec<_>>(),
             FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
             3,
-            |id| id == "first",
+            |id| Ok(id == "first"),
         )
         .unwrap()
         .map(crate::records::SketchInputEntity::id),
@@ -1001,9 +1001,40 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
         (relation.id(), &relation),
     ]);
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        coordinate_line_endpoints_with_linked_point(&marker, &markers)
+        coordinate_line_endpoints_with_linked_point(&ctx, &marker, &markers)
+            .unwrap()
             .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
         Some(["line-handle", "point"])
     );
+}
+
+#[test]
+fn scalar_operands_select_the_only_second_operand_alternative() {
+    let marker = |id: &str, ordinal, object_index, local_id| {
+        let mut entity = SketchInputEntity::new(
+            id, "lane", ordinal, u64::from(ordinal), SketchInputKind::Point,
+        ).with_test_identity(object_index, Some(local_id));
+        entity.feature_ref = Some("feature".into());
+        entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]);
+        entity
+    };
+    let markers = [marker("first", 0, Some(8), 7), marker("second", 1, None, 8)];
+    let operands = [
+        FeatureInputOperand {
+            // D6 addresses the first compatible point by ordinal.
+            kind: FeatureInputOperandKind::D6, entity_index: 0, offset: 0,
+            reference_ref: "first-ref".into(), entity_ref: None,
+        },
+        FeatureInputOperand {
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
+            entity_index: 8, offset: 0, reference_ref: "second-ref".into(), entity_ref: None,
+        },
+    ];
+    let resolved = resolve_scalar_operand_markers(
+        &cadmpeg_test_support::service_decode_context(), &markers.each_ref(), &operands,
+    ).unwrap();
+    assert_eq!(resolved[0].map(SketchInputEntity::id), Some("first"));
+    assert_eq!(resolved[1].map(SketchInputEntity::id), Some("second"));
 }

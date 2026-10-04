@@ -1556,7 +1556,7 @@ pub(crate) fn finalize_lane_bindings(
             continue;
         };
         let resolved =
-            resolve_scalar_operand_markers(ctx, entities.iter().copied(), &scalar.operands)?;
+            resolve_scalar_operand_markers(ctx, entities, &scalar.operands)?;
         for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
             operand.entity_ref = resolved
                 .map(|entity| copy_binding_text(ctx, entity.id()))
@@ -1576,7 +1576,10 @@ pub(crate) fn finalize_lane_bindings(
             .map(|owner| copy_binding_text(ctx, owner))
             .transpose()?;
     }
-    let intervals = feature_intervals(ctx, histories, lane)?;
+    let (intervals, _intervals_storage) =
+        ctx.with_scoped_storage("SLDPRT binding feature intervals", || {
+            feature_intervals(ctx, histories, lane)
+        })?;
     lane.relation_bindings =
         relation_bindings_scoped(ctx, &lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(ctx, histories, lane)?;

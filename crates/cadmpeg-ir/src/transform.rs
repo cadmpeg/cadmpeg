@@ -157,6 +157,18 @@ pub struct Transform {
     rows: [[f64; 4]; 3],
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for Transform {
+    const FIXED_BYTES: Option<u64> = Some(96);
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.rows, ctx, operation)
+    }
+}
+
 impl Default for Transform {
     fn default() -> Self {
         Self::identity()

@@ -476,6 +476,26 @@ pub enum HoleKind {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for HoleKind {
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let bytes = match self {
+            Self::Unresolved(form) => 1 + 1 + u64::from(form.is_some()),
+            Self::PartialCounterbore(_) | Self::PartialCountersink(_) => 1 + 1 + 8,
+            Self::Simple => 1,
+            Self::Chamfer { .. } | Self::Counterbore { .. } | Self::Countersink { .. } => 1 + 2 * 8,
+            Self::SimpleDrilled { .. } => 1 + 8,
+            Self::CounterboreDrilled { .. } => 1 + 3 * 8,
+            Self::Counterdrill { diameters, .. } => 1 + 8 + 1 + u64::from(diameters.entry_diameter.is_some()) * 8 + 2 * 8,
+        };
+        Ok(bytes)
+    }
+}
+
+
 /// Mutually exclusive ordinary and source-native threaded hole constructions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -510,6 +530,21 @@ pub enum HoleConstruction {
         drill_point_angle: InteriorAngle,
     },
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for HoleConstruction {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Form { kind, specification } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, kind, specification), ctx, operation),
+            Self::NativeThread { major_diameter, thread_depth, pitch, drill_point_angle } =>
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, major_diameter.get(), thread_depth.get(), pitch.map(|value| value.get()), drill_point_angle.get()), ctx, operation),
+        }
+    }
+}
+
 
 impl HoleConstruction {
     /// Copy construction metadata after admitting retained specification fields.
@@ -942,6 +977,25 @@ pub enum HoleSpecification {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for HoleSpecification {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Clearance { standard, designation, fit, modeled, cosmetic, hand: _, depth, clearance } =>
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((0u8, standard.as_str(), designation.as_deref(), fit.as_deref()),
+                    (*modeled, *cosmetic, 0u8, depth, clearance.map(|value| value.get()))), ctx, operation),
+            Self::Threaded { standard, designation, class, modeled, cosmetic, pitch, major_diameter, hand: _, depth, clearance } =>
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((0u8, standard.as_str(), designation.as_deref(), class.as_deref()),
+                    (*modeled, *cosmetic, pitch.map(|value| value.get()), major_diameter.map(|value| value.get())),
+                    (0u8, depth, clearance.map(|value| value.get()))), ctx, operation),
+        }
+    }
+}
+
+
 impl HoleSpecification {
     /// Copy a boxed specification after admitting its slot and every retained string.
     pub fn try_clone_for_decode(
@@ -981,6 +1035,20 @@ pub enum HoleThreadDepth {
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard,
 }
+
+impl cadmpeg_core::decode::cost::DecodeCost for HoleThreadDepth {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::HoleDepth | Self::TappedStandard => Ok(1),
+            Self::Blind { depth } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, depth.get()), ctx, operation),
+        }
+    }
+}
+
 
 mod decode_clone;
 

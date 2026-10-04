@@ -1559,13 +1559,13 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
             .retain_uses(&resource_ctx, |_| {
                 calls += 1;
                 assert_ne!(calls, 2, "filter interruption");
-                false
+                Ok(false)
             })
             .unwrap();
     }))
     .is_err());
     assert_eq!(profiles, before_filter);
-    profiles.retain_uses(&resource_ctx, |_| false).unwrap();
+    profiles.retain_uses(&resource_ctx, |_| Ok(false)).unwrap();
     assert!(profiles.is_empty());
 }
 
@@ -1990,3 +1990,7 @@ fn numerical_ranges_sketch_axes_use_angular_orthogonality() {
 }
 
 mod angle_wire;
+
+mod filtering;
+
+mod costs;
