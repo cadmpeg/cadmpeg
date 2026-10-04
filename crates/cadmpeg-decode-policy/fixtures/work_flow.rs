@@ -70,8 +70,9 @@ pub fn hash_bucket_retention(
     values: &mut std::collections::HashMap<String, Vec<String>>,
     other: &std::collections::HashMap<String, Vec<String>>,
 ) -> Result<(), ()> {
+    // Hash-table scans are reported whatever is charged before them.
     ctx.charge_work(u64::try_from(values.capacity()).map_err(|_| ())?, "scan")?;
-    values.retain(|_, _| true);
+    values.retain(|_, _| true); // finding: uncharged_decode_work
     values.retain(|_, _| true); // finding: uncharged_decode_work
     ctx.charge_work(u64::try_from(other.capacity()).map_err(|_| ())?, "other")?;
     values.retain(|_, _| true); // finding: uncharged_decode_work

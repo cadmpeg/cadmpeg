@@ -113,7 +113,7 @@ pub fn imported_marked_hash_callback(
     values: &HashSet<ImportedMarkerHashKey>,
     key: &ImportedMarkerHashKey,
 ) -> Result<(), ()> {
-    let _found = ctx.equal_hash_set(values, key, "imported marked hash callback")?; // finding: unproven_decode_charge
+    let _found = ctx.contains_hash_set(values, key, "imported marked hash callback")?; // finding: unproven_decode_charge
     Ok(())
 }
 
@@ -122,7 +122,7 @@ pub fn imported_marked_equality_callback(
     values: &HashSet<ImportedMarkerEqKey>,
     key: &ImportedMarkerEqKey,
 ) -> Result<(), ()> {
-    let _found = ctx.equal_hash_set(values, key, "imported marked equality callback")?; // finding: unproven_decode_charge
+    let _found = ctx.contains_hash_set(values, key, "imported marked equality callback")?; // finding: unproven_decode_charge
     Ok(())
 }
 
@@ -131,6 +131,15 @@ pub fn imported_derived_self_equality_ignores_other_rhs(
     values: &HashSet<ImportedSelfEqWithOtherRhs>,
     key: &ImportedSelfEqWithOtherRhs,
 ) -> Result<(), ()> {
-    let _found = ctx.equal_hash_set(values, key, "imported Self equality with unrelated RHS")?;
+    let _found = ctx.contains_hash_set(values, key, "imported Self equality with unrelated RHS")?;
+    Ok(())
+}
+
+pub fn imported_vector_key_lookup(
+    ctx: &DecodeContext,
+    values: &HashSet<Vec<String>>,
+    key: &Vec<String>,
+) -> Result<(), ()> {
+    let _found = ctx.contains_hash_set(values, key, "vector key lookup")?;
     Ok(())
 }

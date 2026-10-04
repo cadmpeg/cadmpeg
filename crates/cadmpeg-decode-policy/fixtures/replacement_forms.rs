@@ -79,19 +79,16 @@ pub fn borrowed_extension(_ctx: &DecodeContext, values: &mut Vec<u8>, source: &[
 }
 
 impl DecodeContext {
-    pub fn equal_hash_set<S>(&self, _left: &S, _right: &S, _operation: &str) -> Result<bool, ()> { Ok(false) }
     pub fn retained_string(&self, _capacity: usize, _operation: &str) -> Result<String, ()> { Ok(String::new()) }
     pub fn collect_text(&self, _values: impl IntoIterator<Item = char>, _operation: &str) -> Result<String, ()> { Ok(String::new()) }
     pub fn strip_prefix<'a>(&self, bytes: &'a [u8], _prefix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
     pub fn strip_suffix<'a>(&self, bytes: &'a [u8], _suffix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
 }
-pub fn set_equality(ctx: &DecodeContext, left: &HashSet<String>, right: &HashSet<String>, optional_left: &Option<HashSet<String>>, optional_right: &Option<HashSet<String>>) -> Result<(), ()> {
-    // replacement: equal_hash_set
+pub fn set_equality(_ctx: &DecodeContext, left: &HashSet<String>, right: &HashSet<String>, optional_left: &Option<HashSet<String>>, optional_right: &Option<HashSet<String>>) -> Result<(), ()> {
+    // replacement: BTreeMap or BTreeSet for collections that decode traverses or compares
     let _value = left == right; // finding: uncharged_decode_work
-    // replacement: equal_hash_set
+    // replacement: BTreeMap or BTreeSet for collections that decode traverses or compares
     let _value = optional_left == optional_right; // finding: uncharged_decode_work
-    let _value = ctx.equal_hash_set(left, right, "sets")?;
-    let _value = ctx.equal_hash_set(optional_left, optional_right, "optional sets")?;
     Ok(())
 }
 pub fn string_collection(ctx: &DecodeContext, chars: &[char], capacity: usize) -> Result<(), ()> {

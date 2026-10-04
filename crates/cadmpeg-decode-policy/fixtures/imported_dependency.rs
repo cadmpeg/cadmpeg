@@ -101,6 +101,7 @@ pub mod decode {
     pub mod cost {
         pub trait DecodeCost {}
         impl DecodeCost for String {}
+        impl DecodeCost for Vec<String> {}
         impl DecodeCost for super::super::key_callbacks::ImportedMarkerHashKey {}
         impl DecodeCost for super::super::key_callbacks::ImportedMarkerEqKey {}
         impl DecodeCost for super::super::key_callbacks::ImportedSelfEqWithOtherRhs {}
@@ -124,7 +125,7 @@ pub mod decode {
                 Ok(())
             }
 
-            pub fn equal_hash_set<K, S>(
+            pub fn contains_hash_set<K, S>(
                 &self,
                 values: &HashSet<K, S>,
                 key: &K,

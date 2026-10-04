@@ -42,11 +42,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let ExprKind::Binary(operator, left, _) = expression.kind {
             return method(match operator.node {
                 BinOpKind::Eq | BinOpKind::Ne
-                    if self.replacement_kind(self.expr_ty(left)) == "hash_set" =>
-                {
-                    "equal_hash_set"
-                }
-                BinOpKind::Eq | BinOpKind::Ne
                     if self.replacement_kind(self.expr_ty(left)) == "bytes" =>
                 {
                     "equal_bytes"
@@ -147,7 +142,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 "hash_map" => "collect_hash_map", "hash_set" => "collect_hash_set", "btree_set" => "collect_btree_set", _ => "collect_scoped_btree_map",
             }),
             "eq" | "ne" if kind == "bytes" => method("equal_bytes"),
-            "eq" | "ne" if kind == "hash_set" => method("equal_hash_set"),
             "eq" | "ne" => method("equal"),
             "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge" => method("compare"),
             _ => fallback(name.as_str()),

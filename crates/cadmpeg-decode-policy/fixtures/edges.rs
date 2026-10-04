@@ -37,7 +37,7 @@ pub fn decode(
     ctx.charge_work(strings.len() as u64, "children")?;
     let _children = strings == strings; // finding: unproven_decode_charge
     ctx.charge_work(map.len() as u64, "capacity")?;
-    let _entries = map.iter().fold(0usize, |count, _| count + 1); // finding: unproven_decode_charge
+    let _entries = map.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work, unproven_decode_charge
     ctx.charge_work(1, "opaque")?;
     let _opaque = callback.count(); // finding: unproven_decode_charge
     let _parse = std::str::from_utf8(bytes).map_err(|_| ())?.parse::<u64>(); // finding: unproven_decode_charge, unproven_decode_charge

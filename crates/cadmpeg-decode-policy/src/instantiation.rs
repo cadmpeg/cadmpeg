@@ -167,7 +167,7 @@ fn charged_reference_equality<'tcx>(
             return None;
         }
     }
-    (charged.len() == 2).then(|| crate::hash_set_callbacks::bounded_equality(tcx, receiver))
+    (charged.len() == 2).then(|| crate::hash_tables::bounded_equality(tcx, receiver))
 }
 
 fn standard_vec(tcx: TyCtxt<'_>, value: rustc_middle::ty::Ty<'_>) -> bool {
@@ -638,8 +638,6 @@ pub(crate) fn check_imported<'tcx>(
                 instance.def_id(),
                 block.terminator().source_info.span,
             ));
-            let equal_hash_set =
-                types::decode_context_method(tcx, instance.def_id(), "equal_hash_set");
             let normalized_lookup = receiver.zip(query).and_then(|(receiver, query)| {
                 let receiver = tcx
                     .try_normalize_erasing_regions(
@@ -655,10 +653,10 @@ pub(crate) fn check_imported<'tcx>(
                     .ok()?;
                 Some((receiver, query))
             });
-            let raw_hash_lookup = crate::hash_set_callbacks::is_raw_hash_lookup(tcx, *definition);
+            let raw_hash_lookup = crate::hash_tables::is_raw_hash_lookup(tcx, *definition);
             if raw_hash_lookup {
                 let bounded_raw = normalized_lookup.and_then(|(receiver, query)| {
-                    crate::hash_set_callbacks::bounded_raw_lookup(tcx, *definition, receiver, query)
+                    crate::hash_tables::bounded_raw_lookup(tcx, *definition, receiver, query)
                 });
                 match bounded_raw {
                     Some(true) => (),
@@ -666,7 +664,7 @@ pub(crate) fn check_imported<'tcx>(
                         reporter.report(
                             root.span,
                             "unproven_decode_charge",
-                            "raw hash lookup has an unproven stored Borrow, key callback, or builder",
+                            "raw hash-table key operation has an unproven stored Borrow, key callback, or random hasher",
                         );
                         continue;
                     }
@@ -674,15 +672,15 @@ pub(crate) fn check_imported<'tcx>(
                         reporter.report(
                             root.span,
                             "unproven_decode_charge",
-                            "raw hash lookup has unresolved receiver or query types",
+                            "raw hash-table key operation has unresolved receiver or query types",
                         );
                         continue;
                     }
                 }
             }
-            if crate::hash_set_callbacks::is_hash_lookup_context(tcx, instance.def_id()) {
+            if crate::hash_tables::is_hash_lookup_context(tcx, instance.def_id()) {
                 let concrete_lookup = normalized_lookup.and_then(|(receiver, query)| {
-                    crate::hash_set_callbacks::bounded_context_lookup(
+                    crate::hash_tables::bounded_context_lookup(
                         tcx,
                         instance.def_id(),
                         *definition,
@@ -691,25 +689,20 @@ pub(crate) fn check_imported<'tcx>(
                     )
                 });
                 match concrete_lookup {
-                    Some(true) if equal_hash_set || key_work_proof => continue,
+                    Some(true) if key_work_proof => continue,
                     Some(false) => {
                         reporter.report(
                             root.span,
                             "unproven_decode_charge",
-                            "hash collection lookup has an unproven stored Borrow, key callback, or builder",
+                            "hash-table key operation has an unproven stored Borrow, key callback, or random hasher",
                         );
                         continue;
                     }
-                    None if key_work_proof
-                        || equal_hash_set
-                            && tcx
-                                .opt_item_name(*definition)
-                                .is_some_and(|name| name.as_str() == "contains") =>
-                    {
+                    None if key_work_proof => {
                         reporter.report(
                             root.span,
                             "unproven_decode_charge",
-                            "admitted hash-set lookup has unresolved callback or receiver types",
+                            "admitted hash-table operation has unresolved callback or receiver types",
                         );
                         continue;
                     }
@@ -717,7 +710,7 @@ pub(crate) fn check_imported<'tcx>(
                 }
             }
             let operation_owned = receiver.is_some_and(|receiver| {
-                (types::decode_context_method(tcx, instance.def_id(), "extend_vec")
+                types::decode_context_method(tcx, instance.def_id(), "extend_vec")
                     && tcx
                         .opt_item_name(*definition)
                         .is_some_and(|name| name.as_str() == "extend")
@@ -725,7 +718,7 @@ pub(crate) fn check_imported<'tcx>(
                         types::standard(tcx, trait_id)
                             && tcx.item_name(trait_id).as_str() == "Extend"
                     })
-                    && standard_vec(tcx, receiver))
+                    && standard_vec(tcx, receiver)
             });
             if operation_owned {
                 continue;

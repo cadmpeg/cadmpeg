@@ -89,6 +89,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
+    fn hash_table_traversal(&mut self, expression: &'tcx Expr<'tcx>, operation: &str) {
+        self.report(
+            expression.span,
+            "uncharged_decode_work",
+            &format!(
+                "hash table {operation}: decode code does not iterate, compare, clone, retain or drain a HashMap or HashSet, whose order is unspecified and whose allocated extent is unbounded; replacement: {}",
+                crate::hash_tables::TRAVERSAL_REPLACEMENT
+            ),
+        );
+    }
+
     pub(crate) fn work(&mut self, expression: &'tcx Expr<'tcx>) {
         if self
             .findings
@@ -114,6 +125,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | BinOpKind::Gt
                     | BinOpKind::Ge
             ) {
+                if crate::hash_tables::whole_table(self.tcx, self.expr_ty(left))
+                    || crate::hash_tables::whole_table(self.tcx, self.expr_ty(right))
+                {
+                    self.hash_table_traversal(expression, "comparison");
+                    return;
+                }
                 if self.key_work_paid(&[left, right], "comparison") {
                     self.record_key_work_proof(expression);
                     return;
@@ -168,6 +185,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
+        if let Some(traversal) = crate::hash_tables::traversal(
+            self.tcx,
+            definition,
+            operands.first().map(|receiver| self.expr_ty(receiver)),
+        ) {
+            self.hash_table_traversal(expression, traversal);
+            return;
+        }
         match self.shared_identity_grammar_paid(expression, definition) {
             Some(Some(true)) => return,
             Some(Some(false)) => {
@@ -223,7 +248,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .first()
             .zip(operands.get(1))
             .is_some_and(|(receiver, query)| {
-                crate::hash_set_callbacks::bounded_raw_lookup(
+                crate::hash_tables::bounded_raw_lookup(
                     self.tcx,
                     definition,
                     self.expr_ty(receiver),
