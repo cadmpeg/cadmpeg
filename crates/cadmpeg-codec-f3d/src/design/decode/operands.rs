@@ -1199,8 +1199,13 @@ pub(crate) fn decode_face_source_groups(
             let parsed_source_members = source_reference_offsets.into_iter()
                 .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
                     let Some(source_byte_offset) = carrier_byte_offset.checked_add(indexed_header::LEN).and_then(|at| records.first_at_or_after(at, source_record_index)) else { return Ok(None); };
-                    let Some((source_class_tag, _)) =
-                        lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
+                    let Some((source_class_tag, _)) = lp_ascii_filtered_view(
+                        ctx,
+                        bytes,
+                        source_byte_offset,
+                        3..=3,
+                        u8::is_ascii_digit,
+                    )? else { return Ok(None); };
                     let Some(member) = parse_extrude_identity_member(ctx, bytes, source_byte_offset).transpose()? else { return Ok(None); };
                     let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
                     let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
@@ -1314,16 +1319,24 @@ fn face_source_reference_headers<'a, 'r>(
     for record_index in references {
         let header = scope_start
             .checked_add(indexed_header::LEN)
-            .and_then(|at| records.first_at_or_after(at, *record_index))
-            .and_then(|byte_offset| {
-                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
-                    |(class_tag, _)| FaceSourceReferenceHeader {
-                        record_index: *record_index,
-                        byte_offset,
-                        class_tag,
-                    },
-                )
-            });
+            .and_then(|at| records.first_at_or_after(at, *record_index));
+        let header = match header {
+            Some(byte_offset) => match lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                byte_offset,
+                3..=3,
+                u8::is_ascii_digit,
+            )? {
+                Some((class_tag, _)) => Some(FaceSourceReferenceHeader {
+                    record_index: *record_index,
+                    byte_offset,
+                    class_tag,
+                }),
+                None => None,
+            },
+            None => None,
+        };
         headers.push(header);
     }
     Ok(headers)
@@ -1928,7 +1941,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
+            let Some(carrier) = parse_loft_legacy_body_carrier(ctx, bytes, scope, header)? else {
                 continue;
             };
             push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
@@ -1965,10 +1978,21 @@ fn push_loft_legacy_body_carrier(
 
 /// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
 fn parse_loft_legacy_body_carrier(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
-) -> Option<DesignLoftLegacyBodyCarrier> {
+) -> Result<Option<DesignLoftLegacyBodyCarrier>, CodecError> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let parsed = (|| {
     let start = usize::try_from(header.byte_offset).ok()?;
     let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
         "322" => {
@@ -2009,7 +2033,7 @@ fn parse_loft_legacy_body_carrier(
     }
     let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
     let member_offset = cursor;
-    let (member, _) = take_record_reference(bytes, &mut cursor)?;
+    let (member, _) = admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
     if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
         return None;
     }
@@ -2024,14 +2048,15 @@ fn parse_loft_legacy_body_carrier(
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    let (next_next_record_index, _) =
+        admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
     if cursor != start.checked_add(legacy_loft_322::FLAGS)?
         || bytes.get(cursor..cursor + 2)? != [0, 0]
     {
         return None;
     }
     cursor = cursor.checked_add(2)?;
-    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    let (next_record_index, _) = admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
     if cursor != start.checked_add(legacy_loft_322::LEN)? {
         return None;
     }
@@ -2044,7 +2069,7 @@ fn parse_loft_legacy_body_carrier(
             return None;
         }
         let reference_offset = cursor;
-        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        let (record_index, _) = admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
         if record_index != scope.record_index {
             return None;
         }
@@ -2067,7 +2092,7 @@ fn parse_loft_legacy_body_carrier(
     if paired_class_tag != paired_class {
         return None;
     }
-    Some(DesignLoftLegacyBodyCarrier {
+    Some(Ok(DesignLoftLegacyBodyCarrier {
         id: String::new(),
         scope_record_index: scope.record_index,
         record_index: header.record_index,
@@ -2095,7 +2120,9 @@ fn parse_loft_legacy_body_carrier(
         trailing_scope_reference_offset,
         paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 pub(in crate::design) fn assign_extrude_face_roles(
@@ -2537,6 +2564,14 @@ pub(super) fn parse_construction_operand_group(
     header: &RecordFrame,
 ) -> ConstructionOperandGroupParse {
     use ConstructionOperandGroupParse::{Complete, NotAGroup, Refused, Unclosed};
+    macro_rules! admitted {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Refused(error),
+            }
+        };
+    }
 
     let Ok(start) = usize::try_from(header.byte_offset) else {
         return NotAGroup;
@@ -2573,7 +2608,9 @@ pub(super) fn parse_construction_operand_group(
         return Refused(error);
     }
     for _ in 0..member_count {
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) =
+            admitted!(take_record_reference(ctx, bytes, &mut cursor))
+        else {
             return NotAGroup;
         };
         members.push(crate::records::identity::Located {
@@ -2589,7 +2626,9 @@ pub(super) fn parse_construction_operand_group(
             continue;
         }
         *present = true;
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) =
+            admitted!(take_record_reference(ctx, bytes, &mut cursor))
+        else {
             return NotAGroup;
         };
 
@@ -2626,7 +2665,9 @@ pub(super) fn parse_construction_operand_group(
         return Refused(error);
     }
     for _ in 0..trailing_count {
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) =
+            admitted!(take_record_reference(ctx, bytes, &mut cursor))
+        else {
             return NotAGroup;
         };
         trailing_records.push(crate::records::identity::Located {
@@ -2688,9 +2729,9 @@ pub(super) fn parse_construction_operand_group(
             }
             tail += 4;
         }
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-            != header.record_index.checked_add(2)
-        {
+        let tail_index = admitted!(take_record_reference(ctx, bytes, &mut tail))
+            .map(|(index, _)| index);
+        if tail_index != header.record_index.checked_add(2) {
             continue;
         }
         for flag_bytes in [2usize, 3] {
@@ -2704,22 +2745,23 @@ pub(super) fn parse_construction_operand_group(
             // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
             let mut after = tail + flag_bytes;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
-                != header.record_index.checked_add(1)
-            {
+            let next_index = admitted!(take_record_reference(ctx, bytes, &mut after))
+                .map(|(index, _)| index);
+            if next_index != header.record_index.checked_add(1) {
                 continue;
             }
             if bytes.get(after) != Some(&0) {
                 continue;
             }
             after += 1;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
-                != Some(scope.record_index)
-            {
+            let Some((scope_index, _)) = admitted!(take_record_reference(ctx, bytes, &mut after)) else {
+                continue;
+            };
+            if scope_index != scope.record_index {
                 continue;
             }
             let Some((paired_class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, after, 3..=3, u8::is_ascii_digit)
+                admitted!(lp_ascii_filtered_view(ctx, bytes, after, 3..=3, u8::is_ascii_digit))
             else {
                 continue;
             };
@@ -2734,9 +2776,11 @@ pub(super) fn parse_construction_operand_group(
             }
         }
     }
-    if let Some(legacy_tail) =
-        legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
-    {
+    let legacy_tail = match legacy_body_group_tail(ctx, bytes, scope, header, cursor, opaque_index.get()) {
+        Ok(value) => value,
+        Err(error) => return Refused(error),
+    };
+    if let Some(legacy_tail) = legacy_tail {
         if closed.replace(legacy_tail).is_some() {
             return Unclosed;
         }
@@ -2814,12 +2858,23 @@ pub(super) fn parse_construction_operand_group(
 /// terminating zero. The class and feature gates keep this admission separate
 /// from the terminated flag-block grammar used by other construction groups.
 fn legacy_body_group_tail(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &RecordFrame,
     cursor: usize,
     opaque_index: u32,
-) -> Option<(bool, usize, String)> {
+) -> Result<Option<(bool, usize, String)>, CodecError> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let parsed = (|| {
     let body_scope = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
         || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody;
     let (flag_pair, variant) = match header.class_tag.as_str() {
@@ -2835,9 +2890,11 @@ fn legacy_body_group_tail(
         return None;
     }
     tail += 4;
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-        != header.record_index.checked_add(2)
-    {
+    let tail_index = match take_record_reference(ctx, bytes, &mut tail) {
+        Ok(value) => value.map(|(index, _)| index),
+        Err(error) => return Some(Err(error)),
+    };
+    if tail_index != header.record_index.checked_add(2) {
         return None;
     }
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
@@ -2862,9 +2919,11 @@ fn legacy_body_group_tail(
             return None;
         }
         tail += 2;
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-            != header.record_index.checked_add(1)
-        {
+        let next_index = match take_record_reference(ctx, bytes, &mut tail) {
+            Ok(value) => value.map(|(index, _)| index),
+            Err(error) => return Some(Err(error)),
+        };
+        if next_index != header.record_index.checked_add(1) {
             return None;
         }
         if bytes.get(tail) != Some(&0) {
@@ -2872,11 +2931,17 @@ fn legacy_body_group_tail(
         }
         tail += 1;
     }
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
+    let (scope_index, _) = admitted_option!(take_record_reference(ctx, bytes, &mut tail));
+    if scope_index != scope.record_index {
         return None;
     }
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, tail, 3..=3, u8::is_ascii_digit)?;
+    let (paired_class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        tail,
+        3..=3,
+        u8::is_ascii_digit,
+    ));
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
         && header.class_tag.as_str() == "328"
         && paired_class_tag != "263"
@@ -2886,7 +2951,9 @@ fn legacy_body_group_tail(
     if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
         return None;
     }
-    Some((variant, tail, paired_class_tag.to_owned()))
+    Some(Ok((variant, tail, paired_class_tag.to_owned())))
+    })();
+    parsed.transpose()
 }
 
 /// Bind exact typed records selected by construction-group trailing runs.
@@ -2925,7 +2992,9 @@ pub(crate) fn bind_construction_operand_trailing_records(
             let Some(header) = headers.get(&(stream, record.value)) else {
                 continue;
             };
-            if let Some(transform) = parse_construction_operand_transform(bytes, header) {
+            if let Some(transform) =
+                parse_construction_operand_transform(ctx, bytes, header).transpose()?
+            {
                 ctx.push_vec(
                     &mut trailing_transforms,
                     transform,
@@ -3016,7 +3085,7 @@ pub(crate) fn bind_construction_operand_paths(
                 continue;
             };
             if let Some(path) =
-                parse_construction_operand_path(bytes, group.scope_record_index, header)
+                parse_construction_operand_path(ctx, bytes, group.scope_record_index, header)?
             {
                 ctx.push_vec(
                     &mut auxiliary_paths,
@@ -3034,10 +3103,21 @@ pub(crate) fn bind_construction_operand_paths(
 }
 
 fn parse_construction_operand_path(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::construction::DesignConstructionOperandPath> {
+) -> Result<Option<crate::records::topology::construction::DesignConstructionOperandPath>, CodecError> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let parsed = (|| {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
         return None;
@@ -3068,25 +3148,30 @@ fn parse_construction_operand_path(
         )
     };
     let (scope_record_index, scope_record_index_offset) =
-        take_record_reference(bytes, &mut cursor)?;
+        admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
     if scope_record_index != expected_scope_record_index {
         return None;
     }
     let (nested_record_index, nested_record_index_offset) =
-        take_record_reference(bytes, &mut cursor)?;
+        admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
     if nested_record_index != header.record_index.checked_add(2)?
         || bytes.get(cursor..cursor + 6)? != [0; 6]
     {
         return None;
     }
     let following_at = cursor.checked_add(6)?;
-    let (following_class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let (following_class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        following_at,
+        3..=3,
+        u8::is_ascii_digit,
+    ));
     let following_record_index = View::u32_le_at(bytes, after_tag)?;
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    crate::records::topology::construction::DesignConstructionOperandPath::try_new(
+    Some(Ok(crate::records::topology::construction::DesignConstructionOperandPath::try_new(
         crate::records::topology::construction::DesignConstructionOperandPathDraft {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
@@ -3106,13 +3191,16 @@ fn parse_construction_operand_path(
             .ok()?,
         },
     )
-    .ok()
+    .ok()?))
+    })();
+    parsed.transpose()
 }
 
 fn parse_construction_operand_transform(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::construction::DesignConstructionOperandTransform> {
+) -> Option<Result<crate::records::topology::construction::DesignConstructionOperandTransform, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 22)? != [0; 11]
         || bytes.get(start + 150..start + 152)? != [1, 0]
@@ -3122,13 +3210,22 @@ fn parse_construction_operand_transform(
     let transform_at = start.checked_add(22)?;
     let transform = rigid_transform_at(bytes, transform_at)?;
     let following_at = start.checked_add(152)?;
-    let (following_class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let (following_class_tag, after_tag) = match lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        following_at,
+        3..=3,
+        u8::is_ascii_digit,
+    ) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let following_record_index = View::u32_le_at(bytes, after_tag)?;
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
+    Some(Ok(crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
         crate::records::topology::construction::DesignConstructionOperandTransformDraft {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
@@ -3143,7 +3240,7 @@ fn parse_construction_operand_transform(
             .ok()?,
         },
     )
-    .ok()
+    .ok()?))
 }
 
 fn parse_construction_operand_dual_transform(
@@ -3187,11 +3284,24 @@ fn rigid_transform_at(
 /// Take one reference naming a record of the same segment, advancing `at` past
 /// every byte it owns. Returns the record index and the byte offset of the low
 /// word of the target entity id.
-fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
-    let target_at = at.checked_add(1)?;
-    let reference = take_reference(bytes, at)?;
-    let (target, _) = reference.local()?;
-    Some((u32::try_from(target).ok()?, u64::try_from(target_at).ok()?))
+fn take_record_reference(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<(u32, u64)>, CodecError> {
+    let Some(target_at) = at.checked_add(1).and_then(|at| u64::try_from(at).ok()) else {
+        return Ok(None);
+    };
+    let Some(reference) = take_reference(ctx, bytes, at)? else {
+        return Ok(None);
+    };
+    let Some(target) = reference
+        .local()
+        .and_then(|(target, _)| u32::try_from(target).ok())
+    else {
+        return Ok(None);
+    };
+    Ok(Some((target, target_at)))
 }
 
 /// Decode the persistent identity frame named by each construction-operand group.
@@ -3380,11 +3490,24 @@ fn parse_construction_operand_identity(
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
 ) -> Option<Result<DesignConstructionOperandIdentity, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
-    if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
+    let transform = match parse_construction_operand_transform(ctx, bytes, wrapper_header).transpose() {
+        Ok(transform) => transform,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Some(transform) = transform {
         current_at = usize::try_from(transform.following_byte_offset()).ok()?;
         current_record_index = transform.following_record_index();
         current_class_tag = transform.following_class_tag;
@@ -3392,18 +3515,22 @@ fn parse_construction_operand_identity(
     }
     let mut wrappers = Vec::new();
     let mut seen = HashSet::new();
-    loop {
-        if parse_construction_tracking_path(
+    let tracking_path = loop {
+        match parse_construction_tracking_path(
+            ctx,
             bytes,
             current_at,
             current_record_index,
             &current_class_tag,
-        )
-        .is_some()
-            || bytes.get(current_at + 11..current_at + 21)? != [0; 10]
+        ) {
+            Some(Ok(path)) => break Some(path),
+            Some(Err(error)) => return Some(Err(error)),
+            None => {}
+        }
+        if bytes.get(current_at + 11..current_at + 21)? != [0; 10]
             || bytes.get(current_at + 21..current_at + 24)? != [1, 1, 0]
         {
-            break;
+            break None;
         }
         if seen.contains(&(current_record_index, current_at)) {
             return None;
@@ -3430,8 +3557,13 @@ fn parse_construction_operand_identity(
             },
         );
         current_at = current_at.checked_add(24)?;
-        let (next_class_tag, after_next_tag) =
-            lp_ascii_filtered_view(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
+        let (next_class_tag, after_next_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            current_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if next_class_tag.len() != 3 {
             return None;
         }
@@ -3439,13 +3571,7 @@ fn parse_construction_operand_identity(
         current_class_tag =
             crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?;
         chain_started = true;
-    }
-    let tracking_path = parse_construction_tracking_path(
-        bytes,
-        current_at,
-        current_record_index,
-        &current_class_tag,
-    );
+    };
     if let Some(path) = &tracking_path {
         current_at = usize::try_from(path.following_byte_offset()).ok()?;
         current_record_index = path.following_record_index();
@@ -3491,11 +3617,21 @@ fn parse_construction_operand_identity(
 }
 
 fn parse_construction_tracking_path(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     wrapper_at: usize,
     wrapper_record_index: u32,
     wrapper_class_tag: &crate::records::references::DesignClassTag,
-) -> Option<DesignConstructionTrackingPath> {
+) -> Option<Result<DesignConstructionTrackingPath, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
         || bytes.get(wrapper_at + 21) != Some(&1)
         || View::u64_le_at(bytes, wrapper_at + 22)?
@@ -3505,8 +3641,13 @@ fn parse_construction_tracking_path(
         return None;
     }
     let carrier_at = wrapper_at.checked_add(33)?;
-    let (carrier_class_tag, after_carrier_tag) =
-        lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let (carrier_class_tag, after_carrier_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        carrier_at,
+        3..=3,
+        u8::is_ascii_digit,
+    ));
     let carrier_record_index = View::u32_le_at(bytes, after_carrier_tag)?;
     if carrier_record_index != wrapper_record_index.checked_add(1)?
         || bytes.get(carrier_at + 11..carrier_at + 21)? != [0; 10]
@@ -3535,13 +3676,18 @@ fn parse_construction_tracking_path(
         TrackingIdentityField::Present(value) => Some(value),
     };
     let following_at = cursor;
-    let (following_class_tag, after_following_tag) =
-        lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let (following_class_tag, after_following_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        following_at,
+        3..=3,
+        u8::is_ascii_digit,
+    ));
     let following_record_index = View::u32_le_at(bytes, after_following_tag)?;
     if following_record_index != carrier_record_index.checked_add(1)? {
         return None;
     }
-    DesignConstructionTrackingPath::try_new(
+    Some(Ok(DesignConstructionTrackingPath::try_new(
         crate::records::topology::construction::DesignConstructionTrackingPathDraft {
             wrapper_record_index,
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
@@ -3566,7 +3712,7 @@ fn parse_construction_tracking_path(
             .ok()?,
         },
     )
-    .ok()
+    .ok()?))
 }
 
 enum TrackingIdentityField {
@@ -3617,6 +3763,15 @@ fn parse_extrude_selection_group(
             CodecError,
         >,
     > {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let start = usize::try_from(header.byte_offset).ok()?;
         if bytes.get(start + 11..start + 21)? != [0; 10]
             || bytes.get(start + 21) != Some(&1)
@@ -3671,8 +3826,13 @@ fn parse_extrude_selection_group(
             return None;
         }
         let paired_at = position.checked_add(53)?;
-        let (paired_class_tag, after_paired_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        let (paired_class_tag, after_paired_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            paired_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
             return None;
         }
@@ -4015,6 +4175,15 @@ fn parse_work_point_sketch_point_frame(
     record_index: u32,
     byte_offset: u64,
 ) -> Option<Result<WorkPointSketchPointFrame, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = match parse_entity_selection_prefix(ctx, bytes, start, record_index)? {
         Ok(prefix) => prefix,
@@ -4035,13 +4204,24 @@ fn parse_work_point_sketch_point_frame(
         .into_iter()
         .zip(expected)
     {
-        let (_, after_tag) = lp_ascii_filtered_view(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
+        let (_, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            offset,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if View::u32_le_at(bytes, after_tag)? != expected {
             return None;
         }
     }
-    let (_, after_next_tag) =
-        lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (_, after_next_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        next_at,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
     if next_record_index != record_index.checked_add(4)?
         || bytes
@@ -4095,6 +4275,15 @@ pub(super) fn parse_entity_selection_frame(
     byte_offset: u64,
     class_tag: &str,
 ) -> Option<Result<EntitySelectionFrame, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = match parse_entity_selection_prefix(ctx, bytes, start, record_index)? {
         Ok(prefix) => prefix,
@@ -4115,15 +4304,31 @@ pub(super) fn parse_entity_selection_frame(
         .into_iter()
         .zip(expected)
     {
-        let (_, after_tag) = lp_ascii_filtered_view(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
+        let (_, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            offset,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if View::u32_le_at(bytes, after_tag)? != expected {
             return None;
         }
     }
-    let (identity_class_tag, _) =
-        lp_ascii_filtered_view(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
-    let (_, after_next_tag) =
-        lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (identity_class_tag, _) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        identity_at,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
+    let (_, after_next_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        next_at,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
     let (primary_identity_offset, primary_identity, secondary) = if class_tag == "338"
         && identity_class_tag == "361"
@@ -4954,6 +5159,15 @@ fn parse_extrude_identity_member(
     bytes: &[u8],
     start: usize,
 ) -> Option<Result<ParsedExtrudeIdentityMember, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     if bytes.get(start + extrude_member::ZERO_RUN_10..start + extrude_member::LOCAL_IDENTITY)?
         != [0; 10]
     {
@@ -5002,8 +5216,13 @@ fn parse_extrude_identity_member(
         if fixed_end == bytes.len() {
             (0, u64::try_from(fixed_end).ok()?)
         } else {
-            let (_, after_next_tag) =
-                lp_ascii_filtered_view(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
+            let (_, after_next_tag) = admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                fixed_end,
+                0..=2000,
+                u8::is_ascii_graphic,
+            ));
             (
                 View::u32_le_at(bytes, after_next_tag)?,
                 u64::try_from(fixed_end).ok()?,
@@ -5011,10 +5230,16 @@ fn parse_extrude_identity_member(
         }
     } else if bytes.get(tail_slot_offset + 1..tail_slot_offset + 4)? == [0; 3] {
         let mut cursor = tail_slot_offset.checked_add(4)?;
-        let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        let (next_record_index, _) =
+            admitted_option!(take_record_reference(ctx, bytes, &mut cursor));
         let next_at = cursor;
-        let (_, after_next_tag) =
-            lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+        let (_, after_next_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            next_at,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         if View::u32_le_at(bytes, after_next_tag)? != next_record_index {
             return None;
         }
@@ -5138,6 +5363,15 @@ pub(in crate::design) fn parse_sketch_profile(
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
 ) -> Option<Result<DesignSketchProfileOperand, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -5156,8 +5390,13 @@ pub(in crate::design) fn parse_sketch_profile(
         };
     let (entity_suffix, after_entity_suffix) = utf16_decimal_u64(bytes, after_asset_id)?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
-    let (paired_class_tag, after_paired_tag) =
-        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (paired_class_tag, after_paired_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        paired_at,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
         || !matches!(tail_length, 89 | 93 | 94)
@@ -5233,6 +5472,15 @@ fn parse_sketch_profile_region_selection(
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<Result<DesignSketchProfileRegionSelection, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     const REGION_MARKER_LEN: usize = 1;
     const REGION_COUNT_LEN: usize = 4;
     const TERMINATOR_LEN: usize = 5;
@@ -5254,8 +5502,13 @@ fn parse_sketch_profile_region_selection(
         nested_two_at.checked_add(indexed_header::LEN)?,
         selection_record_index,
     )?;
-    let (class_tag, after_class_tag) =
-        lp_ascii_filtered_view(bytes, selection_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_class_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        selection_at,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     if View::u32_le_at(bytes, after_class_tag)? != selection_record_index
         || bytes.get(
             selection_at + region_selection::ZERO_RUN_10
@@ -5393,8 +5646,13 @@ fn parse_sketch_profile_region_selection(
     {
         return None;
     }
-    let (companion_class_tag, after_companion_class_tag) =
-        lp_ascii_filtered_view(bytes, companion_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (companion_class_tag, after_companion_class_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        companion_at,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
         return None;
     }
@@ -5493,6 +5751,15 @@ fn parse_recipe_operand(
     recipes: &[ConstructionRecipe],
     (recipe_kind, terminator): (ConstructionRecipeKind, RecipeOperandTerminator),
 ) -> Option<Result<ParsedRecipeOperand, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let family_name = crate::design::RECIPES
         .iter()
         .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
@@ -5531,8 +5798,13 @@ fn parse_recipe_operand(
     };
     let mut indexed = [("", 0u32); 5];
     for (offset, slot) in offsets.iter().zip(&mut indexed) {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
+        let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            *offset,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         *slot = (class_tag, View::u32_le_at(bytes, after_tag)?);
     }
     let recipe_record_index = header.record_index.checked_add(3)?;
@@ -6414,6 +6686,15 @@ pub(super) fn parse_face_operand(
     input: FaceOperandFrame<'_>,
     recipes: &[ConstructionRecipe],
 ) -> Option<Result<DesignFaceOperand, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let FaceOperandFrame {
         scope,
         scope_reference_ordinal,
@@ -6437,8 +6718,13 @@ pub(super) fn parse_face_operand(
     offsets[4] = immediate_next;
     let mut indexed = [("", 0u32); 5];
     for (offset, slot) in offsets.iter().zip(&mut indexed) {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
+        let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            *offset,
+            0..=2000,
+            u8::is_ascii_graphic,
+        ));
         *slot = (class_tag, View::u32_le_at(bytes, after_tag)?);
     }
     let recipe_record_index = header.record_index.checked_add(3)?;

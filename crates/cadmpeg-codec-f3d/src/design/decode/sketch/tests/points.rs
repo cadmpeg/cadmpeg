@@ -73,6 +73,7 @@ fn tagged_point_payload(
 
 #[test]
 fn point_record_parser_closes_every_versioned_three_coordinate_form() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let cases = [
         (8, false, 0, 0, false),
         (10, false, 0, 1, false),
@@ -82,9 +83,10 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
     ];
     for (version, inline_typed, selector, state, padded) in cases {
         let decoded = decode_sketch_point_record(
+            &bytes_decode_ctx,
             &tagged_point_payload(version, inline_typed, selector, state, padded),
             version,
-        )
+        ).unwrap()
         .expect("synthetic point form");
         assert_eq!(decoded.record_form.class_version(), version);
         assert_eq!(
@@ -101,14 +103,15 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
         );
     }
     assert!(
-        decode_sketch_point_record(&tagged_point_payload(10, false, 2, 1, false), 10,).is_none()
+        decode_sketch_point_record(&bytes_decode_ctx, &tagged_point_payload(10, false, 2, 1, false), 10,).unwrap().is_none()
     );
     for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
         for padded_paired_reference in [false, true] {
             let decoded = decode_sketch_point_record(
+                &bytes_decode_ctx,
                 &tagged_point_payload(11, false, selector, state, padded_paired_reference),
                 11,
-            )
+            ).unwrap()
             .expect("synthetic version-11 point");
             assert_eq!(
                 decoded.record_form,
@@ -130,15 +133,17 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
     }
     for (selector, state) in [(1, 1), (2, 0), (4, 1), (3, 0), (0, 2)] {
         assert!(decode_sketch_point_record(
+            &bytes_decode_ctx,
             &tagged_point_payload(11, false, selector, state, false),
             11,
-        )
+        ).unwrap()
         .is_none());
     }
 }
 
 #[test]
 fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = Vec::new();
     push_header(&mut payload, "257", POINT);
     payload.extend_from_slice(&[0; 10]);
@@ -154,7 +159,7 @@ fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
     payload.extend_from_slice(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
     push_reference(&mut payload, COMPANION, None);
     push_reference(&mut payload, OWNER, None);
-    let decoded = decode_sketch_point_record(&payload, 0).expect("version-0 point");
+    let decoded = decode_sketch_point_record(&bytes_decode_ctx, &payload, 0).unwrap().expect("version-0 point");
     assert_eq!(
         decoded.record_form,
         SketchPointRecordForm::Version0 { flag: true }

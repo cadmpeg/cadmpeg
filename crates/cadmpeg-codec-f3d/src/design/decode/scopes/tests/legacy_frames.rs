@@ -27,6 +27,7 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition};
 
 #[test]
 fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut frame = vec![0; shell_369_261::LEN];
     frame[shell_369_261::FEATURE_FORM] = shell_369_261::FEATURE_FORM_VALUE;
     frame[shell_369_261::OUTWARD] = 0;
@@ -106,7 +107,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &records, &scope),
+        exact_direct_face_operation(&bytes_decode_ctx, &bytes, &records, &scope).unwrap(),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness,
             thickness_record_index: 9_000,
@@ -119,11 +120,11 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     let mut wrong_pair = scope.clone();
     wrong_pair.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
+    assert!(exact_direct_face_operation(&bytes_decode_ctx, &bytes, &records, &wrong_pair).unwrap().is_none());
 
     let mut invalid_outward = bytes;
     invalid_outward[shell_369_261::OUTWARD] = 2;
-    assert!(exact_direct_face_operation(&invalid_outward, &records, &scope).is_none());
+    assert!(exact_direct_face_operation(&bytes_decode_ctx, &invalid_outward, &records, &scope).unwrap().is_none());
 }
 
 #[test]
@@ -287,6 +288,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
 
 #[test]
 fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut bytes = Vec::new();
     let classes: [(&str, u32); 6] = [
         ("393", 5),
@@ -337,10 +339,11 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             })
             .unwrap();
         let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
-        )
+        ).unwrap()
         .expect("legacy Move transform frame");
 
         assert_eq!(decoded.transform, transform.try_into().unwrap());
@@ -354,10 +357,11 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             bytes[paired_class_at..paired_class_at + 3].copy_from_slice(b"262");
             assert!(
                 crate::design::decode::scopes::direct_face::exact_move_operation(
+                    &bytes_decode_ctx,
                     &bytes,
                     &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                     &scope,
-                )
+                ).unwrap()
                 .is_none(),
                 "class-456 Move requires paired class 258"
             );
@@ -367,6 +371,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
 #[test]
 fn direct_work_axis_carriers_project_both_admitted_generations() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     struct Case {
         scope: (&'static str, &'static str),
         carrier: (&'static str, &'static str),
@@ -445,10 +450,11 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             })
             .unwrap();
         let construction = exact_work_axis_construction(
+            &bytes_decode_ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
-        )
+        ).unwrap()
         .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
@@ -489,6 +495,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
 
 #[test]
 fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let scope_record_index: u32 = 12;
     let mut bytes = Vec::new();
     let append_scalar = |bytes: &mut Vec<u8>, record_index: u32, ordinal: u8, value: f64| {
@@ -533,7 +540,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     along_parameter.id = "generated:parameter#83".into();
     along_parameter.record_index = 83;
 
-    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame())
+    let mut taper_owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .expect("taper owner")
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
@@ -600,12 +607,13 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     }
 
     let fixed = exact_fixed_extrude_parameters(
+        &bytes_decode_ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &[taper_parameter, along_parameter],
         &[taper_owner, along_owner],
-    )
+    ).unwrap()
     .expect("fixed owner lanes");
     assert!(matches!(
         fixed.along_distance,

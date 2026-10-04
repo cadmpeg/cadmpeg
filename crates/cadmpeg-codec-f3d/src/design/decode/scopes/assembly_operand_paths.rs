@@ -25,6 +25,15 @@ pub(super) fn exact_assembly_operand_paths(
     scope: &DesignParameterScope,
 ) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let scope_at = usize::try_from(scope.byte_offset()).ok()?;
         let search_start = usize::try_from(scope.paired_byte_offset())
             .ok()?
@@ -45,7 +54,11 @@ pub(super) fn exact_assembly_operand_paths(
         for (ordinal, relative_offset) in locator_offsets.into_iter().enumerate() {
             let locator_reference_at = scope_at.checked_add(relative_offset)?;
             let (locator_record_index, locator_reference_offset) =
-                exact_same_segment_record_reference(bytes, locator_reference_at)?;
+                admitted_option!(exact_same_segment_record_reference(
+                    ctx,
+                    bytes,
+                    locator_reference_at,
+                ));
             let candidates = records
                 .offsets(locator_record_index)
                 .iter()
@@ -108,7 +121,21 @@ fn exact_assembly_operand_path_envelope(
     locator_at: usize,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
-        let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
+        let locator_class_tag = admitted_option!(exact_indexed_header_at(
+            ctx,
+            bytes,
+            locator_at,
+            locator_record_index,
+        ));
         let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -143,10 +170,11 @@ fn exact_assembly_operand_path_envelope(
                     locator_at.checked_add(path_locator::ZERO_RUN_10)?
                         ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
                 )? != [0; 10]
-                    || exact_same_segment_record_reference(
+                    || admitted_option!(exact_same_segment_record_reference(
+                        ctx,
                         bytes,
                         locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-                    )?
+                    ))
                     .0 == 0
                     || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
                     || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
@@ -164,9 +192,17 @@ fn exact_assembly_operand_path_envelope(
                 )
             };
         let (scope_record_index, locator_scope_reference_offset) =
-            exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
+            admitted_option!(exact_same_segment_record_reference(
+                ctx,
+                bytes,
+                locator_at.checked_add(scope_backlink)?,
+            ));
         let (wrapper_record_index, wrapper_reference_offset) =
-            exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
+            admitted_option!(exact_same_segment_record_reference(
+                ctx,
+                bytes,
+                locator_at.checked_add(wrapper_reference)?,
+            ));
         let path_record_index = locator_record_index.checked_add(1)?;
         if scope_record_index != scope.record_index
             || if variable_reference {
@@ -205,7 +241,12 @@ fn exact_assembly_operand_path_envelope(
             record_index = record_index.checked_add(1)?;
             record_at = next;
         };
-        let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
+        let wrapper_class_tag = admitted_option!(exact_indexed_header_at(
+            ctx,
+            bytes,
+            wrapper_at,
+            wrapper_record_index,
+        ));
         let wrapper_end = next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)?;
         let expected_wrapper_length = if variable_reference {
             path_wrapper::LEN.checked_add(path_spans.len().checked_sub(1)?.checked_mul(11)?)?
@@ -231,28 +272,25 @@ fn exact_assembly_operand_path_envelope(
             return None;
         }
         let (referenced_path_record_index, path_reference_offset) =
-            exact_same_segment_record_reference(
+            admitted_option!(exact_same_segment_record_reference(
+                ctx,
                 bytes,
                 wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
-            )?;
+            ));
         if referenced_path_record_index != path_record_index {
             return None;
         }
-        if variable_reference
-            && path_spans
-                .iter()
-                .skip(1)
-                .enumerate()
-                .any(|(ordinal, (record_index, _, _))| {
-                    exact_same_segment_record_reference(
-                        bytes,
-                        wrapper_at + path_wrapper::LEN + ordinal * 11,
-                    )
-                    .map(|reference| reference.0)
-                        != Some(*record_index)
-                })
-        {
-            return None;
+        if variable_reference {
+            for (ordinal, (record_index, _, _)) in path_spans.iter().skip(1).enumerate() {
+                let reference = admitted_option!(exact_same_segment_record_reference(
+                    ctx,
+                    bytes,
+                    wrapper_at + path_wrapper::LEN + ordinal * 11,
+                ));
+                if reference.0 != *record_index {
+                    return None;
+                }
+            }
         }
         let link = DesignAssemblyOperandPathLink {
             locator_reference_offset,
@@ -306,8 +344,23 @@ fn exact_assembly_operand_path(
     link: DesignAssemblyOperandPathLink,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 1..=8, u8::is_ascii_digit)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                start,
+                1..=8,
+                u8::is_ascii_digit
+            ));
         if View::u64_le_at(bytes, after_tag)? != u64::from(record_index) {
             return None;
         }

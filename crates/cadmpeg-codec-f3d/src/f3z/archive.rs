@@ -175,16 +175,7 @@ pub(super) fn classify_members<'a>(
         };
         let (member_layers, mut member_losses) =
             crate::dialect::classify_layers(ctx, &member_scan)?;
-        let mut loss_positions_storage =
-            ctx.reserve_scoped(0, "stage F3Z member classification loss positions")?;
-        let loss_positions = loss_positions_storage.with_storage(|| {
-            ctx.collect_vec(
-                member_losses.iter().enumerate().map(|(index, _)| index),
-                "stage F3Z member classification loss positions",
-            )
-        })?;
-        for index in ctx.admit_iter(&loss_positions, "prefix F3Z member classification losses")? {
-            let loss = &mut member_losses[*index];
+        for loss in &mut member_losses {
             loss.message = ctx.format_retained(
                 format_args!("archive member {member_path}: {}", loss.message),
                 "prefix F3Z member classification loss",

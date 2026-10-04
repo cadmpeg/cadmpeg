@@ -42,28 +42,30 @@ fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
 
 #[test]
 fn sketch_visibility_member_decodes_both_boolean_values() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let hidden =
-        decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX).expect("hidden member");
+        decode_sketch_visibility_member(&bytes_decode_ctx, &member(1, 0), 0, ENTITY_SUFFIX).unwrap().expect("hidden member");
     assert_eq!(hidden.stream_ordinal.get(), 1);
     assert_eq!(hidden.stream_ordinal_offset(), 30);
     assert_eq!(hidden.visible_offset(), 35);
     assert!(!hidden.visible);
 
     let visible =
-        decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX).expect("visible member");
+        decode_sketch_visibility_member(&bytes_decode_ctx, &member(513, 1), 0, ENTITY_SUFFIX).unwrap().expect("visible member");
     assert_eq!(visible.stream_ordinal.get(), 513);
     assert!(visible.visible);
 }
 
 #[test]
 fn sketch_visibility_member_rejects_invalid_ordinal_or_owner() {
-    assert!(decode_sketch_visibility_member(&member(1, 2), 0, ENTITY_SUFFIX).is_none());
-    assert!(decode_sketch_visibility_member(&member(0, 1), 0, ENTITY_SUFFIX).is_none());
-    assert!(decode_sketch_visibility_member(&member(1, 1), 0, ENTITY_SUFFIX + 1).is_none());
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    assert!(decode_sketch_visibility_member(&bytes_decode_ctx, &member(1, 2), 0, ENTITY_SUFFIX).unwrap().is_none());
+    assert!(decode_sketch_visibility_member(&bytes_decode_ctx, &member(0, 1), 0, ENTITY_SUFFIX).unwrap().is_none());
+    assert!(decode_sketch_visibility_member(&bytes_decode_ctx, &member(1, 1), 0, ENTITY_SUFFIX + 1).unwrap().is_none());
 
     let mut external_owner = member(1, 1);
     external_owner[28] = 1;
-    assert!(decode_sketch_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
+    assert!(decode_sketch_visibility_member(&bytes_decode_ctx, &external_owner, 0, ENTITY_SUFFIX).unwrap().is_none());
 }
 
 fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {

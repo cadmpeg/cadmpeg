@@ -110,14 +110,15 @@ pub(super) fn exact_assembly_alignment(
 
         if as_built_421 {
             let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
-            let form = match exact_legacy_as_built_421_solved_frame(bytes, records, scope) {
-                Some(solved_frame) => DesignAssemblyAlignmentForm::SolvedOnly {
+            let form = match exact_legacy_as_built_421_solved_frame(ctx, bytes, records, scope) {
+                Ok(Some(solved_frame)) => DesignAssemblyAlignmentForm::SolvedOnly {
                     solved_frame,
                     limits: Some(exact.limits),
                 },
-                None => DesignAssemblyAlignmentForm::LimitsOnly {
+                Ok(None) => DesignAssemblyAlignmentForm::LimitsOnly {
                     limits: exact.limits,
                 },
+                Err(error) => return Some(Err(error)),
             };
             return DesignAssemblyAlignment::try_new(
                 exact.angle,

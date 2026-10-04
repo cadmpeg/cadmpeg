@@ -30,6 +30,14 @@ pub(super) fn exact_combine_operation(
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignCombineOperation>, CodecError> {
     (|| {
+        macro_rules! admitted {
+            ($result:expr) => {
+                match $result {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Combine)
             || scope.reference_members().len() < 4
             || !scope.reference_members().len().is_multiple_of(2)
@@ -69,7 +77,7 @@ pub(super) fn exact_combine_operation(
             )
         } else if extended_reference {
             let mut reference_at = start.checked_add(combine_extended::REFERENCE_MARKER)?;
-            let reference = take_reference(bytes, &mut reference_at)?;
+            let reference = admitted!(take_reference(ctx, bytes, &mut reference_at))?;
             if bytes
                 .get(start + combine_extended::ZERO_RUN_18..start + combine_extended::FORM_MARKER)?
                 != [0; 18]
@@ -313,6 +321,14 @@ fn exact_combine_external_body_identity(
     record_index: u32,
 ) -> Result<Option<DesignCombineExternalBodyIdentity>, CodecError> {
     (|| {
+        macro_rules! admitted {
+            ($result:expr) => {
+                match $result {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         if bytes.get(
             start + combine_external::ZERO_RUN_14
                 ..start + combine_external::NESTED_REFERENCE_MARKER,
@@ -321,7 +337,7 @@ fn exact_combine_external_body_identity(
             return None;
         }
         let mut cursor = start.checked_add(combine_external::NESTED_REFERENCE_MARKER)?;
-        let nested = take_reference(bytes, &mut cursor)?;
+        let nested = admitted!(take_reference(ctx, bytes, &mut cursor))?;
         if nested.local()?.0 != u64::from(record_index.checked_add(3)?)
             || View::u32_le_at(bytes, cursor)? != 1
         {
@@ -364,7 +380,7 @@ fn exact_combine_external_body_identity(
         }
         cursor = after_selector_context_id.checked_add(12)?;
         let occurrence_reference_at = cursor.checked_add(1)?;
-        let occurrence = take_reference(bytes, &mut cursor)?;
+        let occurrence = admitted!(take_reference(ctx, bytes, &mut cursor))?;
         let (occurrence_reference, _) = occurrence.local()?;
         if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
             return None;
@@ -392,20 +408,25 @@ fn exact_combine_external_body_identity(
         let second_tail_value = View::u64_le_at(bytes, cursor)?;
         cursor = cursor.checked_add(8)?;
         let take_local = |cursor: &mut usize, expected| {
-            let reference = take_reference(bytes, cursor)?;
-            (reference.local()?.0 == u64::from(expected)).then_some(())
+            let Some(reference) = take_reference(ctx, bytes, cursor)? else {
+                return Ok(None);
+            };
+            let Some((target, _)) = reference.local() else {
+                return Ok(None);
+            };
+            Ok((target == u64::from(expected)).then_some(()))
         };
-        take_local(&mut cursor, record_index.checked_add(2)?)?;
+        admitted!(take_local(&mut cursor, record_index.checked_add(2)?))?;
         if bytes.get(cursor..cursor.checked_add(2)?)? != [0; 2] {
             return None;
         }
         cursor = cursor.checked_add(2)?;
-        take_local(&mut cursor, record_index.checked_add(1)?)?;
+        admitted!(take_local(&mut cursor, record_index.checked_add(1)?))?;
         if bytes.get(cursor) != Some(&0) {
             return None;
         }
         cursor = cursor.checked_add(1)?;
-        take_local(&mut cursor, scope_record_index)?;
+        admitted!(take_local(&mut cursor, scope_record_index))?;
         if cursor != paired_at {
             return None;
         }

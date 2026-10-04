@@ -230,6 +230,7 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
 
 #[test]
 fn owned_parameter_projects_under_its_real_scope_feature() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(44),
         "60 mm",
@@ -241,7 +242,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     .unwrap();
     parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
     parameter.record_index = 45;
-    let mut owner = parse_parameter_owner(&parameter_owner_frame())
+    let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
@@ -357,6 +358,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
 
 #[test]
 fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(44),
         "60 mm",
@@ -369,7 +371,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
     parameter.source_ordinal = 17;
-    let mut owner = parse_parameter_owner(&parameter_owner_frame())
+    let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
@@ -588,6 +590,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
 #[allow(clippy::large_stack_arrays)]
 #[test]
 fn parameter_expressions_project_feature_dependencies() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
         let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(owner_record_index),
@@ -604,7 +607,7 @@ fn parameter_expressions_project_feature_dependencies() {
         parameter
     };
     let owner = |record_index, scope_record_index, parameter_record_index| {
-        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+        let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
             .expect("generated parameter owner is canonical")
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();

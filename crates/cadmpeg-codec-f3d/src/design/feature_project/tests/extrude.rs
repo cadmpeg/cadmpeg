@@ -162,6 +162,7 @@ fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart
 
 #[test]
 fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     crate::test_support::with_decode_context(|decode_ctx| {
         use cadmpeg_ir::features::{
             BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
@@ -604,7 +605,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 .unwrap(),
             )
             .unwrap();
-        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+        let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
             .expect("generated parameter owner is canonical")
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();

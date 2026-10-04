@@ -21,7 +21,8 @@ use crate::records::{
     parameters::DesignParameterOwner,
     recipes::ConstructionRecipe,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 use super::scopes::hole::exact_hole_construction;
@@ -159,10 +160,21 @@ pub(super) fn exact_legacy_as_built_421_alignment(
 }
 
 pub(super) fn exact_legacy_as_built_421_solved_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignAssemblySolvedFrame> {
+) -> Result<Option<DesignAssemblySolvedFrame>, CodecError> {
+    let parsed = (|| {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
@@ -177,19 +189,25 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     }
     let frame_record_index = frame_reference.value;
     let expected_class_tag = generation.frame_class_tag();
-    let mut frame_candidates =
-        records
-            .offsets(frame_record_index)
-            .iter()
-            .copied()
-            .filter(|frame_start| {
-                exact_indexed_header_at(bytes, *frame_start, frame_record_index).as_deref()
-                    == Some(expected_class_tag)
-            });
-    let frame_start = frame_candidates.next()?;
-    if frame_candidates.next().is_some() {
-        return None;
+    let mut frame_start = None;
+    for candidate_at in records.offsets(frame_record_index).iter().copied() {
+        let candidate_class_tag = match exact_indexed_header_at(
+            ctx,
+            bytes,
+            candidate_at,
+            frame_record_index,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => continue,
+            Err(error) => return Some(Err(error)),
+        };
+        if candidate_class_tag == expected_class_tag
+            && frame_start.replace(candidate_at).is_some()
+        {
+            return None;
+        }
     }
+    let frame_start = frame_start?;
     let frame_length = generation.frame_length();
     let matrix_prefix = generation.matrix_prefix();
     let transform_offset = generation.matrix_offset();
@@ -207,13 +225,12 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
             as_built_421_frame_297::MATRIX_PREFIX_VALUE
         }
     };
-    if exact_indexed_header_at(
+    if admitted_option!(exact_indexed_header_at(
+        ctx,
         bytes,
         frame_start.checked_add(frame_length)?,
         frame_record_index,
-    )
-    .as_deref()
-        != Some(generation.frame_paired_class_tag())
+    )) != generation.frame_paired_class_tag()
     {
         return None;
     }
@@ -224,14 +241,16 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
         return None;
     }
     let transform_at = frame_start.checked_add(transform_offset)?;
-    Some(DesignAssemblySolvedFrame {
+    Some(Ok(DesignAssemblySolvedFrame {
         reference_record_index: frame_record_index,
         reference_offset: frame_reference.offset,
         record_byte_offset: u64::try_from(frame_start).ok()?,
         class_tag: expected_class_tag.to_owned().try_into().ok()?,
         transform: rigid_transform_at(bytes, transform_at)?,
         transform_offset: u64::try_from(transform_at).ok()?,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Maximum component error accepted when a legacy hole direction is compared
@@ -347,8 +366,16 @@ recipes,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
-    let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
+    let point_class_tag = match indexed_class_at(ctx, bytes, point.point_record_byte_offset) {
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let hole_class_tag = match indexed_class_at(ctx, bytes, hole.point_record_byte_offset) {
+        Ok(Some(class_tag)) => class_tag,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok(
         crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
             DesignAssemblyLegacyOperand {
@@ -368,10 +395,23 @@ recipes,
     })().transpose()
 }
 
-fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
-    let start = usize::try_from(byte_offset).ok()?;
-    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    (after_tag == start.checked_add(7)?).then(|| class_tag.to_owned())
+fn indexed_class_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    byte_offset: u64,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Ok(start) = usize::try_from(byte_offset) else {
+        return Ok(None);
+    };
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(ctx, bytes, start, 3..=3, u8::is_ascii_digit)?
+    else {
+        return Ok(None);
+    };
+    let Some(expected_end) = start.checked_add(7) else {
+        return Ok(None);
+    };
+    Ok((after_tag == expected_end).then(|| class_tag.to_owned()))
 }
 
 fn exact_legacy_as_built_face_selection(
@@ -409,7 +449,11 @@ fn exact_legacy_as_built_face_selection(
         .iter()
         .copied()
         .filter_map(|byte_offset| {
-            let class_tag = indexed_class_at(bytes, u64::try_from(byte_offset).ok()?)?;
+            let class_tag = match indexed_class_at(ctx, bytes, u64::try_from(byte_offset).ok()?) {
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             if class_tag != expected_class_tag {
                 return None;
             }

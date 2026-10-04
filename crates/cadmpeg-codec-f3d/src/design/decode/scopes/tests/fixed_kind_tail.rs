@@ -91,6 +91,7 @@ fn surface_offset_face_groups_refuse_collection_limit() {
 }
 
 fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"301");
@@ -696,10 +697,11 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         })
         .unwrap();
     let construction = exact_work_axis_construction(
+        &bytes_decode_ctx,
         &axis_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
         &axis_scope,
-    )
+    ).unwrap()
     .expect("exact two-point WorkAxis construction");
     assert_eq!(
         construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),

@@ -39,8 +39,11 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&233u32.to_le_bytes());
 
-    let mut pair = parse_dimension_locus_pair(&bytes, 0, 228, &HashSet::from([192, 194]))
-        .expect("paired dimension locus frame");
+    let mut pair = crate::test_support::with_decode_context(|ctx| {
+        parse_dimension_locus_pair(ctx, &bytes, 0, 228, &HashSet::from([192, 194]))
+    })
+    .unwrap()
+    .expect("paired dimension locus frame");
     pair.id = "f3d:Design/BulkStream.dat:design-dimension-locus-pair#0".into();
     assert_eq!(pair.companion_record_index, 228);
     assert_eq!(pair.record_index, 233);
@@ -104,20 +107,27 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     nested.extend_from_slice(&229u32.to_le_bytes());
     nested.extend_from_slice(&bytes);
     let nested_end = nested.len();
-    let nested = find_dimension_locus_pair(&nested, 0, nested_end, 228, &HashSet::from([192, 194]))
-        .expect("nested paired dimension locus frame");
+    let nested = crate::test_support::with_decode_context(|ctx| {
+        find_dimension_locus_pair(ctx, &nested, 0, nested_end, 228, &HashSet::from([192, 194]))
+    })
+    .unwrap()
+    .expect("nested paired dimension locus frame");
     assert_eq!(nested.byte_offset(), 11);
     assert_eq!(nested.paired_byte_offset(), 91);
 
     let mut competing = bytes.clone();
     competing.extend_from_slice(&bytes);
-    assert!(find_dimension_locus_pair(
-        &competing,
-        0,
-        competing.len(),
-        228,
-        &HashSet::from([192, 194]),
-    )
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        find_dimension_locus_pair(
+            ctx,
+            &competing,
+            0,
+            competing.len(),
+            228,
+            &HashSet::from([192, 194]),
+        )
+    })
+    .unwrap()
     .is_none());
 }
 
@@ -138,8 +148,11 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&1394u32.to_le_bytes());
 
-    let pair = parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109]))
-        .expect("null-locus dimension frame");
+    let pair = crate::test_support::with_decode_context(|ctx| {
+        parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1109]))
+    })
+    .unwrap()
+    .expect("null-locus dimension frame");
     assert_eq!(pair.companion_record_index, 1290);
     assert_eq!(pair.governing_companion_record_index, 1290);
     assert_eq!(pair.record_index, 1394);
@@ -149,7 +162,11 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.loci()[1].role, 7);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
 
-    assert!(parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        parse_dimension_null_locus_pair(ctx, &bytes, 0, 1290, &HashSet::from([1110]))
+    })
+    .unwrap()
+    .is_none());
 
     let mut nested = Vec::new();
     nested.extend_from_slice(&3u32.to_le_bytes());
@@ -157,9 +174,11 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     nested.extend_from_slice(&229u32.to_le_bytes());
     nested.extend_from_slice(&bytes);
     let nested_end = nested.len();
-    let nested =
-        find_dimension_null_locus_pair(&nested, 0, nested_end, 1290, &HashSet::from([1109]))
-            .expect("null-locus frame following another indexed frame");
+    let nested = crate::test_support::with_decode_context(|ctx| {
+        find_dimension_null_locus_pair(ctx, &nested, 0, nested_end, 1290, &HashSet::from([1109]))
+    })
+    .unwrap()
+    .expect("null-locus frame following another indexed frame");
     assert_eq!(nested.byte_offset(), 11);
     assert_eq!(nested.paired_byte_offset(), 85);
 

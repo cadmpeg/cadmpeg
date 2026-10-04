@@ -137,7 +137,7 @@ fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     ] {
         let encoded =
-            crate::bytes::lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
+            crate::bytes::lp_utf16_fixture_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
         bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
         cursor += encoded.len();
     }
@@ -157,7 +157,7 @@ fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
     cursor += 1;
     bytes[cursor..cursor + 8].copy_from_slice(&401u64.to_le_bytes());
     cursor += 18;
-    let encoded = crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000")
+    let encoded = crate::bytes::lp_utf16_fixture_bytes("00000000-0000-0000-0000-000000000000")
         .expect("fixture UTF-16 code-unit count fits u32");
     bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
@@ -170,7 +170,7 @@ fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
     cursor += 10;
     bytes[cursor..cursor + 4].copy_from_slice(&7u32.to_le_bytes());
     cursor += 4;
-    let encoded = crate::bytes::lp_utf16_bytes("Base Feature")
+    let encoded = crate::bytes::lp_utf16_fixture_bytes("Base Feature")
         .expect("fixture UTF-16 code-unit count fits u32");
     bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();

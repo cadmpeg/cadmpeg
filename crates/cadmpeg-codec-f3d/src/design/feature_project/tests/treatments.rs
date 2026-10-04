@@ -506,7 +506,8 @@ fn localized_fillet_owner(
     parameter_record_index: u32,
     local_ordinal: u32,
 ) -> DesignParameterOwner {
-    let mut owner = parse_parameter_owner(&parameter_owner_frame())
+    let bytes_decode_ctx = cadmpeg_test_support::service_decode_context();
+    let mut owner = parse_parameter_owner(&bytes_decode_ctx, &parameter_owner_frame()).transpose().unwrap()
         .unwrap()
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();

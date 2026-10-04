@@ -22,7 +22,8 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkAxisConstruction;
 use crate::records::feature::work_geometry::DesignWorkAxisSource;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -221,15 +222,18 @@ pub(super) fn exact_work_plane_frame(
 }
 
 pub(super) fn exact_work_axis_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignWorkAxisConstruction> {
+) -> Result<Option<DesignWorkAxisConstruction>, CodecError> {
     if scope.kind() != scope::DesignFeatureKind::WorkAxis {
-        return None;
+        return Ok(None);
     }
-    exact_two_point_work_axis_construction(bytes, records, scope)
-        .or_else(|| exact_direct_work_axis_construction(bytes, records, scope))
+    if let Some(construction) = exact_two_point_work_axis_construction(bytes, records, scope) {
+        return Ok(Some(construction));
+    }
+    exact_direct_work_axis_construction(ctx, bytes, records, scope)
 }
 
 fn exact_two_point_work_axis_construction(
@@ -308,10 +312,21 @@ fn exact_two_point_work_axis_construction(
 }
 
 fn exact_direct_work_axis_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignWorkAxisConstruction> {
+) -> Result<Option<DesignWorkAxisConstruction>, CodecError> {
+    (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
     let [carrier_record_index, support_record_index] = scope.reference_members().values_array()?;
     let (
         carrier_class,
@@ -358,10 +373,18 @@ fn exact_direct_work_axis_construction(
     else {
         return None;
     };
-    let carrier_primary_class =
-        exact_indexed_header_at(bytes, carrier_start, *carrier_record_index)?;
-    let carrier_paired_class_tag =
-        exact_indexed_header_at(bytes, carrier_paired, *carrier_record_index)?;
+    let carrier_primary_class = admitted_option!(exact_indexed_header_at(
+        ctx,
+        bytes,
+        carrier_start,
+        *carrier_record_index,
+    ));
+    let carrier_paired_class_tag = admitted_option!(exact_indexed_header_at(
+        ctx,
+        bytes,
+        carrier_paired,
+        *carrier_record_index,
+    ));
     if carrier_paired.checked_sub(carrier_start)? != carrier_length
         || carrier_primary_class != carrier_class
         || carrier_paired_class_tag != carrier_paired_class
@@ -374,10 +397,18 @@ fn exact_direct_work_axis_construction(
     else {
         return None;
     };
-    let support_primary_class =
-        exact_indexed_header_at(bytes, support_start, *support_record_index)?;
-    let support_paired_class_tag =
-        exact_indexed_header_at(bytes, support_paired, *support_record_index)?;
+    let support_primary_class = admitted_option!(exact_indexed_header_at(
+        ctx,
+        bytes,
+        support_start,
+        *support_record_index,
+    ));
+    let support_paired_class_tag = admitted_option!(exact_indexed_header_at(
+        ctx,
+        bytes,
+        support_paired,
+        *support_record_index,
+    ));
     if support_paired.checked_sub(support_start)? != 293
         || support_primary_class != support_class
         || support_paired_class_tag != support_paired_class
@@ -405,7 +436,7 @@ fn exact_direct_work_axis_construction(
     if displacement_length <= f64::EPSILON {
         return None;
     }
-    Some(DesignWorkAxisConstruction {
+    Some(Ok(DesignWorkAxisConstruction {
         origin,
         displacement,
         origin_offset: u64::try_from(carrier_start.checked_add(axis_values_offset)?).ok()?,
@@ -415,7 +446,9 @@ fn exact_direct_work_axis_construction(
             carrier_record_index: *carrier_record_index,
             support_record_index: *support_record_index,
         }),
-    })
+    }))
+    })()
+    .transpose()
 }
 
 pub(super) fn exact_joint_origin_frame(

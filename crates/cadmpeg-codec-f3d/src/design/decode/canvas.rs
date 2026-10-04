@@ -127,6 +127,15 @@ fn parse_canvas_image(
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignCanvasImage>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let scope_at = usize::try_from(scope.byte_offset()).ok()?;
         let geometry_reference_at = if bytes.get(scope_at + 11..scope_at + 21)? == [0; 10] {
             scope_at + 21
@@ -140,7 +149,13 @@ fn parse_canvas_image(
         let geometry_record_index = marked_reference(bytes, geometry_reference_at)?;
         let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
         let (geometry_class_tag, after_geometry_tag) =
-            lp_ascii_filtered_view(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                geometry_at,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         let geometry_prologue: [u8; 15] = bytes
             .get(geometry_at + 11..geometry_at + 26)?
             .try_into()
@@ -156,7 +171,13 @@ fn parse_canvas_image(
             geometry_record_index,
         )?;
         let (paired_geometry_class_tag, after_paired_tag) =
-            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                paired_at,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         let paired_component_at = paired_at + 19;
         if View::u32_le_at(bytes, after_paired_tag)? != geometry_record_index
             || paired_at <= geometry_at
@@ -229,7 +250,13 @@ fn parse_canvas_image(
         }
         let asset_record_at = paired_at.checked_add(30)?;
         let (asset_class_tag, after_asset_tag) =
-            lp_ascii_filtered_view(bytes, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
+            admitted_option!(lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                asset_record_at,
+                0..=2000,
+                u8::is_ascii_graphic
+            ));
         if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
             || bytes.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
         {

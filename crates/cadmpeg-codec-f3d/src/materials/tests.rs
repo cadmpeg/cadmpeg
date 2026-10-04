@@ -135,7 +135,10 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    let (patched, guids) = crate::test_support::with_decode_context(|ctx| {
+        super::patch_protein_appearances(ctx, &protein, &edits, &mut notes)
+    })
+    .unwrap();
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -658,9 +661,9 @@ fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
 
 #[test]
 fn decoded_color_requires_finite_normalized_channels() {
-    assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
+    assert!(super::decoded_color(&cadmpeg_test_support::service_decode_context(), [0.0, 0.25, 0.5, 1.0]).unwrap().is_some());
     for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
-        assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
+        assert!(super::decoded_color(&cadmpeg_test_support::service_decode_context(), [invalid, 0.25, 0.5, 1.0]).unwrap().is_none());
     }
 }
 
@@ -707,7 +710,7 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
         );
         let record = appearance_record(schema, properties);
         assert_eq!(
-            super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
+            super::appearance_base_color(&cadmpeg_test_support::service_decode_context(), &record).unwrap().map(cadmpeg_ir::topology::Color::g),
             Some(0.25),
             "{schema} selects {primary_id}"
         );
@@ -733,7 +736,7 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
     assert_eq!(
-        super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
+        super::appearance_base_color(&cadmpeg_test_support::service_decode_context(), &record).unwrap().map(cadmpeg_ir::topology::Color::g),
         Some(0.625)
     );
 }
@@ -1742,8 +1745,10 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
             properties: std::collections::BTreeMap::new(),
         },
     )]);
-    let error = crate::materials::patch_protein_appearances(&protein, &edits, &mut Vec::new())
-        .expect_err("a record that ends at its GUID places no colour carrier");
+    let error = crate::test_support::with_decode_context(|ctx| {
+        crate::materials::patch_protein_appearances(ctx, &protein, &edits, &mut Vec::new())
+    })
+    .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(
         error
             .to_string()
@@ -1756,3 +1761,24 @@ mod assignment_losses;
 mod limits;
 
 mod appearance_assignments;
+
+#[test]
+fn appearance_payload_comparison_preserves_work_refusal() {
+    let left = opaque_appearance("test-preset");
+    let mut right = left.clone();
+    assert!(crate::test_support::with_decode_context(|decode| {
+        super::appearance_equal(decode, &left, &right)
+    }).unwrap());
+    right.name = Some("Different preset".to_owned());
+    assert!(!crate::test_support::with_decode_context(|decode| {
+        super::appearance_equal(decode, &left, &right)
+    }).unwrap());
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D appearance names",
+        0,
+        |decode| super::appearance_equal(decode, &left, &right),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D appearance names"));
+}

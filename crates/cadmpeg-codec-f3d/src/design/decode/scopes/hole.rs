@@ -76,10 +76,16 @@ pub(in crate::design::decode) fn exact_hole_construction(
                 continue;
             }
             for (start, paired_at) in records.frames(*record_index) {
-                let Some((_, after_tag)) =
-                    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
-                else {
-                    continue;
+                let (_, after_tag) = match lp_ascii_filtered_view(
+                    ctx,
+                    bytes,
+                    start,
+                    3..=3,
+                    u8::is_ascii_digit,
+                ) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
                 };
                 if after_tag != start + 7
                     || View::u32_le_at(bytes, after_tag) != Some(*record_index)
@@ -131,7 +137,7 @@ fn exact_hole_face_selection(
         }
         for (start, _paired_at) in records.frames(*record_index) {
             let Some((class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(ctx, bytes, start, 3..=3, u8::is_ascii_digit)?
             else {
                 continue;
             };
@@ -255,7 +261,11 @@ fn hole_construction_frame_at(
         }
         for _ in 0..input_count {
             let reference_at = cursor;
-            let reference = take_reference(body, &mut cursor)?;
+            let reference = match take_reference(ctx, body, &mut cursor) {
+                Ok(Some(reference)) => reference,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let target = u32::try_from(reference.target()?).ok()?;
             input_records.push(crate::records::identity::Located {
                 value: target,

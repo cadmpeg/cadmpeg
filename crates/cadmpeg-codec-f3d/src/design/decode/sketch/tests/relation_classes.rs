@@ -390,7 +390,7 @@ fn relation_classes_are_named_by_type_guid() {
 fn relation_leading_block_selects_member_run_and_mask_width() {
     let modern = relation_record(&[(300, 0)], &[], 201, 0x0020_0000_0000, &[300]);
     assert_eq!(
-        relation_mask_width(&modern),
+        crate::test_support::with_decode_context(|ctx| relation_mask_width(ctx, &modern).unwrap()),
         Some(SketchRelationMaskWidth::U64)
     );
     let modern_parsed =
@@ -407,7 +407,7 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
 
     let legacy = legacy_relation_record(201, 0x8000_0000, &[300]);
     assert_eq!(
-        relation_mask_width(&legacy),
+        crate::test_support::with_decode_context(|ctx| relation_mask_width(ctx, &legacy).unwrap()),
         Some(SketchRelationMaskWidth::U32)
     );
     let legacy_parsed =
@@ -425,7 +425,10 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
 
     let mut invalid = legacy;
     invalid[19] = 2;
-    assert_eq!(relation_mask_width(&invalid), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| relation_mask_width(ctx, &invalid).unwrap()),
+        None
+    );
     assert!(tested_parse_classed_sketch_relation(&invalid, SketchRelationClass::Plain).is_none());
 }
 

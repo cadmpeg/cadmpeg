@@ -21,15 +21,18 @@ use crate::records::{
     parameters::DesignParameterOwner,
     sketch_placement::valid_sketch_transform,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveReal;
 
 pub(super) fn exact_solid_primitive(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignSolidPrimitive> {
+) -> Result<Option<DesignSolidPrimitive>, CodecError> {
+    let parsed = (|| {
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let (operation, operation_offset, cylinder_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
@@ -87,10 +90,15 @@ pub(super) fn exact_solid_primitive(
                 && bytes.get(start + 52) == Some(&1) =>
         {
             let diameter_record_index = View::u32_le_at(bytes, start + 42)?;
-            let (diameter, diameter_offset) =
-                exact_primitive_diameter(bytes, records, diameter_record_index)?;
+            let (diameter, diameter_offset) = match
+                exact_primitive_diameter(ctx, bytes, records, diameter_record_index)
+            {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let (transform, transform_offset) = matrix(64)?;
-            Some(DesignSolidPrimitive::Sphere(
+            Some(Ok(DesignSolidPrimitive::Sphere(
                 crate::records::feature::primitives::DesignSpherePrimitive {
                     transform,
                     transform_offset,
@@ -100,7 +108,7 @@ pub(super) fn exact_solid_primitive(
                     operation,
                     operation_offset: u64_from_index(operation_offset),
                 },
-            ))
+            )))
         }
         "TorusPrimitive"
             if scope.frame_length() == 486
@@ -115,12 +123,22 @@ pub(super) fn exact_solid_primitive(
             if major_diameter_record_index == minor_diameter_record_index {
                 return None;
             }
-            let (major_diameter, major_diameter_offset) =
-                exact_primitive_diameter(bytes, records, major_diameter_record_index)?;
-            let (minor_diameter, minor_diameter_offset) =
-                exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
+            let (major_diameter, major_diameter_offset) = match
+                exact_primitive_diameter(ctx, bytes, records, major_diameter_record_index)
+            {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            let (minor_diameter, minor_diameter_offset) = match
+                exact_primitive_diameter(ctx, bytes, records, minor_diameter_record_index)
+            {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let (transform, transform_offset) = matrix(75)?;
-            Some(DesignSolidPrimitive::Torus(
+            Some(Ok(DesignSolidPrimitive::Torus(
                 crate::records::feature::primitives::DesignTorusPrimitive {
                     transform,
                     transform_offset,
@@ -133,7 +151,7 @@ pub(super) fn exact_solid_primitive(
                     operation,
                     operation_offset: u64_from_index(operation_offset),
                 },
-            ))
+            )))
         }
         "BoxPrimitive" => {
             if scope.frame_length() < 78 || scope.reference_members().len() < 5 {
@@ -147,7 +165,7 @@ pub(super) fn exact_solid_primitive(
             let length_value = PositiveReal::new(length.evaluated_value().get())?;
             let width_value = PositiveReal::new(width.evaluated_value().get())?;
             let height_value = PositiveReal::new(height.evaluated_value().get())?;
-            Some(DesignSolidPrimitive::Box(
+            Some(Ok(DesignSolidPrimitive::Box(
                 crate::records::feature::primitives::DesignBoxPrimitive {
                     length: length_value,
                     length_record_index: length.record_index(),
@@ -167,7 +185,7 @@ pub(super) fn exact_solid_primitive(
                     operation,
                     operation_offset: u64_from_index(operation_offset),
                 },
-            ))
+            )))
         }
         "CylinderPrimitive" => {
             if scope.frame_length() < 78 || scope.reference_members().len() < 2 {
@@ -180,7 +198,7 @@ pub(super) fn exact_solid_primitive(
             };
             let height_value = PositiveReal::new(height.evaluated_value().get())?;
             let diameter_value = PositiveReal::new(diameter.evaluated_value().get())?;
-            Some(DesignSolidPrimitive::Cylinder(
+            Some(Ok(DesignSolidPrimitive::Cylinder(
                 crate::records::feature::primitives::DesignCylinderPrimitive {
                     height: height_value,
                     height_record_index: height.record_index(),
@@ -192,10 +210,12 @@ pub(super) fn exact_solid_primitive(
                     operation,
                     operation_offset: u64_from_index(operation_offset),
                 },
-            ))
+            )))
         }
         _ => None,
     }
+    })();
+    parsed.transpose()
 }
 
 #[derive(Clone, Copy)]
@@ -468,12 +488,18 @@ fn exact_owned_primitive_parameters<'a, const N: usize>(
 }
 
 fn exact_primitive_diameter(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(PositiveReal, u64)> {
-    let scalar = exact_fixed_scalar(bytes, records, record_index)?;
-    Some((PositiveReal::new(scalar.value.get())?, scalar.value_offset))
+) -> Result<Option<(PositiveReal, u64)>, CodecError> {
+    let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, record_index)? else {
+        return Ok(None);
+    };
+    let Some(diameter) = PositiveReal::new(scalar.value.get()) else {
+        return Ok(None);
+    };
+    Ok(Some((diameter, scalar.value_offset)))
 }
 
 #[cfg(test)]

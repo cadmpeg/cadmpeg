@@ -21,7 +21,8 @@ use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 fn exact_pipe_owner_lanes(
     scope: &DesignParameterScope,
@@ -63,22 +64,24 @@ fn exact_pipe_owner_lanes(
 }
 
 pub(super) fn exact_path_feature_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignPathFeatureConstruction> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let operation = |offset| {
-        Some(match View::u32_le_at(bytes, offset)? {
-            1 => DesignExtrudeOperation::Join,
-            2 => DesignExtrudeOperation::Cut,
-            3 => DesignExtrudeOperation::Intersect,
-            4 => DesignExtrudeOperation::NewBody,
-            _ => return None,
-        })
-    };
-    match design_feature_family(&scope.kind())? {
+) -> Result<Option<DesignPathFeatureConstruction>, CodecError> {
+    let parsed = (|| {
+        let start = usize::try_from(scope.byte_offset()).ok()?;
+        let operation = |offset| {
+            Some(match View::u32_le_at(bytes, offset)? {
+                1 => DesignExtrudeOperation::Join,
+                2 => DesignExtrudeOperation::Cut,
+                3 => DesignExtrudeOperation::Intersect,
+                4 => DesignExtrudeOperation::NewBody,
+                _ => return None,
+            })
+        };
+        match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
             if matches!(scope.reference_members().len(), 6 | 8)
                 && bytes.get(start + revolve::MARKER) == Some(&1)
@@ -88,7 +91,7 @@ pub(super) fn exact_path_feature_construction(
                 && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1) =>
         {
             let angle = unique_revolve_angle_owner(scope, parameter_owners, None)?;
-            Some(DesignPathFeatureConstruction::Revolve(
+            Some(Ok(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
@@ -97,7 +100,7 @@ pub(super) fn exact_path_feature_construction(
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(372)
@@ -105,19 +108,29 @@ pub(super) fn exact_path_feature_construction(
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0) =>
         {
-            let mut lanes = scope
-                .reference_members()
-                .values()
-                .filter_map(|record_index| {
-                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                    (scalar.owner_record_index == Some(scope.record_index))
-                        .then_some((*record_index, scalar))
-                });
-            let ((angle_record_index, angle), (opposite_angle_record_index, opposite)) =
-                (lanes.next()?, lanes.next()?);
-            if lanes.next().is_some() {
-                return None;
+            let mut record_indices = scope.reference_members().values();
+            let mut lanes = [None; 2];
+            let mut lane_count = 0;
+            while let Some(record_index) = record_indices.next() {
+                let scalar = match exact_fixed_scalar(ctx, bytes, records, *record_index) {
+                    Ok(Some(scalar)) => scalar,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
+                };
+                if scalar.owner_record_index != Some(scope.record_index) {
+                    continue;
+                }
+                if lane_count == lanes.len() {
+                    return None;
+                }
+                lanes[lane_count] = Some((*record_index, scalar));
+                lane_count += 1;
             }
+            let [Some((angle_record_index, angle)), Some((opposite_angle_record_index, opposite))] =
+                lanes
+            else {
+                return None;
+            };
             if angle.ordinal != 0
                 || opposite.ordinal != 1
                 || angle.value.get() <= 0.0
@@ -125,7 +138,7 @@ pub(super) fn exact_path_feature_construction(
             {
                 return None;
             }
-            Some(DesignPathFeatureConstruction::Revolve(
+            Some(Ok(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
@@ -137,7 +150,7 @@ pub(super) fn exact_path_feature_construction(
                         offset: opposite.value_offset,
                     }),
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Revolve
             if scope.class_tag.as_str() == "407"
@@ -156,7 +169,7 @@ pub(super) fn exact_path_feature_construction(
             }
             let angle =
                 unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
-            Some(DesignPathFeatureConstruction::Revolve(
+            Some(Ok(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
                     operation_offset: u64::try_from(start + 21).ok()?,
@@ -165,7 +178,7 @@ pub(super) fn exact_path_feature_construction(
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Revolve
             if scope.class_tag.as_str() == "403"
@@ -180,7 +193,7 @@ pub(super) fn exact_path_feature_construction(
                 marked_record_reference(bytes, start + class_403_revolve::ANGLE_REFERENCE_MARKER)?;
             let angle =
                 unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
-            Some(DesignPathFeatureConstruction::Revolve(
+            Some(Ok(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
@@ -189,7 +202,7 @@ pub(super) fn exact_path_feature_construction(
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Loft
             if bytes.get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
@@ -201,44 +214,46 @@ pub(super) fn exact_path_feature_construction(
                 && bytes.get(start + compact_loft::ZERO_RUN_11..start + compact_loft::LEN)
                     == Some(&[0; 11]) =>
         {
-            Some(DesignPathFeatureConstruction::Loft(
+            Some(Ok(DesignPathFeatureConstruction::Loft(
                 path_features::DesignLoftConstruction {
                     operation: operation(start + compact_loft::OPERATION)?,
                     operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Loft
             if parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
         {
-            Some(DesignPathFeatureConstruction::Loft(
+            Some(Ok(DesignPathFeatureConstruction::Loft(
                 path_features::DesignLoftConstruction {
                     operation: operation(start + 29)?,
                     operation_offset: u64::try_from(start + 29).ok()?,
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Sweep => {
-            let mut candidate_lanes =
-                scope
-                    .reference_members()
-                    .values()
-                    .filter_map(|record_index| {
-                        let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                        (scalar.owner_record_index == Some(scope.record_index))
-                            .then_some((*record_index, scalar))
-                    });
-            let lanes = [
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-                candidate_lanes.next()?,
-            ];
-            if candidate_lanes.next().is_some() {
-                return None;
+            let mut record_indices = scope.reference_members().values();
+            let mut matched = [None; 6];
+            let mut count = 0;
+            while let Some(record_index) = record_indices.next() {
+                let scalar = match exact_fixed_scalar(ctx, bytes, records, *record_index) {
+                    Ok(Some(scalar)) => scalar,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
+                };
+                if scalar.owner_record_index != Some(scope.record_index) {
+                    continue;
+                }
+                if count == matched.len() {
+                    return None;
+                }
+                matched[count] = Some((*record_index, scalar));
+                count += 1;
             }
+            let [Some(lane_0), Some(lane_1), Some(lane_2), Some(lane_3), Some(lane_4), Some(lane_5)] = matched else {
+                return None;
+            };
+            let lanes = [lane_0, lane_1, lane_2, lane_3, lane_4, lane_5];
             if lanes
                 .iter()
                 .enumerate()
@@ -246,7 +261,7 @@ pub(super) fn exact_path_feature_construction(
             {
                 return None;
             }
-            Some(DesignPathFeatureConstruction::Sweep(
+            Some(Ok(DesignPathFeatureConstruction::Sweep(
                 path_features::DesignSweepConstruction {
                     operation: operation(start + 25)?,
                     operation_offset: u64::try_from(start + 25).ok()?,
@@ -254,7 +269,7 @@ pub(super) fn exact_path_feature_construction(
                     record_indexes: lanes.map(|(record_index, _)| record_index),
                     value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
                 },
-            ))
+            )))
         }
         DesignFeatureFamily::Pipe => {
             let legacy_prefix_layout = matches!(
@@ -281,8 +296,10 @@ pub(super) fn exact_path_feature_construction(
                 let mut matched = [None; 4];
                 let mut count = 0usize;
                 for record_index in scope.reference_members().values() {
-                    let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) else {
-                        continue;
+                    let scalar = match exact_fixed_scalar(ctx, bytes, records, *record_index) {
+                        Ok(Some(scalar)) => scalar,
+                        Ok(None) => continue,
+                        Err(error) => return Some(Err(error)),
                     };
                     if scalar.owner_record_index != Some(scope.record_index) {
                         continue;
@@ -322,7 +339,7 @@ pub(super) fn exact_path_feature_construction(
                 1 => true,
                 _ => return None,
             };
-            Some(DesignPathFeatureConstruction::Pipe(
+            Some(Ok(DesignPathFeatureConstruction::Pipe(
                 path_features::DesignPipeConstruction {
                     operation: operation(operation_offset)?,
                     operation_offset: u64::try_from(operation_offset).ok()?,
@@ -334,10 +351,12 @@ pub(super) fn exact_path_feature_construction(
                     record_indexes: lanes.map(|(record_index, _)| record_index),
                     value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
                 },
-            ))
+            )))
         }
         _ => None,
-    }
+        }
+    })();
+    parsed.transpose()
 }
 
 #[cfg(test)]

@@ -56,7 +56,10 @@ pub(crate) fn primary_record_frames(
         meta.records.len(),
         "index F3D primary entities",
     )?;
-    for (ordinal, record) in meta.records.iter().enumerate() {
+    for (ordinal, record) in ctx
+        .admit_iter(&meta.records, "frame F3D primary records")?
+        .enumerate()
+    {
         if primary_by_entity
             .insert(record.entity_id, ordinal)
             .is_some()
@@ -97,7 +100,10 @@ pub(crate) fn primary_record_frames(
         meta.secondary_records.len(),
         "index F3D secondary entities",
     )?;
-    for record in &meta.secondary_records {
+    for record in ctx.admit_iter(
+        &meta.secondary_records,
+        "index F3D secondary entities",
+    )? {
         let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
             CodecError::Malformed("F3D secondary record offset exceeds usize".into())
         })?;
@@ -162,11 +168,6 @@ fn take_record_index(
     }
 
     let mut records = Vec::new();
-    ctx.reserve_vec(
-        &mut records,
-        count_usize,
-        "parse F3D MetaStream record index",
-    )?;
     let mut view = View::over_retained(bytes);
     if view.seek(records_at).is_none() {
         return Ok(None);
@@ -178,10 +179,14 @@ fn take_record_index(
         let Some(bulk_offset) = view.u64_le() else {
             return Ok(None);
         };
-        records.push(RecordIndexEntry {
-            entity_id,
-            bulk_offset,
-        });
+        ctx.push_vec(
+            &mut records,
+            RecordIndexEntry {
+                entity_id,
+                bulk_offset,
+            },
+            "parse F3D MetaStream record index",
+        )?;
     }
     *at = view.position();
     Ok(Some(records))
@@ -216,8 +221,16 @@ fn lp_graphic_charged(
     at: usize,
     bounds: std::ops::RangeInclusive<usize>,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    Ok(lp_ascii_strict_charged(ctx, bytes, at, bounds)?
-        .filter(|(value, _)| value.as_bytes().iter().all(u8::is_ascii_graphic)))
+    let Some((value, end)) = lp_ascii_strict_charged(ctx, bytes, at, bounds)? else {
+        return Ok(None);
+    };
+    if !ctx
+        .admit_iter(value.as_bytes(), "validate F3D MetaStream graphic text")?
+        .all(u8::is_ascii_graphic)
+    {
+        return Ok(None);
+    }
+    Ok(Some((value, end)))
 }
 
 fn require<T>(value: Option<T>, field: &'static str, offset: usize) -> Result<T, ParseFailure> {
@@ -249,11 +262,10 @@ fn take_version_guid(
             return Ok(());
         }
     }
-    Err(ParseFailure {
+    Err(ParseIssue::Malformed(ParseFailure {
         field,
         offset: initial,
-    }
-    .into())
+    }))
 }
 
 fn take_version_urn(
@@ -277,17 +289,19 @@ fn take_version_urn(
         let urn = urn.as_bytes();
         if urn.len() > 4
             && urn[..4].eq_ignore_ascii_case(b"urn:")
-            && urn[4..].iter().all(u8::is_ascii_graphic)
+            && ctx
+                .admit_iter(&urn[4..], "validate F3D MetaStream version URN")
+                .map_err(CodecError::from)?
+                .all(u8::is_ascii_graphic)
         {
             *at = next;
             return Ok(());
         }
     }
-    Err(ParseFailure {
+    Err(ParseIssue::Malformed(ParseFailure {
         field: "version-context version URN",
         offset: initial,
-    }
-    .into())
+    }))
 }
 
 fn take_version_context(
@@ -299,11 +313,10 @@ fn take_version_context(
     let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
     *at = require(at.checked_add(4), "version-context count", *at)?;
     if count > 64 {
-        return Err(ParseFailure {
+        return Err(ParseIssue::Malformed(ParseFailure {
             field: "version-context count",
             offset: count_at,
-        }
-        .into());
+        }));
     }
     for _ in 0..count {
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
@@ -577,11 +590,10 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         }
     }
     if at != bytes.len() {
-        return Err(ParseFailure {
+        return Err(ParseIssue::Malformed(ParseFailure {
             field: "trailing bytes",
             offset: at,
-        }
-        .into());
+        }));
     }
     Ok(MetaStream {
         types,

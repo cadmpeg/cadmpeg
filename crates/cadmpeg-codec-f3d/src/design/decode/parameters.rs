@@ -681,9 +681,14 @@ pub(crate) fn decode_parameter_owners(
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
-        let owner = parse_parameter_owner(frame)
-            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header.byte_offset))
-            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header.byte_offset))
+        let owner = parse_parameter_owner(ctx, frame)
+            .or_else(|| {
+                parse_legacy_parameter_owner_68(ctx, frame, evaluated, header.byte_offset)
+            })
+            .or_else(|| {
+                parse_legacy_parameter_owner_88(ctx, frame, evaluated, header.byte_offset)
+            })
+            .transpose()?
             .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
             .into_record(&entry.name, header.byte_offset)
             .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
@@ -763,8 +768,26 @@ impl ParsedParameterOwner {
     }
 }
 
-pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+pub(in crate::design) fn parse_parameter_owner(
+    ctx: &DecodeContext<'_>,
+    frame: &[u8],
+) -> Option<Result<ParsedParameterOwner, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        frame,
+        0,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
@@ -862,7 +885,7 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
         return None;
     }
 
-    Some(ParsedParameterOwner {
+    Some(Ok(ParsedParameterOwner {
         frame_length: u64::try_from(frame.len()).ok()?,
         class_tag,
         record_index,
@@ -874,7 +897,7 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
         owned_ordinal: View::u32_le_at(frame, owned_ordinal_offset)?,
         variant,
         companion_record_index,
-    })
+    }))
 }
 
 /// Parse the legacy owner envelope whose scope and scalar lanes are absent.
@@ -882,11 +905,27 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
 /// The class admission is intentional. A short frame is not enough to select
 /// this grammar because older class tags also occur on modern owner records.
 fn parse_legacy_parameter_owner_68(
+    ctx: &DecodeContext<'_>,
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
-) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+) -> Option<Result<ParsedParameterOwner, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        frame,
+        0,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     if !is_legacy_parameter_owner_68_class(class_tag)
         || frame.len() != legacy_owner_68::LEN
         || after_tag != indexed_header::RECORD_INDEX
@@ -913,7 +952,7 @@ fn parse_legacy_parameter_owner_68(
     if !consecutive(record_index, parameter_record_index, companion_record_index) {
         return None;
     }
-    Some(ParsedParameterOwner {
+    Some(Ok(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
@@ -925,17 +964,33 @@ fn parse_legacy_parameter_owner_68(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
-    })
+    }))
 }
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
 /// whose scalar and local-ordinal lanes are absent.
 fn parse_legacy_parameter_owner_88(
+    ctx: &DecodeContext<'_>,
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
-) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+) -> Option<Result<ParsedParameterOwner, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        frame,
+        0,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     if !is_legacy_parameter_owner_88_class(class_tag)
         || frame.len() != legacy_owner_88::LEN
         || after_tag != indexed_header::RECORD_INDEX
@@ -974,7 +1029,7 @@ fn parse_legacy_parameter_owner_88(
     if !consecutive(record_index, parameter_record_index, companion_record_index) {
         return None;
     }
-    Some(ParsedParameterOwner {
+    Some(Ok(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
@@ -986,7 +1041,7 @@ fn parse_legacy_parameter_owner_88(
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
-    })
+    }))
 }
 
 /// Decode the fixed prefix of every indexed record paired with a parameter
@@ -1023,7 +1078,10 @@ pub(crate) fn decode_parameter_companions(
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
         let prefix = at.and_then(|at| at.checked_add(58).and_then(|end| bytes.get(at..end)));
-        let Some(parsed) = prefix.and_then(parse_parameter_companion) else {
+        let Some(prefix) = prefix else {
+            continue;
+        };
+        let Some(parsed) = parse_parameter_companion(ctx, prefix).transpose()? else {
             continue;
         };
         if parsed.record_index != owner.companion_record_index()
@@ -1088,8 +1146,26 @@ impl ParsedParameterCompanion {
     }
 }
 
-fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
-    let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+fn parse_parameter_companion(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Option<Result<ParsedParameterCompanion, CodecError>> {
+    macro_rules! admitted_option {
+        ($result:expr) => {
+            match $result {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
+    let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+        ctx,
+        prefix,
+        0,
+        0..=2000,
+        u8::is_ascii_graphic,
+    ));
     let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
@@ -1104,7 +1180,7 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
     }
     let timestamp_micros =
         std::num::NonZeroU64::new(View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?)?;
-    Some(ParsedParameterCompanion {
+    Some(Ok(ParsedParameterCompanion {
         class_tag,
         record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
         owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
@@ -1112,7 +1188,7 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
         timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(
             companion_prefix::TIMESTAMP_MICROS,
         ))),
-    })
+    }))
 }
 
 /// Records a companion payload is resolved against.

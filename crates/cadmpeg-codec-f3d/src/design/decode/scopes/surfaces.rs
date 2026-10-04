@@ -122,7 +122,11 @@ fn exact_surface_offset_face_groups(
         if support_reference_count == 0 {
             return None;
         }
-        let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
+        let scalar = match exact_fixed_scalar(ctx, bytes, records, *distance_record_index) {
+            Ok(Some(scalar)) => scalar,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
             return None;
         }
@@ -226,8 +230,17 @@ fn exact_construction_operand_group(
 > {
     let mut candidate = None;
     for (start, _) in records.frames(record_index) {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        let (class_tag, after_tag) = match lp_ascii_filtered_view(
+            ctx,
+            bytes,
+            start,
+            3..=3,
+            u8::is_ascii_digit,
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => continue,
+            Err(error) => return Some(Err(error)),
+        };
         if after_tag != start + 7 {
             continue;
         }
@@ -273,7 +286,16 @@ fn exact_surface_boundary_operation(
     family: DesignFeatureFamily,
     boundary_kind: u32,
 ) -> Result<Option<ExactSurfaceBoundaryOperation>, CodecError> {
-    let parsed = (|| {
+    let parsed = (|| -> Option<Result<_, CodecError>> {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         if design_feature_family(&scope.kind()) != Some(family) {
             return None;
         }
@@ -284,51 +306,77 @@ fn exact_surface_boundary_operation(
         if edge_record_indices.len() == 0 {
             return None;
         }
-        let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
-        if scalar.owner_record_index != Some(scope.record_index)
-            || scalar.ordinal != 0
-            || records
-                .frames(*distance_record_index)
-                .filter(|(start, end)| {
-                    end.checked_sub(*start) == Some(104)
-                        && lp_ascii_filtered_view(bytes, *start, 0..=2000, u8::is_ascii_graphic)
-                            .is_some_and(|(class_tag, after_tag)| {
-                                after_tag == *start + 7
-                                    && class_tag.len() == 3
-                                    && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                            })
-                        && bytes.get(*start + 11..*start + 19) == Some(&[0; 8])
-                        && bytes.get(*start + 19..*start + 24) == Some(&[1, 1, 0, 0, 0])
-                        && marked_record_reference(bytes, *start + 24) == Some(scope.record_index)
-                        && bytes.get(*start + 29..*start + 35) == Some(&[0; 6])
-                        && bytes.get(*start + 35..*start + 40) == Some(&[0; 5])
-                        && marked_record_reference(bytes, *start + 48)
-                            == distance_record_index.checked_sub(1)
-                        && bytes.get(*start + 53..*start + 59) == Some(&[0; 6])
-                        && View::u32_le_at(bytes, *start + 59).is_some_and(|value| value != 0)
-                        && bytes.get(*start + 63..*start + 67) == Some(&[0; 4])
-                        && marked_record_reference(bytes, *start + 67) == Some(scope.record_index)
-                        && bytes.get(*start + 72..*start + 78) == Some(&[0; 6])
-                        && bytes.get(*start + 78..*start + 81) == Some(&[1, 0, 0])
-                        && marked_record_reference(bytes, *start + 81)
-                            == distance_record_index.checked_add(1)
-                        && bytes.get(*start + 86..*start + 93) == Some(&[0; 7])
-                        && marked_record_reference(bytes, *start + 93) == Some(scope.record_index)
-                        && bytes.get(*start + 98..*start + 104) == Some(&[0; 6])
-                })
-                .count()
-                != 1
-        {
+        let scalar = admitted_option!(exact_fixed_scalar(
+            ctx,
+            bytes,
+            records,
+            *distance_record_index
+        ));
+        if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
+            return None;
+        }
+        let mut has_distance_carrier = false;
+        let mut has_duplicate_distance_carrier = false;
+        for (start, end) in records.frames(*distance_record_index) {
+            if end.checked_sub(start) != Some(104) {
+                continue;
+            }
+            let (class_tag, after_tag) = match lp_ascii_filtered_view(
+                ctx,
+                bytes,
+                start,
+                0..=2000,
+                u8::is_ascii_graphic,
+            ) {
+                Ok(Some(value)) => value,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
+            if after_tag == start + 7
+                && class_tag.len() == 3
+                && class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                && bytes.get(start + 11..start + 19) == Some(&[0; 8])
+                && bytes.get(start + 19..start + 24) == Some(&[1, 1, 0, 0, 0])
+                && marked_record_reference(bytes, start + 24) == Some(scope.record_index)
+                && bytes.get(start + 29..start + 35) == Some(&[0; 6])
+                && bytes.get(start + 35..start + 40) == Some(&[0; 5])
+                && marked_record_reference(bytes, start + 48)
+                    == distance_record_index.checked_sub(1)
+                && bytes.get(start + 53..start + 59) == Some(&[0; 6])
+                && View::u32_le_at(bytes, start + 59).is_some_and(|value| value != 0)
+                && bytes.get(start + 63..start + 67) == Some(&[0; 4])
+                && marked_record_reference(bytes, start + 67) == Some(scope.record_index)
+                && bytes.get(start + 72..start + 78) == Some(&[0; 6])
+                && bytes.get(start + 78..start + 81) == Some(&[1, 0, 0])
+                && marked_record_reference(bytes, start + 81)
+                    == distance_record_index.checked_add(1)
+                && bytes.get(start + 86..start + 93) == Some(&[0; 7])
+                && marked_record_reference(bytes, start + 93) == Some(scope.record_index)
+                && bytes.get(start + 98..start + 104) == Some(&[0; 6])
+            {
+                if has_distance_carrier {
+                    has_duplicate_distance_carrier = true;
+                } else {
+                    has_distance_carrier = true;
+                }
+            }
+        }
+        if !has_distance_carrier || has_duplicate_distance_carrier {
             return None;
         }
         let mut candidate = None;
         for (start, end) in records.frames(*boundary_record_index) {
-            let parsed = (|| {
+            let parsed = (|| -> Option<Result<_, CodecError>> {
                 let member_bytes = edge_record_indices.len().checked_mul(11)?;
                 let tail = start.checked_add(25)?.checked_add(member_bytes)?;
                 (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
-                let (class_tag, after_tag) =
-                    lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+                let (class_tag, after_tag) = admitted_option!(lp_ascii_filtered_view(
+                    ctx,
+                    bytes,
+                    start,
+                    0..=2000,
+                    u8::is_ascii_graphic
+                ));
                 if after_tag != start + 7
                     || class_tag.len() != 3
                     || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -364,16 +412,20 @@ fn exact_surface_boundary_operation(
                 let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
                 let tolerance =
                     cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, tail + 39)?)?;
-                Some((
+                Some(Ok((
                     mode,
                     u64::try_from(tail + 2).ok()?,
                     boundary_reference_record_index,
                     u64::try_from(tail + 6).ok()?,
                     tolerance,
                     u64::try_from(tail + 39).ok()?,
-                ))
+                )))
             })();
             if let Some(parsed) = parsed {
+                let parsed = match parsed {
+                    Ok(parsed) => parsed,
+                    Err(error) => return Some(Err(error)),
+                };
                 if candidate.replace(parsed).is_some() {
                     return None;
                 }
@@ -387,7 +439,7 @@ fn exact_surface_boundary_operation(
             tolerance,
             tolerance_offset,
         ) = candidate?;
-        Some((
+        Some(Ok((
             scalar,
             *distance_record_index,
             *boundary_record_index,
@@ -398,8 +450,9 @@ fn exact_surface_boundary_operation(
             boundary_reference_offset,
             tolerance,
             tolerance_offset,
-        ))
+        )))
     })();
+    let parsed = parsed.transpose()?;
     let Some((
         scalar,
         distance_record_index,
@@ -439,27 +492,32 @@ fn exact_surface_boundary_operation(
 }
 
 pub(super) fn exact_surface_stitch_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
     references: &[u32],
-) -> Option<DesignSurfaceStitchOperation> {
+) -> Result<Option<DesignSurfaceStitchOperation>, CodecError> {
     if references.len() < 4 || !references.len().is_multiple_of(2) {
-        return None;
+        return Ok(None);
     }
     let tolerance_record_index = references[references.len() - 2];
     let settings_record_index = references[references.len() - 1];
-    let scalar = exact_fixed_scalar(bytes, records, tolerance_record_index)?;
+    let Some(scalar) = exact_fixed_scalar(ctx, bytes, records, tolerance_record_index)? else {
+        return Ok(None);
+    };
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
-        return None;
+        return Ok(None);
     }
-    let gap_tolerance = cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?;
-    Some(DesignSurfaceStitchOperation {
+    let Some(gap_tolerance) = cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get()) else {
+        return Ok(None);
+    };
+    Ok(Some(DesignSurfaceStitchOperation {
         gap_tolerance,
         gap_tolerance_offset: scalar.value_offset,
         tolerance_record_index,
         settings_record_index,
-    })
+    }))
 }
 
 pub(super) fn exact_ruled_surface_operation(
@@ -471,6 +529,15 @@ pub(super) fn exact_ruled_surface_operation(
     reference_members: &[u32],
 ) -> Result<Option<DesignRuledSurfaceOperation>, CodecError> {
     let parsed = (|| {
+        macro_rules! admitted_option {
+            ($result:expr) => {
+                match $result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         if bytes.get(start.checked_add(11)?..start.checked_add(20)?)? != [0; 9] {
             return None;
         }
@@ -490,13 +557,25 @@ pub(super) fn exact_ruled_surface_operation(
             1 => true,
             _ => return None,
         };
-        let fixed_reference = |at: usize| {
+        let fixed_reference = |at: usize| -> Result<Option<u32>, CodecError> {
             let mut cursor = at;
-            let reference = take_reference(bytes, &mut cursor)?;
-            (cursor == at.checked_add(11)?).then(|| u32::try_from(reference.local()?.0).ok())?
+            let Some(reference) = take_reference(ctx, bytes, &mut cursor)? else {
+                return Ok(None);
+            };
+            let Some(expected_end) = at.checked_add(11) else {
+                return Ok(None);
+            };
+            if cursor != expected_end {
+                return Ok(None);
+            }
+            let Some((target, _)) = reference.local() else {
+                return Ok(None);
+            };
+            Ok(u32::try_from(target).ok())
         };
-        let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
-        let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;
+        let angle_owner_record_index = admitted_option!(fixed_reference(start.checked_add(28)?));
+        let distance_owner_record_index =
+            admitted_option!(fixed_reference(start.checked_add(39)?));
         let corner_offset = start.checked_add(50)?;
         let corner = match View::u32_le_at(bytes, corner_offset)? {
             0 => DesignRuledSurfaceCorner::Rounded,
@@ -516,10 +595,7 @@ pub(super) fn exact_ruled_surface_operation(
                 return Some(Err(error));
             }
             for _ in 0..count {
-                records.push(match fixed_reference(cursor) {
-                    Some(record) => record,
-                    None => return None,
-                });
+                records.push(admitted_option!(fixed_reference(cursor)));
                 cursor = cursor.checked_add(11)?;
             }
             Some(Ok((records, cursor)))
