@@ -831,7 +831,6 @@
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "applications": "e6b7967c82c6f99635ea4c57868723f302a8aec7fda8e2989defa3c1ef72aff2",
-          "attachments": "863a90c57e6a8b638bcfa924e28522399895d2dabb1eb24a78d4d3a19920ed96",
           "byte_coverage": "edcb0b94a889f2f1270ecd01f01e1457ceed91f6e42b5c0007ad00d17a3e1e90",
           "carrier_census": "74a544b49d198f9eb666e61a12f02b598b97fd56324565317344719e3b579232",
           "design_census": "6aab1e7e760c27e30a6ff788d331977bfc7363c608bcde38c2e1667f812e2282",
@@ -853,7 +852,97 @@
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
-      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
+      "__arena_values": {
+        "fcstd": {
+          "attachments": [
+            {
+              "effective_frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "id": "fcstd:native:attachment#ConicWitness",
+              "map_mode": "0",
+              "object": "fcstd:native:object#ConicWitness",
+              "offset": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "placement": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "supports": []
+            }
+          ]
+        }
+      },
+      "__elided": "attachment records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
     "source": {
       "attributes": {

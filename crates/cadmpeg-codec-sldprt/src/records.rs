@@ -1422,7 +1422,7 @@ pub(crate) struct SketchInputEntityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_checked_coordinates_m"
+        deserialize_with = "deserialize_coordinates_m"
     )]
     coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
     /// Resolved links and their selector from the reference-bearing layout.
@@ -2813,16 +2813,8 @@ cadmpeg_core::named_optional_field!(
     cadmpeg_ir::scalar::FiniteReal,
     "state_value"
 );
-cadmpeg_core::named_optional_field!(deserialize_coordinates_m, [f64; 2], "coordinates_m");
-
-fn deserialize_checked_coordinates_m<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<cadmpeg_ir::units::FiniteVector<2>>, D::Error> {
-    deserialize_coordinates_m(deserializer)?
-        .map(|coordinates| {
-            cadmpeg_ir::units::FiniteVector::new(coordinates).ok_or_else(|| {
-                serde::de::Error::custom("coordinates_m: coordinates must be finite")
-            })
-        })
-        .transpose()
-}
+cadmpeg_core::named_optional_field!(
+    deserialize_coordinates_m,
+    cadmpeg_ir::units::FiniteVector<2>,
+    "coordinates_m"
+);

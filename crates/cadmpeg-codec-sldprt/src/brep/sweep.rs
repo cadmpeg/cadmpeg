@@ -553,14 +553,29 @@ mod tests {
 
     #[test]
     fn admits_square_sum_unit_boundary_even_when_hypot_rounds_outside() {
-        let direction = Vector3::new(-0.331_490_106_610_188_6, -0.943_458_696_085_613_4, 0.0);
-        assert!(SumSquaresUnitVector3::new(direction).is_some());
-        assert!(cadmpeg_ir::units::UnitVector3::new(direction).is_none());
-        let mut bytes = header(0x43, 9, 5);
-        for value in [direction.x, direction.y, direction.z, 0.25] {
-            bytes.extend_from_slice(&value.to_be_bytes());
+        // Platform hypot implementations round different boundary directions outward.
+        let directions = [
+            Vector3::new(-0.331_490_106_610_188_6, -0.943_458_696_085_613_4, 0.0),
+            Vector3::new(
+                0.630_485_132_526_264,
+                0.666_809_318_792_633_2,
+                0.397_308_233_031_539_17,
+            ),
+        ];
+        let mut hypot_refuses = false;
+        for direction in directions {
+            assert!(SumSquaresUnitVector3::new(direction).is_some());
+            hypot_refuses |= cadmpeg_ir::units::UnitVector3::new(direction).is_none();
+            let mut bytes = header(0x43, 9, 5);
+            for value in [direction.x, direction.y, direction.z, 0.25] {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            assert!(scan_with_service_context(&bytes).contains_key(&9));
         }
-        assert!(scan_with_service_context(&bytes).contains_key(&9));
+        assert!(
+            hypot_refuses,
+            "a boundary direction must distinguish the admission gates"
+        );
     }
 
     #[test]
