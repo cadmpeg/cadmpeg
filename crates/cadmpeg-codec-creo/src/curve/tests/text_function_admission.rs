@@ -468,3 +468,23 @@ fn relation_lookup_case_fold_refuses_before_missing_symbol() {
         "creo relation identifier case fold",
     );
 }
+
+#[test]
+fn relation_unit_exponent_parse_refuses_work() {
+    assert_work(
+        &crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo relation unit exponent parsing",
+            |ctx| {
+                crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    "1[mm^2]",
+                    &BTreeMap::new(),
+                    RelationEvaluationContext::default(),
+                )
+            },
+        ),
+        "creo relation unit exponent parsing",
+    );
+}
