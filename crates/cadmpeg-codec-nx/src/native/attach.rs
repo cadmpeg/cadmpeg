@@ -1426,7 +1426,7 @@ fn attach_jpeg_preview_assets(
         };
         let native_ref: UnknownId =
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
-        if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
+        if crate::decode::jpeg::jpeg_dimensions(ctx, bytes)?.is_none() {
             annotations.note(
                 ctx,
                 native_ref.as_str(),

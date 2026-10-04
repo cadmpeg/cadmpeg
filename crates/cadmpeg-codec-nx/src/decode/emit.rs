@@ -2001,7 +2001,7 @@ pub(super) fn source_meta(
         let Some(payload) = scan.container.data.get(start..end) else {
             continue;
         };
-        let Some((width, height, precision, components)) = jpeg_dimensions(payload) else {
+        let Some((width, height, precision, components)) = jpeg_dimensions(ctx, payload)? else {
             continue;
         };
         insert_source_attribute(
