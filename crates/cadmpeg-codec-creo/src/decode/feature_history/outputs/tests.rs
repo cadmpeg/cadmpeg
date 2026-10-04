@@ -256,6 +256,125 @@ fn selected_shell_refuses_before_btree_node() {
 }
 
 #[test]
+fn selected_coedge_membership_refuses_work_and_preserves_body() {
+    let (ir, edge) = selected_edge_ir();
+    let body = ir.model.bodies[0].id.clone();
+    let bodies = crate::test_support::assert_work_boundaries(
+        &["creo selected coedge lookup"],
+        |ctx| bodies_containing_edges(ctx, &ir, std::slice::from_ref(&edge)),
+    );
+    assert_eq!(bodies, vec![body]);
+}
+
+#[test]
+fn unmatched_selected_coedge_refuses_work_and_skips_empty_shell_scan() {
+    let (mut ir, _) = selected_edge_ir();
+    ir.model.shells.clear();
+    let unmatched = EdgeId::mint("creo:test:edge#unmatched").expect("identity grammar");
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo selected coedge lookup",
+        |ctx| bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched)),
+    );
+    let limit = match refusal {
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "creo selected coedge lookup" => limit,
+        error => panic!("expected selected-coedge lookup refusal, got {error:?}"),
+    };
+    let cap = limit.used.checked_add(limit.additional).expect("work cap");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    assert!(bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
+        .expect("an unmatched coedge skips loop joins and the empty shell scan")
+        .is_empty());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched))
+    })
+    .expect("service profile preserves an unmatched edge result")
+    .is_empty());
+}
+
+#[test]
+fn selected_wire_shell_membership_short_circuits_after_first_match() {
+    let (mut ir, _) = selected_edge_ir();
+    let selected = EdgeId::mint("creo:test:wire-edge#selected").expect("identity grammar");
+    let later = EdgeId::mint("creo:test:wire-edge#later").expect("identity grammar");
+    let region = ir.model.regions[0].id.clone();
+    let shell = ShellId::mint("creo:test:wire-shell#1").expect("identity grammar");
+    ir.model.coedges.clear();
+    ir.model.shells.clear();
+    ir.model.regions[0].shells = vec![shell.clone()];
+    ir.model.shells.push(
+        Shell::new(
+            shell,
+            region,
+            Vec::new(),
+            vec![selected.clone(), later],
+            Vec::new(),
+        )
+        .expect("wire shell fixture"),
+    );
+    let body = ir.model.bodies[0].id.clone();
+    let mut cap = 0_u64;
+    let mut named_refusals = 0;
+    let mut bounded_result = None;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        match bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&selected)) {
+            Ok(bodies) => {
+                assert_eq!(named_refusals, 1, "the matched wire edge stops the scan");
+                bounded_result = Some(bodies);
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+                let need = resource.used.checked_add(resource.additional).expect("work need");
+                assert!(need > cap);
+                if resource.operation == "creo selected shell wire edge lookup" {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units =
+                        need.checked_sub(1).expect("one below work need");
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty root is admitted");
+                    assert!(matches!(
+                        bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&selected)),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(ref below))
+                            if below.dimension == ResourceDimension::WorkUnits
+                                && below.operation == "creo selected shell wire edge lookup"
+                    ));
+                    named_refusals += 1;
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected wire-shell route refusal: {error:?}"),
+        }
+    }
+    assert_eq!(named_refusals, 1, "work route reaches one wire membership query");
+    assert_eq!(
+        bounded_result.expect("work route admits the unchanged service result"),
+        vec![body.clone()]
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected))
+        })
+        .expect("service profile admits wire shell output"),
+        vec![body]
+    );
+}
+
+#[test]
 fn selected_body_refuses_before_output_row() {
     let (ir, edge) = selected_edge_ir();
     let arena = DecodeArena::new();

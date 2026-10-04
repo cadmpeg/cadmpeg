@@ -379,7 +379,11 @@ pub(in super::super) fn transfer_feature_dimensions(
 ) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
     let mut feature_ids = BTreeSet::new();
     for feature in ctx.admit_iter(&ir.model.features, "creo dimension owner features")? {
-        if !feature_ids.contains(&feature.id) {
+        if !ctx.contains_btree_set(
+            &feature_ids,
+            &feature.id,
+            "creo dimension owner feature ID lookup",
+        )? {
             ctx.insert_btree_set(
                 &mut feature_ids,
                 feature
@@ -398,7 +402,11 @@ pub(in super::super) fn transfer_feature_dimensions(
         else {
             continue;
         };
-        if !feature_ids.contains(&owner) {
+        if !ctx.contains_btree_set(
+            &feature_ids,
+            &owner,
+            "creo dimension owner lookup",
+        )? {
             continue;
         }
         let Some(table) = &definition.dimensions else {

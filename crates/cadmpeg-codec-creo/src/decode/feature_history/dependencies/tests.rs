@@ -261,17 +261,22 @@ fn dependency_reconciliation_preserves_typed_history_edges() {
         .into_iter()
         .collect();
 
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| reconciled_dependencies(
-            ctx,
-            &owner,
-            &[sketch.clone(), missing],
-            [parent.clone(), sketch.clone(), owner.clone()],
-            &emitted,
-        ))
-        .expect("service profile admits reconciled dependencies"),
-        vec![sketch, parent]
+    let dependencies = crate::test_support::assert_work_boundaries(
+        &[
+            "creo established dependency emission lookup",
+            "creo native dependency emission lookup",
+        ],
+        |ctx| {
+            reconciled_dependencies(
+                ctx,
+                &owner,
+                &[sketch.clone(), missing.clone()],
+                [parent.clone(), sketch.clone(), owner.clone()],
+                &emitted,
+            )
+        },
     );
+    assert_eq!(dependencies, vec![sketch, parent]);
 }
 
 #[test]
@@ -923,7 +928,12 @@ fn reconciliation_identity_and_order_work_boundaries_preserve_parent_edges() {
     let ir = crate::test_support::assert_work_boundaries(
         &[
             "creo reconciled native dependency identity validation",
+            "creo emitted feature identity lookup",
+            "creo reconciled feature emission lookup",
             "creo regeneration parent identity validation",
+            "creo regeneration parent identity lookup",
+            "creo emitted dependency identity lookup",
+            "creo preceding dependency identity lookup",
             "creo remaining feature ordering step",
         ],
         |ctx| {
@@ -944,6 +954,45 @@ fn reconciliation_identity_and_order_work_boundaries_preserve_parent_edges() {
     assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
     assert_eq!(ir.model.features[0].ordinal, 0);
     assert_eq!(ir.model.features[1].ordinal, 1);
+}
+
+#[test]
+fn duplicate_emitted_feature_identity_membership_refuses_work_and_preserves_order() {
+    let scan = regeneration_scan();
+    let mut initial_ir = reconciliation_ir_with_emitted_parent();
+    let duplicate_parent = initial_ir.model.features[0].clone();
+    initial_ir.model.features.push(duplicate_parent);
+    let ir = crate::test_support::assert_work_boundaries(
+        &["creo emitted feature identity lookup"],
+        |ctx| {
+            let mut ir = initial_ir.clone();
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())?;
+            Ok::<_, CodecError>(ir)
+        },
+    );
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let feature_ids = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        feature_ids,
+        vec![
+            parent,
+            child,
+            IrFeatureId::mint("creo:model:feature#3").expect("duplicate parent ID"),
+        ]
+    );
+    let ordinals = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .collect::<Vec<_>>();
+    assert_eq!(ordinals, vec![0, 1, 2]);
 }
 
 #[test]

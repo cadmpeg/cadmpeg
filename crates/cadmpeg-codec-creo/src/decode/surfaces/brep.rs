@@ -2529,7 +2529,7 @@ pub(in super::super) fn transfer_native_brep(
                 let mut geometry = source_carriers
                     .curve_geometry(candidate)
                     .try_clone_for_decode(ctx, "creo B-rep edge source curve geometry")?;
-                let derived_line = curve_evidence.derived_intersections.contains(&curve)
+                let derived_line = ctx.contains_btree_set(curve_evidence.derived_intersections, &curve, "creo derived intersection curve lookup")?
                     && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
                 let range = if derived_line {
                     orient_line_edge_carrier(&mut geometry, points)

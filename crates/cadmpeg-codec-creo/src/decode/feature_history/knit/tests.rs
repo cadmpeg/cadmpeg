@@ -1032,6 +1032,70 @@ fn feature_result_identity_validation_refuses_at_work_boundaries() {
 }
 
 #[test]
+fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
+    let row = crate::surface::SurfaceRow {
+        id: 201,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 17,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let available = std::collections::BTreeSet::from([
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#18")
+            .expect("nonmatching feature ID"),
+    ]);
+    let results = std::collections::BTreeMap::from([(17, vec![201])]);
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo generated surface feature lookup",
+        |ctx| {
+            generated_surface_face_refs(
+                ctx,
+                &[201],
+                std::slice::from_ref(&row),
+                &results,
+                &available,
+            )
+        },
+    );
+    let limit = match refusal {
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "creo generated surface feature lookup" => limit,
+        error => panic!("expected generated feature membership refusal, got {error:?}"),
+    };
+    let cap = limit.used.checked_add(limit.additional).expect("work cap");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    assert!(generated_surface_face_refs(
+        &ctx,
+        &[201],
+        std::slice::from_ref(&row),
+        &results,
+        &available,
+    )
+    .expect("a feature miss returns before result-ID membership")
+    .is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        generated_surface_face_refs(
+            ctx,
+            &[201],
+            std::slice::from_ref(&row),
+            &results,
+            &available,
+        )
+    })
+    .expect("service profile preserves the feature-miss result")
+    .is_none());
+}
+
+#[test]
 fn generated_surface_feature_identity_validation_refuses_at_work_boundary() {
     let row = crate::surface::SurfaceRow {
         id: 201,
@@ -1048,7 +1112,10 @@ fn generated_surface_feature_identity_validation_refuses_at_work_boundary() {
     ]);
     let results = std::collections::BTreeMap::from([(17, vec![201])]);
     let generated = crate::test_support::assert_work_boundaries(
-        &["creo generated surface feature identity validation"],
+        &[
+            "creo generated surface feature identity validation",
+            "creo generated surface feature lookup",
+        ],
         |ctx| {
             generated_surface_face_refs(
                 ctx,

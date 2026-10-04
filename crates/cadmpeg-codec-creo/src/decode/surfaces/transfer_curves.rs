@@ -141,7 +141,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         let allow_unresolved_endpoint_witness = endpoint_evidence
             .get(&row.id)
             .is_some_and(|evidence| !evidence.complete)
-            && !nurbs_endpoint_witnesses.contains(&curve_id);
+            && !ctx.contains_btree_set(nurbs_endpoint_witnesses, &curve_id, "creo intersection endpoint witness lookup")?;
         let resolved = if let Some(resolved) = resolve_carrier_intersection_curve(
             ctx,
             first,
@@ -875,6 +875,158 @@ mod tests {
                     && direction.y == 0.0
                     && direction.z == 0.0
             }));
+    }
+
+    #[test]
+    fn intersection_endpoint_witness_lookup_refuses_work_and_preserves_service_result() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.surfaces.rows = [1_u32, 2, 3]
+            .into_iter()
+            .map(|id| surface::SurfaceRow {
+                id,
+                kind: surface::SurfaceKind::Plane,
+                feature_id: 0,
+                reversed: false,
+                boundary_type: crate::surface::BoundaryType::Code00,
+                next_surface: 0,
+                offset: 0,
+            })
+            .collect();
+        scan.curves.topology_rows = vec![curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 0,
+            directions: [0x01, 0xf6],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+            next_edges: [10, 10],
+            offset: 0,
+        }];
+        scan.curves.pcurves = vec![curve::PcurveEndpoints {
+            curve_id: 10,
+            faces: [1, 3].map(std::num::NonZeroU32::new),
+            face_0_endpoints: [[0.0, 1.0], [1.0, 1.0]],
+            face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]],
+            offset: 0,
+        }];
+        scan.topology.half_edges = vec![
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::Zero,
+                },
+                face_id: std::num::NonZeroU32::new(1),
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::One,
+                },
+                face_id: std::num::NonZeroU32::new(2),
+                next: None,
+            },
+        ];
+        scan.topology.vertices = vec![
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new_for_test(
+                    ctx,
+                    1,
+                    vec![HalfEdgeId {
+                        curve_id: 10,
+                        side: crate::topology::Side::Zero,
+                    }],
+                )
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                crate::topology::TopologicalVertex::new_for_test(
+                    ctx,
+                    2,
+                    vec![HalfEdgeId {
+                        curve_id: 10,
+                        side: crate::topology::Side::One,
+                    }],
+                )
+            })
+            .expect("vertex admission")
+            .expect("valid vertex fixture"),
+        ];
+        scan.topology.half_edge_vertex_incidence = vec![
+            HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::Zero,
+                },
+                start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(2),
+            },
+            HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::One,
+                },
+                start_vertex_id: std::num::NonZeroU32::new(2).expect("one-based vertex fixture"),
+                end_vertex_id: std::num::NonZeroU32::new(1),
+            },
+        ];
+
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 2.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                )),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId::mint("creo:visibgeom:surface#3".to_string())
+                    .expect("identity grammar"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            },
+        ]);
+
+        let endpoint_witnesses = BTreeSet::from([
+            CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
+        ]);
+        let (transferred, service_ir) = crate::test_support::assert_work_boundaries(
+            &["creo intersection endpoint witness lookup"],
+            |ctx| {
+                let mut service_ir = ir.clone();
+                let transferred = transfer_carrier_intersection_curves(
+                    ctx,
+                    &scan,
+                    &mut service_ir,
+                    &mut AnnotationBuilder::new(),
+                    &endpoint_witnesses,
+                    &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+                )?;
+                Ok((transferred, service_ir))
+            },
+        );
+        assert!(transferred.is_empty());
+        assert!(service_ir.model.curves.is_empty());
     }
 
     fn nurbs_boundary_fixture(

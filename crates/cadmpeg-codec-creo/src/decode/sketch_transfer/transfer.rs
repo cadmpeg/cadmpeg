@@ -704,7 +704,11 @@ pub(in super::super) fn transfer_sketches(
         let mut profile_entities = BTreeSet::new();
         for profile in ctx.admit_iter(&profiles, "creo sketch profiles")? {
             for entity_use in ctx.admit_iter(profile, "creo sketch profile entities")? {
-            if !profile_entities.contains(&entity_use.entity) {
+            if !ctx.contains_btree_set(
+                &profile_entities,
+                &entity_use.entity,
+                "creo sketch profile entity membership",
+            )? {
                 profile_storage.with_storage(|| {
                     ctx.insert_btree_set(
                         &mut profile_entities,
@@ -718,12 +722,24 @@ pub(in super::super) fn transfer_sketches(
             }
         }
         for profile in saved_profile_chains(ctx, &sketch_id, &generated_profile_geometries)? {
-            if ctx
-                .admit_iter(&profile, "creo saved profile entities")?
-                .all(|entity_use| !profile_entities.contains(&entity_use.entity))
-            {
+            let mut profile_is_new = true;
+            for entity_use in ctx.admit_iter(&profile, "creo saved profile entities")? {
+                if ctx.contains_btree_set(
+                    &profile_entities,
+                    &entity_use.entity,
+                    "creo sketch profile entity membership",
+                )? {
+                    profile_is_new = false;
+                    break;
+                }
+            }
+            if profile_is_new {
                 for entity_use in ctx.admit_iter(&profile, "creo saved profile entities")? {
-                    if !profile_entities.contains(&entity_use.entity) {
+                    if !ctx.contains_btree_set(
+                        &profile_entities,
+                        &entity_use.entity,
+                        "creo sketch profile entity membership",
+                    )? {
                         profile_storage.with_storage(|| {
                             ctx.insert_btree_set(
                                 &mut profile_entities,
@@ -1136,9 +1152,12 @@ pub(in super::super) fn transfer_sketches(
             let parameter_reconciled = constraint
                 .definition
                 .edit(|kind| {
-                    reconcile_constraint_parameter_reference(kind, &available_parameter_ids)
-                })
-                .unwrap_or(false);
+                    reconcile_constraint_parameter_reference(ctx, kind, &available_parameter_ids)
+                });
+            let parameter_reconciled = match parameter_reconciled {
+                Ok(result) => result?,
+                Err(_) => false,
+            };
             if !entity_reconciled || !parameter_reconciled {
                 ctx.insert_btree_set(
                     &mut rejected_equation_offsets,
@@ -1400,7 +1419,7 @@ fn available_parameter_ids<'a>(
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     for id in existing {
-        if !ids.contains(id) {
+        if !ctx.contains_btree_set(&ids, id, "creo available parameter ID membership")? {
             ctx.insert_btree_set(
                 &mut ids,
                 id.try_clone_for_decode(ctx, "creo available parameter identities")?,

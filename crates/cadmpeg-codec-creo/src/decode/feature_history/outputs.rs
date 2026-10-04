@@ -274,10 +274,14 @@ fn bodies_containing_edges(
         })?;
     }
     let mut shell_ids = BTreeSet::new();
-    for coedge in ctx
-        .admit_iter(&ir.model.coedges, "creo selected edge coedges")?
-        .filter(|coedge| selected.contains(&coedge.edge))
-    {
+    for coedge in ctx.admit_iter(&ir.model.coedges, "creo selected edge coedges")? {
+        if !ctx.contains_btree_set(
+            &selected,
+            &coedge.edge,
+            "creo selected coedge lookup",
+        )? {
+            continue;
+        }
         let mut matching_loop = None;
         for lp in ctx.admit_iter(&ir.model.loops, "creo selected edge loops")? {
             if !ctx.equal(
@@ -319,10 +323,18 @@ fn bodies_containing_edges(
         })?;
     }
     for shell in ctx.admit_iter(&ir.model.shells, "creo selected shell lookup")? {
-        if !ctx
-            .admit_iter(shell.wire_edges(), "creo selected shell wire edges")?
-            .any(|edge| selected.contains(edge))
-        {
+        let mut has_selected_wire_edge = false;
+        for edge in ctx.admit_iter(shell.wire_edges(), "creo selected shell wire edges")? {
+            if ctx.contains_btree_set(
+                &selected,
+                edge,
+                "creo selected shell wire edge lookup",
+            )? {
+                has_selected_wire_edge = true;
+                break;
+            }
+        }
+        if !has_selected_wire_edge {
             continue;
         }
         lookup_storage.with_storage(|| {

@@ -257,7 +257,12 @@ pub(super) fn transfer_section_entities(
             geometry.definition(),
             SketchGeometryDefinition::ReferenceLine { .. }
         ) || !unique_segment_ids.contains(&segment.external_id)
-            || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
+            || (!solved.contains(&segment.external_id)
+                && !ctx.contains_btree_set(
+                    profile_entities,
+                    &id,
+                    "creo emitted profile entity membership",
+                )?);
         let point_ids = segment.point_ids();
         let reverse = [point_ids[1], point_ids[0]];
         let endpoints = match (geometry.definition(), segment.kind) {
@@ -385,7 +390,12 @@ pub(super) fn transfer_section_entities(
                     Exactness::ByteExact
                 },
             )?;
-            let construction = !unique_external_id || !profile_entities.contains(&id);
+            let construction = !unique_external_id
+                || !ctx.contains_btree_set(
+                    profile_entities,
+                    &id,
+                    "creo emitted profile entity membership",
+                )?;
             let geometry_ref = placed_sketch_curve_ref(ctx, transform, sketch_id, &suffix, &geometry)?;
             let sketch_copy =
                 sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
@@ -446,7 +456,12 @@ pub(super) fn transfer_section_entities(
                     Exactness::ByteExact
                 },
             )?;
-            let construction = !unique_external_id || !profile_entities.contains(&id);
+            let construction = !unique_external_id
+                || !ctx.contains_btree_set(
+                    profile_entities,
+                    &id,
+                    "creo emitted profile entity membership",
+                )?;
             let sketch_copy =
                 sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
             let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
@@ -614,7 +629,12 @@ pub(super) fn transfer_section_entities(
             let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
-            let construction = !unique_external_id || !profile_entities.contains(&id);
+            let construction = !unique_external_id
+                || !ctx.contains_btree_set(
+                    profile_entities,
+                    &id,
+                    "creo emitted profile entity membership",
+                )?;
             annotate(
                 ctx,
                 annotations,
@@ -736,7 +756,12 @@ pub(super) fn transfer_section_entities(
                     })?,
                 )
             };
-            let construction = !unique_external_id || !profile_entities.contains(&id);
+            let construction = !unique_external_id
+                || !ctx.contains_btree_set(
+                    profile_entities,
+                    &id,
+                    "creo emitted profile entity membership",
+                )?;
             annotate(
                 ctx,
                 annotations,
@@ -1334,6 +1359,7 @@ pub(super) fn transfer_section_entities(
 
 #[cfg(test)]
 mod tests {
+    mod set_owner_tests;
     use super::{
         admitted_endpoint_refs, copied_or_native_geometry, native_section_geometry,
         placed_source_object, push_section_entity, section_row_suffix,
