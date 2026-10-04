@@ -92,6 +92,21 @@ fn planar_offset_parameter_setter_preserves_admitted_pairs() {
 }
 
 #[test]
+fn ellipse_radii_refuse_unknown_wire_fields() {
+    let radii =
+        serde_json::from_str::<EllipseRadii<f64>>(r#"{"major_radius":3.0,"minor_radius":2.0}"#)
+            .unwrap();
+    assert_eq!(radii.major_radius, 3.0);
+    assert_eq!(radii.minor_radius, 2.0);
+    let error = serde_json::from_str::<EllipseRadii<f64>>(
+        r#"{"major_radius":3.0,"minor_radius":2.0,"zz_bogus":1}"#,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `zz_bogus`"), "{error}");
+}
+
+#[test]
 fn sketch_ellipse_serialization_keeps_its_wire_fields() {
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(1.0, 2.0),
