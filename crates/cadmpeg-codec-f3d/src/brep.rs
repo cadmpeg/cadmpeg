@@ -26,7 +26,9 @@ fn merge_brep_counts(
     source: BTreeMap<String, usize>,
 ) -> Result<(), CodecError> {
     for (kind, count) in source {
-        *ctx.entry_btree_map(target, kind, "merge F3D BREP statistic kinds")?.or_default() += count;
+        let total = ctx.entry_btree_map(target, kind, "merge F3D BREP statistic kinds")?.or_default();
+        *total = total.checked_add(count)
+            .ok_or_else(|| ctx.refuse_codec_limit("merge F3D BREP statistic counts", 0, u64::MAX))?;
     }
     Ok(())
 }

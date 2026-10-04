@@ -100,27 +100,32 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
 
 #[test]
 fn finalized_recipe_reference_validation_ignores_only_derived_candidates() {
+    crate::test_support::with_decode_context(|ctx| {
     let actual = recipe_reference();
     let mut expected = actual.clone();
     expected.candidate_faces =
         vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#20").expect("identity grammar")];
     assert!(super::recipe_reference_frames_match(
+        ctx,
         &[actual.clone()],
         &[expected.clone()],
         true,
-    ));
+    ).unwrap());
     assert!(!super::recipe_reference_frames_match(
+        ctx,
         &[actual.clone()],
         &[expected.clone()],
         false,
-    ));
+    ).unwrap());
 
     expected.design_reference += 1;
     assert!(!super::recipe_reference_frames_match(
+        ctx,
         &[actual],
         &[expected],
         true,
-    ));
+    ).unwrap());
+    });
 }
 
 #[test]
