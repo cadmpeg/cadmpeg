@@ -2580,7 +2580,7 @@ fn format_surface_path_set<'a>(
                 Some(local_id) => write!(value, "{local_id}").map_err(|_| {
                     cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface selection")
                 })?,
-                None => value.push('_'),
+                None => ctx.push_retained_char(&mut value, '_', "format SLDPRT absent surface component")?,
             }
         }
         emitted += 1;
