@@ -4,6 +4,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use cadmpeg_core::decode::cost::DecodeCost;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -97,6 +100,18 @@ pub enum Check {
     Counts,
 }
 
+impl DecodeCost for Check {
+    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<Self>()));
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
@@ -141,6 +156,22 @@ pub struct Finding {
     pub entity: Option<String>,
 }
 
+impl DecodeCost for Finding {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            &self.check,
+            &self.severity,
+            self.message.as_str(),
+            &self.entity,
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// Entity counts, findings, and propagated decode losses for one document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -181,3 +212,82 @@ impl ValidationReport {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_entity, String, "entity");
+
+#[cfg(test)]
+mod tests {
+    use super::{Check, Finding};
+    use crate::report::Severity;
+    use cadmpeg_core::decode::cost::DecodeCost;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    #[test]
+    fn finding_cost_includes_fixed_tags_and_owned_text() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let finding = Finding {
+            check: Check::Identity,
+            severity: Severity::Error,
+            message: "bad identity".to_owned(),
+            entity: Some("edge#7".to_owned()),
+        };
+        let expected =
+            u64::try_from(std::mem::size_of::<Check>() + std::mem::size_of::<Severity>())
+                .expect("test tag sizes fit")
+                + u64::try_from(finding.message.len()).expect("test message length fits")
+                + 1
+                + u64::try_from(finding.entity.as_ref().expect("entity").len())
+                    .expect("test entity length fits");
+        assert_eq!(
+            finding.decode_cost(&ctx, "compare finding").expect("cost"),
+            expected
+        );
+        assert_eq!(
+            <Check as DecodeCost>::FIXED_BYTES,
+            Some(u64::try_from(std::mem::size_of::<Check>()).expect("test size fits"))
+        );
+        let without_entity = Finding {
+            entity: None,
+            message: String::new(),
+            ..finding
+        };
+        assert_eq!(
+            without_entity
+                .decode_cost(&ctx, "compare finding")
+                .expect("cost"),
+            u64::try_from(std::mem::size_of::<Check>() + std::mem::size_of::<Severity>())
+                .expect("test tag sizes fit")
+                + 1
+        );
+    }
+
+    #[test]
+    fn finding_equality_refusal_is_sticky_before_comparison() {
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let finding = Finding {
+            check: Check::Counts,
+            severity: Severity::Warning,
+            message: "count mismatch".to_owned(),
+            entity: None,
+        };
+        let CodecError::ResourceLimit(first) = ctx
+            .equal(&finding, &finding, "compare finding")
+            .expect_err("finding key work refuses")
+        else {
+            panic!("resource refusal")
+        };
+        let CodecError::ResourceLimit(repeated) = ctx
+            .equal(&finding, &finding, "repeat finding comparison")
+            .expect_err("sticky refusal precedes comparison")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, repeated);
+        assert_eq!(ctx.resource_refusal(), Some(first));
+    }
+}

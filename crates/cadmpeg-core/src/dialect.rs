@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
-use crate::decode::DecodeContext;
+use crate::decode::{cost::DecodeCost, DecodeContext};
 use crate::CodecError;
 
 #[cfg(feature = "schema")]
@@ -125,6 +125,20 @@ impl DialectId {
     fn parts(&self) -> (&str, &str) {
         let (namespace, qualified_name) = self.as_str().split_at(self.namespace_len);
         (namespace, &qualified_name[1..])
+    }
+}
+
+impl DecodeCost for DialectId {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        ctx.cost_sum(
+            self.as_str().decode_cost(ctx, operation)?,
+            crate::decode::u64_from_index(std::mem::size_of::<usize>()),
+            operation,
+        )
     }
 }
 
@@ -814,6 +828,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
+    use crate::decode::cost::DecodeCost;
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
@@ -832,6 +847,47 @@ mod tests {
             DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance(instance);
         assert_eq!(matched.instance(), Some("embedded-body"));
         assert_eq!(matched.instance().expect("instance").as_ptr(), address);
+    }
+
+    #[test]
+    fn dialect_id_cost_counts_the_complete_utf8_string() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        for id in [
+            crate::dialect_id!("rhino:archive-80"),
+            DialectId::parse("nx:version-5".to_owned()).expect("valid dialect id"),
+        ] {
+            assert_eq!(
+                id.decode_cost(&ctx, "compare dialect id")
+                    .expect("string cost"),
+                u64::try_from(id.as_str().len() + std::mem::size_of::<usize>())
+                    .expect("test cost fits")
+            );
+        }
+    }
+
+    #[test]
+    fn dialect_id_equality_refusal_is_sticky_before_comparison() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let id = crate::dialect_id!("rhino:archive-80");
+        let CodecError::ResourceLimit(first) = ctx
+            .equal(&id, &id, "compare dialect id")
+            .expect_err("dialect key work refuses")
+        else {
+            panic!("resource refusal")
+        };
+        let CodecError::ResourceLimit(repeated) = ctx
+            .equal(&id, &id, "repeat dialect comparison")
+            .expect_err("sticky refusal precedes comparison")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, repeated);
+        assert_eq!(ctx.resource_refusal(), Some(first));
     }
 
     #[derive(serde::Deserialize)]
