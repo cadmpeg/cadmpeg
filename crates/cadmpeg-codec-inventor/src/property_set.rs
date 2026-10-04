@@ -836,9 +836,10 @@ fn decode_code_page(
     }
     let page = code_page.unwrap_or(1252);
     let Some(encoding) = encoding_for_code_page(page) else {
-        let message = format_args!("OLE code page {page} is not implemented");
-        ctx.charge_formatted_retained(message, "retain OLE unsupported code-page detail")?;
-        return Err(CodecError::NotImplemented(message.to_string()));
+        return Err(CodecError::NotImplemented(ctx.format_retained(
+            format_args!("OLE code page {page} is not implemented"),
+            "retain OLE unsupported code-page detail",
+        )?));
     };
     let (selected_encoding, source) = encoding_rs::Encoding::for_bom(content)
         .map_or((encoding, content), |(selected, bom_len)| {
@@ -1209,6 +1210,37 @@ mod tests {
                     if limit.dimension == ResourceDimension::MaterializedBytes
                         && limit.operation == operation
             ));
+        }
+    }
+
+    #[test]
+    fn unsupported_code_page_detail_requires_exact_retained_budget() {
+        let bytes = [0];
+        let arena = DecodeArena::new();
+        let message = "OLE code page 65000 is not implemented";
+        let operation = "retain OLE unsupported code-page detail";
+        let required = u64::try_from(message.len()).expect("diagnostic length fits u64");
+        for cap in [0, required - 1, required] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+            let error = Cursor::new(root, "OLE code-page string")
+                .code_page_string(&ctx, 1, Some(65000), "value")
+                .expect_err("unsupported code page");
+            if cap < required {
+                assert!(matches!(
+                    error,
+                    CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == operation
+                ));
+            } else {
+                assert!(matches!(
+                    error,
+                    CodecError::NotImplemented(detail) if detail == message
+                ));
+            }
         }
     }
 

@@ -68,8 +68,8 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Serializes one decoded document: the IR, the decode report, and source
-/// fidelity. A decode error is frozen too. Native arena text is replaced by the
-/// arena populations and one digest of the records themselves.
+/// fidelity. A decode error is frozen too. Native arenas state their
+/// populations and either their records or a digest of those records.
 ///
 /// The native block is replaced before the authoring-path walk, so that walk
 /// descends only what the snapshot keeps. The digest reads the typed arenas, so
@@ -153,22 +153,29 @@ fn carries_authoring_path(text: &str) -> bool {
 /// `cadmpeg-ir` golden sweep reads that key to recognise an elided document.
 /// `__arena_counts` states each arena's population, which a reviewer reads
 /// directly. `__arena_sha256` carries one digest per arena over the canonical
-/// JSON a CADIR document writes for that arena's records, so any member of any
-/// record moves it, not only an arena name, a population or a record identity.
+/// JSON a CADIR document writes for that arena's records. `__arena_values` pins
+/// attachment and product-node records directly so calculated frames use the
+/// numeric comparison tolerance across platform math libraries.
 ///
 /// The digest is per arena, not one over the whole namespace, so a drifted
-/// record names the arena it sits in: the two maps carry the same keys and a
-/// diff states which of them moved. Their union covers every record byte the
+/// record names the arena it sits in. The digest and value maps cover every
+/// arena named in the count map. Their union covers every record byte the
 /// whole-namespace digest covered, since the arena and namespace names are the
 /// keys the golden prints.
 fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
     let mut counts = serde_json::Map::new();
     let mut digests = serde_json::Map::new();
+    let mut values = serde_json::Map::new();
     for (format, namespace) in &native.0 {
         let mut namespace_counts = serde_json::Map::new();
         let mut namespace_digests = serde_json::Map::new();
+        let mut namespace_values = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
             namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
+            if matches!(arena.as_str(), "attachments" | "product_nodes") && !records.is_empty() {
+                namespace_values.insert(arena.clone(), serde_json::json!(records));
+                continue;
+            }
             namespace_digests.insert(
                 arena.clone(),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
@@ -181,14 +188,24 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
         }
         counts.insert(format.clone(), namespace_counts.into());
         digests.insert(format.clone(), namespace_digests.into());
+        if !namespace_values.is_empty() {
+            values.insert(format.clone(), namespace_values.into());
+        }
     }
     let mut block = serde_json::Map::new();
     block.insert(
         NATIVE_ELISION_KEY.to_owned(),
-        serde_json::json!(NATIVE_ELISION_MARKER),
+        serde_json::json!(if values.is_empty() {
+            NATIVE_ELISION_MARKER
+        } else {
+            "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
+        }),
     );
     block.insert("__arena_counts".to_owned(), counts.into());
     block.insert("__arena_sha256".to_owned(), digests.into());
+    if !values.is_empty() {
+        block.insert("__arena_values".to_owned(), values.into());
+    }
     block.into()
 }
 
@@ -576,6 +593,56 @@ mod native_elision {
                 .expect("the native records state canonical JSON")),
                 "the digest of `{arena}` covers the bytes a CADIR document writes for it"
             );
+        }
+    }
+
+    #[test]
+    fn placement_snapshots_compare_calculated_frames_and_pin_other_fields() {
+        for (arena, frame_field) in [
+            ("attachments", "effective_frame"),
+            ("product_nodes", "local_transform"),
+        ] {
+            let mut native = cadmpeg_ir::Native::default();
+            let mut fields = serde_json::Map::new();
+            fields.insert(
+                "object".to_owned(),
+                serde_json::json!("fcstd:native:object#Box"),
+            );
+            fields.insert(
+                frame_field.to_owned(),
+                serde_json::json!([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]),
+            );
+            let record = cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("fcstd:native:attachment#Box").unwrap(),
+                fields,
+            )
+            .unwrap();
+            native
+                .namespace_mut("fcstd")
+                .arenas_mut()
+                .insert(arena.to_owned(), vec![record]);
+            let before = elided_native(&native);
+            assert!(before["__arena_sha256"]["fcstd"][arena].is_null());
+            assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);
+            assert_eq!(
+                before["__arena_values"]["fcstd"][arena],
+                serde_json::to_value(&native.0["fcstd"].arenas()[arena]).unwrap()
+            );
+            let mut after = before.clone();
+            after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] =
+                serde_json::json!(1.0 + cadmpeg_ir::compare::FLOAT_TOLERANCE / 4.0);
+            assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_ok());
+            after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] = serde_json::json!(2.0);
+            assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
+            let mut after = before.clone();
+            after["__arena_values"]["fcstd"][arena][0]["object"] =
+                serde_json::json!("fcstd:native:object#Other");
+            assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
         }
     }
 }

@@ -308,6 +308,6 @@ projection.
 
 **Question.** What value does a `SIGN` law have when its operand is zero?
 
-**Known.** `asm.md` §6.3 `Law formulas` names `SIGN` as a unary operator. Its serialized form has one recursively framed operand and no field that selects a zero convention. The format model does not give its value at zero.
+**Known.** `asm.md` §6.3 "**Law formulas**" names `SIGN` as a unary operator. Its serialized form has one recursively framed operand and no field that selects a zero convention. The format model does not give its value at zero.
 
 **Need.** A source rule or a law-driven construction with a defined value at an operand zero must settle whether `SIGN(0)` is zero, positive one, negative one, or has no value. This determines the section of a cacheless law-driven sweep at that parameter.
