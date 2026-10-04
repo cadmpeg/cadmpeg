@@ -205,19 +205,15 @@ fn linked_colors(
 ) -> Result<HashMap<(u16, u16), Vec<FramedColor>>, cadmpeg_core::CodecError> {
     let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
     for parent in ctx.admit_iter(entities, "scan SLDPRT linked_colors values")? {
+        let mut linked_faces_storage = ctx.reserve_scoped(0, "Parasolid temporary linked faces")?;
         let mut linked_faces = HashSet::new();
-        ctx.reserve_set(
+        linked_faces_storage.with_storage(|| ctx.reserve_set(
             &mut linked_faces,
             parent.refs.len(),
             "collect Parasolid linked face references",
-        )?;
-        ctx.reserve_set(
-            &mut linked_faces,
-            1,
-            "collect Parasolid parent face reference",
-        )?;
+        ))?;
         linked_faces.extend(parent.refs.iter().copied());
-        linked_faces.insert(parent.attr);
+        linked_faces_storage.with_storage(|| ctx.insert_hash_set(&mut linked_faces, parent.attr, "collect Parasolid parent face reference"))?;
         let mut at = parent.end;
         while let Some((color_attr, color, end)) = color_record(body, at) {
             ctx.charge_work(1, "scan Parasolid linked colors")?;
