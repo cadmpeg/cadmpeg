@@ -1967,3 +1967,5 @@ fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
         None
     );
 }
+
+mod deduplication;

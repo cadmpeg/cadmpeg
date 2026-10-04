@@ -219,14 +219,14 @@ fn curve_namespace(
         Ord::cmp,
         "creo curve namespace topology rows ordering",
     )?;
-    topology_rows.dedup_by_key(|row| row.offset);
+    ctx.dedup_by_key(&mut topology_rows, |row| Ok(row.offset), "creo curve namespace topology_rows deduplication")?;
     ctx.stable_sort_by(
         pcurves.as_mut_slice(),
         |value| &value.offset,
         Ord::cmp,
         "creo curve namespace pcurves ordering",
     )?;
-    pcurves.dedup_by_key(|pcurve| pcurve.offset);
+    ctx.dedup_by_key(&mut pcurves, |pcurve| Ok(pcurve.offset), "creo curve namespace pcurves deduplication")?;
     Ok((topology_rows, pcurves))
 }
 
@@ -1911,4 +1911,28 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(scan(&persistence).topology_rows.len(), 2);
         assert_collection_refusal(&persistence, "creo legacy topology rows");
     }
+#[test]
+fn legacy_topology_rows_deduplication_refuses_work() {
+    let persistence = topology_persistence();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo curve namespace topology_rows deduplication", |ctx| super::scan(ctx, &persistence),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo curve namespace topology_rows deduplication"));
+}
+
+#[test]
+fn legacy_pcurves_deduplication_refuses_work() {
+    let persistence = topology_persistence();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo curve namespace pcurves deduplication", |ctx| super::scan(ctx, &persistence),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo curve namespace pcurves deduplication"));
+}
+
 }

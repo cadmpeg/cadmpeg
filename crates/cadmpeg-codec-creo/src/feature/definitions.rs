@@ -8482,6 +8482,12 @@ struct DefinitionStart {
     positional: bool,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DefinitionStart {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.offset, &self.id, &self.owner_override, &self.positional), ctx, operation)
+    }
+}
+
 fn definition_starts(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -8546,7 +8552,7 @@ fn definition_starts(
         Ord::cmp,
         "creo feature definition starts sort",
     )?;
-    starts.dedup_by_key(|entry| entry.offset);
+    ctx.dedup_by_key(&mut starts, |entry| Ok(entry.offset), "creo definition starts starts deduplication")?;
     Ok(starts)
 }
 
@@ -8636,7 +8642,7 @@ pub(crate) fn definitions(
         Ord::cmp,
         "creo feature definition starts sort",
     )?;
-    starts.dedup_by_key(|entry| entry.offset);
+    ctx.dedup_by_key(&mut starts, |entry| Ok(entry.offset), "creo definitions starts deduplication")?;
     let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
     ctx.retain_vec(&mut definitions, |definition| Ok(retained_offsets.contains(&definition.offset)), "creo definition offset retain")?;
     Ok(definitions)
@@ -8677,7 +8683,7 @@ pub(crate) fn depdb_definitions(
         Ord::cmp,
         "creo feature definition starts sort",
     )?;
-    starts.dedup_by_key(|entry| entry.offset);
+    ctx.dedup_by_key(&mut starts, |entry| Ok(entry.offset), "creo depdb definitions starts deduplication")?;
     definitions_in_ranges(ctx, payload, &starts)
 }
 
@@ -8769,7 +8775,7 @@ pub(crate) fn positional_replay_definitions(
         Ord::cmp,
         "creo feature definition starts sort",
     )?;
-    starts.dedup_by_key(|entry| entry.offset);
+    ctx.dedup_by_key(&mut starts, |entry| Ok(entry.offset), "creo positional replay definitions starts deduplication")?;
     let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
     ctx.retain_vec(&mut definitions, |definition| Ok(pending_offsets.contains(&definition.offset)), "creo replay definition retain")?;
     Ok(definitions)
@@ -9836,6 +9842,54 @@ mod tests {
         let mut offset = 0;
         assert_eq!(super::segment_slots(&payload, &mut offset, 1), None);
     }
+#[test]
+fn definition_starts_deduplication_refuses_work() {
+    let payload = b"feat_defs_1\0";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo definition starts starts deduplication", |ctx| super::definition_starts(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo definition starts starts deduplication"));
+}
+
+#[test]
+fn definitions_deduplication_refuses_work() {
+    let payload = b"feat_defs_1\0";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo definitions starts deduplication", |ctx| super::definitions(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo definitions starts deduplication"));
+}
+
+#[test]
+fn depdb_definitions_deduplication_refuses_work() {
+    let payload = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo depdb definitions starts deduplication", |ctx| super::depdb_definitions(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo depdb definitions starts deduplication"));
+}
+
+#[test]
+fn positional_replay_definitions_deduplication_refuses_work() {
+    let payload = b"\xe3S2D0002\0";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo positional replay definitions starts deduplication", |ctx| super::positional_replay_definitions(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo positional replay definitions starts deduplication"));
+}
+
 }
 
 #[cfg(test)]

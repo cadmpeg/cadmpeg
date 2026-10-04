@@ -162,3 +162,53 @@ fn feature_identity_datum_prefix_refuses_work() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
             && resource.operation == "creo feature identity datum prefix"));
 }
+
+#[test]
+fn loop_array_section_deduplication_refuses_work() {
+    let data = b"loop_array\0";
+    let sections = [Section::scan("VisibGeom".into(), 0, data.len(), None, data).expect("section")];
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo loop array sections selected deduplication", |ctx| super::super::loop_array_sections(ctx, &sections, &[], &[]),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo loop array sections selected deduplication"));
+}
+
+#[test]
+fn appended_topology_row_deduplication_refuses_work() {
+    
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo append topology rows rows deduplication", |ctx| {
+            let mut rows = vec![crate::curve::CurveTopologyRow {
+        id: 1, type_byte: 8, feature_id: 4, directions: [1, 1],
+        faces: [None; 2], next_edges: [0; 2], offset: 0,
+    }];
+            super::super::append_topology_rows(ctx, &mut rows, std::iter::empty(), "creo test topology aggregation")
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo append topology rows rows deduplication"));
+}
+
+#[test]
+fn appended_legacy_pcurve_deduplication_refuses_work() {
+    
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo append legacy curve witnesses pcurves deduplication", |ctx| {
+            let mut topology = Vec::new();
+            let mut pcurves = vec![crate::curve::PcurveEndpoints {
+                curve_id: 1, faces: [None; 2], face_0_endpoints: [[0.0; 2]; 2],
+                face_1_endpoints: [[0.0; 2]; 2], offset: 0,
+            }];
+            super::super::append_legacy_curve_witnesses(ctx, &mut topology, &mut pcurves, &[], &[])
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo append legacy curve witnesses pcurves deduplication"));
+}

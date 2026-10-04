@@ -189,6 +189,20 @@ pub(crate) struct ScannedSection<'a> {
     region: &'a [u8],
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for Section {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.raw_name, &self.offset, &self.length, &self.expanded_length), ctx, operation,
+        )
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ScannedSection<'_> {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.section, &self.region), ctx, operation)
+    }
+}
+
 impl ScannedSection<'_> {
     fn copy_retained(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
@@ -888,7 +902,7 @@ fn toc_sections<'a>(
         Ord::cmp,
         "creo toc sections sections ordering",
     )?;
-    sections.dedup_by_key(|section| section.section.offset());
+    ctx.dedup_by_key(&mut sections, |section| Ok(section.section.offset()), "creo toc sections sections deduplication")?;
     Ok(sections)
 }
 
@@ -1077,7 +1091,7 @@ fn legacy_toc_sections<'a>(
         Ord::cmp,
         "creo legacy toc sections sections ordering",
     )?;
-    sections.dedup_by_key(|section| section.section.offset());
+    ctx.dedup_by_key(&mut sections, |section| Ok(section.section.offset()), "creo legacy toc sections sections deduplication")?;
     Ok(sections)
 }
 
@@ -1717,7 +1731,7 @@ fn loop_array_sections<'a>(
         Ord::cmp,
         "creo loop array sections selected ordering",
     )?;
-    selected.dedup_by_key(|section| section.section.offset());
+    ctx.dedup_by_key(&mut selected, |section| Ok(section.section.offset()), "creo loop array sections selected deduplication")?;
     Ok(selected)
 }
 
@@ -3038,7 +3052,7 @@ fn append_topology_rows(
         Ord::cmp,
         "creo append topology rows rows ordering",
     )?;
-    rows.dedup_by_key(|row| row.offset);
+    ctx.dedup_by_key(rows, |row| Ok(row.offset), "creo append topology rows rows deduplication")?;
     Ok(())
 }
 
@@ -3067,7 +3081,7 @@ fn append_legacy_curve_witnesses(
         Ord::cmp,
         "creo append legacy curve witnesses pcurves ordering",
     )?;
-    pcurves.dedup_by_key(|pcurve| pcurve.offset);
+    ctx.dedup_by_key(pcurves, |pcurve| Ok(pcurve.offset), "creo append legacy curve witnesses pcurves deduplication")?;
     Ok(())
 }
 

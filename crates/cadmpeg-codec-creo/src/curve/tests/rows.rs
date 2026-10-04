@@ -1541,3 +1541,15 @@ fn topology_curve_row_cost_counts_active_face_identifiers() {
         Ok::<(), CodecError>(())
     }).expect("topology curve row cost fits service work");
 }
+
+#[test]
+fn framed_curve_row_deduplication_refuses_work() {
+    let payload = one_framed_curve_input();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo framed rows with face ids result deduplication", |ctx| crate::curve::framed_rows_with_face_ids(ctx, &payload, None),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo framed rows with face ids result deduplication"));
+}

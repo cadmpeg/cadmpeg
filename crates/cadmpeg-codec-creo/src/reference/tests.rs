@@ -713,3 +713,48 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
 }
 
 mod carrier_admission;
+
+#[test]
+fn lines_deduplication_refuses_work() {
+    let payload = b"ent_list(line)\0\xe0\x02end1\0\xf8\x03\x18\xdf\x1d\x84\xe8\xb0\xed\x7b\x46\x19\x87\x25\xdc\x17\x53\xfa\
+            \xe0\x00entity(line)\0\xf1\xe3\xf7\x11\xf6\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x02\
+            \x18\xdf\x1d\x84\xe8\xb0\xed\x7b\x2d\x19\x87\x25\xdc\x17\x53\xfa\
+            \x18\x2d\x43\x23\xb0\x9d\x16\x1d\xaf\x2d\x19\x87\x25\xdc\x17\x53\xfa\xe3\
+            \xe0\x00entity(text)\0";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo lines result deduplication", |ctx| super::lines(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo lines result deduplication"));
+}
+
+#[test]
+fn positional_conics_deduplication_refuses_work() {
+    let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
+            \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\
+            \xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\x0f\x11\x43\xf0\x00\xe4\
+            \xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x43\xf0\x00\x0f\x0f\
+            \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo positional conics result deduplication", |ctx| super::positional_conics(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo positional conics result deduplication"));
+}
+
+#[test]
+fn line3d_lines_deduplication_refuses_work() {
+    let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+            \x0f\x0f\x0f\xe4\x0f\x0f\xe4";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo line3d lines result deduplication", |ctx| super::line3d_lines(ctx, payload),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo line3d lines result deduplication"));
+}
