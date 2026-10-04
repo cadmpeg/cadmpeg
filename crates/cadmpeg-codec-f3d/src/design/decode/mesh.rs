@@ -1663,9 +1663,13 @@ where
         let Some(scope_record_index) = candidate.filter(|_| second_candidate.is_none()) else {
             let mut scope_lists = Vec::new();
             for (index, scope) in ctx.admit_iter(&scopes, "format F3D mesh scope diagnostics")? {
-                let mut body_records = ctx
-                    .collection_vec(scope.body_records.len(), "f3d mesh diagnostic scope bodies")?;
-                body_records.extend_from_slice(&scope.body_records);
+                let mut body_records =
+                    ctx.vector_storage(scope.body_records.len(), "f3d mesh diagnostic scope bodies")?;
+                ctx.extend_from_slice(
+                    &mut body_records,
+                    &scope.body_records,
+                    "f3d mesh diagnostic scope bodies",
+                )?;
                 ctx.push_vec(
                     &mut scope_lists,
                     (*index, body_records),
@@ -2088,6 +2092,7 @@ mod tests {
     mod placement;
     mod text;
     mod identity;
+    mod diagnostic_scope_copy;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
         parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,

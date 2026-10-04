@@ -915,6 +915,57 @@ fn edge_flange_scope_refuses_a_to_object_frame_with_a_table_reference_pair() {
     .is_none());
 }
 
+#[test]
+fn edge_flange_unclaimed_reference_copy_charges_actual_source_length() {
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    let frame = edge_flange_frame(&EdgeFlangeFixture {
+        header_shift: 0,
+        width_count: 0,
+        result_count: 1,
+        bend_position: 1,
+        height_datum: 2,
+        reference_side: 4,
+        bend_radius: 0.25,
+        wrapper: 201,
+        settings: 207,
+        angle_owner: 218,
+        height_owner: 204,
+        aggregate_group: 240,
+        edge_group: 251,
+    });
+    let operation = "collect F3D unclaimed flange references";
+    for (dimension, additional) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, 40),
+        (cadmpeg_core::decode::ResourceDimension::CollectionItems, 8),
+        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, 40),
+    ] {
+        let refusal = crate::test_support::resource_refusal_at(
+            dimension,
+            operation,
+            0,
+            |ctx| {
+                crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+                    ctx,
+                    &frame.bytes,
+                    0,
+                    frame.paired_at,
+                    "414",
+                    "258",
+                    &references,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == operation
+                    && limit.additional == additional
+        ));
+    }
+}
+
 /// Build a single-edge `EdgeFlange` frame from the settled fixed-section layout.
 ///
 /// Every offset is computed from the layout rather than counted by hand, so the
