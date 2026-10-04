@@ -255,11 +255,10 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     ) else {
         return Ok(None);
     };
-    let Some(class_tag) =
-        crate::design::decode::text::class_tag_from_view(ctx, expected_class_tag)?
-    else {
+    let Some(frame_class_tag) = expected_class_tag.as_bytes().first_chunk::<3>() else {
         return Ok(None);
     };
+    let class_tag = retain_class_tag(ctx, frame_class_tag, "copy F3D As-built frame class tag")?;
     Ok(Some(DesignAssemblySolvedFrame {
         reference_record_index: frame_record_index,
         reference_offset: frame_reference.offset,

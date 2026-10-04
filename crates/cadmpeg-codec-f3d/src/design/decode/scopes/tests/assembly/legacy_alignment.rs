@@ -14,9 +14,8 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::test_support::indexed_header;
 
 #[test]
-fn legacy_as_built_421_alignment_reference_scan_refusal_propagates() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn legacy_as_built_421_alignment_reference_frame_test_needs_no_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let scope_record_index = 10;
     let reference_members = [20, 21, 22, 23, 100, 101, 102, 103, 200, 105, 106];
@@ -74,14 +73,13 @@ fn legacy_as_built_421_alignment_reference_scan_refusal_propagates() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    // The eleven reference slots are a fixed frame, so the frame test reads
+    // them without charges and rejects the unmarked slots.
     assert!(matches!(
         crate::design::decode::assembly::exact_legacy_as_built_421_alignment(
             &ctx, &bytes, &scope, &lanes,
         ),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan F3D legacy AsBuilt alignment references"
-                && limit.additional == 11
+        Ok(None)
     ));
 }
 
