@@ -832,6 +832,7 @@ impl std::ops::Deref for ReferenceLineDirection {
 /// An ellipse's radii before their numeric relationship is admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct EllipseRadii<L> {
     /// Semi-major radius.
     pub major_radius: L,

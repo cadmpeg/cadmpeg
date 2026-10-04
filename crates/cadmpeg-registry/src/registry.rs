@@ -11,8 +11,10 @@ use serde::Deserialize;
 use crate::disposition::{Disposition, ReadDisposition, WriteDisposition};
 use crate::{build_encoder, Format};
 
-const IDENTITY_TOML: &str = include_str!("../../../docs/dialects.toml");
-const SUPPORT_TOML: &str = include_str!("../../../docs/dialect-support.toml");
+// The registries live inside this crate so the published tarball carries them;
+// `cargo package` omits paths above the crate root.
+const IDENTITY_TOML: &str = include_str!("../docs/dialects.toml");
+const SUPPORT_TOML: &str = include_str!("../docs/dialect-support.toml");
 
 /// One dialect, as the two registries jointly describe it.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -121,7 +121,7 @@ fn join<T>(
     ctx.join_retained(&parts, ",", operation)
 }
 
-/// One row of `docs/dialects.toml` under the `inventor` namespace.
+/// One row of `crates/cadmpeg-registry/docs/dialects.toml` under the `inventor` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum InventorDialect {
     /// `RSeDb` schema 31 and `RSe` Meta Stream version 8, both declared.

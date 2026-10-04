@@ -250,6 +250,12 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
     ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
     (
+        "crates/cadmpeg-ir/src/scalar.rs",
+        "FiniteBinary32",
+        "keyless",
+    ),
+    ("crates/cadmpeg-ir/src/scalar.rs", "UnitBinary32", "keyless"),
+    (
         "crates/cadmpeg-ir/src/sketches.rs",
         "SpatialSketchNurbsCurve",
         "wire",
@@ -1840,6 +1846,8 @@ mod scanner_tests {
         let error = collect_rust_sources(&missing, &mut found)
             .expect_err("a missing source root must fail the census");
         assert!(error.contains(&missing.display().to_string()));
-        assert!(error.contains("No such file") || error.contains("not found"));
+        let cause = std::fs::read_dir(&missing).expect_err("the source root is absent");
+        assert_eq!(cause.kind(), std::io::ErrorKind::NotFound);
+        assert!(error.contains(&cause.to_string()), "{error}");
     }
 }
