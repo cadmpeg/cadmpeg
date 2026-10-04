@@ -812,10 +812,14 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         })
         .collect::<HashMap<_, _>>();
 
-    let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
-        by_index.get(&index).copied()
-    })
-    .unwrap();
+    let (carrier, decoded) = attribute_chain_color_carrier(
+        &resource_ctx,
+        &entity,
+        by_index.len(),
+        |index| by_index.get(&index).copied(),
+    )
+    .expect("color parser admission")
+    .expect("exact color carrier");
     assert_eq!(carrier.index, 5);
     assert_eq!(
         decoded.carrier,
@@ -917,10 +921,14 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     };
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
-    let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
-        by_index.get(&index).copied()
-    })
-    .unwrap();
+    let (carrier, decoded) = attribute_chain_color_carrier(
+        &resource_ctx,
+        &entity,
+        by_index.len(),
+        |index| by_index.get(&index).copied(),
+    )
+    .expect("color parser admission")
+    .expect("exact color carrier");
     assert_eq!(carrier.index, 1);
     assert_eq!(
         decoded.carrier,

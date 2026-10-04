@@ -28,12 +28,46 @@ fn assert_work_limit(error: cadmpeg_core::CodecError, operation: &str, additiona
     ));
 }
 
+fn assert_work_limit_at(
+    error: cadmpeg_core::CodecError,
+    operation: &str,
+    used: u64,
+    additional: u64,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
 fn assert_macro_work_refusal(error: MacroDataError, operation: &str, additional: u64) {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(error,
         MacroDataError::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+fn assert_macro_work_refusal_at(
+    error: MacroDataError,
+    operation: &str,
+    used: u64,
+    additional: u64,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        MacroDataError::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
                 && limit.additional == additional
                 && limit.operation == operation
     ));
@@ -72,6 +106,15 @@ fn macro_hollerith_count_refuses_utf8_work() {
 }
 
 #[test]
+fn macro_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte precede the one-byte parse.
+    let error = with_work_limit(b"1Ha", 3, |ctx| {
+        crate::parameter::macro_hollerith_end(b"1Ha", 0, ctx).unwrap_err()
+    });
+    assert_macro_work_refusal_at(error, "iges macro Hollerith count value", 3, 1);
+}
+
+#[test]
 fn macro_field_leading_whitespace_refuses_work_before_probe() {
     let error = with_work_limit(b"X,", 0, |ctx| {
         crate::parameter::macro_next_field(b"X,", 0, b',', b';', ctx).unwrap_err()
@@ -93,6 +136,15 @@ fn macro_integer_refuses_utf8_work() {
         crate::parameter::macro_integer(b"621", &(0..3), ctx).unwrap_err()
     });
     assert_work_limit(error, "iges macro integer", 3);
+}
+
+#[test]
+fn macro_integer_parse_refuses_after_utf8_admission() {
+    // The three integer bytes are validated before the same-sized parse.
+    let error = with_work_limit(b"621", 3, |ctx| {
+        crate::parameter::macro_integer(b"621", &(0..3), ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges macro integer value", 3, 3);
 }
 
 #[test]

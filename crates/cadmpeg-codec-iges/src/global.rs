@@ -422,8 +422,8 @@ fn layout_hollerith(
     let count_text = ctx
         .validate_utf8(&bytes[start..cursor], "iges global layout Hollerith count")?
         .map_err(|_| malformed("Hollerith count is not ASCII"))?;
-    let count = count_text
-        .parse::<usize>()
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges global layout Hollerith number")?
         .map_err(|_| malformed("Hollerith count is out of range"))?;
     let payload_start = cursor
         .checked_add(1)
@@ -598,8 +598,8 @@ fn hollerith<'bytes>(
     let count_text = ctx
         .validate_utf8(&bytes[start..cursor], "iges global Hollerith count")?
         .map_err(|_| malformed("Hollerith count is not ASCII"))?;
-    let count = count_text
-        .parse::<usize>()
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges global Hollerith number")?
         .map_err(|_| malformed("Hollerith count is out of range"))?;
     let payload_start = cursor
         .checked_add(1)
@@ -830,10 +830,12 @@ fn date_value_is_valid(
         return Ok(false);
     }
     let number = |start: usize, end: usize| -> Result<Option<u32>, CodecError> {
+        let Ok(value) = ctx.validate_utf8(&bytes[start..end], "iges global date component")? else {
+            return Ok(None);
+        };
         Ok(ctx
-            .validate_utf8(&bytes[start..end], "iges global date component")?
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok()))
+            .parse_text::<u32>(value, "iges global date component number")?
+            .ok())
     };
     let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
         (2, 4, 7, 9, 11)
@@ -955,7 +957,10 @@ fn numeric_text<'bytes>(
 
 fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteReal>, CodecError> {
     if !text.bytes().any(|byte| matches!(byte, b'D' | b'd')) {
-        return Ok(text.parse::<f64>().ok().and_then(FiniteReal::new));
+        return Ok(ctx
+            .parse_text::<f64>(text, "iges global numeric real")?
+            .ok()
+            .and_then(FiniteReal::new));
     }
     let (mut normalized, _reservation) =
         ctx.scoped_vector_storage(text.len(), "iges global numeric text")?;
@@ -969,7 +974,10 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
         Ok(text) => text,
         Err(_) => return Ok(None),
     };
-    Ok(text.parse::<f64>().ok().and_then(FiniteReal::new))
+    Ok(ctx
+        .parse_text::<f64>(text, "iges global numeric real")?
+        .ok()
+        .and_then(FiniteReal::new))
 }
 
 fn recovered_real_text(
@@ -1086,9 +1094,16 @@ impl Resolution<'_, '_> {
     fn supplied_integer(&self, index: usize) -> Result<Supplied<i64>, CodecError> {
         Ok(match self.value(index) {
             Value::Omitted => Supplied::Absent,
-            Value::Atom(bytes) => numeric_text(bytes, self.ctx)?
-                .and_then(|text| text.parse::<i64>().ok())
-                .map_or(Supplied::Malformed, Supplied::Value),
+            Value::Atom(bytes) => {
+                let value = match numeric_text(bytes, self.ctx)? {
+                    Some(text) => self
+                        .ctx
+                        .parse_text::<i64>(text, "iges global integer value")?
+                        .ok(),
+                    None => None,
+                };
+                value.map_or(Supplied::Malformed, Supplied::Value)
+            }
             Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => Supplied::Malformed,
         })
     }

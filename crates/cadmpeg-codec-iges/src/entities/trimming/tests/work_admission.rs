@@ -268,3 +268,42 @@ fn boundary_clustering_root_walk_refuses_before_traversal() {
         );
     });
 }
+
+
+fn assert_identity_parse_refusal<T>(result: Result<T, CodecError>) {
+    // No preceding admission; the identity suffix has one digit.
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "iges native identity sequence"
+            && limit.used == 0 && limit.additional == 1));
+}
+
+#[test]
+fn native_identity_sequence_parse_refuses_work() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        assert_identity_parse_refusal(
+            super::super::native_sequence_from_id("iges:model:surface#D1", "iges:model:surface#D", ctx),
+        );
+    });
+}
+
+#[test]
+fn support_interval_identity_parse_refusal_precedes_missing_record_fallback() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let id = cadmpeg_ir::ids::SurfaceId::mint("iges:model:surface#D1").unwrap();
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        assert_identity_parse_refusal(
+            super::super::surface_parameter_bound_intervals(
+                Some([None; 4]),
+                &id,
+                &std::collections::BTreeMap::new(),
+                &std::collections::BTreeMap::new(),
+                crate::global::RealPrecision { single_significance: 7, double_significance: 15 },
+                ctx,
+            ),
+        );
+    });
+}

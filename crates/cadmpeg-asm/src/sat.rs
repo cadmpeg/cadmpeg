@@ -276,7 +276,7 @@ fn header_line<'a>(bytes: &'a [u8], pos: &mut usize, what: &str) -> Result<&'a [
     Ok(&bytes[start..end])
 }
 
-fn header_int<T: std::str::FromStr>(
+fn header_int<T: cadmpeg_core::decode::text::TextScalar>(
     ctx: &DecodeContext<'_>,
     field: Option<&[u8]>,
     at: usize,
@@ -292,7 +292,9 @@ fn header_int<T: std::str::FromStr>(
         .validate_utf8(field, "validate SAT header integer")
         .map_err(StreamFailure::from_operation)?
         .map_err(|_| no_field())?;
-    text.parse().map_err(|_| no_field().into())
+    ctx.parse_text::<T>(text, "parse SAT header integer")
+        .map_err(StreamFailure::from_operation)?
+        .map_err(|_| no_field().into())
 }
 
 /// Read one `N <bytes>` counted string from a header line's raw byte slice.
@@ -330,7 +332,10 @@ fn counted_string(
         .validate_utf8(&line[start..*pos], "validate SAT header string length")
         .map_err(StreamFailure::from_operation)?
         .map_err(|_| count_error())?;
-    let len: usize = digits.parse().map_err(|_| count_error())?;
+    let len = ctx
+        .parse_text::<usize>(digits, "parse SAT header string length")
+        .map_err(StreamFailure::from_operation)?
+        .map_err(|_| count_error())?;
     if line.get(*pos).is_none_or(|byte| !is_ws(*byte)) {
         return Err(StreamError {
             format: StreamFormat::Text,
@@ -383,7 +388,9 @@ fn header_float(
         .validate_utf8(field, "validate SAT header tolerance")
         .map_err(StreamFailure::from_operation)?
         .map_err(|_| malformed())?;
-    text.parse().map_err(|_| malformed())
+    ctx.parse_text::<f64>(text, "parse SAT header tolerance")
+        .map_err(StreamFailure::from_operation)?
+        .map_err(|_| malformed())
 }
 
 fn parse_header(
@@ -729,19 +736,25 @@ fn lex_prim(
     scratch: &mut ScopedReservation<'_>,
 ) -> Result<Prim, StreamFailure> {
     if let Some(rest) = field.strip_prefix('$') {
-        let index = rest.parse::<i64>().map_err(|_| StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "reference field has no valid decimal index".to_string(),
-        })?;
+        let index = ctx
+            .parse_text::<i64>(rest, "parse SAT reference index")
+            .map_err(StreamFailure::from_operation)?
+            .map_err(|_| StreamError {
+                format: StreamFormat::Text,
+                offset: at,
+                reason: "reference field has no valid decimal index".to_string(),
+            })?;
         return Ok(Prim::Ref(index));
     }
     if let Some(rest) = field.strip_prefix('@') {
-        let len = rest.parse::<usize>().map_err(|_| StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "string field has no valid decimal byte count".to_string(),
-        })?;
+        let len = ctx
+            .parse_text::<usize>(rest, "parse SAT string byte count")
+            .map_err(StreamFailure::from_operation)?
+            .map_err(|_| StreamError {
+                format: StreamFormat::Text,
+                offset: at,
+                reason: "string field has no valid decimal byte count".to_string(),
+            })?;
         return Ok(Prim::Str(reader.read_str_payload(ctx, len, at, scratch)?));
     }
     if field == "{" {
@@ -755,16 +768,23 @@ fn lex_prim(
         .or_else(|| field.strip_prefix('-'))
         .unwrap_or(&field);
     if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return field.parse::<i64>().map(Prim::Integer).map_err(|_| {
-            StreamError {
-                format: StreamFormat::Text,
-                offset: at,
-                reason: "integer field is outside the signed 64-bit range".to_string(),
-            }
-            .into()
-        });
+        return ctx
+            .parse_text::<i64>(&field, "parse SAT integer field")
+            .map_err(StreamFailure::from_operation)?
+            .map(Prim::Integer)
+            .map_err(|_| {
+                StreamError {
+                    format: StreamFormat::Text,
+                    offset: at,
+                    reason: "integer field is outside the signed 64-bit range".to_string(),
+                }
+                .into()
+            });
     }
-    if let Ok(value) = field.parse::<f64>() {
+    if let Ok(value) = ctx
+        .parse_text::<f64>(&field, "parse SAT real field")
+        .map_err(StreamFailure::from_operation)?
+    {
         return Ok(Prim::Real(value));
     }
     Ok(Prim::Word(field))
@@ -2062,6 +2082,48 @@ mod tests {
         Ok(use_context(&ctx))
     }
 
+    fn assert_work_refusal(
+        error: StreamFailure,
+        operation: &str,
+        used: u64,
+        additional: u64,
+    ) {
+        let StreamFailure::Resource(refusal) = error else {
+            panic!("expected work refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, operation);
+        assert_eq!(refusal.used, used);
+        assert_eq!(refusal.additional, additional);
+    }
+
+    fn assert_lex_prim_work_refusal(
+        field: &str,
+        limit: u64,
+        operation: &str,
+        additional: u64,
+    ) {
+        let source = format!(
+            "0 0 0 0\n0 0 0 \n1 0 0\naudit {field} #\nEnd-of-ASM-data \n"
+        )
+        .into_bytes();
+        let error = with_work_limit(&source, limit, |ctx| super::parse(ctx, &source))
+            .expect("test context")
+            .expect_err("primitive text parsing must refuse");
+        assert_work_refusal(error, operation, limit, additional);
+    }
+
+    fn lex_prim_with_work_limit(field: &str, max_work: u64) -> Result<Prim, StreamFailure> {
+        with_work_limit(&[], max_work, |ctx| {
+            let mut reader = super::FieldReader { bytes: &[], pos: 0 };
+            let mut scratch = ctx
+                .reserve_scoped(0, "test SAT primitive")
+                .map_err(StreamFailure::from_operation)?;
+            super::lex_prim(ctx, &mut reader, 0, field.to_owned(), &mut scratch)
+        })
+        .expect("test context")
+    }
+
     #[test]
     fn sat_container_framing_admits_work_before_header_scan() {
         let source = asm_stream("");
@@ -2199,7 +2261,8 @@ mod tests {
         };
         assert_eq!(length.operation, "validate SAT header string length");
 
-        let value = with_work_limit(b"1 x", 4, |ctx| {
+        // One whitespace probe, two count probes, UTF-8 and scalar parsing cost five.
+        let value = with_work_limit(b"1 x", 5, |ctx| {
             let mut pos = 0;
             super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
         })
@@ -2224,7 +2287,7 @@ mod tests {
     #[test]
     fn sat_framing_refuses_record_and_payload_field_loop_work() {
         let source = b"0 0 0 0\n0 0 0 \n1 0 0\nx #\nEnd-of-ASM-data \n";
-        for (limit, operation) in [(19, "frame SAT record"), (25, "frame SAT field")] {
+        for (limit, operation) in [(29, "frame SAT record"), (35, "frame SAT field")] {
             let error = with_work_limit(source, limit, |ctx| super::parse(ctx, source))
                 .expect("test context")
                 .expect_err("SAT scanner loop work must refuse");
@@ -2233,9 +2296,101 @@ mod tests {
             };
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, operation);
-            // Header work is 19; the record step, probes, UTF-8 and copy spend six more.
+            // Header work is 29 after scalar parsing; record/name framing adds six more.
             assert_eq!(refusal.used, limit);
         }
+    }
+
+    #[test]
+    fn sat_header_text_scalar_parses_refuse_after_utf8_validation() {
+        let integer = with_work_limit(b"12", 2, |ctx| {
+            super::header_int::<u32>(ctx, Some(b"12"), 0, "fixture")
+        })
+        .expect("test context")
+        .expect_err("header integer parsing must refuse");
+        assert_work_refusal(integer, "parse SAT header integer", 2, 2);
+
+        let length = with_work_limit(b"12 x", 6, |ctx| {
+            let mut pos = 0;
+            super::counted_string(ctx, b"12 x", &mut pos, 0, "fixture")
+        })
+        .expect("test context")
+        .expect_err("header string count parsing must refuse");
+        // One whitespace probe, three count probes, and two UTF-8 bytes cost six units.
+        assert_work_refusal(length, "parse SAT header string length", 6, 2);
+
+        let tolerance = with_work_limit(b"1.5", 3, |ctx| {
+            super::header_float(ctx, Some(b"1.5"), 0, "fixture")
+        })
+        .expect("test context")
+        .expect_err("header tolerance parsing must refuse");
+        assert_work_refusal(tolerance, "parse SAT header tolerance", 3, 3);
+    }
+
+    #[test]
+    fn sat_primitive_text_scalar_parses_refuse_after_header_and_field_work() {
+        // Compact header work is 29: 19 scan/UTF-8 units plus ten one-byte scalar parses.
+        // Record/name framing adds 18. Field framing adds 13 for three-byte fields
+        // and 10 for the two-byte field, including both whitespace probes.
+        assert_lex_prim_work_refusal("$12", 60, "parse SAT reference index", 2);
+        assert_lex_prim_work_refusal("@12", 60, "parse SAT string byte count", 2);
+        assert_lex_prim_work_refusal("12", 57, "parse SAT integer field", 2);
+        assert_lex_prim_work_refusal("1.5", 60, "parse SAT real field", 3);
+    }
+
+    #[test]
+    fn sat_text_scalar_inner_errors_keep_existing_syntax_and_word_results() {
+        let integer = with_work_limit(b"x", 100, |ctx| {
+            super::header_int::<u32>(ctx, Some(b"x"), 0, "fixture")
+        })
+        .expect("test context")
+        .expect_err("invalid header integer remains malformed syntax");
+        let StreamFailure::Parse(integer) = integer else {
+            panic!("expected header integer syntax error");
+        };
+        assert_eq!(integer.reason, "header line has no fixture field");
+
+        let length = with_work_limit(b"x ", 100, |ctx| {
+            let mut pos = 0;
+            super::counted_string(ctx, b"x ", &mut pos, 0, "fixture")
+        })
+        .expect("test context")
+        .expect_err("invalid header count remains malformed syntax");
+        let StreamFailure::Parse(length) = length else {
+            panic!("expected header count syntax error");
+        };
+        assert_eq!(length.reason, "header line has no fixture count");
+
+        let tolerance = with_work_limit(b"x", 100, |ctx| {
+            super::header_float(ctx, Some(b"x"), 0, "fixture")
+        })
+        .expect("test context")
+        .expect_err("invalid tolerance remains malformed syntax");
+        let StreamFailure::Malformed(tolerance) = tolerance else {
+            panic!("expected malformed tolerance error");
+        };
+        assert_eq!(tolerance.reason, "header line has no valid fixture value");
+
+        for (field, expected_reason) in [
+            ("$bad", "reference field has no valid decimal index"),
+            ("@bad", "string field has no valid decimal byte count"),
+            (
+                "9223372036854775808",
+                "integer field is outside the signed 64-bit range",
+            ),
+        ] {
+            let error = lex_prim_with_work_limit(field, 100)
+                .expect_err("invalid primitive scalar remains syntax error");
+            let StreamFailure::Parse(error) = error else {
+                panic!("expected primitive syntax error");
+            };
+            assert_eq!(error.reason, expected_reason);
+        }
+
+        assert_eq!(
+            lex_prim_with_work_limit("plain", 100).expect("unparsed primitive remains a word"),
+            Prim::Word("plain".to_owned())
+        );
     }
 
     #[test]

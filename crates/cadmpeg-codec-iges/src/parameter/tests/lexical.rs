@@ -37,12 +37,46 @@ fn assert_work_limit(error: cadmpeg_core::CodecError, operation: &str, additiona
     ));
 }
 
+fn assert_work_limit_at(
+    error: cadmpeg_core::CodecError,
+    operation: &str,
+    used: u64,
+    additional: u64,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
 fn assert_tokenize_work_refusal(error: TokenizeFailure, operation: &str, additional: u64) {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(error,
         TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+fn assert_tokenize_work_refusal_at(
+    error: TokenizeFailure,
+    operation: &str,
+    used: u64,
+    additional: u64,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
                 && limit.additional == additional
                 && limit.operation == operation
     ));
@@ -62,6 +96,15 @@ fn parameter_layout_hollerith_count_refuses_utf8_work() {
         super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
     });
     assert_work_limit(error, "iges parameter layout Hollerith count", 1);
+}
+
+#[test]
+fn parameter_layout_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte are admitted before the one-byte parse.
+    let error = with_work_limit(b"1H,a", 3, |ctx| {
+        super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges parameter layout Hollerith number", 3, 1);
 }
 
 #[test]
@@ -97,6 +140,15 @@ fn parameter_hollerith_count_refuses_utf8_work() {
 }
 
 #[test]
+fn parameter_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte are admitted before the one-byte parse.
+    let error = with_work_limit(b"1Ha", 3, |ctx| {
+        super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
+    });
+    assert_tokenize_work_refusal_at(error, "iges parameter Hollerith count value", 3, 1);
+}
+
+#[test]
 fn parameter_numeric_exponent_refuses_utf8_work() {
     let error = with_work_limit(b"1E2", 0, |ctx| {
         super::super::decimal_shape(b"1E2", ctx).unwrap_err()
@@ -105,11 +157,40 @@ fn parameter_numeric_exponent_refuses_utf8_work() {
 }
 
 #[test]
+fn parameter_numeric_exponent_parse_refuses_after_utf8_admission() {
+    // One exponent byte is validated before its one-byte integer parse.
+    let error = with_work_limit(b"1E2", 1, |ctx| {
+        super::super::decimal_shape(b"1E2", ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges numeric exponent value", 1, 1);
+}
+
+#[test]
 fn parameter_numeric_token_refuses_utf8_work() {
     let error = with_work_limit(b"12", 0, |ctx| {
         super::super::numeric_with_limits(b"12", 0..2, declared_numeric_limits(), ctx).unwrap_err()
     });
     assert_tokenize_work_refusal(error, "iges numeric token text", 2);
+}
+
+#[test]
+fn parameter_numeric_real_parse_refuses_after_utf8_admission() {
+    // The three token bytes are validated before the same-sized real parse.
+    let error = with_work_limit(b"1.5", 3, |ctx| {
+        super::super::numeric_with_limits(b"1.5", 0..3, declared_numeric_limits(), ctx)
+            .unwrap_err()
+    });
+    assert_tokenize_work_refusal_at(error, "iges numeric real token", 3, 3);
+}
+
+#[test]
+fn parameter_numeric_integer_parse_refuses_after_utf8_admission() {
+    // The two token bytes are validated before the same-sized integer parse.
+    let error = with_work_limit(b"12", 2, |ctx| {
+        super::super::numeric_with_limits(b"12", 0..2, declared_numeric_limits(), ctx)
+            .unwrap_err()
+    });
+    assert_tokenize_work_refusal_at(error, "iges numeric integer token", 2, 2);
 }
 
 #[test]

@@ -597,13 +597,22 @@ fn procedural_pcurve_parameter_map(
     Some((u_map.0, u_map.1, v_map.0, v_map.1))
 }
 
-fn native_sequence_from_id(id: &str, prefix: &str) -> Option<u32> {
-    let suffix = id.strip_prefix(prefix)?;
+fn native_sequence_from_id(
+    id: &str,
+    prefix: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<u32>, CodecError> {
+    let Some(suffix) = id.strip_prefix(prefix) else {
+        return Ok(None);
+    };
     let end = suffix
         .bytes()
         .position(|byte| !byte.is_ascii_digit())
         .unwrap_or(suffix.len());
-    (end > 0).then(|| suffix[..end].parse().ok())?
+    if end == 0 {
+        return Ok(None);
+    }
+    Ok(ctx.parse_text::<u32>(&suffix[..end], "iges native identity sequence")?.ok())
 }
 
 fn parameter_curve_carrier_id(
@@ -640,21 +649,24 @@ fn surface_parameter_bound_intervals(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     precision: RealPrecision,
-) -> Option<[Option<DeclaredInterval>; 4]> {
-    let bounds = bounds?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[Option<DeclaredInterval>; 4]>, CodecError> {
+    let Some(bounds) = bounds else {
+        return Ok(None);
+    };
     let mut intervals = bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0)));
-    let Some(sequence) = native_sequence_from_id(surface_id.as_str(), "iges:model:surface#D")
+    let Some(sequence) = native_sequence_from_id(surface_id.as_str(), "iges:model:surface#D", ctx)?
     else {
-        return Some(intervals);
+        return Ok(Some(intervals));
     };
     let Some(entry) = entries.get(&sequence).copied() else {
-        return Some(intervals);
+        return Ok(Some(intervals));
     };
     if entry.entity_type != 128 {
-        return Some(intervals);
+        return Ok(Some(intervals));
     }
     let Some(record) = records.get(&sequence).copied() else {
-        return Some(intervals);
+        return Ok(Some(intervals));
     };
     if let Some(declared) = super::surfaces::type128_parameter_bound_intervals(record, precision) {
         for (bound, declared) in intervals.iter_mut().zip(declared) {
@@ -663,7 +675,7 @@ fn surface_parameter_bound_intervals(
             }
         }
     }
-    Some(intervals)
+    Ok(Some(intervals))
 }
 
 fn source_curve_control_intervals(
@@ -689,7 +701,7 @@ fn source_curve_control_intervals(
         let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
             return Ok(None);
         };
-        if let Some(sequence) = native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D") {
+        if let Some(sequence) = native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D", ctx)? {
             let Some(entry) = entries.get(&sequence).copied() else {
                 return Ok(None);
             };
@@ -782,7 +794,7 @@ fn source_curve_control_intervals(
                     Ok(controls)
                 };
                 let Some(sequence) =
-                    native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D")
+                    native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D", ctx)?
                 else {
                     return Ok(Some(exact()?));
                 };
@@ -2587,7 +2599,8 @@ pub(super) fn project(
             &entries,
             &records,
             global.real_precision(),
-        );
+            ctx,
+        )?;
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
         let implicit_outer_domain = surface_kind == BoundarySurfaceKind::Trimmed
             && !has_explicit_outer

@@ -739,8 +739,16 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         ResourceDimension::CollectionItems,
         "iges_cards",
     );
+    let source_len = cadmpeg_core::decode::u64_from_index(point_file().len());
+    // Classification admits a 512-byte read window and each read-loop probe.
+    // A short input also admits its remaining window before the EOF read.
+    let prefix_work = if source_len < 512 {
+        1 + 512 + 1 + (512 - source_len)
+    } else {
+        1 + 512
+    };
     assert_refusal(
-        |limits| limits.max_work_units = 1,
+        |limits| limits.max_work_units = prefix_work,
         ResourceDimension::WorkUnits,
         "iges_card_scan",
     );
@@ -827,6 +835,25 @@ fn attributed_loss_index_refuses_node_limit() {
                 && limit.operation == "iges attributed loss sequences"
     ));
     assert_eq!(attributed_index(&[tagged_loss("D7:parameter")]).len(), 1);
+}
+
+#[test]
+fn attributed_loss_sequence_parse_refusal_propagates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The tag contains one sequence digit and no earlier work charge.
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::attributed_sequences(&[tagged_loss("D7:parameter")], &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges attributed loss sequence"
+    ));
 }
 
 #[test]

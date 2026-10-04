@@ -93,9 +93,9 @@ fn global_hollerith_count_refuses_utf8_work() {
 fn global_field_scan_refuses_work_before_value() {
     let bytes = fixed_ascii_with_global(b"1H,,1H;,;");
     let scan = crate::test_support::scan(&bytes).unwrap();
-    // The two delimiter counts each admit digit probes and UTF-8 validation; then the
+    // The two delimiter counts each admit digit probes, UTF-8 validation and scalar parsing; then the
     // record delimiter copy, 26 indexed defaults, and parameter delimiter copy are admitted.
-    let preceding_work = 3 + 3 + 1 + 26 + 1;
+    let preceding_work = 4 + 4 + 1 + 26 + 1;
     let error = with_work_limit(&bytes, preceding_work, |ctx| {
         crate::global::parse_raw(&scan, ctx).unwrap_err()
     });
@@ -637,4 +637,73 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
         assert_eq!(parsed.sender_product(), Some("product"));
         assert!(losses.is_empty(), "{losses:#?}");
     }
+}
+
+fn assert_work_limit_at(error: CodecError, operation: &str, used: u64, additional: u64) {
+    assert!(matches!(error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == used
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn global_layout_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte are admitted before the one-byte parse.
+    let error = with_work_limit(b"1H,", 3, |ctx| {
+        crate::global::layout_hollerith(b"1H,", 0, ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges global layout Hollerith number", 3, 1);
+}
+
+#[test]
+fn global_hollerith_parse_refuses_after_utf8_admission() {
+    // Two digit probes and one UTF-8 byte are admitted before the one-byte parse.
+    let error = with_work_limit(b"1H,", 3, |ctx| {
+        crate::global::hollerith(b"1H,", 0, ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges global Hollerith number", 3, 1);
+}
+
+#[test]
+fn global_date_component_parse_refuses_after_utf8_admission() {
+    // The two-byte month is validated before its two-byte integer parse.
+    let error = with_work_limit(b"010100.000000", 2, |ctx| {
+        crate::global::date_value_is_valid(b"010100.000000", true, ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges global date component number", 2, 2);
+}
+
+#[test]
+fn global_plain_real_parse_refuses_work_before_conversion() {
+    // The two-byte input reaches parsing without a preceding work admission.
+    let error = with_work_limit(b"42", 0, |ctx| {
+        crate::global::parse_real_text("42", ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges global numeric real", 0, 2);
+}
+
+#[test]
+fn global_normalized_real_parse_refuses_after_utf8_admission() {
+    // Four normalized bytes are validated before the four-byte parse.
+    let error = with_work_limit(b"1D+0", 4, |ctx| {
+        crate::global::parse_real_text("1D+0", ctx).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges global numeric real", 4, 4);
+}
+
+#[test]
+fn global_integer_parse_refuses_after_utf8_admission() {
+    // The two-byte integer text is validated before its two-byte parse.
+    let error = with_work_limit(b"42", 2, |ctx| {
+        let resolution = crate::global::Resolution {
+            ctx,
+            values: vec![crate::global::Value::Atom(b"42".to_vec())],
+            losses: Vec::new(),
+        };
+        resolution.supplied_integer(0).unwrap_err()
+    });
+    assert_work_limit_at(error, "iges global integer value", 2, 2);
 }

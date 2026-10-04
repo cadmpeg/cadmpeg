@@ -310,8 +310,13 @@ fn packed_rgb(packed: u32) -> Option<Color> {
 ///
 /// Palette, material-library, inherited truecolor, and malformed records do
 /// not define a neutral RGB color.
-fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
-    let payload = attribute_base(record)?.payload();
+fn direct_attribute_color(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &Record,
+) -> Result<Option<DirectAttributeColor>, cadmpeg_core::CodecError> {
+    let Some(payload) = attribute_base(record).map(AttributeBase::payload) else {
+        return Ok(None);
+    };
     match record.name.as_str() {
         "rgb_color-st-attrib" => {
             let mut channels = record.chunks().enumerate().skip(payload).filter_map(
@@ -330,28 +335,35 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
             let [(r_field, r), (g_field, g), (b_field, b)] = match channels {
                 [Some(red), Some(green), Some(blue), None, None] => [red, green, blue],
                 [Some(red), Some(green), Some(blue), Some((_, 1.0)), None] => [red, green, blue],
-                _ => return None,
+                _ => return Ok(None),
             };
             if ![r, g, b]
                 .into_iter()
                 .all(|value| (0.0..=1.0).contains(&value))
             {
-                return None;
+                return Ok(None);
             }
-            Some(DirectAttributeColor {
-                color: Color::new(
-                    cadmpeg_core::convert::f32_from_f64(r)?,
-                    cadmpeg_core::convert::f32_from_f64(g)?,
-                    cadmpeg_core::convert::f32_from_f64(b)?,
-                    1.0,
-                )?,
+            let Some(red) = cadmpeg_core::convert::f32_from_f64(r) else {
+                return Ok(None);
+            };
+            let Some(green) = cadmpeg_core::convert::f32_from_f64(g) else {
+                return Ok(None);
+            };
+            let Some(blue) = cadmpeg_core::convert::f32_from_f64(b) else {
+                return Ok(None);
+            };
+            let Some(color) = Color::new(red, green, blue, 1.0) else {
+                return Ok(None);
+            };
+            Ok(Some(DirectAttributeColor {
+                color,
                 carrier: DirectColorCarrier::NormalizedRgb {
                     fields: [r_field, g_field, b_field],
                 },
-            })
+            }))
         }
         "truecolor-adesk-attrib" => {
-            let (field, packed) = record
+            let Some((field, packed)) = record
                 .chunks()
                 .enumerate()
                 .skip(payload)
@@ -359,20 +371,28 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
                     Token::Int64(value) | Token::Long(value) => Some((field, *value)),
                     _ => None,
                 })
-                .last()?;
-            let packed = packed_u32(packed)?;
+                .last()
+            else {
+                return Ok(None);
+            };
+            let Some(packed) = packed_u32(packed) else {
+                return Ok(None);
+            };
             // AcCmColor stores its color method in the high byte. Only
             // kByColor carries self-contained RGB channels.
             if packed >> 24 != 0xc2 {
-                return None;
+                return Ok(None);
             }
-            Some(DirectAttributeColor {
-                color: packed_rgb(packed)?,
+            let Some(color) = packed_rgb(packed) else {
+                return Ok(None);
+            };
+            Ok(Some(DirectAttributeColor {
+                color,
                 carrier: DirectColorCarrier::AutodeskTrueColor { field },
-            })
+            }))
         }
         "entatt_color-bt-attrib" => {
-            let (field, text) = record
+            let Some((field, text)) = record
                 .chunks()
                 .enumerate()
                 .skip(payload)
@@ -380,49 +400,67 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
                     Token::Str(value) => Some((field, value.as_str())),
                     _ => None,
                 })
-                .last()?;
+                .last()
+            else {
+                return Ok(None);
+            };
             if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-                return None;
+                return Ok(None);
             }
-            let packed = text
-                .parse::<u32>()
-                .ok()
-                .filter(|value| *value <= 0xff_ffff)?;
-            Some(DirectAttributeColor {
-                color: packed_rgb(packed)?,
+            let parsed = ctx.parse_text::<u32>(text, "parse ASM decimal color")?;
+            let Ok(packed) = parsed else {
+                return Ok(None);
+            };
+            if packed > 0xff_ffff {
+                return Ok(None);
+            }
+            let Some(color) = packed_rgb(packed) else {
+                return Ok(None);
+            };
+            Ok(Some(DirectAttributeColor {
+                color,
                 carrier: DirectColorCarrier::DecimalRgb { field },
-            })
+            }))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
 /// The first well-formed exact direct-color carrier on an attribute chain.
 pub fn attribute_chain_color_carrier<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     max_steps: usize,
     mut by_index: impl FnMut(i64) -> Option<&'a Record>,
-) -> Option<(&'a Record, DirectAttributeColor)> {
-    let mut current = entity.ref_at(0)?;
+) -> Result<Option<(&'a Record, DirectAttributeColor)>, cadmpeg_core::CodecError> {
+    let Some(mut current) = entity.ref_at(0) else {
+        return Ok(None);
+    };
     for _ in 0..max_steps {
-        let record = by_index(current)?;
-        if let Some(color) = direct_attribute_color(record) {
-            return Some((record, color));
+        let Some(record) = by_index(current) else {
+            return Ok(None);
+        };
+        if let Some(color) = direct_attribute_color(ctx, record)? {
+            return Ok(Some((record, color)));
         }
-        current = attribute_next(record)?;
+        let Some(next) = attribute_next(record) else {
+            return Ok(None);
+        };
+        current = next;
     }
-    None
+    Ok(None)
 }
 
 /// The first well-formed exact direct color on `entity`'s attribute chain.
 pub fn attribute_chain_color(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     by_index: &HashMap<i64, &Record, RandomState>,
-) -> Option<Color> {
-    attribute_chain_color_carrier(entity, by_index.len(), |index| {
+) -> Result<Option<Color>, cadmpeg_core::CodecError> {
+    Ok(attribute_chain_color_carrier(ctx, entity, by_index.len(), |index| {
         by_index.get(&index).copied()
-    })
-    .map(|(_, decoded)| decoded.color)
+    })?
+    .map(|(_, decoded)| decoded.color))
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.

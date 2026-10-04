@@ -2846,8 +2846,8 @@ fn layout_hollerith(
     let count_text = ctx
         .validate_utf8(&bytes[start..cursor], "iges parameter layout Hollerith count")?
         .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?;
-    let count = count_text
-        .parse::<usize>()
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges parameter layout Hollerith number")?
         .map_err(|_| CodecError::Malformed("IGES Hollerith count is out of range".into()))?;
     if count == 0 {
         return Err(CodecError::Malformed(
@@ -3019,8 +3019,9 @@ fn hollerith(
         .validate_utf8(&bytes[start..cursor], "iges parameter Hollerith count")
         .map_err(TokenizeFailure::Refusal)?
         .map_err(|_| unreadable_count())?;
-    let count = count_text
-        .parse::<usize>()
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges parameter Hollerith count value")
+        .map_err(TokenizeFailure::Refusal)?
         .map_err(|_| unreadable_count())?;
     if count == 0 {
         return Err(TokenizeFailure::Defect(
@@ -3119,11 +3120,13 @@ fn macro_hollerith_end(
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count_text = ctx.validate_utf8(&bytes[start..cursor], "iges macro Hollerith count")?;
-    let count = count_text
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges macro Hollerith count")?
         .ok()
-        .and_then(|text| text.parse::<usize>().ok())
         .ok_or((ParameterDefect::HollerithCountUnreadable, start))?;
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges macro Hollerith count value")?
+        .map_err(|_| (ParameterDefect::HollerithCountUnreadable, start))?;
     if count == 0 {
         return Err((ParameterDefect::HollerithCountZero, start).into());
     }
@@ -3189,7 +3192,7 @@ fn macro_integer(
         Ok(text) => text,
         Err(_) => return Ok(None),
     };
-    Ok(text.parse::<i64>().ok())
+    Ok(ctx.parse_text::<i64>(text, "iges macro integer value")?.ok())
 }
 
 fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
@@ -3420,7 +3423,7 @@ fn decimal_shape(
             let Ok(value) = ctx.validate_utf8(value, "iges numeric exponent")? else {
                 return Ok(None);
             };
-            let Ok(exponent) = value.parse::<i64>() else {
+            let Ok(exponent) = ctx.parse_text::<i64>(value, "iges numeric exponent value")? else {
                 return Ok(None);
             };
             exponent
@@ -3550,15 +3553,16 @@ fn numeric_with_limits(
                 byte
             })
         }));
-        TokenValue::Real(
-            normalized
-                .parse::<f64>()
-                .ok()
-                .and_then(FiniteReal::new)
-                .ok_or_else(not_a_number)?,
-        )
+        let value = ctx
+            .parse_text::<f64>(&normalized, "iges numeric real token")
+            .map_err(TokenizeFailure::Refusal)?
+            .map_err(|_| not_a_number())?;
+        TokenValue::Real(FiniteReal::new(value).ok_or_else(not_a_number)?)
     } else {
-        let value = text.parse::<i64>().map_err(|_| not_a_number())?;
+        let value = ctx
+            .parse_text::<i64>(text, "iges numeric integer token")
+            .map_err(TokenizeFailure::Refusal)?
+            .map_err(|_| not_a_number())?;
         if limits
             .integer_bits
             .is_some_and(|bits| !integer_within_bits(value, bits))

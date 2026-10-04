@@ -179,8 +179,11 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
                 let count_text = ctx
                     .validate_utf8(&pending_digits, "iges compressed Global Hollerith count")?
                     .map_err(|_| malformed("Global Hollerith count is not ASCII"))?;
-                let count = count_text
-                    .parse::<usize>()
+                let count = ctx
+                    .parse_text::<usize>(
+                        count_text,
+                        "iges compressed Global Hollerith number",
+                    )?
                     .map_err(|_| malformed("Global Hollerith count is out of range"))?;
                 stream.extend_from_slice(&pending_digits);
                 stream.push(byte);
@@ -218,8 +221,8 @@ fn hollerith_at(
     let count_text = ctx
         .validate_utf8(&bytes[start..cursor], "iges compressed Global Hollerith count")?
         .map_err(|_| malformed("Global Hollerith count is not ASCII"))?;
-    let count = count_text
-        .parse::<usize>()
+    let count = ctx
+        .parse_text::<usize>(count_text, "iges compressed Global Hollerith number")?
         .map_err(|_| malformed("Global Hollerith count is out of range"))?;
     let payload_start = cursor
         .checked_add(1)
@@ -287,8 +290,8 @@ fn parse_sequence(bytes: &[u8], start: usize, label: &str, ctx: &DecodeContext<'
     let sequence_text = ctx
         .validate_utf8(&bytes[start..end], "iges compressed sequence number")?
         .map_err(|_| malformed(format!("{label} sequence is not ASCII")))?;
-    let value = sequence_text
-        .parse::<u32>()
+    let value = ctx
+        .parse_text::<u32>(sequence_text, "iges compressed sequence value")?
         .map_err(|_| malformed(format!("{label} sequence is out of range")))?;
     if value == 0 || value > MAX_SEQUENCE {
         return Err(malformed(format!(
@@ -326,8 +329,8 @@ fn parse_field_specs(
         let field_text = ctx
             .validate_utf8(&bytes[field_start..cursor], "iges compressed Directory field number")?
             .map_err(|_| malformed("Directory field number is not ASCII"))?;
-        let field = field_text
-            .parse::<usize>()
+        let field = ctx
+            .parse_text::<usize>(field_text, "iges compressed Directory field index")?
             .map_err(|_| malformed("Directory field number is out of range"))?;
         let compressed_field = FIELDS
             .iter()
@@ -492,11 +495,12 @@ fn field_i64(
             "Directory field {field} ({name}) is blank"
         )));
     }
-    text.parse::<i64>().map_err(|_| {
-        malformed(format!(
-            "Directory field {field} ({name}) is not a decimal integer"
-        ))
-    })
+    ctx.parse_text::<i64>(text, "iges compressed Directory field integer")?
+        .map_err(|_| {
+            malformed(format!(
+                "Directory field {field} ({name}) is not a decimal integer"
+            ))
+        })
 }
 
 fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {

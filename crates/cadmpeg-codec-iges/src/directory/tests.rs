@@ -73,6 +73,35 @@ fn directory_entity_refuses_entity_limit_before_storage() {
 }
 
 #[test]
+fn directory_integer_parse_refusal_escapes_record_quarantine() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3,0;".into(),
+    }]);
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The first entity-type field has three bytes and no earlier work charge.
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+
+    let result = super::parse(&scan, GlobalTable::V5Later, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == 0
+                && limit.additional == 3
+                && limit.operation == "iges directory integer value"
+    ));
+}
+
+#[test]
 fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
     for (subordinate, physical, logical) in [
         (0, false, false),

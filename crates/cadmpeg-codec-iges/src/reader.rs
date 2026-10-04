@@ -138,29 +138,44 @@ fn attributed_sequences(
     losses: &[LossNote],
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u32>, CodecError> {
-    fn rendered_sequence(rendered: &str) -> Option<u32> {
+    fn rendered_sequence(
+        rendered: &str,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<u32>, CodecError> {
         if rendered.len() > 1 && rendered.starts_with('0')
             || !rendered.bytes().all(|byte| byte.is_ascii_digit())
         {
-            return None;
+            return Ok(None);
         }
-        rendered.parse::<u32>().ok()
+        Ok(ctx
+            .parse_text::<u32>(rendered, "iges attributed loss sequence")?
+            .ok())
     }
 
-    let sequences = losses
-        .iter()
-        .filter_map(|loss| loss.provenance.as_ref()?.tag.as_deref())
-        .filter_map(|tag| {
-            tag.strip_prefix("directory_entry:D")
-                .and_then(rendered_sequence)
-                .or_else(|| {
-                    let (head, _) = tag.split_once(':')?;
-                    rendered_sequence(head.strip_prefix('D')?)
-                })
-        });
     let mut attributed = BTreeSet::new();
-    for sequence in sequences {
-        ctx.insert_btree_set(&mut attributed, sequence, "iges attributed loss sequences")?;
+    for loss in losses {
+        let Some(tag) = loss
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref())
+        else {
+            continue;
+        };
+        let mut sequence = match tag.strip_prefix("directory_entry:D") {
+            Some(rendered) => rendered_sequence(rendered, ctx)?,
+            None => None,
+        };
+        if sequence.is_none() {
+            sequence = tag
+                .split_once(':')
+                .and_then(|(head, _)| head.strip_prefix('D'))
+                .map(|rendered| rendered_sequence(rendered, ctx))
+                .transpose()?
+                .flatten();
+        }
+        if let Some(sequence) = sequence {
+            ctx.insert_btree_set(&mut attributed, sequence, "iges attributed loss sequences")?;
+        }
     }
     Ok(attributed)
 }
