@@ -55,6 +55,9 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
         ])
     );
 
+    crate::test_support::work_refusal_at("deduplicate SLDPRT rectangle u coordinates", |ctx| {
+        ordered_rectangle_corners(ctx, &corners)
+    });
     let duplicate = [corners[0], corners[0], corners[2], corners[3]];
     assert_eq!(
         ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &duplicate)

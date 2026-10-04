@@ -1666,7 +1666,7 @@ pub(super) fn ordered_rectangle_corners(
         f64::total_cmp,
         "sldprt rectangle u sort",
     )?;
-    u.dedup();
+    ctx.dedup_vec(&mut u, "deduplicate SLDPRT rectangle u coordinates")?;
     let mut v = storage.with_storage(|| ctx.collect_vec(
         points.iter().map(|point| point.v),
         "collect SLDPRT rectangle v coordinates",
