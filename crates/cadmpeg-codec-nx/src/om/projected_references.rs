@@ -34,80 +34,73 @@ impl ProjectedCurveReferences {
             *at += token.raw().len();
             Some(token)
         };
-        let consume = |at: &mut usize, expected: &[u8]| {
-            let end = at.checked_add(expected.len())?;
-            if bytes.get(*at..end) != Some(expected) {
-                return None;
-            }
+        let consume = |at: &mut usize, expected: &[u8]| -> Result<Option<()>, cadmpeg_core::CodecError> {
+            let Some(end) = at.checked_add(expected.len()) else { return Ok(None); };
+            if !ctx.equal(&bytes.get(*at..end), &Some(expected), "NX read equality")? { return Ok(None); }
             *at = end;
-            Some(())
+            Ok(Some(()))
         };
         let decode = |start: usize| {
             let mut at = start;
             let body = match record.name() {
                 "CPROJ" => {
-                    consume(&mut at, &[1, 2])?;
+                    propagate_resource!(consume(&mut at, &[1, 2]))?;
                     let first = read_token(&mut at)?;
                     let second = read_token(&mut at)?;
-                    consume(&mut at, &CPROJ_MIDDLE)?;
+                    propagate_resource!(consume(&mut at, &CPROJ_MIDDLE))?;
                     let third = read_token(&mut at)?;
-                    consume(&mut at, &CPROJ_SUFFIX)?;
+                    propagate_resource!(consume(&mut at, &CPROJ_SUFFIX))?;
                     Body::Projected([first, second, third])
                 }
                 "CPROJ_CMB" => {
-                    consume(&mut at, &CMB_PREFIX)?;
+                    propagate_resource!(consume(&mut at, &CMB_PREFIX))?;
                     let first = read_token(&mut at)?;
-                    consume(&mut at, &[0x33])?;
+                    propagate_resource!(consume(&mut at, &[0x33]))?;
                     let second = read_token(&mut at)?;
-                    consume(&mut at, &[0])?;
+                    propagate_resource!(consume(&mut at, &[0]))?;
                     let third = read_token(&mut at)?;
-                    consume(&mut at, &[0; 6])?;
+                    propagate_resource!(consume(&mut at, &[0; 6]))?;
                     let fourth = read_token(&mut at)?;
                     let mut read_branch = |anchor| {
-                        consume(&mut at, &CMB_BRANCH_PREFIX)?;
+                        propagate_resource!(consume(&mut at, &CMB_BRANCH_PREFIX))?;
                         if read_token(&mut at)? != anchor {
                             return None;
                         }
-                        consume(&mut at, &CMB_BRANCH_MIDDLE)?;
+                        propagate_resource!(consume(&mut at, &CMB_BRANCH_MIDDLE))?;
                         let token = read_token(&mut at)?;
-                        consume(&mut at, &CMB_BRANCH_SUFFIX)?;
-                        Some(token)
+                        propagate_resource!(consume(&mut at, &CMB_BRANCH_SUFFIX))?;
+                        Some(Ok(token))
                     };
-                    let fifth = read_branch(first)?;
-                    let sixth = read_branch(second)?;
-                    consume(&mut at, &CMB_TAIL_PREFIX)?;
+                    let fifth = propagate_resource!(read_branch(first).transpose())?;
+                    let sixth = propagate_resource!(read_branch(second).transpose())?;
+                    propagate_resource!(consume(&mut at, &CMB_TAIL_PREFIX))?;
                     let seventh = read_token(&mut at)?;
                     let eighth = read_token(&mut at)?;
-                    consume(&mut at, &CMB_TAIL_SUFFIX)?;
+                    propagate_resource!(consume(&mut at, &CMB_TAIL_SUFFIX))?;
                     Body::Combined([first, second, third, fourth, fifth, sixth, seventh, eighth])
                 }
                 _ => return None,
             };
-            Some(Self {
+            Some(Ok(Self {
                 offset: record.payload_offset() + start,
                 body,
-            })
+            }))
         };
         let marker = match record.name() {
             "CPROJ" => &[1, 2][..],
             "CPROJ_CMB" => &CMB_PREFIX[..],
             _ => return Ok(None),
         };
-        Ok({
-let Some(candidate_end_0) = bytes
-                .len()
-                .checked_sub(marker.len()) else { return Ok(None); };
-let mut candidates = ctx.admit_iter(&(0..=candidate_end_0), "NX projected curve reference candidate search")?
-                .filter_map(|start| {
-                    if bytes.get(start..start + marker.len()) != Some(marker) {
-                        return None;
-                    }
-                    decode(start)
-                });
-let first = candidates.next();
-let second = candidates.next();
-if second.is_none() { first } else { None }
-})
+        let Some(candidate_end) = bytes.len().checked_sub(marker.len()) else { return Ok(None); };
+        let mut candidate = None;
+        for start in ctx.admit_iter(&(0..=candidate_end), "NX projected curve reference candidate search")? {
+            if !ctx.equal(&bytes.get(start..start + marker.len()), &Some(marker), "NX read equality")? { continue; }
+            if let Some(parsed) = decode(start).transpose()? {
+                if candidate.is_some() { return Ok(None); }
+                candidate = Some(parsed);
+            }
+        }
+        Ok(candidate)
     }
 
     pub(crate) fn into_references(self) -> Vec<PayloadObjectReference<PayloadIndexToken>> {
@@ -144,5 +137,16 @@ if second.is_none() { first } else { None }
             }
         }
         references
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn projected_reference_equality_refusal_propagates() {
+        let bytes = [1, 2, 0xf0, 1];
+        let payload = super::OperationPayload::new(&bytes, 100, "CPROJ").unwrap();
+        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX read equality", |ctx| super::ProjectedCurveReferences::read(ctx, payload));
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3));
     }
 }

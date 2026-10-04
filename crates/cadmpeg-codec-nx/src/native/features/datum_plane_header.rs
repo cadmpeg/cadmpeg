@@ -87,12 +87,10 @@ pub(in crate::native) fn feature_datum_plane_headers(
                 ) else {
                     return Ok(());
                 };
-                let parsed = datum_plane_header::datum_plane_descriptor_reference_branch(
-                    record.payload_view(),
-                )
-                .or_else(|| {
-                    datum_plane_header::datum_plane_double_reference_branch(record.payload_view())
-                });
+                let parsed = match datum_plane_header::datum_plane_descriptor_reference_branch(ctx, record.payload_view())? {
+                    Some(frame) => Some(frame),
+                    None => datum_plane_header::datum_plane_double_reference_branch(ctx, record.payload_view())?,
+                };
                 let branch = match parsed {
                     Some(frame) => {
                         let Some(frame) = frame.relocate(entry_offset) else {

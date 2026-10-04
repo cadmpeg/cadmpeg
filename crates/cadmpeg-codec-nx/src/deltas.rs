@@ -1420,9 +1420,9 @@ fn inline_body_states(
 ) -> Result<Vec<InlineBodyState>, CodecError> {
     let mut states = Vec::new();
     for (offset, gap_end) in ctx.admit_iter(&uncovered_spans(ctx, stream.len(), census, true)?, "NX deltas uncovered span traversal")?.copied() {
-        if !ctx.admit_iter(&census.inline_schema_declarations, "NX deltas body header traversal")?.any(|declaration| {
-            declaration.end == offset && declaration.fields == InlineSchemaFields::BodyHeader
-        }) {
+        if !ctx.any_by(&census.inline_schema_declarations, |declaration| Ok({
+            declaration.end == offset && ctx.equal(&(declaration.fields), &(InlineSchemaFields::BodyHeader), "NX inline body states equality")?
+        }), "NX deltas body header traversal")? {
             continue;
         }
         if let Some(state) = inline_body_state(ctx, stream, offset, gap_end)? {
@@ -1438,25 +1438,14 @@ fn inline_body_state(
     offset: usize,
     gap_end: usize,
 ) -> Result<Option<InlineBodyState>, CodecError> {
-    let next_header = ctx.admit_iter(&((offset + 1)..gap_end), "scan NX inline BODY state")?.find(|candidate| {
-        [
-            BODY_SCHEMA_HEADER,
-            REGION_SCHEMA_HEADER,
-            ATTDEF_LIST_SCHEMA_HEADER,
-            TYPE_70_SCHEMA_HEADER,
-            crate::topology::TYPE_38_SCHEMA_HEADER,
-            TYPE_41_SCHEMA_HEADER,
-            TYPE_100_SCHEMA_HEADER,
-            TYPE_101_SCHEMA_HEADER,
-        ]
-        .iter()
-        .any(|header| {
-            candidate
-                .checked_add(header.len())
-                .and_then(|end| stream.get(*candidate..end))
-                == Some(*header)
-        })
-    });
+    let mut next_header = None;
+    for candidate in ctx.admit_iter(&((offset + 1)..gap_end), "scan NX inline BODY state")? {
+        let headers = [BODY_SCHEMA_HEADER, REGION_SCHEMA_HEADER, ATTDEF_LIST_SCHEMA_HEADER, TYPE_70_SCHEMA_HEADER, crate::topology::TYPE_38_SCHEMA_HEADER, TYPE_41_SCHEMA_HEADER, TYPE_100_SCHEMA_HEADER, TYPE_101_SCHEMA_HEADER];
+        if ctx.any_by(&headers, |header| Ok(ctx.equal(&candidate.checked_add(header.len()).and_then(|end| stream.get(candidate..end)), &Some(*header), "NX inline body state equality")?), "NX inline BODY schema header lookup")? {
+            next_header = Some(candidate);
+            break;
+        }
+    }
     let expected_end = next_header.unwrap_or(gap_end);
     let Some((first, consumed)) = read_xmt(stream, offset) else {
         return Ok(None);

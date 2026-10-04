@@ -384,17 +384,14 @@ pub(super) fn atomic_disjoint_body_selections(
                 ..
             },
         ) => {
-            let same_namespace =
-                left.first()
-                    .zip(right.first())
-                    .is_none_or(|(left, right)| match (left, right) {
-                        (FeatureBodyIdentity::Segment(_), FeatureBodyIdentity::Segment(_)) => true,
-                        (
-                            FeatureBodyIdentity::OffsetStore(left),
-                            FeatureBodyIdentity::OffsetStore(right),
-                        ) => offset_store_identity(left) == offset_store_identity(right),
-                        _ => false,
-                    });
+            let same_namespace = match left.first().zip(right.first()) {
+                None => true,
+                Some((left, right)) => match (left, right) {
+                    (FeatureBodyIdentity::Segment(_), FeatureBodyIdentity::Segment(_)) => true,
+                    (FeatureBodyIdentity::OffsetStore(left), FeatureBodyIdentity::OffsetStore(right)) => ctx.equal(&offset_store_identity(left), &offset_store_identity(right), "NX atomic disjoint body selections equality")?,
+                    _ => false,
+                },
+            };
             same_namespace && !ctx.admit_iter(left, "NX body selection disjointness")?.any(|key| right.contains(key))
         }
         _ => false,

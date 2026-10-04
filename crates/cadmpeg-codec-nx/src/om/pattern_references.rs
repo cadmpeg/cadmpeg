@@ -70,13 +70,11 @@ const INSTANCE_SUFFIX: [u8; 17] = [
 impl PatternReferences {
     pub(crate) fn read(ctx: &cadmpeg_core::decode::DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let bytes = record.payload();
-        let consume = |at: &mut usize, expected: &[u8]| {
-            let end = at.checked_add(expected.len())?;
-            if bytes.get(*at..end) != Some(expected) {
-                return None;
-            }
+        let consume = |at: &mut usize, expected: &[u8]| -> Result<Option<()>, cadmpeg_core::CodecError> {
+            let Some(end) = at.checked_add(expected.len()) else { return Ok(None); };
+            if !ctx.equal(&bytes.get(*at..end), &Some(expected), "NX read equality")? { return Ok(None); }
             *at = end;
-            Some(())
+            Ok(Some(()))
         };
         let read_token = |at: &mut usize| {
             let token = PayloadIndexToken::read(bytes.get(*at..)?)?;
@@ -94,18 +92,18 @@ impl PatternReferences {
                     };
                     at += 1;
                     let first = read_token(&mut at)?;
-                    consume(&mut at, framing.separator())?;
+                    propagate_resource!(consume(&mut at, framing.separator()))?;
                     let second = read_token(&mut at)?;
                     let third = read_token(&mut at)?;
-                    consume(&mut at, &[framing.marker()])?;
+                    propagate_resource!(consume(&mut at, &[framing.marker()]))?;
                     let fourth = read_token(&mut at)?;
-                    consume(&mut at, framing.separator())?;
+                    propagate_resource!(consume(&mut at, framing.separator()))?;
                     let fifth = read_token(&mut at)?;
                     let sixth = read_token(&mut at)?;
-                    consume(&mut at, framing.middle())?;
+                    propagate_resource!(consume(&mut at, framing.middle()))?;
                     let seventh = read_token(&mut at)?;
                     let eighth = read_token(&mut at)?;
-                    consume(&mut at, &TAIL_PREFIX)?;
+                    propagate_resource!(consume(&mut at, &TAIL_PREFIX))?;
                     let ninth = read_token(&mut at)?;
                     let terminal = if bytes.get(at) == Some(&0xff) {
                         at += 1;
@@ -113,7 +111,7 @@ impl PatternReferences {
                     } else {
                         Some(read_token(&mut at)?)
                     };
-                    consume(&mut at, &SUFFIX)?;
+                    propagate_resource!(consume(&mut at, &SUFFIX))?;
                     Body::Graph {
                         framing,
                         required: [
@@ -123,25 +121,26 @@ impl PatternReferences {
                     }
                 }
                 "Geometry Instance" => {
-                    consume(&mut at, &INSTANCE_PREFIX)?;
+                    propagate_resource!(consume(&mut at, &INSTANCE_PREFIX))?;
                     let reference = read_token(&mut at)?;
-                    consume(&mut at, &INSTANCE_SUFFIX)?;
+                    propagate_resource!(consume(&mut at, &INSTANCE_SUFFIX))?;
                     Body::Instance(reference)
                 }
                 _ => return None,
             };
-            Some(Self {
+            Some(Ok(Self {
                 offset: record.payload_offset() + start,
                 body,
-            })
+            }))
         };
-        Ok({
-
-let mut candidates = ctx.admit_iter(&(0..bytes.len()), "NX pattern reference candidate search")?.filter_map(decode);
-let first = candidates.next();
-let second = candidates.next();
-if second.is_none() { first } else { None }
-})
+        let mut candidate = None;
+        for start in ctx.admit_iter(&(0..bytes.len()), "NX pattern reference candidate search")? {
+            if let Some(parsed) = decode(start).transpose()? {
+                if candidate.is_some() { return Ok(None); }
+                candidate = Some(parsed);
+            }
+        }
+        Ok(candidate)
     }
 
     pub(crate) fn layout(&self) -> PatternPayloadReferenceLayout {
@@ -195,6 +194,14 @@ if second.is_none() { first } else { None }
 #[cfg(test)]
 mod tests {
     use super::{OperationPayload, PatternReferences};
+
+    #[test]
+    fn pattern_reference_equality_refusal_propagates() {
+        let bytes = b"\x61\xf0\x01\xff\x00\xff\x01";
+        let payload = OperationPayload::new(bytes, 100, "Pattern Geometry").unwrap();
+        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX read equality", |ctx| PatternReferences::read(ctx, payload));
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 5));
+    }
 
     #[test]
     fn mixed_width_graph_references_keep_framed_positions() -> Result<(), Box<dyn std::error::Error>>

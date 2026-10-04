@@ -322,7 +322,7 @@ fn color_table_end(ctx: &DecodeContext<'_>, bytes: &[u8], start: usize) -> Resul
         }
         at += 1;
         let (token, width) = color_index.definition_token();
-        if bytes.get(at..at + width) != Some(&token[..width]) {
+        if !propagate_resource!(ctx.equal(&(bytes.get(at..at + width)), &(Some(&token[..width])), "NX color table end equality")) {
             return None;
         }
         at += width;
@@ -548,6 +548,14 @@ pub(crate) enum ExpressionUnit {
     Degree,
     /// Unit label without a neutral dimensional mapping.
     Native(String),
+}
+impl cadmpeg_core::decode::cost::DecodeCost for ExpressionUnit {
+    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+        match self {
+            Self::Native(text) => (1_u8, text).decode_cost(ctx, operation),
+            Self::Millimeter | Self::Inch | Self::Degree => Ok(1),
+        }
+    }
 }
 
 /// One numeric expression decoded from an exactly bounded OM entity.
@@ -1830,7 +1838,7 @@ pub(crate) fn pattern_payload_transform_lane(
         let mut rows = Vec::new();
         for ordinal in match ctx.admit_iter(&(1..declared_count), "NX pattern payload transform lane row traversal") { Ok(rows) => rows, Err(error) => { *failure.borrow_mut() = Some(error.into()); return None; } } {
             (record.payload().get(at) == Some(&row_schema_index.get())).then_some(())?;
-            (record.payload().get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
+            (match ctx.equal(&record.payload().get(at + 1..at + 1 + prefix_tail.len()), &Some(prefix_tail), "NX pattern transform framing equality") { Ok(matches) => matches, Err(error) => { *failure.borrow_mut() = Some(error.into()); return None; } })
                 .then_some(())?;
             at += 1 + prefix_tail.len();
             let scalar = ShiftedScalar::read(record.payload().get(at..)?)?;
@@ -1840,7 +1848,7 @@ pub(crate) fn pattern_payload_transform_lane(
                 offset: record.payload_offset() + at,
             };
             at += width;
-            (record.payload().get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
+            (match ctx.equal(&record.payload().get(at..at + scalar_suffix.len()), &Some(scalar_suffix), "NX pattern transform framing equality") { Ok(matches) => matches, Err(error) => { *failure.borrow_mut() = Some(error.into()); return None; } })
                 .then_some(())?;
             at += scalar_suffix.len();
             let selector_offset = at;
@@ -3641,21 +3649,21 @@ pub(crate) fn operation_common_frames(
         let prefix = CommonFramePrefix::read(bytes, marker)?;
         let state_at = prefix.byte_len();
         let state = bytes.get(state_at..state_at + 8)?.try_into().ok()?;
-        let suffix = CommonFrameSuffix::read(bytes.get(state_at + 8..)?)?;
+        let suffix = propagate_resource!(CommonFrameSuffix::read(ctx, bytes.get(state_at + 8..)?))?;
         CommonFrame::<usize>::new(
             prefix,
             state,
             suffix,
             record.payload_offset().checked_add(start)?,
-        )
+        ).map(Ok)
     };
     let mut frames = Vec::new();
     for start in ctx.admit_iter(&(0..record.payload().len()), "scan NX common frames")? {
-        if let Some(frame) = decode(start, [1, 3, 2]) {
+        if let Some(frame) = decode(start, [1, 3, 2]).transpose()? {
             ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
-        if let Some(frame) = decode(start, [1, 1, 1]) {
+        if let Some(frame) = decode(start, [1, 1, 1]).transpose()? {
             ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
@@ -3684,7 +3692,7 @@ pub(crate) fn operation_terminal_frame(
     let mut candidate = None;
     for start in ctx.admit_iter(&(0..terminator), "NX operation terminal frame range traversal")?.rev().take(9) {
         let parsed = (|| {
-            let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
+            let suffix = propagate_resource!(CommonFrameSuffix::read(ctx, record.payload().get(start..)?))?;
             (start + suffix.byte_len() == record.payload().len()).then_some(())?;
             let frame =
                 TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;

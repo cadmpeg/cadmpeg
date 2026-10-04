@@ -1005,11 +1005,14 @@ impl Graph {
     pub(crate) fn parse(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Self, CodecError> {
         let (mut baseline, mut baseline_bytes) = Self::parse_fixed_records(ctx, stream, false)?;
         let (full_domain, full_domain_bytes) = Self::parse_fixed_records(ctx, stream, true)?;
-        let preserves_baseline = ctx.admit_iter(&baseline.nodes, "NX baseline topology preservation")?.all(|(key, node)| {
-            full_domain.nodes.get(key).is_some_and(|candidate| {
-                candidate.pos() == node.pos() && candidate.bytes == node.bytes
-            })
-        });
+        let mut preserves_baseline = true;
+        for (key, node) in ctx.admit_iter(&baseline.nodes, "NX baseline topology preservation")? {
+            let matches = match full_domain.nodes.get(key) {
+                Some(candidate) => candidate.pos() == node.pos() && ctx.equal(&candidate.bytes, &node.bytes, "NX parse equality")?,
+                None => false,
+            };
+            if !matches { preserves_baseline = false; break; }
+        }
         if !preserves_baseline {
             baseline_bytes.commit()?;
             return Ok(baseline);
