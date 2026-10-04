@@ -53,7 +53,7 @@ pub(crate) fn dialect_loss(
         return Ok(None);
     };
     let declared = global.declared_version_flag();
-    let version = global.version_name();
+    let version = global.version_name(ctx)?;
     let names = VerifiedVersionNames;
     let message = match recovery {
         UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => ctx.format_retained(format_args!(
@@ -61,7 +61,7 @@ pub(crate) fn dialect_loss(
             ), "iges dialect loss message")?,
         UnverifiedDialectRecovery::Clamped => ctx.format_retained(format_args!(
                 "IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
-                global.effective_version_flag(),
+                global.effective_version_flag(ctx)?,
             ), "iges dialect loss message")?,
         UnverifiedDialectRecovery::UnverifiedVersion => ctx.format_retained(format_args!(
                 "IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
@@ -174,7 +174,7 @@ pub(crate) fn classify(
     representation: Representation,
     global: &ResolvedGlobal,
 ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
-    let dialect = dialect_id(representation, global.declared_version());
+    let dialect = dialect_id(representation, global.declared_version(ctx)?);
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
     declared.insert(
@@ -187,7 +187,7 @@ pub(crate) fn classify(
     );
     declared.insert(
         cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION),
-        global.version_name().to_owned(),
+        global.version_name(ctx)?.to_owned(),
     );
     if matches!(
         recovery,
@@ -195,7 +195,7 @@ pub(crate) fn classify(
     ) {
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION_FLAG),
-            global.effective_version_flag().to_string(),
+            global.effective_version_flag(ctx)?.to_string(),
         );
     }
     if let Some(text) = global.unreadable_version_declaration() {

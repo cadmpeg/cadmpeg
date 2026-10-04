@@ -508,3 +508,32 @@ fn decode_accepts_carriage_return_only_line_endings() {
         result.report().losses
     );
 }
+
+#[test]
+fn physical_line_traversal_refuses_work_before_scanning() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let result = crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        super::physical_lines(b"line\n", ctx)
+    });
+    let Err(error) = result else {
+        panic!("physical line traversal must refuse work");
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        && limit.operation == "iges physical line traversal"));
+}
+
+#[test]
+fn terminate_count_utf8_refusal_reaches_the_caller() {
+    let bytes = point_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        super::terminate_counts(&scan.lines, &mut super::FramingRecoveries::default(), ctx)
+    }).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        && limit.operation == "iges terminate count text"));
+}

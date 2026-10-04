@@ -647,18 +647,24 @@ pub struct EmbeddedG2Blend {
 }
 
 pub(super) fn decode_nullable_embedded_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<Nullable<PcurveNurbs>> {
+) -> Option<Result<Nullable<PcurveNurbs>, cadmpeg_core::CodecError>> {
     let saved = *position;
-    if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
-        return Some(Nullable::Null);
+    let is_null = match take_native_ident(ctx, bytes, position) {
+        None => false,
+        Some(Ok(ident)) => ident.0 == "nullbs",
+        Some(Err(error)) => return Some(Err(error)),
+    };
+    if is_null {
+        return Some(Ok(Nullable::Null));
     }
     *position = saved;
     let (pcurve, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
     *position = end;
-    Some(Nullable::Value(pcurve))
+    Some(Ok(Nullable::Value(pcurve)))
 }
 
 /// Decode a `nullbs`-or-2D-block pcurve slot. Token-space counterpart of
@@ -2182,44 +2188,24 @@ fn loft_spl_sur(
     let closures = [cur.take_enum()?, cur.take_enum()?];
     let singularities = [cur.take_enum()?, cur.take_enum()?];
     let mode = cur.take_long()?;
-    let mut bridge = Vec::new();
-    while toks::marker_at(span, cur.pos()).is_none() {
-        match cur.peek()? {
-            Token::True | Token::False => {
-                propagate_resource!(ctx.push_vec(
-                    &mut bridge,
-                    LoftBridgeToken::Boolean(cur.take_bool()?),
-                    "ASM loft bridge token"
-                ));
-            }
-            Token::Long(_) => propagate_resource!(ctx.push_vec(
-                &mut bridge,
-                LoftBridgeToken::Integer(cur.take_long()?),
-                "ASM loft bridge token"
-            )),
-            Token::Double(_) => propagate_resource!(ctx.push_vec(
-                &mut bridge,
-                LoftBridgeToken::Double(cur.take_f64()?),
-                "ASM loft bridge token"
-            )),
-            Token::Enum(_) => propagate_resource!(ctx.push_vec(
-                &mut bridge,
-                LoftBridgeToken::Enum(cur.take_enum()?),
-                "ASM loft bridge token"
-            )),
-            Token::Str(_) => {
-                let value = cur.take_str()?;
-                let value =
-                    propagate_resource!(ctx.copy_retained_text(value, "ASM loft bridge text"));
-                propagate_resource!(ctx.push_vec(
-                    &mut bridge,
-                    LoftBridgeToken::Text(value),
-                    "ASM loft bridge token"
-                ));
-            }
-            _ => return None,
+    let bridge_scan = (|| -> Result<Option<Vec<LoftBridgeToken>>, cadmpeg_core::CodecError> {
+        let mut bridge = Vec::new();
+        while {
+            ctx.charge_work(1, "ASM loft bridge token scan")?;
+            toks::marker_at(span, cur.pos()).is_none()
+        } {
+            let Some(token) = bridge_token(ctx, &mut cur) else {
+                return Ok(None);
+            };
+            ctx.push_vec(&mut bridge, token?, "ASM loft bridge token")?;
         }
-    }
+        Ok(Some(bridge))
+    })();
+    let bridge = match bridge_scan {
+        Ok(Some(bridge)) => bridge,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
@@ -5074,6 +5060,85 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM t spline values",
         );
+    }
+}
+
+#[cfg(test)]
+mod loft_bridge_work_tests {
+    use super::loft_spl_sur;
+    use crate::sab::Token;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn loft_bridge_scan_refuses_work_before_terminal_cache_probe() {
+        let path_curve = [
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Double(0.0),
+            Token::Long(1),
+            Token::Double(1.0),
+            Token::Long(1),
+            Token::Double(0.0),
+            Token::Double(0.0),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Double(0.0),
+        ];
+        let mut tokens = vec![Token::SubtypeOpen, Token::Ident("loftsur".into())];
+        for _ in 0..2 {
+            tokens.extend([Token::Long(1), Token::Double(0.0), Token::Long(0)]);
+            tokens.extend(path_curve.iter().cloned());
+            tokens.extend([Token::Long(0), Token::Long(0)]);
+        }
+        tokens.extend([
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Enum(1),
+            Token::Enum(2),
+            Token::Enum(3),
+            Token::Enum(4),
+            Token::Long(7),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
+        ]);
+        for _ in 0..2 {
+            tokens.extend([
+                Token::Double(0.0), Token::Long(1),
+                Token::Double(1.0), Token::Long(1),
+            ]);
+        }
+        for point in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]] {
+            tokens.extend(point.map(Token::Double));
+        }
+        tokens.extend([Token::Double(0.001), Token::SubtypeClose]);
+        let service_ctx = cadmpeg_test_support::service_decode_context();
+        assert!(matches!(loft_spl_sur(&service_ctx, &tokens, None), Some(Ok(_))));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Each path curve costs 10 units: 3 admitted pole steps, 4 finite-knot checks, and 3 knot-pair comparisons; the bridge probe is unit 21.
+        policy.limits.max_work_units = 20;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Some(Err(error)) = loft_spl_sur(&ctx, &tokens, None) else {
+            panic!("loft bridge-scan admission must propagate");
+        };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM loft bridge token scan");
     }
 }
 

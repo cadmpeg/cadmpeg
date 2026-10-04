@@ -125,6 +125,7 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
     let mut lines = Vec::new();
     let mut start = 0_usize;
     while start < source.len() {
+        ctx.charge_work(1, "iges compressed ASCII line scan")?;
         let relative_end = memchr::memchr2(b'\r', b'\n', &source[start..]);
         let (end, next) = match relative_end {
             Some(relative) => {
@@ -175,8 +176,10 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
                 continue;
             }
             if matches!(byte, b'H' | b'h') && !pending_digits.is_empty() {
-                let count = std::str::from_utf8(&pending_digits)
-                    .map_err(|_| malformed("Global Hollerith count is not ASCII"))?
+                let count_text = ctx
+                    .validate_utf8(&pending_digits, "iges compressed Global Hollerith count")?
+                    .map_err(|_| malformed("Global Hollerith count is not ASCII"))?;
+                let count = count_text
                     .parse::<usize>()
                     .map_err(|_| malformed("Global Hollerith count is out of range"))?;
                 stream.extend_from_slice(&pending_digits);
@@ -196,16 +199,26 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
     Ok(stream)
 }
 
-fn hollerith_at(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
+fn hollerith_at(
+    bytes: &[u8],
+    start: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(usize, usize)>, CodecError> {
     let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges compressed Global Hollerith digits")?;
+        if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Global Hollerith count is not ASCII"))?
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges compressed Global Hollerith count")?
+        .map_err(|_| malformed("Global Hollerith count is not ASCII"))?;
+    let count = count_text
         .parse::<usize>()
         .map_err(|_| malformed("Global Hollerith count is out of range"))?;
     let payload_start = cursor
@@ -225,7 +238,7 @@ fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8
     let (parameter_delimiter, cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
-        let Some((header_end, payload_end)) = hollerith_at(&bytes, 0)? else {
+        let Some((header_end, payload_end)) = hollerith_at(&bytes, 0, ctx)? else {
             return Err(malformed("parameter delimiter is not a Hollerith string"));
         };
         let payload = &bytes[header_end..payload_end];
@@ -237,7 +250,7 @@ fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8
     let record_delimiter = if bytes.get(cursor) == Some(&parameter_delimiter) {
         b';'
     } else {
-        let Some((header_end, payload_end)) = hollerith_at(&bytes, cursor)? else {
+        let Some((header_end, payload_end)) = hollerith_at(&bytes, cursor, ctx)? else {
             return Err(malformed("record delimiter is not a Hollerith string"));
         };
         let payload = &bytes[header_end..payload_end];
@@ -257,9 +270,13 @@ fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8
     Ok((parameter_delimiter, record_delimiter))
 }
 
-fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize), CodecError> {
+fn parse_sequence(bytes: &[u8], start: usize, label: &str, ctx: &DecodeContext<'_>) -> Result<(u32, usize), CodecError> {
     let mut end = start;
-    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges compressed sequence digits")?;
+        if !bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         end += 1;
     }
     if end == start {
@@ -267,8 +284,10 @@ fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize
             "{label} has no unsigned sequence number"
         )));
     }
-    let value = std::str::from_utf8(&bytes[start..end])
-        .map_err(|_| malformed(format!("{label} sequence is not ASCII")))?
+    let sequence_text = ctx
+        .validate_utf8(&bytes[start..end], "iges compressed sequence number")?
+        .map_err(|_| malformed(format!("{label} sequence is not ASCII")))?;
+    let value = sequence_text
         .parse::<u32>()
         .map_err(|_| malformed(format!("{label} sequence is out of range")))?;
     if value == 0 || value > MAX_SEQUENCE {
@@ -286,6 +305,7 @@ fn parse_field_specs(
     let mut specs = std::array::from_fn(|_| None);
     let mut cursor = 0_usize;
     while cursor < bytes.len() {
+        ctx.charge_work(1, "iges compressed Directory specifiers")?;
         if bytes[cursor] != b'@' {
             return Err(malformed(
                 "Directory field continuation does not begin with @",
@@ -293,14 +313,20 @@ fn parse_field_specs(
         }
         cursor += 1;
         let field_start = cursor;
-        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        loop {
+            ctx.charge_work(1, "iges compressed Directory field digits")?;
+            if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+                break;
+            }
             cursor += 1;
         }
         if field_start == cursor || bytes.get(cursor) != Some(&b'_') {
             return Err(malformed("Directory field specifier lacks an underscore"));
         }
-        let field = std::str::from_utf8(&bytes[field_start..cursor])
-            .map_err(|_| malformed("Directory field number is not ASCII"))?
+        let field_text = ctx
+            .validate_utf8(&bytes[field_start..cursor], "iges compressed Directory field number")?
+            .map_err(|_| malformed("Directory field number is not ASCII"))?;
+        let field = field_text
             .parse::<usize>()
             .map_err(|_| malformed("Directory field number is out of range"))?;
         let compressed_field = FIELDS
@@ -324,7 +350,11 @@ fn parse_field_specs(
         }
         cursor += 1;
         let value_start = cursor;
-        while bytes.get(cursor).is_some_and(|byte| *byte != b'@') {
+        loop {
+            ctx.charge_work(1, "iges compressed Directory field value")?;
+            if !bytes.get(cursor).is_some_and(|byte| *byte != b'@') {
+                break;
+            }
             cursor += 1;
         }
         let value = &bytes[value_start..cursor];
@@ -361,10 +391,11 @@ fn parse_directory_record(
     if first.len() > CARD_DATA_WIDTH {
         return Err(malformed("Directory field line exceeds 72 columns"));
     }
-    let (sequence, cursor) = parse_sequence(first, 1, "Data record")?;
+    let (sequence, cursor) = parse_sequence(first, 1, "Data record", ctx)?;
     let mut length = 0_usize;
     let mut line_index = start;
     let delimiter_offset = loop {
+        ctx.charge_work(1, "iges compressed Directory record lines")?;
         let line = if line_index == start {
             &first[cursor..]
         } else {
@@ -448,10 +479,12 @@ fn field_i64(
     fields: &DirectoryFields,
     field: CompressedField,
     name: &str,
+    ctx: &DecodeContext<'_>,
 ) -> Result<i64, CodecError> {
     let bytes = fields.get(field);
     let field = field.number();
-    let text = std::str::from_utf8(bytes)
+    let text = ctx
+        .validate_utf8(bytes, "iges compressed Directory field text")?
         .map_err(|_| malformed(format!("Directory field {field} ({name}) is not ASCII")))?
         .trim();
     if text.is_empty() {
@@ -687,11 +720,13 @@ fn parse_data_entity(
         &fields,
         CompressedField::Shared(DirectoryFieldSlot::EntityType),
         "entity type",
+        ctx,
     )?;
     let line_count = field_i64(
         &fields,
         CompressedField::ParameterLineCount,
         "Parameter Data line count",
+        ctx,
     )?;
     let line_count = usize::try_from(line_count)
         .map_err(|_| malformed("Parameter Data line count is negative or out of range"))?;
@@ -800,10 +835,6 @@ fn append_terminate(
     append_card(output, &data, b'T', 1)
 }
 
-fn charge_normalization(ctx: &DecodeContext<'_>, bytes: usize) -> Result<(), CodecError> {
-    ctx.charge_work(u64_from_index(bytes), "iges_compressed_ascii_normalization")
-}
-
 /// Expand one Compressed ASCII source into the fixed-card input consumed by
 /// the IGES section, Directory, and Parameter parsers.
 pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
@@ -820,20 +851,28 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
     let mut cursor = 1_usize;
     let start_begin = cursor;
-    while lines
-        .get(cursor)
-        .is_some_and(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'S'))
-    {
+    loop {
+        ctx.charge_work(1, "iges compressed Start section lines")?;
+        if !lines
+            .get(cursor)
+            .is_some_and(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'S'))
+        {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start_begin {
         return Err(malformed("Start section is missing after the flag record"));
     }
     let global_begin = cursor;
-    while lines
-        .get(cursor)
-        .is_some_and(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'G'))
-    {
+    loop {
+        ctx.charge_work(1, "iges compressed Global section lines")?;
+        if !lines
+            .get(cursor)
+            .is_some_and(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'G'))
+        {
+            break;
+        }
         cursor += 1;
     }
     if cursor == global_begin {
@@ -854,8 +893,8 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let mut entities = Vec::new();
     let mut data_cursor = data_begin;
     let mut expected_sequence = 1_u32;
-    charge_normalization(ctx, source.len())?;
     while data_cursor < terminate_index {
+        ctx.charge_work(1, "iges_compressed_ascii_normalization")?;
         ctx.charge_collection_items(1, "iges_compressed_entities")?;
 
         ctx.reserve_capacity(&mut entities, 1, "iges_compressed_entity_record")?;
@@ -906,7 +945,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
                 "IGES Compressed ASCII normalized output exceeds usize".into(),
             )
         })?;
-    charge_normalization(ctx, output_estimate)?;
+    ctx.charge_work(u64_from_index(output_estimate), "iges_compressed_ascii_normalization")?;
     let mut output = ctx.vector_storage(output_estimate, "iges_compressed_normalized_output")?;
 
     for line in &lines[start_begin..global_begin] {

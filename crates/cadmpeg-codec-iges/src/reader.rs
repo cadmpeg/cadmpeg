@@ -397,7 +397,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let scan = card::scan_with_context(bytes, ctx)?;
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
-            directory::parse(&scan, global.global_table(), ctx)?;
+            directory::parse(&scan, global.global_table(ctx)?, ctx)?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
@@ -455,7 +455,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             "iges admission loss slots",
         )?;
         losses.extend(std::mem::take(&mut self.global_losses));
-        if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
+        if matches!(self.global.global_table(ctx)?, global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
                 ctx.reserve_vec(&mut losses, 1, "iges admission loss slots")?;
@@ -560,7 +560,7 @@ fn decode_with_occurrence_limits(
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
-    let length_context = parse.global.length_context();
+    let length_context = parse.global.length_context(ctx)?;
     let quarantined_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)?;
     let projected_directory =
@@ -731,7 +731,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
-    let global_table = parse.global.global_table();
+    let global_table = parse.global.global_table(ctx)?;
     if !ctx.container_only() {
         let attributed_before_generic = attributed_sequences(&losses, ctx)?;
         append_generic_losses(

@@ -157,7 +157,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         },
     ]);
 
-    assert_eq!(super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE), None);
+    assert_eq!(crate::test_support::with_service_context(&[], |ctx| super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE, ctx)).unwrap(), None);
 }
 
 #[test]

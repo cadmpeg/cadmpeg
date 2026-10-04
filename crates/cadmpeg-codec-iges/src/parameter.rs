@@ -2827,16 +2827,26 @@ enum TokenizeFailure {
     Refusal(CodecError),
 }
 
-fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
+fn layout_hollerith(
+    bytes: &[u8],
+    start: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(usize, usize)>, CodecError> {
     let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges parameter layout Hollerith digits")?;
+        if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges parameter layout Hollerith count")?
+        .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?;
+    let count = count_text
         .parse::<usize>()
         .map_err(|_| CodecError::Malformed("IGES Hollerith count is out of range".into()))?;
     if count == 0 {
@@ -2870,12 +2880,17 @@ pub(crate) fn layout_parameter_cards(
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
     loop {
+        ctx.charge_work(1, "iges parameter layout fields")?;
         let start = cursor;
         let mut end = cursor;
-        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor)? {
+        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor, ctx)? {
             end = payload_end;
         }
-        while end < bytes.len() && !matches!(bytes[end], b',' | b';') {
+        loop {
+            ctx.charge_work(1, "iges parameter layout field bytes")?;
+            if !(end < bytes.len() && !matches!(bytes[end], b',' | b';')) {
+                break;
+            }
             end += 1;
         }
         let delimiter = bytes.get(end).ok_or_else(|| {
@@ -2899,7 +2914,7 @@ pub(crate) fn layout_parameter_cards(
             .position(|byte| !byte.is_ascii_whitespace())
             .unwrap_or(field.len());
         let header_end = if leading < field.len() {
-            layout_hollerith(field, leading)?.map(|(header_end, _)| header_end)
+            layout_hollerith(field, leading, ctx)?.map(|(header_end, _)| header_end)
         } else {
             None
         };
@@ -2978,7 +2993,12 @@ fn hollerith(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges parameter Hollerith digits")
+            .map_err(TokenizeFailure::Refusal)?;
+        if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
@@ -2995,8 +3015,11 @@ fn hollerith(
     }
     let unreadable_count =
         || TokenizeFailure::Defect(ParameterDefect::HollerithCountUnreadable, start);
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| unreadable_count())?
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges parameter Hollerith count")
+        .map_err(TokenizeFailure::Refusal)?
+        .map_err(|_| unreadable_count())?;
+    let count = count_text
         .parse::<usize>()
         .map_err(|_| unreadable_count())?;
     if count == 0 {
@@ -3049,42 +3072,60 @@ pub(crate) struct MacroParameterData {
     header_payload_start: usize,
 }
 
-fn trim_macro_span(bytes: &[u8], span: Range<usize>) -> Range<usize> {
+fn trim_macro_span(
+    bytes: &[u8],
+    span: Range<usize>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Range<usize>, CodecError> {
     let mut start = span.start;
     let mut end = span.end;
-    while bytes
-        .get(start)
-        .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
-    {
+    loop {
+        ctx.charge_work(1, "iges macro leading whitespace")?;
+        if !bytes
+            .get(start)
+            .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+        {
+            break;
+        }
         start += 1;
     }
-    while end > start
-        && bytes
-            .get(end - 1)
-            .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
-    {
+    loop {
+        ctx.charge_work(1, "iges macro trailing whitespace")?;
+        if !(end > start
+            && bytes
+                .get(end - 1)
+                .is_some_and(|byte| matches!(*byte, b' ' | b'\t')))
+        {
+            break;
+        }
         end -= 1;
     }
-    start..end
+    Ok(start..end)
 }
 
 fn macro_hollerith_end(
     bytes: &[u8],
     start: usize,
-) -> Result<Option<usize>, (ParameterDefect, usize)> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<usize>, MacroDataError> {
     let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges macro Hollerith digits")?;
+        if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
+    let count_text = ctx.validate_utf8(&bytes[start..cursor], "iges macro Hollerith count")?;
+    let count = count_text
         .ok()
         .and_then(|text| text.parse::<usize>().ok())
         .ok_or((ParameterDefect::HollerithCountUnreadable, start))?;
     if count == 0 {
-        return Err((ParameterDefect::HollerithCountZero, start));
+        return Err((ParameterDefect::HollerithCountZero, start).into());
     }
     let payload_start = cursor
         .checked_add(1)
@@ -3093,7 +3134,7 @@ fn macro_hollerith_end(
         .checked_add(count)
         .ok_or((ParameterDefect::HollerithPayloadTruncated, start))?;
     if bytes.get(payload_start..payload_end).is_none() {
-        return Err((ParameterDefect::HollerithPayloadTruncated, start));
+        return Err((ParameterDefect::HollerithPayloadTruncated, start).into());
     }
     Ok(Some(payload_end))
 }
@@ -3103,9 +3144,14 @@ fn macro_next_field(
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: u8,
-) -> Result<(Range<usize>, u8, usize), (ParameterDefect, usize)> {
+    ctx: &DecodeContext<'_>,
+) -> Result<(Range<usize>, u8, usize), MacroDataError> {
     let mut cursor = start;
-    while let Some(byte) = bytes.get(cursor) {
+    loop {
+        ctx.charge_work(1, "iges macro leading whitespace")?;
+        let Some(byte) = bytes.get(cursor) else {
+            break;
+        };
         if matches!(*byte, b' ' | b'\t') {
             cursor += 1;
         } else {
@@ -3113,25 +3159,37 @@ fn macro_next_field(
         }
     }
     let field_start = cursor;
-    while let Some(byte) = bytes.get(cursor).copied() {
-        if let Some(payload_end) = macro_hollerith_end(bytes, cursor)? {
+    loop {
+        ctx.charge_work(1, "iges macro header field scan")?;
+        let Some(byte) = bytes.get(cursor).copied() else {
+            break;
+        };
+        if let Some(payload_end) = macro_hollerith_end(bytes, cursor, ctx)? {
             cursor = payload_end;
             continue;
         }
         if byte == parameter_delimiter || byte == record_delimiter {
-            let field = trim_macro_span(bytes, field_start..cursor);
+            let field = trim_macro_span(bytes, field_start..cursor, ctx)?;
             return Ok((field, byte, cursor + 1));
         }
         cursor += 1;
     }
-    Err((ParameterDefect::MacroHeaderMalformed, field_start))
+    Err((ParameterDefect::MacroHeaderMalformed, field_start).into())
 }
 
-fn macro_integer(bytes: &[u8], span: &Range<usize>) -> Option<i64> {
-    std::str::from_utf8(bytes.get(span.clone())?)
-        .ok()?
-        .parse::<i64>()
-        .ok()
+fn macro_integer(
+    bytes: &[u8],
+    span: &Range<usize>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<i64>, CodecError> {
+    let Some(bytes) = bytes.get(span.clone()) else {
+        return Ok(None);
+    };
+    let text = match ctx.validate_utf8(bytes, "iges macro integer")? {
+        Ok(text) => text,
+        Err(_) => return Ok(None),
+    };
+    Ok(text.parse::<i64>().ok())
 }
 
 fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
@@ -3175,8 +3233,12 @@ pub(crate) fn macro_parameter_data_with_context(
     let mut statements = Vec::new();
     let mut start = 0_usize;
     let mut cursor = 0_usize;
-    while let Some(byte) = bytes.get(cursor).copied() {
-        if let Some(payload_end) = macro_hollerith_end(bytes, cursor)? {
+    loop {
+        ctx.charge_work(1, "iges macro statement scan")?;
+        let Some(byte) = bytes.get(cursor).copied() else {
+            break;
+        };
+        if let Some(payload_end) = macro_hollerith_end(bytes, cursor, ctx)? {
             cursor = payload_end;
             continue;
         }
@@ -3185,7 +3247,7 @@ pub(crate) fn macro_parameter_data_with_context(
             continue;
         }
         let raw_statement = start..cursor;
-        if trim_macro_span(bytes, raw_statement.clone()).is_empty() {
+        if trim_macro_span(bytes, raw_statement.clone(), ctx)?.is_empty() {
             return Err((ParameterDefect::MacroStatementEmpty, start).into());
         }
         ctx.reserve_vec(&mut statements, 1, "iges macro statement spans")?;
@@ -3197,9 +3259,9 @@ pub(crate) fn macro_parameter_data_with_context(
                 .cloned()
                 .ok_or((ParameterDefect::MacroHeaderMalformed, start))?;
             let (entity_type_span, first_delimiter, after_entity_type) =
-                macro_next_field(bytes, first.start, parameter_delimiter, record_delimiter)?;
+                macro_next_field(bytes, first.start, parameter_delimiter, record_delimiter, ctx)?;
             if first_delimiter != parameter_delimiter
-                || macro_integer(bytes, &entity_type_span) != Some(306)
+                || macro_integer(bytes, &entity_type_span, ctx)? != Some(306)
             {
                 return Err((
                     ParameterDefect::MacroHeaderMalformed,
@@ -3212,6 +3274,7 @@ pub(crate) fn macro_parameter_data_with_context(
                 after_entity_type,
                 parameter_delimiter,
                 record_delimiter,
+                ctx,
             )?;
             if keyword_delimiter != parameter_delimiter
                 || !macro_keyword(bytes, &keyword_span, b"MACRO")
@@ -3219,7 +3282,7 @@ pub(crate) fn macro_parameter_data_with_context(
                 return Err((ParameterDefect::MacroHeaderMalformed, keyword_span.start).into());
             }
             let (defined_type_span, defined_type_delimiter, after_defined_type) =
-                macro_next_field(bytes, after_keyword, parameter_delimiter, record_delimiter)?;
+                macro_next_field(bytes, after_keyword, parameter_delimiter, record_delimiter, ctx)?;
             if defined_type_delimiter == record_delimiter {
                 return Err((
                     ParameterDefect::MacroArgumentListMissing,
@@ -3234,7 +3297,7 @@ pub(crate) fn macro_parameter_data_with_context(
                 )
                     .into());
             }
-            let Some(defined_entity_type) = macro_integer(bytes, &defined_type_span) else {
+            let Some(defined_entity_type) = macro_integer(bytes, &defined_type_span, ctx)? else {
                 return Err((
                     ParameterDefect::MacroHeaderMalformed,
                     defined_type_span.start,
@@ -3332,7 +3395,10 @@ struct DecimalShape {
     double_precision: bool,
 }
 
-fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
+fn decimal_shape(
+    text: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<DecimalShape>, CodecError> {
     let mut start = 0;
     if matches!(text.first(), Some(b'+' | b'-')) {
         start = 1;
@@ -3350,42 +3416,53 @@ fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
         None => (text, None, false),
     };
     let exponent = match exponent_text {
-        Some(value) => std::str::from_utf8(value).ok()?.parse::<i64>().ok()?,
+        Some(value) => {
+            let Ok(value) = ctx.validate_utf8(value, "iges numeric exponent")? else {
+                return Ok(None);
+            };
+            let Ok(exponent) = value.parse::<i64>() else {
+                return Ok(None);
+            };
+            exponent
+        }
         None => 0,
     };
-    let base = base.get(start..)?;
-    let (integer, fraction) = match base.iter().position(|byte| *byte == b'.') {
-        Some(dot) => (base.get(..dot)?, base.get(dot + 1..)?),
-        None => (base, &[][..]),
-    };
-    if integer.is_empty() && fraction.is_empty()
-        || integer
+    let shape = (|| {
+        let base = base.get(start..)?;
+        let (integer, fraction) = match base.iter().position(|byte| *byte == b'.') {
+            Some(dot) => (base.get(..dot)?, base.get(dot + 1..)?),
+            None => (base, &[][..]),
+        };
+        if integer.is_empty() && fraction.is_empty()
+            || integer
+                .iter()
+                .chain(fraction)
+                .any(|byte| !byte.is_ascii_digit())
+        {
+            return None;
+        }
+        let first_nonzero = integer
             .iter()
             .chain(fraction)
-            .any(|byte| !byte.is_ascii_digit())
-    {
-        return None;
-    }
-    let first_nonzero = integer
-        .iter()
-        .chain(fraction)
-        .position(|byte| *byte != b'0');
-    let Some(first_nonzero) = first_nonzero else {
-        return Some(DecimalShape {
-            magnitude: Magnitude::Zero,
+            .position(|byte| *byte != b'0');
+        let Some(first_nonzero) = first_nonzero else {
+            return Some(DecimalShape {
+                magnitude: Magnitude::Zero,
+                double_precision,
+            });
+        };
+        let integer_digits = i64::try_from(integer.len()).ok()?;
+        let first_nonzero = i64::try_from(first_nonzero).ok()?;
+        let order = integer_digits
+            .checked_sub(1)?
+            .checked_sub(first_nonzero)?
+            .checked_add(exponent)?;
+        Some(DecimalShape {
+            magnitude: Magnitude::Order(order),
             double_precision,
-        });
-    };
-    let integer_digits = i64::try_from(integer.len()).ok()?;
-    let first_nonzero = i64::try_from(first_nonzero).ok()?;
-    let order = integer_digits
-        .checked_sub(1)?
-        .checked_sub(first_nonzero)?
-        .checked_add(exponent)?;
-    Some(DecimalShape {
-        magnitude: Magnitude::Order(order),
-        double_precision,
-    })
+        })
+    })();
+    Ok(shape)
 }
 
 fn integer_within_bits(value: i64, bits: u32) -> bool {
@@ -3437,14 +3514,18 @@ fn numeric_with_limits(
             start,
         ));
     }
-    let text = std::str::from_utf8(text_bytes)
+    let text = ctx
+        .validate_utf8(text_bytes, "iges numeric token text")
+        .map_err(TokenizeFailure::Refusal)?
         .map_err(|_| TokenizeFailure::Defect(ParameterDefect::TokenNotAscii, start))?;
     let not_a_number = || TokenizeFailure::Defect(ParameterDefect::TokenNotANumber, start);
     let real = text
         .bytes()
         .any(|byte| matches!(byte, b'.' | b'E' | b'e' | b'D' | b'd'));
     let value = if real {
-        let shape = decimal_shape(text_bytes).ok_or_else(not_a_number)?;
+        let shape = decimal_shape(text_bytes, ctx)
+            .map_err(TokenizeFailure::Refusal)?
+            .ok_or_else(not_a_number)?;
         if !real_within_limits(shape, limits) {
             return Err(TokenizeFailure::Defect(
                 ParameterDefect::NumericOutOfRange,
@@ -3504,7 +3585,14 @@ fn tokenize_with_limits(
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
     loop {
-        while bytes.get(cursor) == Some(&b' ') {
+        ctx.charge_work(1, "iges parameter token scan")
+            .map_err(TokenizeFailure::Refusal)?;
+        loop {
+            ctx.charge_work(1, "iges parameter leading spaces")
+                .map_err(TokenizeFailure::Refusal)?;
+            if bytes.get(cursor) != Some(&b' ') {
+                break;
+            }
             cursor += 1;
         }
         if bytes.get(cursor) == Some(&record_delimiter) {
@@ -3996,6 +4084,7 @@ pub(crate) fn assemble_with_context(
     global: &ResolvedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<ParameterAssembly, CodecError> {
+    let global_table = global.global_table(ctx)?;
     let mut lines = BTreeMap::new();
     for (sequence, line) in scan.section(Section::Parameter) {
         ctx.insert_btree_map(&mut lines, sequence, line, "iges parameter lines")?;
@@ -4047,7 +4136,7 @@ pub(crate) fn assemble_with_context(
                 &owned_bytes.card_boundaries,
                 global.parameter_delimiter,
                 global.record_delimiter,
-                global.global_table(),
+                global_table,
                 global.numeric_limits(),
                 ctx,
             )
@@ -4118,7 +4207,7 @@ pub(crate) fn assemble_with_context(
                 record,
                 &entries,
                 &record_by_directory,
-                global.global_table(),
+                global_table,
                 ctx,
             )?;
             ctx.insert_btree_map(

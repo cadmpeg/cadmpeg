@@ -3,6 +3,107 @@
 
 use crate::parameter::{macro_parameter_data_with_context, MacroDataError, ParameterDefect};
 
+fn with_work_limit<T>(
+    source: &[u8],
+    max_work_units: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = max_work_units;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    run(&ctx)
+}
+
+fn assert_work_limit(error: cadmpeg_core::CodecError, operation: &str, additional: u64) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+fn assert_macro_work_refusal(error: MacroDataError, operation: &str, additional: u64) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(error,
+        MacroDataError::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn macro_span_leading_whitespace_refuses_work_before_probe() {
+    let error = with_work_limit(b" X", 0, |ctx| {
+        crate::parameter::trim_macro_span(b" X", 0..2, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges macro leading whitespace", 1);
+}
+
+#[test]
+fn macro_span_trailing_whitespace_refuses_work_before_probe() {
+    let error = with_work_limit(b"X ", 1, |ctx| {
+        crate::parameter::trim_macro_span(b"X ", 0..2, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges macro trailing whitespace", 1);
+}
+
+#[test]
+fn macro_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1Ha", 0, |ctx| {
+        crate::parameter::macro_hollerith_end(b"1Ha", 0, ctx).unwrap_err()
+    });
+    assert_macro_work_refusal(error, "iges macro Hollerith digits", 1);
+}
+
+#[test]
+fn macro_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1Ha", 2, |ctx| {
+        crate::parameter::macro_hollerith_end(b"1Ha", 0, ctx).unwrap_err()
+    });
+    assert_macro_work_refusal(error, "iges macro Hollerith count", 1);
+}
+
+#[test]
+fn macro_field_leading_whitespace_refuses_work_before_probe() {
+    let error = with_work_limit(b"X,", 0, |ctx| {
+        crate::parameter::macro_next_field(b"X,", 0, b',', b';', ctx).unwrap_err()
+    });
+    assert_macro_work_refusal(error, "iges macro leading whitespace", 1);
+}
+
+#[test]
+fn macro_header_scan_refuses_work_after_leading_probe() {
+    let error = with_work_limit(b"X,", 1, |ctx| {
+        crate::parameter::macro_next_field(b"X,", 0, b',', b';', ctx).unwrap_err()
+    });
+    assert_macro_work_refusal(error, "iges macro header field scan", 1);
+}
+
+#[test]
+fn macro_integer_refuses_utf8_work() {
+    let error = with_work_limit(b"621", 0, |ctx| {
+        crate::parameter::macro_integer(b"621", &(0..3), ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges macro integer", 3);
+}
+
+#[test]
+fn macro_statement_scan_refuses_work_before_statement_probe() {
+    let bytes = b"306,MACRO,621,X;BODY;ENDM;";
+    let error = with_work_limit(bytes, 0, |ctx| {
+        macro_parameter_data_with_context(bytes, b',', b';', ctx).unwrap_err()
+    });
+    assert_macro_work_refusal(error, "iges macro statement scan", 1);
+}
+
 #[test]
 fn macro_statement_spans_refuse_collection_limit_before_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

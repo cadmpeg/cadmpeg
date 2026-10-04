@@ -33,14 +33,38 @@ fn curve_cache_decodes_in_both_integer_widths() {
         assert_eq!(curve.control_points().len(), 2);
         assert_eq!(curve.control_points()[1].x, 10.0); // cm→mm ×10
         assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
-        assert!(first_curve_patch_layout(&block, int_width).is_some());
-        assert!(final_curve_patch_layout(&block, int_width).is_some());
+        assert!(first_curve_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            int_width,
+        )
+        .expect("decode work admission")
+        .is_some());
+        assert!(final_curve_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            int_width,
+        )
+        .expect("decode work admission")
+        .is_some());
         let other_width = match int_width {
             RefWidth::Four => RefWidth::Eight,
             RefWidth::Eight => RefWidth::Four,
         };
-        assert!(first_curve_patch_layout(&block, other_width).is_none());
-        assert!(final_curve_patch_layout(&block, other_width).is_none());
+        assert!(first_curve_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            other_width,
+        )
+        .expect("decode work admission")
+        .is_none());
+        assert!(final_curve_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            other_width,
+        )
+        .expect("decode work admission")
+        .is_none());
     }
 }
 
@@ -56,12 +80,24 @@ fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
         assert!(super::decode_pcurve_cache(&pcurves).is_none());
 
         let block = pcurve_block(int_width);
-        assert!(super::final_pcurve_patch_layout(&block, int_width).is_some());
+        assert!(super::final_pcurve_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            int_width,
+        )
+        .expect("decode work admission")
+        .is_some());
         let other_width = match int_width {
             RefWidth::Four => RefWidth::Eight,
             RefWidth::Eight => RefWidth::Four,
         };
-        assert!(super::final_pcurve_patch_layout(&block, other_width).is_none());
+        assert!(super::final_pcurve_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            other_width,
+        )
+        .expect("decode work admission")
+        .is_none());
 
         let mut surfaces = b"comp_spl_sur".to_vec();
         surfaces.extend_from_slice(&surface_block(int_width));
@@ -183,18 +219,36 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         surfaces.extend_from_slice(&surface_block_with_x_offset(int_width, 9.0));
         surfaces.extend_from_slice(&[0x10, 0x10]);
         assert_eq!(
-            final_surface_patch_layout(&surfaces, int_width)
+            final_surface_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &surfaces,
+                int_width,
+            )
+                .expect("decode work admission")
                 .expect("owned surface layout")
                 .end(),
             surface_end
         );
-        assert!(surface_patch_layout_at(&surfaces, 1, int_width).is_none());
+        assert!(surface_patch_layout_at(
+            &cadmpeg_test_support::service_decode_context(),
+            &surfaces,
+            1,
+            int_width,
+        )
+        .expect("decode work admission")
+        .is_none());
         let mut ambiguous_surfaces = surfaces.clone();
         ambiguous_surfaces.push(0x0f);
         push_ident(&mut ambiguous_surfaces, "competing");
         ambiguous_surfaces.extend_from_slice(&surface_block(int_width));
         ambiguous_surfaces.push(0x10);
-        assert!(final_surface_patch_layout(&ambiguous_surfaces, int_width).is_none());
+        assert!(final_surface_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &ambiguous_surfaces,
+            int_width,
+        )
+        .expect("decode work admission")
+        .is_none());
 
         let mut curves = Vec::new();
         push_ident(&mut curves, "intcurve");
@@ -210,13 +264,23 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         curves.extend_from_slice(&curve_block_with_endpoint(int_width, [9.0, 0.0, 0.0]));
         curves.extend_from_slice(&[0x10, 0x10]);
         assert_eq!(
-            first_curve_patch_layout(&curves, int_width)
+            first_curve_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &curves,
+                int_width,
+            )
+                .expect("decode work admission")
                 .expect("first owned curve layout")
                 .end(),
             curve_end
         );
         assert_eq!(
-            final_curve_patch_layout(&curves, int_width)
+            final_curve_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &curves,
+                int_width,
+            )
+                .expect("decode work admission")
                 .expect("final owned curve layout")
                 .end(),
             curve_end
@@ -236,7 +300,12 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         pcurves.extend_from_slice(&pcurve_block(int_width));
         pcurves.extend_from_slice(&[0x10, 0x10]);
         assert_eq!(
-            super::final_pcurve_patch_layout(&pcurves, int_width)
+            super::final_pcurve_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &pcurves,
+                int_width,
+            )
+                .expect("decode work admission")
                 .expect("final owned pcurve layout")
                 .control_end(),
             pcurve_end
@@ -252,12 +321,24 @@ fn surface_cache_decodes_in_both_integer_widths() {
             .unwrap_or_else(|| panic!("surface cache at width {int_width}"));
         assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
         assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-        assert!(final_surface_patch_layout(&block, int_width).is_some());
+        assert!(final_surface_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            int_width,
+        )
+        .expect("decode work admission")
+        .is_some());
         let other_width = match int_width {
             RefWidth::Four => RefWidth::Eight,
             RefWidth::Eight => RefWidth::Four,
         };
-        assert!(final_surface_patch_layout(&block, other_width).is_none());
+        assert!(final_surface_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &block,
+            other_width,
+        )
+        .expect("decode work admission")
+        .is_none());
     }
 }
 
@@ -547,6 +628,7 @@ fn a_token_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
 /// The byte-space owned-cache decoder reads the scope, not a raw stream.
 #[test]
 fn a_byte_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "exact_int_cur");
@@ -557,9 +639,12 @@ fn a_byte_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
         bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
         bytes.push(0x10);
 
-        let scope =
-            crate::nurbs::subtypes::subtype_span(&bytes, 0, int_width).expect("balanced scope");
-        let curve = crate::nurbs::core::decode_owned_curve_cache_at(scope, int_width)
+        let scope = crate::nurbs::subtypes::subtype_span(&ctx, &bytes, 0, int_width)
+            .expect("decode work admission")
+            .expect("balanced scope");
+        let curve = crate::nurbs::core::decode_owned_curve_cache_at(&ctx, scope, int_width)
+            .transpose()
+            .expect("decode work admission")
             .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
 
         assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);

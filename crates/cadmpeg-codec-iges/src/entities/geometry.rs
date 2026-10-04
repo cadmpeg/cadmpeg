@@ -917,6 +917,7 @@ pub(crate) fn enforce_transform_depth(
         let mut path = BTreeSet::new();
         let mut depth = 0_usize;
         loop {
+            ctx.charge_work(1, "iges transform preflight walk")?;
             if depth >= depth_limit {
                 let requested = depth.checked_add(1).map(u64_from_index).ok_or_else(|| {
                     refuse_local_limit(
@@ -931,7 +932,6 @@ pub(crate) fn enforce_transform_depth(
                     requested,
                 ));
             }
-            ctx.charge_work(1, "iges transform preflight walk")?;
             if !ctx.insert_btree_set(&mut path, sequence, "iges transform preflight path")? {
                 break;
             }
@@ -1155,7 +1155,11 @@ fn consumed_support_sequences(
     }
 
     let mut consumed = direction_sequences;
-    while let Some(sequence) = transform_sequences.pop_first() {
+    loop {
+        ctx.charge_work(1, "iges consumed-support closure traversal")?;
+        let Some(sequence) = transform_sequences.pop_first() else {
+            break;
+        };
         if !ctx.insert_btree_set(&mut consumed, sequence, "iges consumed-support closure")? {
             continue;
         }

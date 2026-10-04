@@ -58,7 +58,10 @@ pub fn parameters(data: &[u8]) {
     let Ok((global, _)) = crate::global::parse(&scan, &ctx) else {
         return;
     };
-    let Ok((directory, quarantined)) = crate::directory::parse(&scan, global.global_table(), &ctx)
+    let Ok(global_table) = global.global_table(&ctx) else {
+        return;
+    };
+    let Ok((directory, quarantined)) = crate::directory::parse(&scan, global_table, &ctx)
     else {
         return;
     };

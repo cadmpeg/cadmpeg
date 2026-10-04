@@ -583,6 +583,7 @@ fn elevate_bezier_homogeneous(
     elevated.extend_from_slice(control_points);
     let mut degree = source_degree;
     while degree < target_degree {
+        ctx.charge_work(1, "iges composite Bezier degree elevation")?;
         let Some(next_degree) = degree.checked_add(1) else {
             return Ok(None);
         };
@@ -916,7 +917,11 @@ fn trim_nurbs_lanes(
         let Some(target_multiplicity) = degree.checked_add(1) else {
             return Ok(None);
         };
-        while knots.iter().filter(|knot| **knot == value).count() < target_multiplicity {
+        loop {
+            ctx.charge_work(1, "iges composite trim knot multiplicity")?;
+            if knots.iter().filter(|knot| **knot == value).count() >= target_multiplicity {
+                break;
+            }
             let Some(InsertedKnotNet {
                 control_points: new_homogeneous,
                 knots: new_knots,

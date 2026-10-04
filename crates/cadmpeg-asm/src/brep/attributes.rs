@@ -24,6 +24,7 @@ pub fn collect_attributes(
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
     while let Some(index) = current {
+        ctx.charge_work(1, "ASM attribute chain walk")?;
         if !ctx.insert_hash_set(&mut chain, index, "ASM attribute chain")? {
             break;
         }
@@ -513,6 +514,49 @@ mod tests {
         };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM unknown record identity");
+    }
+
+    #[test]
+    fn attribute_chain_walk_refuses_work_before_following_link() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::attributes::AttributeTarget;
+        use std::collections::{HashMap, HashSet};
+
+        let entity = Record {
+            index: 0,
+            name: "entity".into(),
+            tokens: vec![Token::Ref(1)].into(),
+            offset: 0,
+            len: 0,
+        };
+        let attribute = Record {
+            index: 1,
+            name: "empty-st-attrib".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: 0,
+        };
+        let by_index = HashMap::from([(1, &attribute)]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::collect_attributes(
+            &ctx,
+            &entity,
+            &AttributeTarget::Document,
+            &by_index,
+            &mut HashSet::new(),
+            &mut Vec::new(),
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM attribute chain walk");
     }
 
     fn transform_record(scale: f64, x: [f64; 3]) -> Record {

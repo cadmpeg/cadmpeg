@@ -82,11 +82,12 @@ pub fn frame_history(
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
 pub fn payload_token_offsets(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     ref_width: RefWidth,
     tag: u8,
-) -> Result<Vec<usize>, StreamError> {
+) -> Result<Vec<usize>, StreamFailure> {
     let end = record
         .offset
         .checked_add(record.len)
@@ -104,7 +105,9 @@ pub fn payload_token_offsets(
     let mut offsets = Vec::new();
     while position < end {
         let token_offset = position;
-        let (token, next) = lex(bytes, position, ref_width)?;
+        let (token, next) = lex(ctx, bytes, position, ref_width)
+            .map_err(StreamFailure::from_operation)?
+            .map_err(StreamFailure::from)?;
         if bytes[token_offset] == tag && matches!(&token, Lexed::Value(_) | Lexed::Str(_)) {
             offsets.push(token_offset);
         }

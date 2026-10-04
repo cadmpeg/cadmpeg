@@ -66,12 +66,15 @@ impl VersionDeclaration {
         }
     }
 
-    const fn effective_version(&self) -> VersionFlag {
-        match self {
+    fn effective_version(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<VersionFlag, CodecError> {
+        Ok(match self {
             Self::Exact(version) => *version,
             Self::Unreadable(_) => VersionFlag::V2_0,
-            Self::Clamped(value) => VersionFlag::effective(*value),
-        }
+            Self::Clamped(value) => VersionFlag::effective(*value, ctx)?,
+        })
     }
 
     fn recovery(&self) -> DialectRecovery<'_> {
@@ -400,16 +403,26 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
 
-fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
+fn layout_hollerith(
+    bytes: &[u8],
+    start: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(usize, usize)>, CodecError> {
     let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges global layout Hollerith digits")?;
+        if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Hollerith count is not ASCII"))?
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges global layout Hollerith count")?
+        .map_err(|_| malformed("Hollerith count is not ASCII"))?;
+    let count = count_text
         .parse::<usize>()
         .map_err(|_| malformed("Hollerith count is out of range"))?;
     let payload_start = cursor
@@ -437,7 +450,7 @@ pub(crate) fn layout_global_cards(
     let (parameter_delimiter, mut cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
-        let Some((header_end, payload_end)) = layout_hollerith(bytes, 0)? else {
+        let Some((header_end, payload_end)) = layout_hollerith(bytes, 0, ctx)? else {
             return Err(malformed("parameter delimiter is not a Hollerith string"));
         };
         let payload = bytes
@@ -459,7 +472,7 @@ pub(crate) fn layout_global_cards(
         cursor += 1;
         b';'
     } else {
-        let Some((header_end, payload_end)) = layout_hollerith(bytes, cursor)? else {
+        let Some((header_end, payload_end)) = layout_hollerith(bytes, cursor, ctx)? else {
             return Err(malformed("record delimiter is not a Hollerith string"));
         };
         let payload = bytes
@@ -483,15 +496,20 @@ pub(crate) fn layout_global_cards(
         field_storage.with_storage(|| ctx.collection_vec(1, "iges global layout fields"))?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
+        ctx.charge_work(1, "iges global layout fields")?;
         let start = cursor;
         let mut end = cursor;
-        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor)? {
+        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor, ctx)? {
             end = payload_end;
         }
-        while end < bytes.len()
-            && bytes[end] != parameter_delimiter
-            && bytes[end] != record_delimiter
-        {
+        loop {
+            ctx.charge_work(1, "iges global layout field bytes")?;
+            if !(end < bytes.len()
+                && bytes[end] != parameter_delimiter
+                && bytes[end] != record_delimiter)
+            {
+                break;
+            }
             end += 1;
         }
         let is_record = bytes
@@ -516,7 +534,7 @@ pub(crate) fn layout_global_cards(
             .position(|byte| !byte.is_ascii_whitespace())
             .unwrap_or(field.len());
         let header_end = if leading < field.len() {
-            layout_hollerith(field, leading)?.map(|(header_end, _)| header_end)
+            layout_hollerith(field, leading, ctx)?.map(|(header_end, _)| header_end)
         } else {
             None
         };
@@ -561,16 +579,26 @@ fn source_span_crosses_card(start: usize, end: usize) -> bool {
     end > start && start / 72 != (end - 1) / 72
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, CodecError> {
+fn hollerith<'bytes>(
+    bytes: &'bytes [u8],
+    start: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(&'bytes [u8], usize)>, CodecError> {
     let mut cursor = start;
-    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+    loop {
+        ctx.charge_work(1, "iges global Hollerith digits")?;
+        if !bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            break;
+        }
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed("Hollerith count is not ASCII"))?
+    let count_text = ctx
+        .validate_utf8(&bytes[start..cursor], "iges global Hollerith count")?
+        .map_err(|_| malformed("Hollerith count is not ASCII"))?;
+    let count = count_text
         .parse::<usize>()
         .map_err(|_| malformed("Hollerith count is out of range"))?;
     let payload_start = cursor
@@ -585,11 +613,11 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, Codec
     Ok(Some((payload, payload_end)))
 }
 
-fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
+fn first_delimiter(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<(u8, usize), CodecError> {
     if bytes.first() == Some(&b',') {
         return Ok((b',', 1));
     }
-    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor)) = hollerith(bytes, 0, ctx)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
     if source_span_crosses_card(0, cursor - payload.len()) {
@@ -633,7 +661,7 @@ fn delimited_value(
         return Ok((Value::Omitted, value_start + 1, true));
     }
     let (value, end, allow_padding_after) =
-        if let Some((payload, end)) = hollerith(bytes, value_start)? {
+        if let Some((payload, end)) = hollerith(bytes, value_start, ctx)? {
             if !retain {
                 (Value::Omitted, end, true)
             } else if source_span_crosses_card(value_start, end - payload.len()) {
@@ -713,7 +741,7 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
+    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes, ctx)?;
     let (record_value, next, _) =
         delimited_value(&bytes, cursor, parameter_delimiter, None, true, ctx)?;
     cursor = next;
@@ -746,6 +774,7 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
     };
     let mut field_count = 2_usize;
     loop {
+        ctx.charge_work(1, "iges global fields")?;
         let retain = field_count < values.len();
         let (value, next, ended) = delimited_value(
             &bytes,
@@ -782,11 +811,15 @@ pub(crate) fn parse(
     resolve(parse_raw(scan, ctx)?, ctx)
 }
 
-fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
+fn date_value_is_valid(
+    bytes: &[u8],
+    accepts_four_digit_date: bool,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let dot = match bytes.len() {
         13 => 6,
         15 if accepts_four_digit_date => 8,
-        _ => return false,
+        _ => return Ok(false),
     };
     if bytes.get(dot) != Some(&b'.')
         || bytes
@@ -794,23 +827,47 @@ fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
             .enumerate()
             .any(|(index, byte)| index != dot && !byte.is_ascii_digit())
     {
-        return false;
+        return Ok(false);
     }
-    let number = |start: usize, end: usize| {
-        std::str::from_utf8(&bytes[start..end])
+    let number = |start: usize, end: usize| -> Result<Option<u32>, CodecError> {
+        Ok(ctx
+            .validate_utf8(&bytes[start..end], "iges global date component")?
             .ok()
-            .and_then(|value| value.parse::<u32>().ok())
+            .and_then(|value| value.parse::<u32>().ok()))
     };
     let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
         (2, 4, 7, 9, 11)
     } else {
         (4, 6, 9, 11, 13)
     };
-    number(month_start, month_start + 2).is_some_and(|month| (1..=12).contains(&month))
-        && number(day_start, day_start + 2).is_some_and(|day| (1..=31).contains(&day))
-        && number(hour_start, hour_start + 2).is_some_and(|hour| hour < 24)
-        && number(minute_start, minute_start + 2).is_some_and(|minute| minute < 60)
-        && number(second_start, second_start + 2).is_some_and(|second| second < 60)
+    let Some(month) = number(month_start, month_start + 2)? else {
+        return Ok(false);
+    };
+    if !(1..=12).contains(&month) {
+        return Ok(false);
+    }
+    let Some(day) = number(day_start, day_start + 2)? else {
+        return Ok(false);
+    };
+    if !(1..=31).contains(&day) {
+        return Ok(false);
+    }
+    let Some(hour) = number(hour_start, hour_start + 2)? else {
+        return Ok(false);
+    };
+    if hour >= 24 {
+        return Ok(false);
+    }
+    let Some(minute) = number(minute_start, minute_start + 2)? else {
+        return Ok(false);
+    };
+    if minute >= 60 {
+        return Ok(false);
+    }
+    let Some(second) = number(second_start, second_start + 2)? else {
+        return Ok(false);
+    };
+    Ok(second < 60)
 }
 
 fn delegated_unit_factor_mm(name: &str) -> Option<f64> {
@@ -882,12 +939,18 @@ struct Resolution<'ctx, 'arena> {
     losses: Vec<LossNote>,
 }
 
-fn numeric_text(bytes: &[u8]) -> Option<&str> {
-    let first = bytes.iter().position(|byte| *byte != b' ')?;
+fn numeric_text<'bytes>(
+    bytes: &'bytes [u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<&'bytes str>, CodecError> {
+    let Some(first) = bytes.iter().position(|byte| *byte != b' ') else {
+        return Ok(None);
+    };
     let text = &bytes[first..];
-    (!text.iter().any(u8::is_ascii_whitespace))
-        .then(|| std::str::from_utf8(text).ok())
-        .flatten()
+    if text.iter().any(u8::is_ascii_whitespace) {
+        return Ok(None);
+    }
+    Ok(ctx.validate_utf8(text, "iges global numeric text")?.ok())
 }
 
 fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteReal>, CodecError> {
@@ -902,10 +965,11 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
             *byte = b'E';
         }
     }
-    Ok(std::str::from_utf8(&normalized)
-        .ok()
-        .and_then(|value| value.parse::<f64>().ok())
-        .and_then(FiniteReal::new))
+    let text = match ctx.validate_utf8(&normalized, "iges global numeric text")? {
+        Ok(text) => text,
+        Err(_) => return Ok(None),
+    };
+    Ok(text.parse::<f64>().ok().and_then(FiniteReal::new))
 }
 
 fn recovered_real_text(
@@ -975,10 +1039,21 @@ impl Resolution<'_, '_> {
             Value::Omitted => Ok(Supplied::Absent),
             Value::String(bytes) if bytes.is_empty() => Ok(Supplied::Absent),
             Value::String(bytes) => {
-                let copy = self
+                let mut text = String::new();
+                self.ctx.try_reserve_retained_text(
+                    &mut text,
+                    bytes.len(),
+                    "iges global supplied string",
+                )?;
+                let Ok(value) = self
                     .ctx
-                    .copy_retained(bytes, "iges global supplied string")?;
-                Ok(String::from_utf8(copy).map_or(Supplied::Malformed, Supplied::Value))
+                    .validate_utf8(bytes, "iges global supplied string")?
+                else {
+                    return Ok(Supplied::Malformed);
+                };
+                self.ctx
+                    .append_retained(&mut text, value, "iges global supplied string")?;
+                Ok(Supplied::Value(text))
             }
             Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => {
                 Ok(Supplied::Malformed)
@@ -992,32 +1067,37 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
     ) -> Result<Supplied<String>, CodecError> {
         Ok(match self.supplied_string(index)? {
-            Supplied::Value(text)
-                if date_value_is_valid(text.as_bytes(), global_table.accepts_four_digit_date()) =>
-            {
-                Supplied::Value(text)
+            Supplied::Value(text) => {
+                if date_value_is_valid(
+                    text.as_bytes(),
+                    global_table.accepts_four_digit_date(),
+                    self.ctx,
+                )? {
+                    Supplied::Value(text)
+                } else {
+                    Supplied::Malformed
+                }
             }
-            Supplied::Value(_) => Supplied::Malformed,
             Supplied::Absent => Supplied::Absent,
             Supplied::Malformed => Supplied::Malformed,
         })
     }
 
-    fn supplied_integer(&self, index: usize) -> Supplied<i64> {
-        match self.value(index) {
+    fn supplied_integer(&self, index: usize) -> Result<Supplied<i64>, CodecError> {
+        Ok(match self.value(index) {
             Value::Omitted => Supplied::Absent,
-            Value::Atom(bytes) => numeric_text(bytes)
+            Value::Atom(bytes) => numeric_text(bytes, self.ctx)?
                 .and_then(|text| text.parse::<i64>().ok())
                 .map_or(Supplied::Malformed, Supplied::Value),
             Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => Supplied::Malformed,
-        }
+        })
     }
 
     fn supplied_real(&self, index: usize) -> Result<SuppliedReal, CodecError> {
         match self.value(index) {
             Value::Omitted => Ok(SuppliedReal::Absent),
             Value::Atom(bytes) => {
-                let Some(text) = numeric_text(bytes) else {
+                let Some(text) = numeric_text(bytes, self.ctx)? else {
                     return Ok(SuppliedReal::Malformed);
                 };
                 if let Some(value) = parse_real_text(text, self.ctx)? {
@@ -1069,12 +1149,16 @@ impl Resolution<'_, '_> {
     }
 
     /// The supplied integer, with a value the field does not admit read as malformed.
-    fn admitted_integer(&self, index: usize, admits: fn(i64) -> bool) -> Supplied<i64> {
-        match self.supplied_integer(index) {
+    fn admitted_integer(
+        &self,
+        index: usize,
+        admits: fn(i64) -> bool,
+    ) -> Result<Supplied<i64>, CodecError> {
+        Ok(match self.supplied_integer(index)? {
             Supplied::Value(value) if admits(value) => Supplied::Value(value),
             Supplied::Absent => Supplied::Absent,
             Supplied::Malformed | Supplied::Value(_) => Supplied::Malformed,
-        }
+        })
     }
 
     fn metadata_string(
@@ -1124,7 +1208,7 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Result<Supplied<i64>, CodecError> {
-        let supplied = self.admitted_integer(index, admits);
+        let supplied = self.admitted_integer(index, admits)?;
         self.charge_metadata(index, &supplied, global_table)?;
         Ok(supplied)
     }
@@ -1136,7 +1220,7 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Result<(), CodecError> {
-        let supplied = self.admitted_integer(index, admits);
+        let supplied = self.admitted_integer(index, admits)?;
         self.charge_metadata(index, &supplied, global_table)
     }
 
@@ -1175,7 +1259,7 @@ impl Resolution<'_, '_> {
     }
 
     fn significance(&mut self, index: usize) -> Result<Supplied<u32>, CodecError> {
-        let defect = match self.supplied_integer(index) {
+        let defect = match self.supplied_integer(index)? {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
                 Some(value) => return Ok(Supplied::Value(value)),
@@ -1254,7 +1338,7 @@ impl Resolution<'_, '_> {
         &mut self,
         global_table: GlobalTable,
     ) -> Result<Option<LineWeightScale>, CodecError> {
-        let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS);
+        let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS)?;
         let gradations_was_supplied = !matches!(&supplied_gradations, Supplied::Absent);
         let (gradations, gradations_defect) = match supplied_gradations {
             Supplied::Absent if matches!(global_table, GlobalTable::V4_0) => {
@@ -1338,7 +1422,7 @@ impl Resolution<'_, '_> {
             },
             SuppliedReal::Malformed => (None, Some(Defect::Malformed)),
         };
-        let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
+        let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG)? {
             Supplied::Absent => (global_table.default_units_flag(), None),
             Supplied::Value(value) if (1..=11).contains(&value) => (Some(value), None),
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
@@ -1444,9 +1528,9 @@ fn resolve(
         losses: Vec::new(),
     };
 
-    let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
+    let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG)? {
         Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),
-        Supplied::Value(value) => match VersionFlag::exact(value) {
+        Supplied::Value(value) => match VersionFlag::exact(value, ctx)? {
             Some(version) => VersionDeclaration::Exact(version),
             None => VersionDeclaration::Clamped(value),
         },
@@ -1454,7 +1538,7 @@ fn resolve(
             VersionDeclaration::Unreadable(resolution.declaration_text(FIELD_VERSION_FLAG)?)
         }
     };
-    let effective_version = declaration.effective_version();
+    let effective_version = declaration.effective_version(ctx)?;
     let global_table = effective_version.global_table();
     resolution.apply_string_policy(global_table);
     let global_field_count = global_table.global_field_count();
@@ -1483,7 +1567,7 @@ fn resolve(
         resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true)?;
     let double_significance = if global_table == GlobalTable::V5_0
         && matches!(
-            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
+            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE)?,
             Supplied::Absent
         ) {
         Supplied::Absent
@@ -1562,15 +1646,21 @@ fn resolve(
 
 impl ResolvedGlobal {
     /// The projection view, present only when the millimetre length factor resolved.
-    pub(crate) fn length_context(&self) -> Option<ProjectedGlobal> {
-        let length_factor_mm = self.length_factor_mm?;
-        Some(ProjectedGlobal {
+    pub(crate) fn length_context(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<ProjectedGlobal>, CodecError> {
+        let Some(length_factor_mm) = self.length_factor_mm else {
+            return Ok(None);
+        };
+        let global_table = self.global_table(ctx)?;
+        Ok(Some(ProjectedGlobal {
             length_factor_mm,
             minimum_resolution_mm: self.minimum_resolution.get() * length_factor_mm.get(),
             precision: self.real_precision(),
             line_weight_scale: self.line_weight_scale,
-            global_table: self.global_table(),
-        })
+            global_table,
+        }))
     }
 
     pub(crate) fn real_precision(&self) -> RealPrecision {
@@ -1603,8 +1693,11 @@ impl ResolvedGlobal {
     }
 
     /// The exact field-23 table entry, before postprocessor recovery.
-    pub(crate) fn declared_version(&self) -> Option<VersionFlag> {
-        VersionFlag::exact(self.declared_version_flag())
+    pub(crate) fn declared_version(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<VersionFlag>, CodecError> {
+        VersionFlag::exact(self.declared_version_flag(), ctx)
     }
 
     /// The declaration text of a field 23 that does not read as an integer.
@@ -1616,8 +1709,11 @@ impl ResolvedGlobal {
     }
 
     /// The declared version flag after the specification's postprocessor clamp.
-    pub(crate) fn effective_version_flag(&self) -> i64 {
-        self.declaration.effective_version().value()
+    pub(crate) fn effective_version_flag(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<i64, CodecError> {
+        Ok(self.declaration.effective_version(ctx)?.value())
     }
 
     /// Why this decode did not read the file with a Global table verified for
@@ -1630,12 +1726,18 @@ impl ResolvedGlobal {
         self.declaration.recovery()
     }
 
-    pub(crate) fn version_name(&self) -> &'static str {
-        self.declaration.effective_version().name()
+    pub(crate) fn version_name(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&'static str, CodecError> {
+        Ok(self.declaration.effective_version(ctx)?.name())
     }
 
-    pub(crate) fn global_table(&self) -> GlobalTable {
-        self.declaration.effective_version().global_table()
+    pub(crate) fn global_table(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<GlobalTable, CodecError> {
+        Ok(self.declaration.effective_version(ctx)?.global_table())
     }
 
     pub(crate) fn conditional_double_precision_losses(
@@ -1643,7 +1745,8 @@ impl ResolvedGlobal {
         uses_double_precision: bool,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<LossNote>, CodecError> {
-        if self.global_table() != GlobalTable::V5_0 || !uses_double_precision {
+        let global_table = self.global_table(ctx)?;
+        if global_table != GlobalTable::V5_0 || !uses_double_precision {
             return Ok(Vec::new());
         }
         let mut losses = Vec::new();
@@ -1679,6 +1782,9 @@ impl ResolvedGlobal {
     /// that case, retain the declared flag and label the effective version as
     /// recovery rather than presenting it as the document's verified version.
     pub(crate) fn summary_notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
+        let effective_version = self.declaration.effective_version(ctx)?;
+        let global_table = effective_version.global_table();
+        let version_name = effective_version.name();
         let mut notes = Vec::new();
         ctx.push_formatted_retained(
             &mut notes,
@@ -1703,7 +1809,7 @@ impl ResolvedGlobal {
                 "iges global summary text",
             )?;
         }
-        if self.global_table() == GlobalTable::V5_0 {
+        if global_table == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
                 ctx.push_formatted_retained(
                     &mut notes,
@@ -1724,7 +1830,7 @@ impl ResolvedGlobal {
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
             ctx.push_formatted_retained(
                 &mut notes,
-                format_args!("iges_version={}", self.version_name()),
+                format_args!("iges_version={version_name}"),
                 "iges global summary notes",
                 "iges global summary text",
             )?;
@@ -1746,7 +1852,7 @@ impl ResolvedGlobal {
             )?;
             ctx.push_formatted_retained(
                 &mut notes,
-                format_args!("iges_effective_version={}", self.version_name()),
+                format_args!("iges_effective_version={version_name}"),
                 "iges global summary notes",
                 "iges global summary text",
             )?;

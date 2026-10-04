@@ -1455,12 +1455,16 @@ fn homogeneous_pcurve_spans(
     )?;
     internal.dedup();
     for knot in internal {
-        while copied_knots
-            .iter()
-            .filter(|candidate| **candidate == knot)
-            .count()
-            < degree
-        {
+        loop {
+            ctx.charge_work(1, "iges pcurve internal knot multiplicity")?;
+            if copied_knots
+                .iter()
+                .filter(|candidate| **candidate == knot)
+                .count()
+                >= degree
+            {
+                break;
+            }
             if insert_homogeneous_pcurve_knot(degree, &mut copied_knots, &mut controls, knot, ctx)?
                 .is_none()
             {
@@ -1510,6 +1514,7 @@ fn split_homogeneous_pcurve(
     first.extend_from_slice(controls);
     levels.push(first);
     while levels.last().is_some_and(|level| level.len() > 1) {
+        ctx.charge_work(1, "iges pcurve split levels")?;
         let Some(previous) = levels.last() else {
             return Ok(None);
         };

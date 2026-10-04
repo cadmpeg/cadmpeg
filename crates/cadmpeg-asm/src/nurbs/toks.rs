@@ -760,11 +760,11 @@ pub(crate) fn admit_subtype_references(
         let root = (subtype_refs(&record.tokens), None);
         ctx.push_scoped_vec(&mut scratch, &mut pending, root, "walk ASM subtype stack")?;
         while let Some((references, _guard)) = pending.last_mut() {
+            ctx.charge_work(1, "follow ASM subtype reference")?;
             let Some(index) = references.next() else {
                 pending.pop();
                 continue;
             };
-            ctx.charge_work(1, "follow ASM subtype reference")?;
             if visited.contains(&index) {
                 continue;
             }

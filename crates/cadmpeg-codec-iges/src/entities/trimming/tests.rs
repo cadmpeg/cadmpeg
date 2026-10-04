@@ -915,16 +915,15 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
 
 #[test]
 fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
-    let global = crate::test_support::parse_global(
+    let resolved_global = crate::test_support::parse_global(
         &crate::test_support::scan(&fixed_ascii_with_global(
             b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,3,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
         ))
         .unwrap(),
     )
     .unwrap()
-    .0
-    .length_context()
-    .unwrap();
+    .0;
+    let global = crate::test_support::with_service_context(&[], |ctx| resolved_global.length_context(ctx)).unwrap().unwrap();
     let points = [Point3::new(100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)];
     let policy = FaceTolerancePolicy::from_global(&global, points.into_iter());
 

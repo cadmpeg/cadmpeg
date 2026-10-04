@@ -49,7 +49,7 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         fields[13] = "3".into();
         fields[14] = format!("{}H{name}", name.len());
         let (parsed, losses) = resolve_global_fields(&fields);
-        let actual = parsed.length_context().unwrap().length_factor_mm();
+        let actual = crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().length_factor_mm();
         let tolerance = f64::EPSILON * 64.0 * expected.abs().max(1.0);
         assert!((actual - expected).abs() <= tolerance, "{name}: {actual}");
         assert!(losses.is_empty(), "{name}: {losses:#?}");
@@ -69,7 +69,7 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         fields[13] = "3".into();
         fields[14] = format!("{}H{name}", name.len());
         let (parsed, losses) = resolve_global_fields(&fields);
-        assert!(parsed.length_context().is_none(), "{name}");
+        assert!(crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().is_none(), "{name}");
         assert_eq!(parsed.units_name(), Some(name.as_str()), "{name}");
         assert_eq!(losses.len(), 1, "{name}: {losses:#?}");
         assert_eq!(
@@ -83,7 +83,7 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
     fields[13] = "2".into();
     fields[14] = "7Hgarbage".into();
     let (parsed, losses) = resolve_global_fields(&fields);
-    assert_eq!(parsed.length_context().unwrap().length_factor_mm(), 1.0);
+    assert_eq!(crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().length_factor_mm(), 1.0);
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -95,7 +95,7 @@ fn flag_three_units_require_a_nonempty_name_and_accept_delegated_symbols() {
         fields[14] = units_name.into();
         let (parsed, losses) = resolve_global_fields(&fields);
         assert_eq!(parsed.units_name(), Some(&units_name[2..]));
-        let actual = parsed.length_context().unwrap().length_factor_mm();
+        let actual = crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().length_factor_mm();
         let tolerance = f64::EPSILON * 64.0 * expected.max(1.0);
         assert!(
             (actual - expected).abs() <= tolerance,
@@ -108,7 +108,7 @@ fn flag_three_units_require_a_nonempty_name_and_accept_delegated_symbols() {
     fields[13] = "3".into();
     fields[14] = "0H".into();
     let (parsed, losses) = resolve_global_fields(&fields);
-    assert!(parsed.length_context().is_none());
+    assert!(crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().is_none());
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
         code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
@@ -128,7 +128,7 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
         .unwrap();
 
         assert_eq!(
-            parsed.length_context().unwrap().minimum_resolution_mm(),
+            crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().minimum_resolution_mm(),
             0.0
         );
         assert_eq!(losses.len(), expected, "{resolution:?}: {losses:#?}");
@@ -148,7 +148,7 @@ fn trailing_exponent_decimal_recovers_global_real_without_substitution() {
     let (parsed, losses) = resolve_global_fields(&fields);
 
     assert_eq!(
-        parsed.length_context().unwrap().minimum_resolution_mm(),
+        crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().minimum_resolution_mm(),
         2e-6
     );
     assert_eq!(losses.len(), 1, "{losses:#?}");
@@ -168,7 +168,7 @@ fn trailing_decimal_recovery_requires_an_exponent_prefix() {
     let (parsed, losses) = resolve_global_fields(&fields);
 
     assert_eq!(
-        parsed.length_context().unwrap().minimum_resolution_mm(),
+        crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().minimum_resolution_mm(),
         0.0
     );
     assert_eq!(losses.len(), 1, "{losses:#?}");

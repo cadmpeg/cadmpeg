@@ -165,7 +165,7 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
-        let representation = representation::classify(&mut reader)?
+        let representation = representation::classify(&mut reader, ctx)?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {
@@ -184,7 +184,7 @@ impl CodecBackend for IgesCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut source = Cursor::new(root.window());
-        let representation = representation::classify(&mut source)?
+        let representation = representation::classify(&mut source, ctx)?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {

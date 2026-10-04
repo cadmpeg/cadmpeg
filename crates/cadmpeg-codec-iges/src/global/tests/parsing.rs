@@ -16,6 +16,129 @@ use crate::test_support::test_cards::{
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
 use crate::IgesCodec;
 
+fn with_work_limit<T>(
+    source: &[u8],
+    max_work_units: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = max_work_units;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+    run(&ctx)
+}
+
+fn assert_work_limit(error: CodecError, operation: &str, additional: u64) {
+    assert!(matches!(error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional == additional
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn global_layout_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1H,", 0, |ctx| {
+        crate::global::layout_hollerith(b"1H,", 0, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global layout Hollerith digits", 1);
+}
+
+#[test]
+fn global_layout_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1H,", 2, |ctx| {
+        crate::global::layout_hollerith(b"1H,", 0, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global layout Hollerith count", 1);
+}
+
+#[test]
+fn global_layout_field_scan_refuses_work_before_field() {
+    let bytes = b",,1;";
+    // Both delimiters are the default bytes, so no Hollerith probe precedes the field slot.
+    let error = with_work_limit(bytes, 0, |ctx| {
+        crate::global::layout_global_cards(bytes, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global layout fields", 1);
+}
+
+#[test]
+fn global_layout_field_bytes_refuse_work_before_byte() {
+    let bytes = b",,1;";
+    // One field slot and the count digit plus its non-digit probe precede the byte scan.
+    let error = with_work_limit(bytes, 3, |ctx| {
+        crate::global::layout_global_cards(bytes, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global layout field bytes", 1);
+}
+
+#[test]
+fn global_hollerith_digit_scan_refuses_work_before_probe() {
+    let error = with_work_limit(b"1H,", 0, |ctx| {
+        crate::global::hollerith(b"1H,", 0, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global Hollerith digits", 1);
+}
+
+#[test]
+fn global_hollerith_count_refuses_utf8_work() {
+    let error = with_work_limit(b"1H,", 2, |ctx| {
+        crate::global::hollerith(b"1H,", 0, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global Hollerith count", 1);
+}
+
+#[test]
+fn global_field_scan_refuses_work_before_value() {
+    let bytes = fixed_ascii_with_global(b"1H,,1H;,;");
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    // The two delimiter counts each admit digit probes and UTF-8 validation; then the
+    // record delimiter copy, 26 indexed defaults, and parameter delimiter copy are admitted.
+    let preceding_work = 3 + 3 + 1 + 26 + 1;
+    let error = with_work_limit(&bytes, preceding_work, |ctx| {
+        crate::global::parse_raw(&scan, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global fields", 1);
+}
+
+#[test]
+fn global_date_component_refuses_utf8_work() {
+    let error = with_work_limit(b"010100.000000", 0, |ctx| {
+        crate::global::date_value_is_valid(b"010100.000000", true, ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global date component", 2);
+}
+
+#[test]
+fn global_numeric_text_refuses_utf8_work() {
+    let error = with_work_limit(b"42", 0, |ctx| {
+        crate::global::numeric_text(b"42", ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global numeric text", 2);
+}
+
+#[test]
+fn global_normalized_real_refuses_utf8_work() {
+    let error = with_work_limit(b"1D+0", 0, |ctx| {
+        crate::global::parse_real_text("1D+0", ctx).unwrap_err()
+    });
+    assert_work_limit(error, "iges global numeric text", 4);
+}
+
+#[test]
+fn global_supplied_string_refuses_utf8_work_after_retained_admission() {
+    let error = with_work_limit(b"abc", 0, |ctx| {
+        let resolution = crate::global::Resolution {
+            ctx,
+            values: vec![crate::global::Value::String(b"abc".to_vec())],
+            losses: Vec::new(),
+        };
+        resolution.supplied_string(0).unwrap_err()
+    });
+    assert_work_limit(error, "iges global supplied string", 3);
+}
+
 fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
     let mut fields = valid_global_fields();
     fields[0] = format!("1H{parameter}");

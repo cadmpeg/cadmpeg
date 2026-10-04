@@ -69,10 +69,11 @@ fn representation_version_products_and_registry_rows_are_closed_bidirectionally(
 
 #[test]
 fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits() {
+    crate::test_support::with_service_context(&[], |ctx| {
     // Fixed ASCII enumerates all eleven flags the version table declares.
     for flag in 1..=11 {
         assert_ne!(
-            dialect_id(Representation::FixedAscii, VersionFlag::exact(flag)),
+            dialect_id(Representation::FixedAscii, VersionFlag::exact(flag, ctx).unwrap()),
             IGES_UNKNOWN,
             "fixed ASCII flag {flag} must name its own row"
         );
@@ -81,19 +82,20 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     for representation in [Representation::CompressedAscii, Representation::Binary] {
         for flag in [6, 8, 9, 10, 11] {
             assert_ne!(
-                dialect_id(representation, VersionFlag::exact(flag)),
+                dialect_id(representation, VersionFlag::exact(flag, ctx).unwrap()),
                 IGES_UNKNOWN,
                 "{representation:?} flag {flag} must name its own row"
             );
         }
         for flag in [1, 2, 3, 4, 5, 7] {
             assert_eq!(
-                dialect_id(representation, VersionFlag::exact(flag)),
+                dialect_id(representation, VersionFlag::exact(flag, ctx).unwrap()),
                 IGES_UNKNOWN,
                 "{representation:?} flag {flag} has no declared row"
             );
         }
     }
+    });
 }
 
 #[test]

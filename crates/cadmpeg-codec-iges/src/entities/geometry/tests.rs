@@ -1977,3 +1977,5 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
         .message
         .contains("non-finite coefficients after length scaling")));
 }
+
+mod work_admission;

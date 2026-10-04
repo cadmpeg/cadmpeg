@@ -258,6 +258,7 @@ impl<'a> BitReader<'a> {
     ) -> Result<Vec<u8>, CodecError> {
         let mut output = Vec::new();
         loop {
+            ctx.charge_work(1, "iges binary string segments")?;
             let count = self.read_integer(lengths.single_integer)?;
             if count == 0 {
                 return Err(malformed("a Binary string has a zero character count"));
@@ -662,6 +663,7 @@ fn read_directory(
     let mut records = Vec::new();
     let mut cursor = 0_usize;
     while cursor < payload.len() {
+        ctx.charge_work(1, "iges binary section records")?;
         let offset = u32::try_from(cursor + 1)
             .map_err(|_| malformed("Binary Directory pointer exceeds u32"))?;
         let byte_count = usize::try_from(u32_at(payload, cursor)?)
@@ -925,7 +927,11 @@ fn normalize_start(
     let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    while let Some(value) = primitive_storage.with_storage(|| stream.next())? {
+    loop {
+        ctx.charge_work(1, "iges binary start primitives")?;
+        let Some(value) = primitive_storage.with_storage(|| stream.next())? else {
+            break;
+        };
         let BinaryValue::String(value) = value else {
             return Err(malformed(
                 "Binary Start section contains a non-text primitive",
@@ -949,6 +955,7 @@ fn render_start_cards(
     let mut line_start = 0;
     let mut index = 0;
     while index < text.len() {
+        ctx.charge_work(1, "iges binary start characters")?;
         if text[index] == b'\n' {
             return Err(malformed(
                 "Binary Start contains a line feed without a preceding carriage return",
@@ -1013,6 +1020,7 @@ fn read_parameters(
     let mut records = Vec::new();
     let mut cursor = 0_usize;
     while cursor < payload.len() {
+        ctx.charge_work(1, "iges binary section records")?;
         let offset = u32::try_from(cursor + 1)
             .map_err(|_| malformed("Binary Parameter pointer exceeds u32"))?;
         let byte_count = usize::try_from(u32_at(payload, cursor)?)
@@ -1036,7 +1044,11 @@ fn read_parameters(
             "Parameter Directory pointer",
         )?;
         let mut values = Vec::new();
-        while let Some(value) = stream.next()? {
+        loop {
+            ctx.charge_work(1, "iges binary parameter primitives")?;
+            let Some(value) = stream.next()? else {
+                break;
+            };
             ctx.reserve_vec(&mut values, 1, "iges binary parameter values")?;
             values.push(value);
         }
@@ -2308,4 +2320,80 @@ mod tests {
     fn binary_start_rejects_a_lone_line_feed() {
         assert!(normalize_for_test(&binary_file_with_start(b"first\nsecond")).is_err());
     }
+    fn assert_loop_work_refusal<T>(
+        operation: &str,
+        run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
+    ) {
+        let mut cap = 0_u64;
+        for _ in 0..128 {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
+            match run(&ctx) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                    if limit.operation == operation {
+                        return;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Err(error) => panic!("unexpected error before {operation}: {error}"),
+                Ok(_) => panic!("operation {operation} was not admitted"),
+            }
+        }
+        panic!("operation {operation} was not reached");
+    }
+
+    #[test]
+    fn binary_string_segments_refuse_loop_work() {
+        let mut writer = BitWriter::default();
+        writer.string(b"abc", lengths());
+        let bytes = writer.bytes();
+        assert_loop_work_refusal("iges binary string segments", |ctx| {
+            super::BitReader::new(&bytes).read_string(lengths(), ctx)
+        });
+    }
+
+    #[test]
+    fn binary_directory_records_refuse_loop_work() {
+        let bytes = directory_payload(lengths());
+        assert_loop_work_refusal("iges binary section records", |ctx| {
+            super::read_directory(&bytes, lengths(), ctx)
+        });
+    }
+
+    #[test]
+    fn binary_start_primitives_refuse_loop_work() {
+        let bytes = primitive_string(b"fixture", lengths());
+        assert_loop_work_refusal("iges binary start primitives", |ctx| {
+            super::normalize_start(&bytes, lengths(), ctx)
+        });
+    }
+
+    #[test]
+    fn binary_start_characters_refuse_loop_work() {
+        assert_loop_work_refusal("iges binary start characters", |ctx| {
+            super::render_start_cards(&mut Vec::new(), b"fixture", &mut 1, ctx)
+        });
+    }
+
+    #[test]
+    fn binary_parameter_records_refuse_loop_work() {
+        let bytes = parameter_payload(lengths());
+        let directory = std::collections::BTreeMap::from([(1, 0)]);
+        assert_loop_work_refusal("iges binary section records", |ctx| {
+            super::read_parameters(&bytes, lengths(), &directory, ctx)
+        });
+    }
+
+    #[test]
+    fn binary_parameter_primitives_refuse_loop_work() {
+        let bytes = parameter_payload(lengths());
+        let directory = std::collections::BTreeMap::from([(1, 0)]);
+        assert_loop_work_refusal("iges binary parameter primitives", |ctx| {
+            super::read_parameters(&bytes, lengths(), &directory, ctx)
+        });
+    }
+
 }

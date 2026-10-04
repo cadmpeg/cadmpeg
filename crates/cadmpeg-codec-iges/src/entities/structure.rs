@@ -1384,7 +1384,7 @@ fn plane_carrier(
 ) -> Result<Option<(Point3, Vector3)>, CodecError> {
     let mut key_storage = [0_u8; 64];
     let Some(key) =
-        crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage)
+        crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage, ctx)?
     else {
         return Ok(None);
     };
@@ -1715,7 +1715,7 @@ fn plane_boundary_edge(
 ) -> Result<Edge, PlaneBoundaryError> {
     let mut key_storage = [0_u8; 64];
     let key =
-        crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
+        crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage, ctx)?
             .ok_or(PlaneBoundaryError::MissingEdge)?;
     let source_edge = index
         .edges(key, ctx)
