@@ -153,3 +153,42 @@ fn component_path_type_identities_name_ordered_features() {
         ["prior"]
     );
 }
+
+#[test]
+fn dissected_profile_propagates_ordinal_work_refusal() {
+    let feature = Feature {
+        id: "profile".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: None,
+        ordinal: 0,
+        name: "Sketch<1>".into(),
+        kind: String::new(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::from([(
+            cadmpeg_core::nonblank_const!("Description"),
+            "Sketch<1>".into(),
+        )]),
+        text: None,
+        content: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::is_dissected_profile_feature(&ctx, &feature),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "split SLDPRT dissected profile ordinal"
+    ));
+    assert!(super::is_dissected_profile_feature(
+        &cadmpeg_test_support::service_decode_context(),
+        &feature,
+    ).unwrap());
+}

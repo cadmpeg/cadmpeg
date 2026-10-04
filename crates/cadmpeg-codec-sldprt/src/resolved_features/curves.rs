@@ -379,9 +379,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     second_entity.construction = false;
     second_entity.endpoint_refs = second_endpoint_refs;
     second_entity.geometry = second_geometry;
-    let sketch_key = sketch
-        .as_str()
-        .rsplit_once('#')
+    let sketch_key = ctx.rsplit_once(sketch.as_str(), "#", "split SLDPRT semicircle sketch key")?
         .map_or(sketch.as_str(), |(_, key)| key);
     for (index, (start_ref, end_ref, start, end)) in [
         (

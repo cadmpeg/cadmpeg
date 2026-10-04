@@ -369,7 +369,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     Some((*first, *second, 0))
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
-                    if is_dissectable(first) || is_dissected_profile_feature(second) =>
+                    if is_dissectable(first) || is_dissected_profile_feature(ctx, second)? =>
                 {
                     Some((*second, *first, 1))
                 }
@@ -598,15 +598,16 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     Ok(referenced_definitions.is_empty() || referenced_definitions == definitions)
 }
 
-pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
-    feature.properties.get("Description") == Some(&feature.name)
-        && feature
-            .name
-            .rsplit_once('<')
+pub(crate) fn is_dissected_profile_feature(
+    ctx: &DecodeContext<'_>,
+    feature: &crate::records::Feature,
+) -> Result<bool, CodecError> {
+    Ok(feature.properties.get("Description") == Some(&feature.name)
+        && ctx.rsplit_once(&feature.name, "<", "split SLDPRT dissected profile ordinal")?
             .and_then(|(_, suffix)| suffix.strip_suffix('>'))
             .is_some_and(|ordinal| {
                 !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-            })
+            }))
 }
 
 pub(crate) fn project_dissected_sketches(
@@ -653,12 +654,14 @@ pub(crate) fn project_dissected_sketches(
                     | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 ..
             })
-        ) && feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| native_features.get(native))
-            .is_some_and(|native| is_dissected_profile_feature(native))
+        )
     }) {
+        let Some(native) = feature.native_ref.as_deref().and_then(|native| native_features.get(native)) else {
+            continue;
+        };
+        if !is_dissected_profile_feature(ctx, native)? {
+            continue;
+        }
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(feature.dependencies.len()),
             "resolve SLDPRT dissected profile owner",

@@ -1450,7 +1450,7 @@ pub(crate) fn bind_scalar_operands(
             {
                 continue;
             }
-            if !is_dissected_profile_feature(child) {
+            if !is_dissected_profile_feature(ctx, child)? {
                 continue;
             }
             let child_end = starts

@@ -612,9 +612,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                     )?;
                 }
             }
-            let relation_key = relation
-                .id
-                .rsplit_once('#')
+            let relation_key = ctx.rsplit_once(&relation.id, "#", "split SLDPRT relation key")?
                 .map_or(relation.id.as_str(), |(_, key)| key);
             let (mut key_text, _key_reservation) =
                 ctx.scoped_string(relation_key.len(), OPERATION)?;
@@ -2836,9 +2834,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     Option<&str>,
                 )>::new();
                 for lane in lanes {
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
+                    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for selection in &lane.surface_selections {
                         ctx.charge_work(1, REFERENCE_OPERATION)?;
@@ -2891,9 +2887,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         };
                         ctx.insert_hash_set(&mut cylinder_tokens, token, TOKEN_OPERATION)?;
                     }
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
+                    let lane_key = ctx.rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for super::selections::CylinderMarkerReference(marker, components) in
                         cosmetic_thread_cylinder_marker_reference(

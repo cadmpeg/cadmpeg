@@ -206,33 +206,35 @@ pub(crate) fn bind_unique_sketch_feature(
         )?;
         let mut candidates = feature_indices
             .iter()
-            .filter(|base_index| {
+            .map(|base_index| -> Result<Option<&usize>, cadmpeg_core::CodecError> {
+                if features[*base_index].name.as_deref() != Some(base_name) {
+                    return Ok(None);
+                }
                 let alias_native = features[*index]
                     .native_ref
                     .as_deref()
                     .and_then(|native_ref| native_features.get(native_ref));
-                let base_native = features[**base_index]
+                let base_native = features[*base_index]
                     .native_ref
                     .as_deref()
                     .and_then(|native_ref| native_features.get(native_ref));
-                features[**base_index].name.as_deref() == Some(base_name)
-                    && alias_native.zip(base_native).is_some_and(|(alias, base)| {
-                        let compatible_class = alias.input_class == base.input_class
-                            || (alias.input_class.is_none()
-                                && base.input_class.as_deref() == Some("moProfileFeature_c")
-                                && crate::resolved_features::component_paths::is_dissected_profile_feature(
-                                    alias,
-                                ));
-                        alias.xml_tag == base.xml_tag
-                            && compatible_class
-                            && alias.parameters == base.parameters
-                            && alias.content == base.content
-                    })
-            });
-        let Some(base_index) = candidates.next() else {
+                let Some((alias, base)) = alias_native.zip(base_native) else {
+                    return Ok(None);
+                };
+                let compatible_class = alias.input_class == base.input_class
+                    || (alias.input_class.is_none()
+                        && base.input_class.as_deref() == Some("moProfileFeature_c")
+                        && crate::resolved_features::component_paths::is_dissected_profile_feature(ctx, alias)?);
+                Ok((alias.xml_tag == base.xml_tag
+                    && compatible_class
+                    && alias.parameters == base.parameters
+                    && alias.content == base.content).then_some(base_index))
+            })
+            .filter_map(Result::transpose);
+        let Some(base_index) = candidates.next().transpose()? else {
             continue;
         };
-        if candidates.next().is_some() {
+        if candidates.next().transpose()?.is_some() {
             continue;
         }
         let base_index = *base_index;
