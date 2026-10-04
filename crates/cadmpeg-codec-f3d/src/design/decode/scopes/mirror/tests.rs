@@ -101,85 +101,46 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
 }
 
 #[test]
-fn compact_mirror_reference_refuses_guid_text_limits() {
+fn compact_mirror_reference_validates_guids_in_place() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let (bytes, header, identity, reference) = compact_reference_fixture();
-    for cap in [35, 71] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cap;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = compact_feature_reference(&ctx, &bytes, &header);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d Design UTF-16 text"
-        ));
-    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        compact_feature_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &header
-        )
-        .unwrap(),
+        compact_feature_reference(&ctx, &bytes, &header).unwrap(),
         Some((reference, u64_from_index(identity + 21)))
     );
-}
-
-#[test]
-fn compact_mirror_ascii_tag_refusal_propagates() {
-    let (bytes, header, _, _) = compact_reference_fixture();
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D Mirror ASCII tag",
-        0,
-        |ctx| compact_feature_reference(ctx, &bytes, &header),
-    );
-    assert!(matches!(
+    for operation in [
+        "validate F3D counted relaxed GUID",
+        "find F3D indexed record header",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| compact_feature_reference(ctx, &bytes, &header),
+        );
+        assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
-    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-    && limit.operation == "validate F3D Mirror ASCII tag"
-    && limit.additional == 3
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
         ));
+    }
 }
 
 #[test]
 fn class_413_mirror_scope_decodes_inline_tolerance() {
     let (bytes, scope) = class_413_tolerance_fixture();
-    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &scope,
-    )
-    .unwrap()
-    .expect("class-413 tolerance");
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-413 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
-}
-
-#[test]
-fn class_413_mirror_kind_count_refusal_propagates() {
-    let (bytes, scope) = class_413_tolerance_fixture();
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "count F3D Mirror kind UTF-16 units",
-        0,
-        |ctx| exact_legacy_mirror_scope_tolerance(ctx, &bytes, &scope),
-    );
-    assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-    && limit.operation == "count F3D Mirror kind UTF-16 units"
-    && limit.additional == 6
-        ));
 }
 
 #[test]
@@ -210,13 +171,8 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 76] = 1;
     bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &scope,
-    )
-    .unwrap()
-    .expect("class-369 tolerance");
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-369 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.marker.code(), 89);
@@ -225,15 +181,7 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     assert_eq!(carrier.second_reference, 11);
 
     bytes[32 + 59..32 + 63].copy_from_slice(&90_u32.to_le_bytes());
-    assert_eq!(
-        exact_legacy_mirror_scope_tolerance(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &scope
-        )
-        .unwrap(),
-        None
-    );
+    assert_eq!(exact_legacy_mirror_scope_tolerance(&bytes, &scope), None);
 }
 
 #[test]
@@ -264,13 +212,8 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     bytes[32 + 63..32 + 67].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 75] = 1;
     bytes[32 + 76..32 + 80].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &scope,
-    )
-    .unwrap()
-    .expect("class-391 tolerance");
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-391 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 50);
     assert_eq!(carrier.marker.code(), 94);
@@ -279,15 +222,7 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     assert_eq!(carrier.second_reference, 11);
 
     bytes[32 + 58..32 + 62].copy_from_slice(&95_u32.to_le_bytes());
-    assert_eq!(
-        exact_legacy_mirror_scope_tolerance(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &scope
-        )
-        .unwrap(),
-        None
-    );
+    assert_eq!(exact_legacy_mirror_scope_tolerance(&bytes, &scope), None);
 }
 
 #[test]
@@ -318,13 +253,8 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 76] = 1;
     bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &scope,
-    )
-    .unwrap()
-    .expect("class-440 tolerance");
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-440 tolerance");
     assert_eq!(value.get(), 0.25);
     assert_eq!(offset, 32 + 51);
     assert_eq!(carrier.marker.code(), 100);
@@ -359,13 +289,8 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     bytes[32 + 59..32 + 63].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 71] = 1;
     bytes[32 + 72..32 + 76].copy_from_slice(&11_u32.to_le_bytes());
-    let (value, offset, carrier) = exact_legacy_mirror_scope_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &scope,
-    )
-    .unwrap()
-    .expect("class-441 tolerance");
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-441 tolerance");
     assert_eq!(value.get(), 0.125);
     assert_eq!(offset, 32 + 50);
     assert_eq!(carrier.marker.code(), 61);
@@ -434,19 +359,6 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
         .unwrap(),
         Some((count_record_index, 40))
     );
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "find F3D Mirror count reference",
-        0,
-        |ctx| exact_legacy_mirror_scope_count(ctx, &bytes, &records, &scope),
-    );
-    assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-    && limit.operation == "find F3D Mirror count reference"
-    && limit.additional == 4
-        ));
 }
 
 #[test]
@@ -455,6 +367,14 @@ fn mirror_header_index_refuses_collection_limit() {
     use std::io::Cursor;
     use zip::CompressionMethod;
 
+    // The header index is built for the first Mirror scope.
+    let mirror_scope = || {
+        DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#2",
+            crate::records::feature::scope::DesignFeatureKind::Mirror,
+            2,
+        )
+    };
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record-header#1".into(),
         record_index: 1,
@@ -473,7 +393,7 @@ fn mirror_header_index_refuses_collection_limit() {
         let refusal = super::bind_mirror_constructions(
             &limited,
             scan,
-            &mut [],
+            &mut [mirror_scope()],
             &[],
             std::slice::from_ref(&header),
             &[],
@@ -488,7 +408,7 @@ fn mirror_header_index_refuses_collection_limit() {
         super::bind_mirror_constructions(
             &cadmpeg_test_support::service_decode_context(),
             scan,
-            &mut [],
+            &mut [mirror_scope()],
             &[],
             std::slice::from_ref(&header),
             &[],
@@ -503,7 +423,7 @@ fn mirror_header_index_refuses_collection_limit() {
                 super::bind_mirror_constructions(
                     ctx,
                     scan,
-                    &mut [],
+                    &mut [mirror_scope()],
                     &[],
                     std::slice::from_ref(&header),
                     &[],
@@ -523,16 +443,49 @@ fn mirror_header_index_refuses_collection_limit() {
 
 #[test]
 fn mirror_unique_match_preserves_zero_one_and_many() {
-    assert!(matches!(
-        super::unique_match(std::iter::empty::<u32>()),
-        super::UniqueMatch::Zero
-    ));
-    assert!(matches!(
-        super::unique_match([7].into_iter()),
-        super::UniqueMatch::One(7)
-    ));
-    assert!(matches!(
-        super::unique_match([7, 8].into_iter()),
-        super::UniqueMatch::Many
-    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    // The number of selected values, up to two, and the only one.
+    let select = |values: &[u32]| match super::unique_match(
+        &ctx,
+        values,
+        |value| Ok(*value >= 7),
+        "find test values",
+    )
+    .unwrap()
+    {
+        super::UniqueMatch::Zero => (0, None),
+        super::UniqueMatch::One(value) => (1, Some(*value)),
+        super::UniqueMatch::Many => (2, None),
+    };
+    assert_eq!(select(&[]), (0, None));
+    assert_eq!(select(&[1, 7, 2]), (1, Some(7)));
+    assert_eq!(select(&[7, 8]), (2, None));
+}
+
+#[test]
+fn mirror_unique_match_charges_only_the_values_it_visits() {
+    // The second match is the third value, so three work units decide the
+    // search and the fourth value is never read.
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 3;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let found = super::unique_match(
+            ctx,
+            &[1, 7, 8, 9],
+            |value| Ok(*value >= 7),
+            "find test values",
+        )
+        .unwrap();
+        assert!(matches!(found, super::UniqueMatch::Many));
+    });
+    policy.limits.max_work_units = 2;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::unique_match(
+            ctx,
+            &[1, 7, 8, 9],
+            |value| Ok(*value >= 7),
+            "find test values"
+        )
+        .is_err());
+    });
 }
