@@ -537,7 +537,6 @@ pub(crate) fn closed_source_trait(tcx: TyCtxt<'_>, trait_id: rustc_span::def_id:
         &["decode", "text", "QuerySource"][..],
         &["decode", "text_collect", "TextFragment"][..],
         &["decode", "extend_source", "ExtendSource"][..],
-        &["decode", "compare", "HashSetSource"][..],
     ]
     .iter()
     .any(|path| physical_item_path(tcx, trait_id, "cadmpeg_core", path))
@@ -558,6 +557,9 @@ pub(crate) fn closed_admission_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_
     false
 }
 
+/// A body inside a Serde `Serialize` or `Deserialize` implementation. These
+/// run as callbacks of a serializer or deserializer; the decode call that
+/// starts them owns their admission.
 pub(crate) fn serde_body(tcx: TyCtxt<'_>, mut owner: rustc_span::def_id::DefId) -> bool {
     while let Some(parent) = tcx.opt_parent(owner) {
         if matches!(
