@@ -1,42 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible linear search and byte comparison under the caller's work budget.
 
-use super::iter_source::{IterSource, VisitBoundError};
+use super::iter_source::{AdmissionMode, IterSource, Precharged};
 use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
 
-/// An iterator whose upper visit bound was charged before construction.
+/// An iterator whose source work is admitted by its charging mode.
 /// Its private source cannot be cloned or extracted for unpaid replay.
 #[derive(Debug)]
-pub struct AdmittedIter<I> {
+pub struct AdmittedIter<I, Mode = Precharged> {
     source: I,
+    mode: Mode,
 }
 
-impl<I: Iterator> Iterator for AdmittedIter<I> {
-    type Item = I::Item;
+impl<I, Mode> AdmittedIter<I, Mode> {
+    pub(super) fn from_admitted(source: I, mode: Mode) -> Self {
+        Self { source, mode }
+    }
+}
+
+impl<I, Mode> Iterator for AdmittedIter<I, Mode>
+where
+    I: Iterator,
+    Mode: AdmissionMode<I>,
+{
+    type Item = Mode::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.source.next()
+        self.mode.next(&mut self.source)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.source.size_hint()
+        self.mode.size_hint(&self.source)
     }
 }
 
-impl<I: DoubleEndedIterator> DoubleEndedIterator for AdmittedIter<I> {
+impl<I: DoubleEndedIterator> DoubleEndedIterator for AdmittedIter<I, Precharged> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.source.next_back()
     }
 }
 
-impl<I: ExactSizeIterator> ExactSizeIterator for AdmittedIter<I> {}
+impl<I: ExactSizeIterator> ExactSizeIterator for AdmittedIter<I, Precharged> {}
 
-impl<'a, T> AdmittedIter<std::slice::Iter<'a, T>> {
+impl<'a, T> AdmittedIter<std::slice::Iter<'a, T>, Precharged> {
     /// Consumes admission for overlapping windows; each window has child work.
     pub fn windows(self, size: std::num::NonZeroUsize) -> AdmittedIter<std::slice::Windows<'a, T>> {
         AdmittedIter {
             source: self.source.as_slice().windows(size.get()),
+            mode: Precharged(()),
         }
     }
 
@@ -44,21 +56,23 @@ impl<'a, T> AdmittedIter<std::slice::Iter<'a, T>> {
     pub fn chunks(self, size: std::num::NonZeroUsize) -> AdmittedIter<std::slice::Chunks<'a, T>> {
         AdmittedIter {
             source: self.source.as_slice().chunks(size.get()),
+            mode: Precharged(()),
         }
     }
 }
 
-impl<'text> AdmittedIter<std::str::Chars<'text>> {
+impl<'text> AdmittedIter<std::str::Chars<'text>, Precharged> {
     /// Consumes byte admission for the remaining UTF-16 units.
     /// A UTF-16 unit count does not exceed the UTF-8 byte count.
     pub fn encode_utf16(self) -> AdmittedIter<std::str::EncodeUtf16<'text>> {
         AdmittedIter {
             source: self.source.as_str().encode_utf16(),
+            mode: Precharged(()),
         }
     }
 }
 
-impl DecodeContext<'_> {
+impl<'arena> DecodeContext<'arena> {
     /// Finds a non-empty byte pattern after admitting both input extents.
     /// An empty pattern has no matches.
     pub fn find_bytes(
@@ -162,7 +176,8 @@ impl DecodeContext<'_> {
             Some(memchr::memmem::find_iter(haystack, needle))
         };
         Ok(AdmittedIter {
-            source: search.into_iter().flatten(),
+            source: std::iter::IntoIterator::into_iter(search).flatten(),
+            mode: Precharged(()),
         })
     }
 
@@ -192,23 +207,18 @@ impl DecodeContext<'_> {
         Ok(left.eq_ignore_ascii_case(right))
     }
 
-    /// Admits the source traversal before visiting any element. Iterator adapters
-    /// run on the admitted result; callbacks admit their own child work.
-    pub fn admit_iter<'values, S: IterSource + ?Sized>(
-        &self,
-        values: &'values S,
+    /// Admits a known source before traversal and an unknown source before each
+    /// step. Incremental sources yield `Result` items; callers propagate the first
+    /// refusal. Adapters over admitted results keep their charging mode.
+    pub fn admit_iter<'context, S: IterSource>(
+        &'context self,
+        values: S,
         operation: &'static str,
-    ) -> Result<AdmittedIter<S::Iter<'values>>, super::ResourceLimit> {
-        let bound = match values.visit_bound() {
-            Ok(bound) => bound,
-            Err(VisitBoundError::ExceedsU64) => {
-                return Err(self.budget.work_bound_overflow_limit(operation));
-            }
-        };
-        self.charge_work_limit(bound, operation)?;
-        Ok(AdmittedIter {
-            source: values.source_iter(),
-        })
+    ) -> Result<AdmittedIter<S::Iter, S::Mode<'context, 'arena>>, super::ResourceLimit>
+    where
+        'arena: 'context,
+    {
+        super::iter_source::sealed::Sealed::admit(values, self, operation)
     }
 
     /// Returns the first matching position. Each visited slot is admitted before
@@ -285,10 +295,10 @@ impl DecodeContext<'_> {
         Ok(found)
     }
 
-    /// Counts a sealed source after admitting its complete traversal.
-    pub fn count<S: IterSource + ?Sized>(
+    /// Counts a sealed source with a complete upfront traversal bound.
+    pub fn count<S: IterSource<AdmissionKind = Precharged>>(
         &self,
-        values: &S,
+        values: S,
         operation: &'static str,
     ) -> Result<usize, CodecError> {
         Ok(self.admit_iter(values, operation)?.count())
@@ -546,12 +556,16 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::iter_source::IterSource;
+    mod iteration;
+    use crate::decode::iter_source::{IterSource, Precharged};
     use crate::decode::ResourceFailure;
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
-    fn assert_range_overflow<S: IterSource + ?Sized>(source: &S, prior_work: u64) {
+    fn assert_range_overflow<S: IterSource<AdmissionKind = Precharged>>(
+        source: S,
+        prior_work: u64,
+    ) {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
@@ -1029,8 +1043,8 @@ mod tests {
 
     #[test]
     fn overflowing_range_bounds_fuse_at_the_work_limit() {
-        assert_range_overflow(&(0_u64..=u64::MAX), 0);
-        assert_range_overflow(&(0_u128..=u128::MAX), u64::MAX);
+        assert_range_overflow(0_u64..=u64::MAX, 0);
+        assert_range_overflow(0_u128..=u128::MAX, u64::MAX);
     }
 
     #[test]
