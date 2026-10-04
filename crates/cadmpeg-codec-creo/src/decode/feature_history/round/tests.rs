@@ -1037,11 +1037,11 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
     ]);
 
     assert_eq!(
-        super::round_placed_cylinder_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_placed_cylinder_radius(ctx, 
             &ir,
             &row,
             &crate::decode::source_carriers::SourceUnitCarriers::default()
-        ),
+        )).expect("service profile admits scalar parsing"),
         None
     );
 }
@@ -1491,4 +1491,23 @@ fn numerical_followup_slot_requires_one_tangent_radius() {
             assert_eq!(result.is_some(), ratio == 1.);
         }
     }
+}
+
+#[test]
+fn lazy_plane_radius_propagates_final_item_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let planes = std::iter::once("1").map(|text| {
+        ctx.parse_text::<u32>(text, "creo scalar text parsing")?
+            .expect("valid plane identity");
+        Ok(None)
+    });
+    let error = super::parallel_support_radius_from_iter(&planes).expect_err("last refusal propagates");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo scalar text parsing"));
 }

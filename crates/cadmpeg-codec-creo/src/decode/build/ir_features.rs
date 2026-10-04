@@ -287,13 +287,9 @@ pub(super) fn emit_model_features(
     }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
-        if !ir.model.features.iter().any(|feature| {
-            crate::identity::matches_numbered_identity(
-                feature.id.as_str(),
-                "creo:model:feature#",
-                operation.feature_id,
-            )
-        }) {
+        if !ctx.any_by(&(ir.model.features)[..], |feature| -> Result<bool, cadmpeg_core::CodecError> {
+            Ok(crate::identity::matches_numbered_identity(ctx, feature.id.as_str(), "creo:model:feature#", operation.feature_id)?)
+        }, "creo numbered identity candidate scan")? {
             ctx.charge_entities(1, "admit Creo model features")?;
         }
         let current_operation =
@@ -421,16 +417,11 @@ pub(super) fn emit_model_features(
             .transpose()?;
         let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
         let (id, id_bytes) = compose_feature_id(ctx, operation.feature_id)?;
-        let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
-            .and_then(|parent_feature_id| {
-                ir.model.features.iter().find(|feature| {
-                    crate::identity::matches_numbered_identity(
-                        feature.id.as_str(),
-                        "creo:model:feature#",
-                        parent_feature_id,
-                    )
-                })
-            })
+        let parent = (current_feature_recipe_parent(&scan.features.operations, operation.feature_id)).map(|parent_feature_id| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                Ok(ctx.find_by(&(ir.model.features)[..], |feature| -> Result<bool, cadmpeg_core::CodecError> {
+                    Ok(crate::identity::matches_numbered_identity(ctx, feature.id.as_str(), "creo:model:feature#", parent_feature_id)?)
+                }, "creo numbered identity candidate scan")?)
+            }).transpose()?.flatten()
             .map(|feature| &feature.id);
         if let Some(parent) = parent {
             lookup_storage.with_storage(|| {

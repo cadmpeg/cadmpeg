@@ -328,25 +328,23 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
     Ok(outputs)
 }
 
-pub(in super::super) fn evaluated_sweep_body_kind(
+pub(in super::super) fn evaluated_sweep_body_kind(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     ir: &CadIr,
     family: &str,
     feature_id: u32,
-) -> Option<BodyKind> {
+) -> Result<Option<BodyKind>, cadmpeg_core::CodecError> {
     let prefix = match family {
         "extrusion" => "creo:feature:extrusion#",
         "revolution" => "creo:feature:revolution#",
-        _ => return None,
+        _ => return Ok(None),
     };
-    exactly_one(ir.model.bodies.iter().filter(|body| {
-        body.id
-            .as_str()
-            .strip_suffix(":body")
-            .is_some_and(|candidate| {
-                crate::identity::matches_numbered_identity(candidate, prefix, feature_id)
-            })
-    }))
-    .map(|body| body.kind)
+    Ok(({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.bodies)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let body = &numbered_identity_candidate; 
+        Ok(if match body.id.as_str().strip_suffix(":body") {
+                Some(candidate) => crate::identity::matches_numbered_identity(ctx, candidate, prefix, feature_id)?,
+                None => false,
+            } { Some(numbered_identity_candidate) } else { None })
+    }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique })
+    .map(|body| body.kind))
 }
 
 pub(in super::super) fn new_sheet_output_surface_id(
@@ -383,13 +381,13 @@ pub(in super::super) fn new_sheet_output_surface_id(
     surfaces.next().is_none().then_some(surface.id)
 }
 
-pub(in super::super) fn sweep_output_kind(
+pub(in super::super) fn sweep_output_kind(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     scan: &ContainerScan,
     ir: &CadIr,
     family: &str,
     feature_id: u32,
-) -> Option<BodyKind> {
-    evaluated_sweep_body_kind(ir, family, feature_id).or_else(|| {
+) -> Result<Option<BodyKind>, cadmpeg_core::CodecError> {
+    Ok(evaluated_sweep_body_kind(ctx, ir, family, feature_id)?.or_else(|| {
         feature_is_sheet_extrusion(scan, feature_id).then_some(())?;
         new_sheet_output_surface_id(
             feature_id,
@@ -402,7 +400,7 @@ pub(in super::super) fn sweep_output_kind(
                 .filter(|operation| operation.kind.as_str() == "Surface")
                 .map(|_| BodyKind::Sheet)
         })
-    })
+    }))
 }
 
 pub(super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {

@@ -630,10 +630,10 @@ pub(crate) fn operation_states(
         if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Some(feature_id) = std::str::from_utf8(&digits[..end])
-            .ok()
-            .and_then(|digits| digits.parse::<u32>().ok())
-        else {
+        let Ok(digits) = std::str::from_utf8(&digits[..end]) else {
+            continue;
+        };
+        let Ok(feature_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
         let record_start = payload[..offset]

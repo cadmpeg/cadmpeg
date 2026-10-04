@@ -32,6 +32,27 @@ pub(crate) struct FeatureRow {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureRow {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.feature_id,
+                &self.root_schema_class,
+                &self.stream_offset,
+                &*self.body,
+                &self.body_offset,
+                &self.offset,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Row bytes with a complete two-byte header.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureRowBody(Vec<u8>);

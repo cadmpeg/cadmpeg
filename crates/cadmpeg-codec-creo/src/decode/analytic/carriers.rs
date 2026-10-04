@@ -434,12 +434,18 @@ pub(in crate::decode) fn placed_carriers(
                 ctx.insert_btree_map(&mut carriers, row.id, carrier, "creo placed carrier nodes")?;
                 continue;
             }
-            let mut model_surfaces = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| matches_native_surface_id(scan, row.id, &surface.id));
-            let surface = match (model_surfaces.next(), model_surfaces.next()) {
+            let mut first = None;
+            let mut second = None;
+            for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+                if matches_native_surface_id(ctx, scan, row.id, &surface.id)? {
+                    if first.is_some() {
+                        second = Some(surface);
+                        break;
+                    }
+                    first = Some(surface);
+                }
+            }
+            let surface = match (first, second) {
                 (None, _) => continue,
                 (Some(surface), None) => surface,
                 (Some(_), Some(_)) => {
@@ -478,12 +484,8 @@ pub(in crate::decode) fn placed_carriers(
         }
     }
     for datum in &scan.planes.datum_cylinders {
-        let Some(surface) = exactly_one(
-            ir.model
-                .surfaces
-                .iter()
-                .filter(|surface| matches_native_surface_id(scan, datum.id, &surface.id)),
-        ) else {
+        let Some(surface) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model
+                .surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let surface = &numbered_identity_candidate;  Ok(if matches_native_surface_id(ctx, scan, datum.id, &surface.id)? { Some(numbered_identity_candidate) } else { None }) }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else {
             carriers.remove(&datum.id);
             continue;
         };
@@ -559,12 +561,8 @@ fn positional_cylinder_carrier(
         == Some(SchemaClass::Round)
         && inline
     {
-        if let Some(surface) = exactly_one(
-            ir.model
-                .surfaces
-                .iter()
-                .filter(|surface| matches_native_surface_id(scan, row.id, &surface.id)),
-        ) {
+        if let Some(surface) = { let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model
+                .surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let surface = &numbered_identity_candidate;  Ok(if matches_native_surface_id(ctx, scan, row.id, &surface.id)? { Some(numbered_identity_candidate) } else { None }) }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique } {
             if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Ok(Some(carrier));
             }

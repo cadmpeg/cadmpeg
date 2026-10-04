@@ -768,10 +768,15 @@ fn toc_sections<'a>(
         };
         let header = header.trim_end_matches('#');
         let mut fields = header.split_whitespace();
-        let (Some(count), Some(row_width)) = (
-            fields.nth(2).and_then(|value| value.parse::<usize>().ok()),
-            fields.next().and_then(|value| value.parse::<usize>().ok()),
-        ) else {
+        let count = match fields.nth(2) {
+            Some(value) => ctx.parse_text::<usize>(value, "creo scalar text parsing")?.ok(),
+            None => None,
+        };
+        let row_width = match fields.next() {
+            Some(value) => ctx.parse_text::<usize>(value, "creo scalar text parsing")?.ok(),
+            None => None,
+        };
+        let (Some(count), Some(row_width)) = (count, row_width) else {
             continue;
         };
         if row_width == 0 {
@@ -913,7 +918,7 @@ fn legacy_toc_sections<'a>(
         return Ok(Vec::new());
     };
     let Some((toc_id, _, _)) =
-        legacy::parse_declaration(toc_declaration).filter(|(_, name, type_code)| {
+        legacy::parse_declaration(ctx, toc_declaration)?.filter(|(_, name, type_code)| {
             *name == "Toc" && matches!(type_code, LegacyTypeCode::Object)
         })
     else {
@@ -927,7 +932,7 @@ fn legacy_toc_sections<'a>(
     };
     let mut toc_fields = toc_value.split_ascii_whitespace();
     if toc_fields.next() != Some("0")
-        || toc_fields.next().and_then(|id| id.parse::<u32>().ok()) != Some(toc_id)
+        || match toc_fields.next() { Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(), None => None } != Some(toc_id)
         || toc_fields.next() != Some("->")
         || toc_fields.next().is_some()
     {
@@ -939,7 +944,7 @@ fn legacy_toc_sections<'a>(
         return Ok(Vec::new());
     };
     let Some((entry_id, _, _)) =
-        legacy::parse_declaration(entry_declaration).filter(|(_, name, type_code)| {
+        legacy::parse_declaration(ctx, entry_declaration)?.filter(|(_, name, type_code)| {
             *name == "entry" && matches!(type_code, LegacyTypeCode::String)
         })
     else {
@@ -953,16 +958,17 @@ fn legacy_toc_sections<'a>(
     };
     let mut array_fields = entry_array.split_ascii_whitespace();
     if array_fields.next() != Some("1")
-        || array_fields.next().and_then(|id| id.parse::<u32>().ok()) != Some(entry_id)
+        || match array_fields.next() { Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(), None => None } != Some(entry_id)
     {
         return Ok(Vec::new());
     }
-    let Some(count) = array_fields
-        .next()
+    let Some(count) = array_fields.next()
         .and_then(|count| count.strip_prefix('['))
         .and_then(|count| count.strip_suffix(']'))
-        .and_then(|count| count.parse::<usize>().ok())
     else {
+        return Ok(Vec::new());
+    };
+    let Ok(count) = ctx.parse_text::<usize>(count, "creo scalar text parsing")? else {
         return Ok(Vec::new());
     };
     if array_fields.next().is_some() {
@@ -1283,7 +1289,7 @@ fn legacy_scope_ranges(
         else {
             continue;
         };
-        if legacy::starts_with_declaration(data, payload_start) {
+        if legacy::starts_with_declaration(ctx, data, payload_start)? {
             scopes.push(section.section.offset()..section.section.offset() + region.len());
         }
     }
@@ -2301,14 +2307,14 @@ fn registered_feature_schema_class(schema_class: crate::feature::schema::SchemaC
     )
 }
 
-fn feature_row_has_model_identity(
+fn feature_row_has_model_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     row: &FeatureRow,
     structural_ids: &std::collections::BTreeSet<u32>,
     operations: &[FeatureOperation],
     reference_names: &[FeatureReferenceName],
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     use crate::feature::schema::SchemaClass;
-    structural_ids.contains(&row.feature_id)
+    if structural_ids.contains(&row.feature_id)
         || operations.iter().any(|operation| {
             operation.feature_id == row.feature_id
                 && (stored_operation_schema_class(operation) == row.root_schema_class
@@ -2317,30 +2323,36 @@ fn feature_row_has_model_identity(
                             !registered_feature_schema_class(schema_class)
                         })))
         })
-        || reference_names.iter().any(|reference| {
-            let Some(name) = std::str::from_utf8(&reference.name_bytes).ok() else {
-                return false;
-            };
-            let numbered_family = |family: &str| {
-                [" id ", " ID "].into_iter().any(|separator| {
-                    name.strip_prefix(family)
-                        .and_then(|suffix| suffix.strip_prefix(separator))
-                        .and_then(|ordinal| ordinal.parse::<u32>().ok())
-                        == Some(reference.feature_id)
-                })
-            };
-            let named_datum = matches!(name, "Datum Plane" | "Bezugsebene")
-                || numbered_family("Datum Plane")
-                || numbered_family("Bezugsebene")
-                || name.strip_prefix("DTM").is_some_and(|ordinal| {
-                    !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-                });
-            reference.feature_id == row.feature_id
-                && (row.root_schema_class == Some(SchemaClass::Section)
-                    || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
-                    || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
-                        && name == "PRT_CSYS_DEF"))
-        })
+    {
+        return Ok(true);
+    }
+    ctx.any_by(reference_names, |reference| {
+        let Ok(name) = std::str::from_utf8(&reference.name_bytes) else {
+            return Ok(false);
+        };
+        let numbered_family = |family: &str| {
+            ctx.any_by(&[" id ", " ID "], |separator| {
+                let digits = name.strip_prefix(family)
+                    .and_then(|suffix| suffix.strip_prefix(*separator));
+                let ordinal = match digits {
+                    Some(digits) => ctx.parse_text::<u32>(digits, "creo scalar text parsing")?.ok(),
+                    None => None,
+                };
+                Ok(ordinal == Some(reference.feature_id))
+            }, "creo feature identity numbered family scan")
+        };
+        let named_datum = matches!(name, "Datum Plane" | "Bezugsebene")
+            || numbered_family("Datum Plane")?
+            || numbered_family("Bezugsebene")?
+            || name.strip_prefix("DTM").is_some_and(|ordinal| {
+                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+            });
+        Ok(reference.feature_id == row.feature_id
+            && (row.root_schema_class == Some(SchemaClass::Section)
+                || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
+                || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
+                    && name == "PRT_CSYS_DEF")))
+    }, "creo feature identity reference scan")
 }
 
 fn feature_entity_tables(
@@ -3314,14 +3326,15 @@ pub(crate) fn scan_bytes<'a>(
             ),
     )?;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
-    feature_rows.retain(|row| {
+    ctx.retain_vec(&mut feature_rows, |row| {
         feature_row_has_model_identity(
+            ctx,
             row,
             &structural_feature_ids,
             &feature_operations,
             &feature_reference_names,
         )
-    });
+    }, "creo feature identity row retention")?;
     let feature_ids = complete_feature_ids(
         ctx,
         structural_feature_ids,
@@ -4043,36 +4056,36 @@ mod feature_row_definition_tests {
         };
         let structural = std::collections::BTreeSet::new();
 
-        assert!(feature_row_has_model_identity(
+        assert!(crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
             &row(42, 913),
             &structural,
             std::slice::from_ref(&operation),
             std::slice::from_ref(&reference),
-        ));
-        assert!(!feature_row_has_model_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
             &row(42, 923),
             &structural,
             std::slice::from_ref(&operation),
             std::slice::from_ref(&reference),
-        ));
-        assert!(feature_row_has_model_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
             &row(73, 926),
             &structural,
             &[operation],
             &[reference],
-        ));
-        assert!(feature_row_has_model_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
             &row(87, 923),
             &structural,
             &[],
             std::slice::from_ref(&datum_reference),
-        ));
-        assert!(!feature_row_has_model_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| feature_row_has_model_identity(ctx, 
             &row(87, 911),
             &structural,
             &[],
             &[datum_reference],
-        ));
+        )).expect("service profile admits scalar parsing"));
     }
 
     #[test]

@@ -358,7 +358,7 @@ fn unknown_declaration_codes_retain_scope_identity() {
         persistence.scopes[0].declarations[1].type_code,
         LegacyTypeCode::Other(_)
     ));
-    assert!(parse_declaration(b"@future 1 256").is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| parse_declaration(ctx, b"@future 1 256")).expect("service profile admits scalar parsing").is_none());
 }
 
 #[test]
@@ -1657,4 +1657,48 @@ fn numeric_array_withholds_child_at_maximum_depth() {
         IntegerPayload::Scalar { value: 7 }
     ));
     assert_eq!(persistence.integer_values.unresolved_count, 1);
+}
+
+#[test]
+fn legacy_declaration_id_parse_refuses_before_invalid_text() {
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        |ctx| super::parse_declaration(ctx, b"@name x 1"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo scalar text parsing"));
+}
+
+#[test]
+fn legacy_declaration_type_parse_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        |ctx| super::parse_declaration(ctx, b"@name 1 123"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo scalar text parsing"));
+}
+
+#[test]
+fn legacy_signed_integer_parse_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        |ctx| super::signed_integer(ctx, b"-2147483648"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo scalar text parsing"));
+}
+
+#[test]
+fn legacy_unsigned_integer_parse_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        |ctx| super::unsigned_integer(ctx, b"4294967295"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo scalar text parsing"));
 }

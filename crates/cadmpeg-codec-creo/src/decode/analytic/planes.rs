@@ -477,21 +477,23 @@ fn agreed_plane_iter(mut planes: impl Iterator<Item = PlaneEquation>) -> Option<
         .then_some(first)
 }
 
-pub(in crate::decode) fn reconciled_model_plane(
+pub(in crate::decode) fn reconciled_model_plane(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     local_planes: &BTreeMap<u32, PlaneEquation>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
-) -> Option<PlaneEquation> {
-    let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| {
-        crate::identity::matches_numbered_identity(
-            surface.id.as_str(),
-            "creo:visibgeom:surface#",
-            surface_id,
-        )
-    });
-    let first = model_surfaces.next();
-    let second = model_surfaces.next();
+) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
+    let mut first = None;
+    let mut second = None;
+    for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+        if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", surface_id)? {
+            if first.is_some() {
+                second = Some(surface);
+                break;
+            }
+            first = Some(surface);
+        }
+    }
     let model_plane = match (first, second) {
         (None, None) => None,
         (Some(surface), None) => match source_carriers.surface_geometry(surface) {
@@ -504,16 +506,16 @@ pub(in crate::decode) fn reconciled_model_plane(
                 })
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
-            _ => return None,
+            _ => return Ok(None),
         },
-        _ => return None,
+        _ => return Ok(None),
     };
-    match (local_planes.get(&surface_id).copied(), model_plane) {
+    Ok(match (local_planes.get(&surface_id).copied(), model_plane) {
         (Some(local), Some(model)) => agreed_plane(&[local, model]),
         (Some(local), None) => Some(local),
         (None, Some(model)) => Some(model),
         (None, None) => None,
-    }
+    })
 }
 
 #[derive(Clone, Copy)]

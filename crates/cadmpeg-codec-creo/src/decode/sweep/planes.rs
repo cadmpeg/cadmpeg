@@ -88,7 +88,7 @@ pub(in super::super) fn feature_plane_equations(
     }
     let mut equations = Vec::new();
     for id in ids {
-        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, id) else {
+        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, id)? else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut equations, 1, "creo feature plane equations")?;
@@ -239,9 +239,9 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         return Ok(None);
     };
     if frame_records.is_empty()
-        || !frame_records.iter().all(|(surface_id, frame)| {
-            cylinder_frame_agrees_with_model(ir, *surface_id, frame, source_carriers)
-        })
+        || !ctx.all_by(&(frame_records)[..], |(surface_id, frame)| -> Result<bool, cadmpeg_core::CodecError> {
+            Ok(cylinder_frame_agrees_with_model(ctx, ir, *surface_id, frame, source_carriers)?)
+        }, "creo numbered identity candidate scan")?
     {
         return Ok(None);
     }
@@ -251,30 +251,30 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     ))
 }
 
-fn cylinder_frame_agrees_with_model(
+fn cylinder_frame_agrees_with_model(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     ir: &CadIr,
     surface_id: u32,
     frame: &crate::surface::PositionalCylinderFrame,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> bool {
-    let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| {
-        crate::identity::matches_numbered_identity(
-            surface.id.as_str(),
-            "creo:visibgeom:surface#",
-            surface_id,
-        )
-    });
-    let surface = match (model_surfaces.next(), model_surfaces.next()) {
-        (None, None) => return true,
-        (Some(surface), None) => surface,
-        _ => return false,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut found = None;
+    for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+        if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", surface_id)? {
+            if found.is_some() {
+                return Ok(false);
+            }
+            found = Some(surface);
+        }
+    }
+    let Some(surface) = found else {
+        return Ok(true);
     };
     let geometry = source_carriers.surface_geometry(surface);
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = geometry.solved() else {
-        return matches!(
+        return Ok(matches!(
             geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-        );
+        ));
     };
     let origin = cylinder_surface.origin().get();
     let radius = cylinder_surface.radius().get();
@@ -295,7 +295,7 @@ fn cylinder_frame_agrees_with_model(
             .all(|(left, right)| close(left, right))
         || !close(frame.radius().get(), radius)
     {
-        return false;
+        return Ok(false);
     }
     let model_origin = [origin.x, origin.y, origin.z];
     let relative = std::array::from_fn(|index| model_origin[index] - frame.frame().origin()[index]);
@@ -308,7 +308,7 @@ fn cylinder_frame_agrees_with_model(
         .chain(model_origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    dot(radial, radial).sqrt() <= EPS_CYLINDER_CARRIER * scale
+    Ok(dot(radial, radial).sqrt() <= EPS_CYLINDER_CARRIER * scale)
 }
 
 pub(super) fn ordered_parallel_cap_extent(
@@ -378,14 +378,16 @@ pub(in super::super) fn generated_cap_plane_extent(
         return Ok(None);
     };
     let local_planes = placed_planes(ctx, scan)?;
-    let plane = |surface_id: u32| {
-        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
-        (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
-            .then_some(())?;
-        reconciled_model_plane(&local_planes, ir, source_carriers, surface_id)
+    let plane = |surface_id: u32| -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
+            return Ok(None);
+        };
+        if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane {
+            return Ok(None);
+        }
+        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)
     };
-    Ok(plane(start_id)
-        .zip(plane(end_id))
+    Ok(plane(start_id)?.zip(plane(end_id)?)
         .and_then(|(start, end)| ordered_parallel_cap_extent(start, end)))
 }
 

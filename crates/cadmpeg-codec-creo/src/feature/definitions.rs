@@ -8101,7 +8101,7 @@ fn definition_starts(
         let Ok(digits) = std::str::from_utf8(digits) else {
             continue;
         };
-        let Ok(id) = digits.parse::<u32>() else {
+        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
         ctx.reserve_vec(&mut starts, 1, "creo feature definition starts")?;
@@ -8174,23 +8174,23 @@ fn depdb_gsec2d_starts(
             continue;
         };
         let digits_start = name_offset + NAME.len();
-        let Some(candidate) = (|| {
-            let digits_end = payload[digits_start..search_end]
+        let Some(candidate) = (|| -> Result<Option<_>, CodecError> {
+            let digits_end = { let Some(value) = payload[digits_start..search_end]
                 .iter()
-                .position(|byte| *byte == 0)?
+                .position(|byte| *byte == 0) else { return Ok(None); }; value }
                 + digits_start;
-            let digits = payload.get(digits_start..digits_end)?;
+            let digits = { let Some(value) = payload.get(digits_start..digits_end) else { return Ok(None); }; value };
             if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-                return None;
+                return Ok(None);
             }
-            let id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
-            Some(DefinitionStart {
+            let id = { let Some(value) = ctx.parse_text::<u32>({ let Some(value) = std::str::from_utf8(digits).ok() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
+            Ok(Some(DefinitionStart {
                 offset: start,
                 id: NonZeroU32::new(id),
                 owner_override: None,
                 positional: false,
-            })
-        })() else {
+            }))
+        })()? else {
             continue;
         };
         ctx.reserve_vec(&mut starts, 1, "creo DEPDB section starts")?;
@@ -8405,18 +8405,18 @@ pub(crate) fn depdb_section_definition(
         return Ok(None);
     };
     let name = name_offset + NAME.len();
-    let Some(section_id) = (|| {
-        let name_end = payload[name..name_search_end]
+    let Some(section_id) = (|| -> Result<Option<_>, CodecError> {
+        let name_end = { let Some(value) = payload[name..name_search_end]
             .iter()
-            .position(|byte| *byte == 0)?
+            .position(|byte| *byte == 0) else { return Ok(None); }; value }
             + name;
-        let digits = payload.get(name..name_end)?;
+        let digits = { let Some(value) = payload.get(name..name_end) else { return Ok(None); }; value };
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-            return None;
+            return Ok(None);
         }
-        let section_id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
-        Some(section_id)
-    })() else {
+        let section_id = { let Some(value) = ctx.parse_text::<u32>({ let Some(value) = std::str::from_utf8(digits).ok() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
+        Ok(Some(section_id))
+    })()? else {
         return Ok(None);
     };
     let end = ctx
