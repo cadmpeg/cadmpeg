@@ -918,9 +918,16 @@ pub(in super::super) fn feature_reference_name<'a>(
     let Some(record) = records.next() else {
         return Ok(None);
     };
-    Ok(records
-        .all(|candidate| candidate.name_bytes.as_slice() == record.name_bytes.as_slice())
-        .then_some(record.name_bytes.as_slice()))
+    for candidate in records {
+        if !ctx.equal_bytes(
+            candidate.name_bytes.as_slice(),
+            record.name_bytes.as_slice(),
+            "creo feature reference name agreement",
+        )? {
+            return Ok(None);
+        }
+    }
+    Ok(Some(record.name_bytes.as_slice()))
 }
 
 pub(in super::super) fn decoded_feature_reference_name<'a>(
