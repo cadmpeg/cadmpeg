@@ -415,8 +415,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             }
         }
         for (profile, extrusion, strength) in associations {
-            let Some(vote) = profiles
-                .get_mut(extrusion.id.as_str())
+            let Some(vote) = ctx.get_mut_hash_map(&mut profiles, extrusion.id.as_str(), "resolve SLDPRT adjacent profile votes")?
                 .and_then(|votes| votes.last_mut())
             else {
                 continue;

@@ -5771,17 +5771,7 @@ pub(super) fn profile_loci_by_marker(
         }
     }
     for marker in endpoint_marker_keys {
-        ctx.charge_work(
-            result_key_byte_bound
-                .checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
-                .and_then(|bytes| bytes.checked_mul(4))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX)
-                })?,
-            ENDPOINT_OPERATION,
-        )?;
-        if let Some(loci) = result.get_mut(&marker) {
+        if let Some(loci) = ctx.get_mut_hash_map(&mut result, &marker, "lookup SLDPRT marker endpoint loci")? {
             canonicalize_physical_loci(ctx, loci, sketch_entities, QUANTUM)?;
         }
     }

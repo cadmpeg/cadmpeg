@@ -26,6 +26,7 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
+mod identity_lookups;
 mod limits;
 mod patterns;
 

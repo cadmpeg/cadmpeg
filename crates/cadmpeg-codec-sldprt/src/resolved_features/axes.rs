@@ -987,7 +987,7 @@ pub(crate) fn enrich_history_revolution_inputs(
     let mut name_counts = HashMap::<String, usize>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, "count SLDPRT revolution feature names")?;
-        if let Some(count) = name_counts.get_mut(feature.name.as_str()) {
+        if let Some(count) = ctx.get_mut_hash_map(&mut name_counts, feature.name.as_str(), "lookup SLDPRT revolution feature name count")? {
             *count = count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "count SLDPRT revolution feature names",
@@ -1067,7 +1067,7 @@ pub(crate) fn enrich_history_revolution_inputs(
         profile_sources.push(sources);
         for feature in &history.features {
             ctx.charge_work(1, "index SLDPRT revolution profile owners")?;
-            if let Some(owner) = profile_source_owner.get_mut(feature.id.as_str()) {
+            if let Some(owner) = ctx.get_mut_hash_map(&mut profile_source_owner, feature.id.as_str(), "lookup SLDPRT revolution profile owner")? {
                 *owner = history_index;
             } else {
                 ctx.reserve_map(
