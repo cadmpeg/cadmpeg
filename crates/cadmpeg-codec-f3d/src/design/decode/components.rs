@@ -31,6 +31,7 @@ pub(crate) fn decode_component_occurrences(
         let scope = native_scope_charged(ctx, &entry.name)?;
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(ctx, bytes, at)? {
+            ctx.charge_work(1, "scan F3D component occurrence candidates")?;
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
                 ctx.push_vec(
                     &mut occurrences,
@@ -432,4 +433,57 @@ mod tests {
                 && limit.operation == "f3d decoded component occurrence")
         );
     }
+    #[test]
+    fn component_occurrence_candidate_loop_refuses_work_after_matching_output() {
+        use std::io::{Cursor, Write};
+
+        let mut seed = common(229, 1);
+        seed[208] = 1;
+        seed[218] = 1;
+        indexed_header(&mut seed, *b"333", 21);
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        archive
+            .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .expect("Design stream entry");
+        archive.write_all(&seed).expect("component occurrence frame");
+        let archive = archive.finish().expect("synthetic archive").into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let output = crate::test_support::with_decode_context(|ctx| {
+                super::decode_component_occurrences(ctx, scan)
+            })
+            .expect("valid fixed component occurrence");
+            let [occurrence] = output.as_slice() else {
+                panic!("expected one component occurrence");
+            };
+            assert_eq!(occurrence.id, "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#0");
+            assert_eq!(occurrence.class_tag.as_str(), "256");
+            assert_eq!(occurrence.record_index, 20);
+            assert_eq!(occurrence.byte_offset(), 0);
+            assert_eq!(
+                serde_json::to_value(occurrence).expect("native component record")["component_record_index"],
+                10,
+            );
+            assert_eq!(occurrence.component_guid.as_str(), COMPONENT);
+            assert_eq!(occurrence.occurrence_guid.as_str(), OCCURRENCE);
+            assert_eq!(occurrence.occurrence_ordinal(), 1);
+            assert_eq!(occurrence.transform(), None);
+            let operation = "scan F3D component occurrence candidates";
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                0,
+                |ctx| super::decode_component_occurrences(ctx, scan).map(|_| ()),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(refusal)
+                    if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == operation
+                        && refusal.additional == 1
+            ));
+        });
+    }
+
 }
