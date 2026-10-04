@@ -1,10 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged slice copies and stable in-place vector compaction.
 use super::cost::DecodeCost;
-use super::{u64_from_index, DecodeContext};
+use super::{u64_from_index, DecodeContext, ScopedReservation};
 use crate::CodecError;
 
 impl DecodeContext<'_> {
+    /// Inserts one value after admitting its move, suffix moves and slot growth.
+    pub fn insert_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        index: usize,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(0, operation)?;
+        let suffix = values.get(index..)
+            .ok_or_else(|| CodecError::malformed("vector insertion index exceeds length"))?;
+        self.admit_moves(suffix, 1, operation)?;
+        self.admit_moves(std::slice::from_ref(&value), 1, operation)?;
+        self.reserve_vec(values, 1, operation)?;
+        values.insert(index, value);
+        Ok(())
+    }
+
+    /// Inserts one value with scoped vector growth and retained child ownership.
+    pub fn insert_scoped_vec<T>(
+        &self,
+        reservation: &mut ScopedReservation<'_>,
+        values: &mut Vec<T>,
+        index: usize,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        reservation.with_storage(|| self.insert_vec(values, index, value, operation))
+    }
+
     /// Converts vector storage to a boxed slice after admitting a possible shrink copy.
     /// The caller admits the vector's existing storage.
     pub fn into_boxed_slice<T>(
@@ -37,7 +67,17 @@ impl DecodeContext<'_> {
         moves: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let count = u64_from_index(values.len());
+        self.admit_inline_moves::<T>(values.len(), moves, operation)
+    }
+
+    /// Admits moves for an exact collection extent without traversing its values.
+    pub(super) fn admit_inline_moves<T>(
+        &self,
+        count: usize,
+        moves: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let count = u64_from_index(count);
         let bytes =
             self.cost_product(count, u64_from_index(std::mem::size_of::<T>()), operation)?;
         let bytes = self.cost_product(bytes, moves, operation)?;
@@ -939,4 +979,58 @@ mod tests {
         values.sort_unstable();
         assert_eq!(values, [1, 2, 3]);
     }
+    #[test]
+    fn indexed_insertion_preserves_order_and_charges_suffix_before_mutation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut values = Vec::with_capacity(4);
+        values.extend([1_u8, 3, 4]);
+        ctx.insert_vec(&mut values, 1, 2, "insert").expect("suffix and value moves");
+        assert_eq!(values, [1, 2, 3, 4]);
+        let CodecError::ResourceLimit(first) = ctx.insert_vec(&mut values, 0, 0, "next insertion").expect_err("move refusal") else { panic!("resource refusal") };
+        assert_eq!(first.used, 6);
+        assert_eq!(values, [1, 2, 3, 4]);
+        let CodecError::ResourceLimit(repeated) = ctx.insert_vec(&mut values, 4, 5, "later").expect_err("sticky refusal") else { panic!("resource refusal") };
+        assert_eq!(first, repeated);
+        let CodecError::ResourceLimit(invalid) = ctx.insert_vec(&mut values, 5, 5, "invalid after refusal").expect_err("sticky refusal precedes invalid index") else { panic!("resource refusal") };
+        assert_eq!(first, invalid);
+    }
+
+    #[test]
+    fn indexed_insertion_validates_index_and_admits_scoped_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (mut values, mut storage) = ctx.temporary_vec::<u8>(0, "temporary").expect("empty");
+        assert!(matches!(ctx.insert_scoped_vec(&mut storage, &mut values, 1, 1, "invalid"), Err(CodecError::Malformed(_))));
+        assert!(values.is_empty());
+        ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert").expect("scoped growth");
+        ctx.insert_scoped_vec(&mut storage, &mut values, 1, 2, "end").expect("end insertion");
+        assert_eq!(values, [1, 2]);
+        drop((values, storage));
+        ctx.reserve_scoped(8, "released vector").expect("released");
+    }
+
+    #[test]
+    fn indexed_insertion_refuses_growth_before_mutation() {
+        for scoped in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if scoped { policy.limits.max_materialized_bytes = 0; }
+            else { policy.limits.max_retained_bytes = 0; }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let mut values = Vec::<u8>::new();
+            let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
+            let error = if scoped { ctx.insert_scoped_vec(&mut storage, &mut values, 0, 1, "insert") }
+            else { ctx.insert_vec(&mut values, 0, 1, "insert") };
+            assert!(matches!(error, Err(CodecError::ResourceLimit(_))));
+            assert!(values.is_empty());
+            assert_eq!(values.capacity(), 0);
+        }
+    }
+
 }
