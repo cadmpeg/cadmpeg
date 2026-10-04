@@ -1524,10 +1524,12 @@ pub(crate) fn bind_face_operand_candidates(
             continue;
         };
         operand.candidate_faces.clear();
-        for tag in tags.iter().filter(|tag| {
-            crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                && tag.design_references.contains(&design_reference)
-        }) {
+        for tag in tags {
+            if !crate::ids::same_native_occurrence(ctx, &tag.id, &operand.id)?
+                || !tag.design_references.contains(&design_reference)
+            {
+                continue;
+            }
             if let AttributeTarget::Face(face) = &tag.target {
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
@@ -1593,10 +1595,12 @@ pub(crate) fn bind_edge_operand_candidates(
         else {
             continue;
         };
-        for tag in tags.iter().filter(|tag| {
-            crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                && tag.design_references.contains(&design_reference)
-        }) {
+        for tag in tags {
+            if !crate::ids::same_native_occurrence(ctx, &tag.id, &operand.id)?
+                || !tag.design_references.contains(&design_reference)
+            {
+                continue;
+            }
             if let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target {
                 push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
             }
@@ -1620,17 +1624,20 @@ pub(crate) fn edge_operand_candidate_faces(
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let mut faces = tags
-        .iter()
-        .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.design_references.contains(&design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(id) => Some(id.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let mut faces = Vec::new();
+    for tag in tags {
+        if let Some(owner_id) = owner_id {
+            if !crate::ids::same_native_occurrence(ctx, &tag.id, owner_id)? {
+                continue;
+            }
+        }
+        if !tag.design_references.contains(&design_reference) {
+            continue;
+        }
+        if let AttributeTarget::Face(id) = &tag.target {
+            faces.push(id.clone());
+        }
+    }
     ctx.stable_sort_by(
         &mut faces,
         |value| value.as_str(),
@@ -4954,13 +4961,15 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
             };
-            for tag in tags.iter().filter(|tag| {
-                crate::ids::same_native_occurrence(&tag.id, &operand_id)
-                    && tag.design_references.contains(&design_reference)
-                    && (reference.form != 3
-                        || !form_three_uses_recipe_selector
-                        || tag_selector == Some(tag.selector))
-            }) {
+            for tag in tags {
+                if !crate::ids::same_native_occurrence(ctx, &tag.id, &operand_id)?
+                    || !tag.design_references.contains(&design_reference)
+                    || (reference.form == 3
+                        && form_three_uses_recipe_selector
+                        && tag_selector != Some(tag.selector))
+                {
+                    continue;
+                }
                 if let AttributeTarget::Face(face) = &tag.target {
                     {
                         push_operand_face_candidate(ctx, reference.candidate_faces, face)?;

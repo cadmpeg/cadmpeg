@@ -473,7 +473,7 @@ fn validation_native_arena_reload_releases_scoped_storage() {
     // Reload admits the native object backing nodes within scoped storage.
     policy.limits.max_materialized_bytes = 16384;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (records, storage) = super::super::reload_native_arena::<
+    let (storage, records) = super::super::reload_native_arena::<
         crate::history_records::AsmBulletinBoard,
     >(&ctx, &ir, "asm_bulletin_boards")
     .unwrap();
@@ -529,4 +529,21 @@ fn face_reference_comparison_preserves_work_refusal() {
         assert!(!super::super::face_ids_match_refs(ctx, &actual, &[]).unwrap());
         assert!(ctx.resource_refusal().is_none());
     });
+}
+
+#[test]
+fn assembly_target_header_lookup_preserves_work_refusal() {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D assembly target header",
+        0,
+        |decode| super::super::design_header_matches(
+            decode,
+            &std::collections::HashMap::new(),
+            "design-stream",
+            1,
+            "307",
+            0,
+        ),
+    );
 }

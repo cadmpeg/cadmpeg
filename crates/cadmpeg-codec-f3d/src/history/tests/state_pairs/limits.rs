@@ -3,7 +3,9 @@
 
 use crate::history::resolve_pattern_face_by_surface_radius;
 use crate::history::selection::{
-    historical_identity_edge, unique_entity_selection_edge, HistoricalIdentityIndex,
+    bind_entity_selection_history,
+    historical_identity_edge, historical_pattern_identity_axes_for_selection,
+    unique_entity_selection_edge, HistoricalIdentityIndex,
 };
 use crate::history::{
     collect_reference_edge_sets, face_boundary_contexts_for_slots, face_boundary_edge_index,
@@ -22,8 +24,8 @@ use crate::history_records::{
     AsmHistoricalTransition, AsmHistory,
 };
 use crate::history_records::{
-    AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalRelation,
-    AsmHistoricalSurfaceRadius,
+    AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind, AsmHistoricalCarrierBinding,
+    AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalSurfaceRadius,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::HashMap;
@@ -43,13 +45,121 @@ fn identity_index_refuses_history_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = HistoricalIdentityIndex::build(&ctx, &[history], [1])
+    let error = HistoricalIdentityIndex::build(
+        &ctx,
+        &[history],
+        ctx.admit_iter(&[1], "scan F3D identity local IDs")
+            .expect("test identity local ID admission"),
+        |local_id| std::iter::once(*local_id).chain(None),
+    )
         .err()
         .expect("limit refusal");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D identity histories")
     );
+}
+
+#[test]
+fn identity_index_refuses_local_id_scan_work() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D identity local IDs",
+        0,
+        |decode| {
+            let local_ids = decode
+                .admit_iter(&[1], "scan F3D identity local IDs")
+                .map_err(cadmpeg_core::CodecError::ResourceLimit)?;
+            HistoricalIdentityIndex::build(
+                decode,
+                &[],
+                local_ids,
+                |local_id| std::iter::once(*local_id).chain(None),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D identity local IDs"
+    ));
+}
+
+#[test]
+fn entity_selection_previous_state_comparison_propagates_work_refusal() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#42"),
+        crate::records::feature::scope::DesignScopePayload::Sweep(None),
+        42,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let history = AsmHistory {
+        id: format!("{stream}/BREP.selection.smbh:asm-1"),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![change_state(1)],
+    };
+    let scopes = [scope];
+    let histories = [history];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D selection previous state ID",
+        0,
+        |decode| {
+            let mut operands = [
+                crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+                    crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                        id: format!("{stream}:design-entity-selection-operand#200"),
+                        scope_record_index: 42,
+                        group_record_index: 100,
+                        group_member_ordinal: 0,
+                        record_index: 200,
+                        byte_offset: 0,
+                        class_tag: "377".to_owned().try_into().unwrap(),
+                        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                            .to_owned()
+                            .try_into()
+                            .unwrap(),
+                        asset_id_offset: 0,
+                        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                            .to_owned()
+                            .try_into()
+                            .unwrap(),
+                        context_id_offset: 0,
+                        identity_record_index: 203,
+                        identity_record_offset: 0,
+                        primary_identity: 7,
+                        primary_identity_offset: 21,
+                        secondary: None,
+                        historical_edge_candidates: Vec::new(),
+                        historical_face_candidates: Vec::new(),
+                        resolved_edge_slot: None,
+                        next_record_index: 202,
+                        next_byte_offset: 29,
+                    },
+                )
+                .unwrap(),
+            ];
+            bind_entity_selection_history(decode, &mut operands, &scopes, &histories).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D selection previous state ID"
+    ));
 }
 
 #[test]
@@ -69,6 +179,59 @@ fn identity_edges_refuse_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D identity edges")
     );
+}
+
+#[test]
+fn identity_edge_membership_propagates_work_refusal() {
+    let topology = AsmHistoricalTopology {
+        edges: vec![7],
+        ..Default::default()
+    };
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D identity edge",
+        0,
+        |decode| {
+            historical_identity_edge(decode, AsmHistoricalEntityKind::Edge, 7, &topology)
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D identity edge"));
+}
+
+#[test]
+fn edge_axis_candidate_scan_propagates_work_refusal() {
+    let mut state = change_state(3);
+    state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        AsmHistoricalTopology {
+            edges: vec![7],
+            ..Default::default()
+        },
+    );
+    let history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![state],
+    };
+    let state_ids = [3];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D edge axis candidates",
+        0,
+        |decode| {
+            historical_pattern_identity_axes_for_selection(
+                decode,
+                Some((AsmHistoricalEntityKind::Edge, 7, &state_ids)),
+                &history,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D edge axis candidates"));
 }
 
 fn edge_context_topology() -> AsmHistoricalTopology {
@@ -155,6 +318,144 @@ pub(super) fn change_state(state_id: i64) -> AsmDeltaState {
         ),
         transition: None,
     }
+}
+
+fn two_state_entity_history() -> AsmHistory {
+    let make_state = |state_id| {
+        let mut state = change_state(state_id);
+        state.entity_versions = vec![crate::history_records::AsmEntityVersion {
+            entity_ref: 42,
+            record_ref: 700,
+        }];
+        state.topology_cache = crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology {
+                faces: vec![42],
+                ..Default::default()
+            },
+        );
+        state
+    };
+    AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![make_state(3), make_state(5)],
+    }
+}
+
+#[test]
+fn identity_revision_state_membership_propagates_work_refusal() {
+    let history = two_state_entity_history();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D revision membership state",
+        0,
+        |decode| {
+            HistoricalIdentityIndex::build(
+                decode,
+                std::slice::from_ref(&history),
+                decode.admit_iter(&[700], "scan F3D identity local IDs")?,
+                |local_id| std::iter::once(*local_id).chain(None),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D revision membership state"));
+}
+
+#[test]
+fn identity_membership_state_propagates_work_refusal() {
+    let history = two_state_entity_history();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D identity membership state",
+        0,
+        |decode| {
+            HistoricalIdentityIndex::build(
+                decode,
+                std::slice::from_ref(&history),
+                decode.admit_iter(&[700], "scan F3D identity local IDs")?,
+                |local_id| std::iter::once(*local_id).chain(None),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D identity membership state"));
+}
+
+#[test]
+fn identity_index_history_limit_scan_propagates_work_refusal() {
+    let histories = [AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: Vec::new(),
+    }];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D identity history limits",
+        0,
+        |decode| {
+            HistoricalIdentityIndex::build(
+                decode,
+                &histories,
+                decode.admit_iter(&[1], "scan F3D identity local IDs")?,
+                |local_id| std::iter::once(*local_id).chain(None),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D identity history limits")
+    );
+}
+
+#[test]
+fn identity_index_bulletin_scan_propagates_work_refusal() {
+    let mut history = AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![change_state(1)],
+    };
+    history.states[0].bulletin_boards.push(AsmBulletinBoard {
+        id: "board".into(),
+        parent: "state".into(),
+        byte_offset: 0,
+        owner_ref: 1,
+        number: 0,
+        changes: vec![AsmEntityChange {
+            id: "change".into(),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Update { old: 1, new: 2 },
+        }],
+    });
+    let histories = [history];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D identity bulletin changes",
+        0,
+        |decode| {
+            HistoricalIdentityIndex::build(
+                decode,
+                &histories,
+                decode.admit_iter(&[1], "scan F3D identity local IDs")?,
+                |local_id| std::iter::once(*local_id).chain(None),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D identity bulletin changes")
+    );
 }
 
 #[test]

@@ -1284,3 +1284,33 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     assert_eq!(ir.model.faces[0].color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);
 }
+
+#[test]
+fn projection_body_binding_scan_preserves_work_refusal() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native.design_body_bindings.push(
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 0,
+            asm_body_key_offset: 0,
+            entity_suffix: 1,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.snapshot.smb".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap(),
+    );
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D projection design_body_bindings",
+        0,
+        |ctx| super::super::design_projection_gaps(ctx, &ir, &native),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D projection design_body_bindings"));
+}

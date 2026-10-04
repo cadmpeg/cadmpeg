@@ -423,7 +423,8 @@ fn rescope_fidelity(
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
     let record_key_collection = ctx.collect_scoped_texts(
-        records.keys().map(|id| id.as_str()),
+        ctx.admit_iter(&records, "scan F3Z retained record keys")?
+            .map(|(id, _)| id.as_str()),
         "stage F3Z retained record keys",
     )?;
     let _record_key_storage = record_key_collection.1;

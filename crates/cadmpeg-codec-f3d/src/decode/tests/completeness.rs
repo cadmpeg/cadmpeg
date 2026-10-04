@@ -110,12 +110,12 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
         )
         .unwrap(),
     });
-    assert!(!feature_definition_is_incomplete(&direct));
-    assert!(feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &direct)).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn trim_surface_completeness_accepts_an_explicit_cell_selection() {
             ),
         },
     );
-    assert!(!feature_definition_is_incomplete(&complete));
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete)).expect("completeness admission"));
 }
 
 #[test]
@@ -143,14 +143,14 @@ fn datum_axes_require_a_finite_nonzero_direction() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -160,7 +160,7 @@ fn datum_axes_require_a_finite_nonzero_direction() {
             ))
             .unwrap(),
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn coordinate_systems_require_a_finite_right_handed_frame() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
             frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
                 Point3::new(1.0, 2.0, 3.0),
@@ -178,31 +178,31 @@ fn coordinate_systems_require_a_finite_right_handed_frame() {
             )
             .unwrap()
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
 fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved {
                 bodies: Default::default(),
                 native: "native:base-feature".into(),
             },
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Native("native:base-feature".into()),
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::InsertBodies {
             bodies: cadmpeg_ir::features::InsertedBodies::Native("native:insert-bodies".into()),
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
             FaceId::mint(format!("test:model:face#{name}")).expect("identity grammar")
         ])
     };
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 resolved("target"),
@@ -225,8 +225,8 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
             .expect("operand admission")
             .unwrap(),
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 FaceSelection::Native("native:target".into()),
@@ -236,8 +236,8 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
             .expect("operand admission")
             .unwrap(),
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
                 resolved("target"),
@@ -247,7 +247,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
             .expect("operand admission")
             .unwrap(),
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
@@ -267,15 +267,15 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
         ),
         mode: BodyRetentionMode::DeleteSelected,
     });
-    assert!(!feature_definition_is_incomplete(&complete));
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete)).expect("completeness admission"));
 
-    assert!(feature_definition_is_incomplete(
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Native("native:remove-body".into()),
             mode: BodyRetentionMode::DeleteSelected,
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(
                 cadmpeg_ir::features::DistinctMembers::try_from(
@@ -286,7 +286,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
             ),
             mode: BodyRetentionMode::Unresolved,
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
@@ -295,17 +295,17 @@ fn product_feature_definitions_require_neutral_reference_ids() {
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::JointId;
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::InsertComponent {
             occurrence: OccurrenceId::mint("model:test:occurrence#component")
                 .expect("identity grammar"),
         })
-    ));
-    assert!(!feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
             joint: JointId::mint("model:test:joint#assembly").expect("identity grammar"),
         })
-    ));
+    )).expect("completeness admission"));
     assert!(OccurrenceId::mint(String::new()).is_err());
     assert!(JointId::mint(String::new()).is_err());
 }
@@ -331,15 +331,15 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         .expect("distinct bodies"),
     );
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
             op: BooleanOp::NewBody,
         })
-    ));
+    )).expect("completeness admission"));
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::Torus {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
             axis: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
@@ -347,31 +347,31 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             op: BooleanOp::Join,
         })
-    ));
+    )).expect("completeness admission"));
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: faces.clone(),
             motion: FaceMotion::Offset {
                 distance: Length::new(-2.0).unwrap(),
             },
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: FaceSelection::Native("native:faces".into()),
             motion: FaceMotion::Offset {
                 distance: Length::new(2.0).unwrap(),
             },
         })
-    ));
-    assert!(!feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: faces.clone(),
             thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
             side: Some(ThickenSide::Forward),
         })
-    ));
+    )).expect("completeness admission"));
 
     let shell = |bodies, removed_faces| {
         FeatureDefinition::Operation(FeatureOperation::Shell {
@@ -385,26 +385,26 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             allow_self_intersections: None,
         })
     };
-    assert!(!feature_definition_is_incomplete(&shell(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &shell(
         Some(bodies.clone()),
         FaceSelection::Faces(Vec::new()),
-    )));
-    assert!(!feature_definition_is_incomplete(&shell(
+    ))).expect("completeness admission"));
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &shell(
         None,
         FaceSelection::Faces(vec!["test:model:face#opening"
             .try_into()
             .expect("valid identity")]),
-    )));
-    assert!(feature_definition_is_incomplete(&shell(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &shell(
         None,
         FaceSelection::Faces(Vec::new()),
-    )));
-    assert!(feature_definition_is_incomplete(&shell(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &shell(
         Some(BodySelection::Native("native:bodies".into())),
         FaceSelection::Faces(Vec::new()),
-    )));
+    ))).expect("completeness admission"));
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: bodies.clone(),
             translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 2.0, 3.0))
@@ -420,9 +420,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
             }),
             copies: 0,
         })
-    ));
+    )).expect("completeness admission"));
 
-    assert!(!feature_definition_is_incomplete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(
                 cadmpeg_ir::features::DistinctMembers::try_from(
@@ -436,8 +436,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
             },
         })
-    ));
-    assert!(feature_definition_is_incomplete(
+    )).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, 
         &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(
                 cadmpeg_ir::features::DistinctMembers::try_from(
@@ -451,7 +451,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
             },
         })
-    ));
+    )).expect("completeness admission"));
 }
 
 #[test]
@@ -471,46 +471,86 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
         .try_into()
         .expect("valid identity")]);
 
-    assert!(!feature_definition_is_incomplete(&complete(
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         faces.clone(),
         Some(true),
         Some(true),
         Some(NonNegativeLength::new(0.1).unwrap()),
-    )));
-    assert!(!feature_definition_is_incomplete(&complete(
+    ))).expect("completeness admission"));
+    assert!(!crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         faces.clone(),
         Some(false),
         Some(false),
         Some(NonNegativeLength::new(0.1).unwrap()),
-    )));
-    assert!(feature_definition_is_incomplete(&complete(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         FaceSelection::Native("native:surface-stitch".into()),
         Some(true),
         Some(true),
         Some(NonNegativeLength::new(0.1).unwrap()),
-    )));
-    assert!(feature_definition_is_incomplete(&complete(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         faces.clone(),
         None,
         Some(true),
         Some(NonNegativeLength::new(0.1).unwrap()),
-    )));
-    assert!(feature_definition_is_incomplete(&complete(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         faces.clone(),
         Some(true),
         None,
         Some(NonNegativeLength::new(0.1).unwrap()),
-    )));
-    assert!(feature_definition_is_incomplete(&complete(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         faces.clone(),
         Some(true),
         Some(true),
         Some(NonNegativeLength::new(0.0).unwrap()),
-    )));
-    assert!(feature_definition_is_incomplete(&complete(
+    ))).expect("completeness admission"));
+    assert!(crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(decode, &complete(
         faces,
         Some(true),
         Some(true),
         None,
-    )));
+    ))).expect("completeness admission"));
+}
+
+#[test]
+fn datum_point_completeness_preserves_work_refusal() {
+    use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction, FeatureDefinition, FeatureId, FeatureOperation, FinitePoint3};
+    let definition = FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+        position: FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap(),
+        construction: Some(Box::new(DatumPointConstruction::ThreePlaneIntersection {
+            planes: Box::new(std::array::from_fn(|index| DatumPlaneReference::Feature {
+                feature: FeatureId::mint(format!("test:model:feature#plane:{index}")).unwrap(),
+            })),
+        })),
+    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D datum point construction planes",
+        0,
+        |decode| feature_definition_is_incomplete(decode, &definition),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D datum point construction planes"));
+}
+
+#[test]
+fn draft_neutral_plane_comparison_preserves_work_refusal() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureId};
+    let id = FeatureId::mint("test:model:feature#plane").unwrap();
+    let selection = FaceSelection::Native("test:model:feature#plane".into());
+    let direction = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    assert!(crate::test_support::with_decode_context(|decode|
+        super::super::draft_neutral_plane_is_resolved(decode, &selection, Some(&id), Some(&direction))
+    ).unwrap());
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D Draft neutral plane",
+        0,
+        |decode| super::super::draft_neutral_plane_is_resolved(decode, &selection, Some(&id), Some(&direction)),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D Draft neutral plane"));
 }

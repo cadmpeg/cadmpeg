@@ -33,27 +33,59 @@ pub(crate) fn native_stream(id: &str) -> Option<&str> {
 }
 
 /// Return whether two native IDs belong to the same root document or xref occurrence.
-pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
+pub(crate) fn same_native_occurrence(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &str,
+    right: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
     const OCCURRENCE_SEGMENT: &str = "/occurrence-";
+    const OPERATION: &str = "compare F3D native occurrence IDs";
 
-    fn occurrence(id: &str) -> Option<&str> {
+    fn occurrence<'id>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &'id str,
+        marker: &'static str,
+        operation: &'static str,
+    ) -> Result<Option<&'id str>, cadmpeg_core::CodecError> {
         let mut occurrence_end = None;
-        for (at, _) in id.match_indices(OCCURRENCE_SEGMENT) {
-            let digits_at = at + OCCURRENCE_SEGMENT.len();
-            let end = id[digits_at..]
-                .find('/')
-                .map_or(id.len(), |end| digits_at + end);
-            if end > digits_at && id[digits_at..end].bytes().all(|byte| byte.is_ascii_digit()) {
-                occurrence_end = Some(end);
+        let marker = marker.as_bytes();
+        let mut matched = 0;
+        for (index, byte) in ctx.admit_iter(id.as_bytes(), operation)?.enumerate() {
+            if *byte == marker[matched] {
+                matched += 1;
+                if matched == marker.len() {
+                    let digits_at = index + 1;
+                    let digits = &id[digits_at..];
+                    let digits_end = ctx
+                        .find_text(digits, "/", operation)?
+                        .map_or(id.len(), |end| digits_at + end);
+                    let digits = &id[digits_at..digits_end];
+                    if !digits.is_empty()
+                        && ctx
+                            .admit_iter(digits.as_bytes(), operation)?
+                            .all(u8::is_ascii_digit)
+                    {
+                        occurrence_end = Some(digits_end);
+                    }
+                    matched = 0;
+                }
+            } else {
+                matched = usize::from(*byte == marker[0]);
             }
         }
-        occurrence_end.map(|end| &id[..end])
+        Ok(occurrence_end.map(|end| &id[..end]))
     }
 
-    match (occurrence(left), occurrence(right)) {
-        (Some(left), Some(right)) => left == right,
-        (None, None) => !left.contains(OCCURRENCE_SEGMENT) && !right.contains(OCCURRENCE_SEGMENT),
-        _ => false,
+    match (
+        occurrence(ctx, left, OCCURRENCE_SEGMENT, OPERATION)?,
+        occurrence(ctx, right, OCCURRENCE_SEGMENT, OPERATION)?,
+    ) {
+        (Some(left_occurrence), Some(right_occurrence)) => {
+            ctx.equal(left_occurrence, right_occurrence, OPERATION)
+        }
+        (None, None) => Ok(!ctx.contains_text(left, OCCURRENCE_SEGMENT, OPERATION)?
+            && !ctx.contains_text(right, OCCURRENCE_SEGMENT, OPERATION)?),
+        _ => Ok(false),
     }
 }
 
@@ -1064,11 +1096,13 @@ fn history_input_entity_id_charged(
     kind: &'static str,
     slot: impl std::fmt::Display,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
-        .1;
+    let (_, feature_key) = ctx
+        .split_once(
+            feature.as_str(),
+            "#",
+            "split F3D history feature identity",
+        )?
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?;
     ctx.format_retained(
         format_args!(
             "f3d:history-input:{kind}#{}:{feature_key}:{previous_state_id}:{slot}",
@@ -1125,11 +1159,13 @@ pub(crate) fn history_input_state_id_charged(
     feature: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
 ) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, cadmpeg_core::CodecError> {
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
-        .1;
+    let (_, feature_key) = ctx
+        .split_once(
+            feature.as_str(),
+            "#",
+            "split F3D history feature identity",
+        )?
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?;
     let value = ctx.format_retained(
         format_args!(
             "f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
@@ -1438,6 +1474,30 @@ mod tests {
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
 
+    mod native_occurrence;
+
+    fn assert_history_split_refusal(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        result: Result<(), cadmpeg_core::CodecError>,
+    ) {
+        let Some(cadmpeg_core::CodecError::ResourceLimit(returned)) = result.err() else {
+            panic!("history feature split returns a resource refusal");
+        };
+        assert_eq!(
+            returned.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert_eq!(returned.operation, "split F3D history feature identity");
+        assert_eq!(ctx.resource_refusal(), Some(returned));
+        let cadmpeg_core::CodecError::ResourceLimit(fused) = ctx
+            .charge_work(0, "repeat history feature split refusal")
+            .expect_err("the original split refusal remains fused")
+        else {
+            panic!("history feature split refusal remains fused");
+        };
+        assert_eq!(fused, returned);
+    }
+
     #[test]
     fn charged_native_id_matches_escaped_identity_bytes() {
         let ctx = cadmpeg_test_support::service_decode_context();
@@ -1586,6 +1646,29 @@ mod tests {
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain F3D history input identity")
+        );
+    }
+
+    #[test]
+    fn history_input_ids_propagate_feature_key_split_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#key").unwrap();
+        assert_history_split_refusal(
+            &ctx,
+            super::history_input_edge_id_charged(&ctx, &feature, -3, 9).map(|_| ()),
+        );
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_history_split_refusal(
+            &ctx,
+            super::history_input_state_id_charged(&ctx, &feature, -3).map(|_| ()),
         );
     }
 
@@ -1788,26 +1871,37 @@ mod tests {
 
     #[test]
     fn native_occurrence_scope_isolates_xrefs_and_includes_root_streams() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         assert!(same_native_occurrence(
+            &ctx,
             "f3d:Asset/Design1/BulkStream.dat:record#1",
             "f3d:design:persistent-subentity-tag#1",
-        ));
+        )
+        .expect("admitted comparison"));
         assert!(same_native_occurrence(
+            &ctx,
             "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
             "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
-        ));
+        )
+        .expect("admitted comparison"));
         assert!(!same_native_occurrence(
+            &ctx,
             "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
             "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1",
-        ));
+        )
+        .expect("admitted comparison"));
         assert!(!same_native_occurrence(
+            &ctx,
             "f3d:xref/root/occurrence-0/xref/child/occurrence-0/design:record#1",
             "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
-        ));
+        )
+        .expect("admitted comparison"));
         assert!(!same_native_occurrence(
+            &ctx,
             "f3d:xref/root/occurrence-invalid/design:record#1",
             "f3d:design:persistent-subentity-tag#1",
-        ));
+        )
+        .expect("admitted comparison"));
     }
 
     #[test]

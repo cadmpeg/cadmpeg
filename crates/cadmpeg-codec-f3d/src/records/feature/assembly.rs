@@ -1125,33 +1125,21 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
 
 impl DesignAssemblyAxialSelectorIdentity {
     /// Report whether two axis selectors carry the same persistent connector identity.
-    pub(crate) fn selects_same_object(&self, other: &Self) -> bool {
-        self.selector_asset_id
-            .as_str()
-            .eq_ignore_ascii_case(other.selector_asset_id.as_str())
-            && self
-                .selector_context_id
-                .as_str()
-                .eq_ignore_ascii_case(other.selector_context_id.as_str())
+    pub(crate) fn selects_same_object(&self, decode: &cadmpeg_core::decode::DecodeContext<'_>, other: &Self) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(decode.eq_ignore_ascii_case(self.selector_asset_id.as_str(), other.selector_asset_id.as_str(), "compare F3D axial connector selector asset id")?
+            && decode.eq_ignore_ascii_case(self.selector_context_id.as_str(), other.selector_context_id.as_str(), "compare F3D axial connector selector context id")?
             && self.external_object_reference == other.external_object_reference
             && self.external_segment == other.external_segment
-            && self
-                .external_asset_id
-                .as_str()
-                .eq_ignore_ascii_case(other.external_asset_id.as_str())
-            && self.external_link_name == other.external_link_name
+            && decode.eq_ignore_ascii_case(self.external_asset_id.as_str(), other.external_asset_id.as_str(), "compare F3D axial connector external asset id")?
+            && decode.equal(self.external_link_name.as_str(), other.external_link_name.as_str(), "compare F3D axial connector external link names")?
             && match (&self.external_version, &other.external_version) {
                 (None, None) => true,
                 (Some(first), Some(second)) => {
-                    first
-                        .property_key
-                        .value
-                        .as_str()
-                        .eq_ignore_ascii_case(second.property_key.value.as_str())
-                        && first.version_urn.value == second.version_urn.value
+                    decode.eq_ignore_ascii_case(first.property_key.value.as_str(), second.property_key.value.as_str(), "compare F3D axial connector version property keys")?
+                        && decode.equal(first.version_urn.value.as_str(), second.version_urn.value.as_str(), "compare F3D axial connector version URNs")?
                 }
                 _ => false,
-            }
+            })
     }
 }
 

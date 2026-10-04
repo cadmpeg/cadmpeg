@@ -271,7 +271,7 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
 
     fn guid(&mut self, field: &str) -> Result<Utf16View<'a>, ManifestFailure<'ctx>> {
         let value = self.utf16(field)?;
-        if !value.is_guid_hyphenated() {
+        if !value.is_guid_hyphenated(self.ctx)? {
             return Err(probe_malformed(
                 self.ctx,
                 field,

@@ -786,11 +786,19 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    for tag in tags.iter().filter(|tag| {
-        tag.token.as_str() == reference.token
-            && tag.design_references.contains(&reference.design_reference)
-            && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-    }) {
+    for tag in tags {
+        if tag.token.as_str() != reference.token
+            || !tag
+                .design_references
+                .contains(&reference.design_reference)
+        {
+            continue;
+        }
+        if let Some(owner_id) = owner_id {
+            if !crate::ids::same_native_occurrence(ctx, &tag.id, owner_id)? {
+                continue;
+            }
+        }
         let matching_selector = tag.selector == reference.selector;
         match (&tag.target, matching_selector) {
             (AttributeTarget::Face(face), true) => ctx.push_vec(

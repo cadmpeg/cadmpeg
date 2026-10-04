@@ -870,6 +870,62 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
 }
 
 #[test]
+fn body_recipe_history_refuses_guid_copy_limits() {
+    use crate::records::identity::RecordedValue;
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let recipe = ConstructionRecipe {
+        id: "recipe".into(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: RecordedValue {
+                value: "301".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: Some(RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    };
+
+    for operation in [
+        "copy F3D body recipe asset ID",
+        "copy F3D body recipe context ID",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
+            operation,
+            0,
+            |decode| {
+                let (scope, history, mut operands, _) = body_recipe_history_fixture();
+                bind_body_recipe_operand_history_candidates(
+                    decode,
+                    &mut operands,
+                    std::slice::from_ref(&recipe),
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&history),
+                )
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
 fn body_recipe_history_refuses_collection_limit() {
     let (scope, history, mut operands, _) = body_recipe_history_fixture();
     let arena = cadmpeg_core::decode::DecodeArena::new();

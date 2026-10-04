@@ -94,7 +94,7 @@ fn native_owner_index_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(&ctx, ["first", "second"].into_iter()).unwrap_err();
+    let error = super::owner_indices(&ctx, &["first", "second"], |id| *id).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -115,7 +115,7 @@ fn native_owner_index_refuses_retained_key_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::owner_indices(&ctx, ["key"].into_iter())
+            super::owner_indices(&ctx, &["key"], |id| *id)
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from)
         },
@@ -124,7 +124,7 @@ fn native_owner_index_refuses_retained_key_limit() {
         error => panic!("unexpected refusal: {error:?}"),
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(&ctx, ["key"].into_iter()).unwrap_err();
+    let error = super::owner_indices(&ctx, &["key"], |id| *id).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1694,4 +1694,30 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
         ),
         "{error:?}"
     );
+}
+
+#[test]
+fn native_owner_lookup_preserves_work_refusal() {
+    let owners = std::collections::HashMap::from([("owner".to_owned(), 0)]);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D native record owner", 0,
+        |decode| super::group_by_owner(decode, vec![("child", "owner")], &owners, 1, |row| row.0, |row| row.1)
+            .map_err(cadmpeg_core::CodecError::from),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D native record owner"));
+}
+
+#[test]
+fn native_owner_scan_and_hash_preserve_work_refusal() {
+    for operation in ["scan F3D native owners", "index F3D native owners"] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, 0,
+            |decode| super::owner_indices(decode, &["owner"], |id| *id)
+                .map_err(cadmpeg_core::CodecError::from),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation));
+    }
 }

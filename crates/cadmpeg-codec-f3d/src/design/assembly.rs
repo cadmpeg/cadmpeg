@@ -1613,7 +1613,13 @@ mod tests {
             .to_ascii_uppercase()
             .try_into()
             .expect("GUID");
-        assert!(first.selects_same_object(&second));
+        assert!(crate::test_support::with_decode_context(|decode| first.selects_same_object(decode, &second)).expect("axial connector identity admission"));
+        crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "compare F3D axial connector selector asset id",
+            0,
+            |decode| first.selects_same_object(decode, &second),
+        );
         assert_eq!(
             crate::ids::neutral_assembly_axial_object_id(&first),
             crate::ids::neutral_assembly_axial_object_id(&second)

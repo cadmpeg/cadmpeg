@@ -168,3 +168,26 @@ fn edge_flange_claimed_index_refuses_collection_limit() {
         if limit.operation == "index F3D edge flange claimed references")
     );
 }
+
+#[test]
+fn edge_flange_reference_scan_preserves_work_refusal() {
+    crate::test_support::with_decode_context(|service| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: vec![scope(Case::Flange)],
+            ..Default::default()
+        };
+        for operation in ["validate F3D flange claimed references", "find F3D located flange claimed reference"] {
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, 0,
+                |decode| {
+                    let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                    ctx.decode = decode;
+                    super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
+                },
+            );
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation));
+        }
+    });
+}

@@ -102,6 +102,18 @@ pub(crate) struct Located<T, O = u64> {
     pub(crate) offset: O,
 }
 
+impl<T: cadmpeg_core::decode::cost::DecodeCost, O: cadmpeg_core::decode::cost::DecodeCost>
+    cadmpeg_core::decode::cost::DecodeCost for Located<T, O>
+{
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.value, &self.offset).decode_cost(ctx, operation)
+    }
+}
+
 impl<T, O> Located<T, O> {
     pub(super) fn from_wire(
         value: Option<T>,

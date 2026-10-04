@@ -33,6 +33,13 @@ pub(crate) enum DesignEdgeIdentityLayout {
     Shortest,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeIdentityLayout {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
+    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl DesignEdgeIdentityLayout {
     /// Byte offset of the presence marker from the indexed-record header.
     pub(crate) fn marker_offset(self) -> u64 {
@@ -100,6 +107,12 @@ pub(crate) struct DesignEdgeIdentityOperand {
     /// Native identity or embedded bounded-face operand proving the resolved
     /// edge selection.
     pub(crate) resolution_identity_id: Option<String>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeIdentityOperand {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        ((&self.frame, &self.id, &self.scope_record_index, &self.group_record_index, &self.group_member_ordinal, &self.class_tag,), (&self.layout, &self.local_id, &self.asset_id, &self.context_id, &self.historical, &self.treatment_radius_candidates,), (&self.transition_edge_candidates, &self.resolved_edge_slots, &self.resolved_edge_slot, &self.resolution_identity_id,),).decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -1097,6 +1110,12 @@ pub(crate) struct DesignEdgeTreatmentRadiusCandidate {
     pub(crate) radius: cadmpeg_ir::scalar::PositiveReal,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeTreatmentRadiusCandidate {
+    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.edge_slot, &self.radius.get(),).decode_cost(ctx, operation)
+    }
+}
+
 cadmpeg_core::named_optional_field!(pub(super) deserialize_resolved_edge_slot, i64, "resolved_edge_slot");
 
 cadmpeg_core::named_optional_field!(
@@ -1136,6 +1155,13 @@ cadmpeg_core::named_optional_field!(
     FiniteVector3,
     "resolved_axis_direction"
 );
+
+
+
+
+
+
+
 
 #[cfg(test)]
 mod tests;

@@ -284,7 +284,14 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         }],
     };
     let identities = crate::test_support::with_decode_context(|decode_ctx| {
-        HistoricalIdentityIndex::build(decode_ctx, std::slice::from_ref(&history), [700, 800])
+        HistoricalIdentityIndex::build(
+            decode_ctx,
+            std::slice::from_ref(&history),
+            decode_ctx
+                .admit_iter(&[700, 800], "scan F3D identity local IDs")
+                .expect("test identity local ID admission"),
+            |local_id| std::iter::once(*local_id).chain(None),
+        )
     })
     .unwrap();
     let candidates = crate::test_support::with_decode_context(|decode_ctx| {
@@ -316,6 +323,40 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
             },
         ]
     );
+    let state_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D selected identity state",
+        0,
+        |decode_ctx| {
+            entity_selection_edge_candidates(
+                decode_ctx,
+                [(0, 700)],
+                3,
+                &identities,
+                &topology,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(state_error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D selected identity state"));
+    let source_error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D selected identity edge candidates",
+        0,
+        |decode_ctx| {
+            entity_selection_edge_candidates(
+                decode_ctx,
+                [(0, 700)],
+                3,
+                &identities,
+                &topology,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(source_error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D selected identity edge candidates"));
     assert_eq!(crate::test_support::with_decode_context(|decode_ctx| {
         unique_entity_selection_edge(decode_ctx, &candidates)
     }).unwrap(), Some(17));
