@@ -8098,7 +8098,7 @@ fn definition_starts(
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Ok(digits) = std::str::from_utf8(digits) else {
+        let Ok(digits) = ctx.validate_utf8(digits, "creo UTF-8 validation")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -8183,7 +8183,7 @@ fn depdb_gsec2d_starts(
             if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
                 return Ok(None);
             }
-            let id = { let Some(value) = ctx.parse_text::<u32>({ let Some(value) = std::str::from_utf8(digits).ok() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
+            let id = { let Some(value) = ctx.parse_text::<u32>({ let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
             Ok(Some(DefinitionStart {
                 offset: start,
                 id: NonZeroU32::new(id),
@@ -8414,7 +8414,7 @@ pub(crate) fn depdb_section_definition(
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
             return Ok(None);
         }
-        let section_id = { let Some(value) = ctx.parse_text::<u32>({ let Some(value) = std::str::from_utf8(digits).ok() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
+        let section_id = { let Some(value) = ctx.parse_text::<u32>({ let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value }, "creo scalar text parsing")?.ok() else { return Ok(None); }; value };
         Ok(Some(section_id))
     })()? else {
         return Ok(None);

@@ -1485,3 +1485,36 @@ fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
         "the retained body includes the optional type wrapper and row close"
     );
 }
+
+#[test]
+fn definition_identity_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::definition_starts(ctx, b"feat_defs_1\0"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn depdb_section_identity_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D1\0"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn depdb_definition_identity_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::depdb_section_definition(ctx, b"gsec2d_ptr\0name\0S2D1\0", None),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}

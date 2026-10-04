@@ -164,3 +164,47 @@ fn plane_local_system_scalar_cache_refuses_before_hashset_growth() {
         .expect_err("scalar image needs a HashSet item"),
     );
 }
+
+#[test]
+fn prototype_family_utf8_refuses_before_unknown_family() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::super::named_prototype_frames(ctx, b"srf_prim_ptr(\xff)\0"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn prototype_count_utf8_refuses_before_unknown_family() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::super::prototype_count(ctx, b"srf_prim_ptr(\xff)\0"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn prototype_parameter_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| super::super::named_prototype_frames(ctx, b"srf_prim_ptr(plane)\0\xe0\x01radius\0"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn prototype_fields_retain_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo named prototype field retain",
+        |ctx| super::super::named_prototype_frames(ctx, b"srf_prim_ptr(plane)\0\xe0\x01radius\0"),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo named prototype field retain"));
+}

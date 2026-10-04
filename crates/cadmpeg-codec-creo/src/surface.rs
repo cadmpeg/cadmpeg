@@ -3680,7 +3680,7 @@ fn named_prototype_frames<'a>(
             break;
         };
         let family_bytes = &payload[family_start..close];
-        let family = match std::str::from_utf8(family_bytes) {
+        let family = match ctx.validate_utf8(family_bytes, "creo UTF-8 validation")? {
             Ok(name) => SurfacePrototypeFamily::from_known_name(name).map_or_else(
                 || {
                     ctx.copy_retained_text(name, "creo prototype family name")
@@ -3740,7 +3740,7 @@ fn named_prototype_frames<'a>(
             };
             let name_start = token_offset + 2;
             let name_end = token_offset + length - 1;
-            let name = std::str::from_utf8(&payload[name_start..name_end]).ok();
+            let name = ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?.ok();
             if name.is_some_and(|name| prototype_parameter_allowed(&family, name)) {
                 ctx.reserve_vec(&mut named, 1, "creo named prototype field positions")?;
                 named.push((token_offset, length));
@@ -3754,13 +3754,13 @@ fn named_prototype_frames<'a>(
         )?;
         named.dedup();
         let mut owned_scalar_end = close + 2;
-        named.retain(|(token_offset, token_length)| {
+        ctx.retain_vec(&mut named, |(token_offset, token_length)| {
             if *token_offset < owned_scalar_end {
-                return false;
+                return Ok(false);
             }
             let name_start = *token_offset + 2;
             let name_end = *token_offset + *token_length - 1;
-            if let Ok(name) = std::str::from_utf8(&payload[name_start..name_end]) {
+            if let Ok(name) = ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")? {
                 if prototype_parameter_allowed(&family, name) {
                     let value_offset = *token_offset + *token_length;
                     if let Some(length) = named_vector_scalar_body_len(
@@ -3773,13 +3773,13 @@ fn named_prototype_frames<'a>(
                     }
                 }
             }
-            true
-        });
+            Ok(true)
+        }, "creo named prototype field retain")?;
         let mut parameters = Vec::new();
         for (position, (token_offset, token_length)) in named.iter().copied().enumerate() {
             let name_start = token_offset + 2;
             let name_end = token_offset + token_length - 1;
-            let Some(name) = std::str::from_utf8(&payload[name_start..name_end]).ok() else {
+            let Some(name) = ctx.validate_utf8(&payload[name_start..name_end], "creo UTF-8 validation")?.ok() else {
                 continue;
             };
             if !prototype_parameter_allowed(&family, name) {
@@ -7741,7 +7741,7 @@ pub(crate) fn prototype_count(
         else {
             break;
         };
-        if std::str::from_utf8(&payload[family_start..close])
+        if ctx.validate_utf8(&payload[family_start..close], "creo UTF-8 validation")?
             .ok()
             .and_then(SurfacePrototypeFamily::from_known_name)
             .is_some()

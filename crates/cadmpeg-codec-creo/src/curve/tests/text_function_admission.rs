@@ -506,3 +506,47 @@ fn relation_scientific_exponent_parse_refuses_work() {
         |ctx| crate::curve::format_relation_real_admitted(ctx, 0.01234, Some(2), true),
     ), "creo scalar text parsing");
 }
+
+#[test]
+fn relation_literal_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| crate::curve::parse_relation_expression::<CurveExpressionValue>(ctx, "'abc'", &BTreeMap::new(), RelationEvaluationContext::default()),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn relation_number_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| crate::curve::parse_relation_expression::<CurveExpressionValue>(ctx, "1.25", &BTreeMap::new(), RelationEvaluationContext::default()),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn relation_identifier_utf8_refuses_before_missing_symbol() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| crate::curve::parse_relation_expression::<CurveExpressionValue>(ctx, "MISSING", &BTreeMap::new(), RelationEvaluationContext::default()),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}
+
+#[test]
+fn relation_unit_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
+        |ctx| crate::curve::parse_relation_expression::<CurveExpressionValue>(ctx, "1[mm^2]", &BTreeMap::new(), RelationEvaluationContext::default()),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation"));
+}

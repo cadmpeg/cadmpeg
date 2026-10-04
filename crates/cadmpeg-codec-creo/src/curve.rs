@@ -1160,7 +1160,7 @@ pub(crate) fn expression_records_with_model_name(
                 break;
             };
             let line_end = cursor + relative_end;
-            let Ok(text) = std::str::from_utf8(&payload[cursor..line_end]) else {
+            let Ok(text) = ctx.validate_utf8(&payload[cursor..line_end], "creo UTF-8 validation")? else {
                 lines.clear();
                 break;
             };
@@ -2649,7 +2649,7 @@ impl RelationUnitParser<'_> {
         let Some(digits) = self.source.get(start..self.cursor) else {
             return Ok(None);
         };
-        let Ok(digits) = std::str::from_utf8(digits) else {
+        let Ok(digits) = self.ctx.validate_utf8(digits, "creo UTF-8 validation")? else {
             return Ok(None);
         };
         let Ok(magnitude) = self.ctx.parse_text::<i16>(
@@ -2692,7 +2692,7 @@ impl RelationUnitParser<'_> {
         {
             self.cursor += 1;
         }
-        let symbol = { let Some(value) = std::str::from_utf8({ let Some(value) = self.source.get(start..self.cursor) else { return Ok(None); }; value }).ok() else { return Ok(None); }; value };
+        let symbol = { let Some(value) = self.ctx.validate_utf8({ let Some(value) = self.source.get(start..self.cursor) else { return Ok(None); }; value }, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
         Ok(relation_unit_symbol(self.ctx, symbol)?)
     }
 
@@ -5696,7 +5696,6 @@ struct ExpressionParser<'a, V> {
     values: &'a BTreeMap<String, V>,
     context: RelationEvaluationContext<'a>,
     ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
-    resource_error: Option<cadmpeg_core::CodecError>,
     nesting: usize,
 }
 
@@ -5726,16 +5725,6 @@ impl ComparisonOperator {
 }
 
 impl<V: ExpressionValue> ExpressionParser<'_, V> {
-    fn admit<T>(&mut self, result: Result<T, cadmpeg_core::CodecError>) -> Option<T> {
-        match result {
-            Ok(value) => Some(value),
-            Err(error) => {
-                self.resource_error = Some(error);
-                None
-            }
-        }
-    }
-
     fn finite_value(value: V) -> Option<V> {
         value.finite().then_some(value)
     }
@@ -5926,7 +5915,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 })
             }
             byte if byte.is_ascii_digit() || *byte == b'.' => self.number()?,
-            b'\'' | b'"' => self.string(),
+            b'\'' | b'"' => self.string()?,
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function()?,
             _ => None,
         }) else { return Ok(None); }; value };
@@ -5937,7 +5926,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 .iter()
                 .position(|byte| *byte == b']') else { return Ok(None); }; value };
             let unit_end = unit_start + unit_length;
-            let unit = { let Some(value) = std::str::from_utf8(&self.source[unit_start..unit_end]).ok() else { return Ok(None); }; value };
+            let unit = { let Some(value) = self.ctx.validate_utf8(&self.source[unit_start..unit_end], "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
             let unit = { let Some(value) = relation_unit(self.ctx, unit)? else { return Ok(None); }; value };
             let result = value.with_unit_checked(unit, self.ctx);
             value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
@@ -5946,8 +5935,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         Ok(Self::finite_value(value))
     }
 
-    fn string(&mut self) -> Option<V> {
-        let delimiter = *self.source.get(self.cursor)?;
+    fn string(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
+        let Some(delimiter) = self.source.get(self.cursor).copied() else {
+            return Ok(None);
+        };
         self.cursor += 1;
         let start = self.cursor;
         while self
@@ -5957,14 +5948,15 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         {
             self.cursor += 1;
         }
-        (self.source.get(self.cursor) == Some(&delimiter)).then_some(())?;
-        let source = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
-        let value = self.admit(
-            self.ctx
-                .copy_retained_text(source, "creo relation literal text"),
-        )?;
+        if self.source.get(self.cursor) != Some(&delimiter) {
+            return Ok(None);
+        }
+        let Ok(source) = self.ctx.validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")? else {
+            return Ok(None);
+        };
+        let value = self.ctx.copy_retained_text(source, "creo relation literal text")?;
         self.cursor += 1;
-        V::string(value)
+        Ok(V::string(value))
     }
 
     fn number(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
@@ -5993,7 +5985,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 self.cursor += 1;
             }
         }
-        let Ok(text) = std::str::from_utf8(&self.source[start..self.cursor]) else {
+        let Ok(text) = self.ctx.validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")? else {
             return Ok(None);
         };
         let Ok(value) = self.ctx.parse_text(text, "creo scalar text parsing")? else {
@@ -6005,7 +5997,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
     fn identifier_or_function(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
         let start = self.cursor;
         self.cursor = { let Some(value) = expression_identifier_end(self.source, start) else { return Ok(None); }; value };
-        let name = { let Some(value) = std::str::from_utf8(&self.source[start..self.cursor]).ok() else { return Ok(None); }; value };
+        let name = { let Some(value) = self.ctx.validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'(') {
             if let Some(value) = V::reserved(self.ctx, name)? {
@@ -6597,13 +6589,9 @@ fn parse_relation_expression<V: ExpressionValue>(
         values,
         context,
         ctx,
-        resource_error: None,
         nesting: 0,
     };
     let value = parser.logical_or()?;
-    if let Some(error) = parser.resource_error {
-        return Err(error);
-    }
     parser.whitespace();
     Ok(value.filter(|value| parser.cursor == parser.source.len() && value.finite()))
 }
