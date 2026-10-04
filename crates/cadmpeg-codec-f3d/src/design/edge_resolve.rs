@@ -189,7 +189,7 @@ pub(super) fn resolved_surface_patch_edge_group(
         };
         ctx.push_vec(&mut edge_slots, slot, "f3d surface patch stable edge slot")?;
     }
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let mut historical_edges = Vec::new();
     for edge_slot in edge_slots {
         let id = crate::design::identity::history_input_edge_id(
@@ -346,7 +346,7 @@ pub(super) fn resolved_edge_flange_group(
     if edges.is_empty() {
         return Ok(selection);
     }
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let state =
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
     let mut historical_edges = Vec::new();
@@ -634,7 +634,7 @@ fn resolved_edge_group_with_transition_chain(
         EdgeGroupProof::Treatment { radius } => (true, radius),
     };
 
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let unmatched_selection = |state_id: Option<i64>| -> Result<EdgeSelection, CodecError> {
         if group.lost_edge_references.is_empty() {
             native_edge_selection(group, ctx)
@@ -1302,7 +1302,7 @@ pub(super) fn resolved_hem_edge_group(
     let Some(edge) = hem_transition_edge_slot(operand, ctx)? else {
         return Ok(selection);
     };
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     Ok(cadmpeg_ir::features::EdgeSelection::historical(
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?,
         vec![crate::design::identity::history_input_edge_id(

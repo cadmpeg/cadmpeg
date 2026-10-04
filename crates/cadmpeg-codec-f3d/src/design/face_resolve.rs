@@ -1158,7 +1158,7 @@ fn historical_face_selection_with_native(
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
+    let feature_key = crate::design::identity::identity_key(ctx, feature.as_str())?;
     let prefix =
         crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
     let mut historical_faces = Vec::new();
