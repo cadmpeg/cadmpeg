@@ -488,3 +488,21 @@ fn relation_unit_exponent_parse_refuses_work() {
         "creo relation unit exponent parsing",
     );
 }
+
+#[test]
+fn relation_numeric_literal_parse_refuses_work() {
+    assert_work(&crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        |ctx| crate::curve::parse_relation_expression::<f64>(
+            ctx, "1.25", &BTreeMap::new(), RelationEvaluationContext::default(),
+        ),
+    ), "creo scalar text parsing");
+}
+
+#[test]
+fn relation_scientific_exponent_parse_refuses_work() {
+    assert_work(&crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+        |ctx| crate::curve::format_relation_real_admitted(ctx, 0.01234, Some(2), true),
+    ), "creo scalar text parsing");
+}

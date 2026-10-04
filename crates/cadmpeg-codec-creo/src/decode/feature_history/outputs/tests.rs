@@ -1144,7 +1144,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         vec![BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar")]
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "extrusion", 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "extrusion", 40)).expect("service profile admits scalar parsing"),
         Some(BodyKind::Solid)
     );
 
@@ -1162,5 +1162,5 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
             .expect("service profile admits output bodies")
             .is_empty()
     );
-    assert_eq!(evaluated_sweep_body_kind(&ir, "extrusion", 40), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "extrusion", 40)).expect("service profile admits scalar parsing"), None);
 }

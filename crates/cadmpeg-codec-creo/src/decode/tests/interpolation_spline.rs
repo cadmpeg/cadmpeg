@@ -594,7 +594,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     assert!(feature_is_sheet_extrusion(&scan, 942));
     assert!(feature_allows_linear_extrusion(&scan, 942));
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
+        crate::decode::with_test_decode_ctx(|ctx| sweep_output_kind(ctx, &scan, &CadIr::empty(), "extrusion", 942)).expect("service profile admits scalar parsing"),
         Some(BodyKind::Sheet)
     );
     assert!(matches!(
@@ -620,7 +620,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     assert!(!feature_is_sheet_extrusion(&scan, 942));
     assert!(!feature_allows_linear_extrusion(&scan, 942));
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
+        crate::decode::with_test_decode_ctx(|ctx| sweep_output_kind(ctx, &scan, &CadIr::empty(), "extrusion", 942)).expect("service profile admits scalar parsing"),
         None
     );
     assert!(matches!(

@@ -263,7 +263,7 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
         },
     )]);
     assert_eq!(
-        reconciled_model_plane(&local, &ir, &source_carriers, 7).map(|plane| plane.origin),
+        crate::decode::with_test_decode_ctx(|ctx| reconciled_model_plane(ctx, &local, &ir, &source_carriers, 7)).expect("service profile admits scalar parsing").map(|plane| plane.origin),
         Some([1.0, 0.0, 0.0])
     );
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =

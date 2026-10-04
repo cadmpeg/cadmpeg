@@ -49,21 +49,26 @@ const PCURVE_MISMATCH_SAMPLE_LIMIT: usize = 4;
 const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
-fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
+fn unique_model_surface<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, surfaces: &'a [Surface], face_id: u32) -> Result<Option<&'a Surface>, cadmpeg_core::CodecError> {
     for prefix in [
         "creo:visibgeom:surface#",
         "creo:novisgeom:surface#",
         "creo:actdatums:surface#",
     ] {
-        let mut matches = surfaces.iter().filter(|surface| {
-            crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, face_id)
-        });
-        let Some(surface) = matches.next() else {
-            continue;
-        };
-        return matches.next().is_none().then_some(surface);
+        let mut found = None;
+        for surface in ctx.admit_iter(surfaces, "creo numbered identity candidate scan")? {
+            if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), prefix, face_id)? {
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some(surface);
+            }
+        }
+        if found.is_some() {
+            return Ok(found);
+        }
     }
-    None
+    Ok(None)
 }
 
 fn topology_ignored_surface_ids(
@@ -147,9 +152,10 @@ fn map_two_chart_endpoint_sets(
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
         return Ok(TwoChartMapping::NoSamples);
     };
-    let surfaces = pcurve
-        .faces
-        .map(|face_id| unique_model_surface(&ir.model.surfaces, face_id));
+    let surfaces = [
+        unique_model_surface(ctx, &ir.model.surfaces, pcurve.faces[0])?,
+        unique_model_surface(ctx, &ir.model.surfaces, pcurve.faces[1])?,
+    ];
     let mut mapped = surfaces.map(|surface| surface.is_some());
     let missing_surface_paths = usize::from(!mapped[0]) + usize::from(!mapped[1]);
     let mut unevaluable_paths = 0;
@@ -500,7 +506,7 @@ fn pcurve_path_carrier_status(
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
+    let Some(surface) = (face_id).map(|id| -> Result<Option<_>, cadmpeg_core::CodecError> { Ok(unique_model_surface(ctx, &ir.model.surfaces, id.get())?) }).transpose()?.flatten()
     else {
         return Ok(PcurveCarrierStatus::Unknown(
             PcurveCarrierUnknownReason::MissingSurface,
@@ -536,7 +542,7 @@ fn pcurve_endpoint_carrier_status(
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
+    let Some(surface) = (face_id).map(|id| -> Result<Option<_>, cadmpeg_core::CodecError> { Ok(unique_model_surface(ctx, &ir.model.surfaces, id.get())?) }).transpose()?.flatten()
     else {
         return Ok(PcurveCarrierStatus::Unknown(
             PcurveCarrierUnknownReason::MissingSurface,
@@ -675,25 +681,26 @@ fn collect_support_cone_plane_witness(
     Ok(())
 }
 
-fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
+fn unique_model_surface_mut<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, surfaces: &'a mut [Surface], face_id: u32) -> Result<Option<&'a mut Surface>, cadmpeg_core::CodecError> {
     for prefix in [
         "creo:visibgeom:surface#",
         "creo:novisgeom:surface#",
         "creo:actdatums:surface#",
     ] {
-        let mut matches = surfaces.iter().enumerate().filter_map(|(index, surface)| {
-            crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, face_id)
-                .then_some(index)
-        });
-        let Some(index) = matches.next() else {
-            continue;
-        };
-        if matches.next().is_some() {
-            return None;
+        let mut found = None;
+        for (index, surface) in ctx.admit_iter(&surfaces[..], "creo numbered identity candidate scan")?.enumerate() {
+            if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), prefix, face_id)? {
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some(index);
+            }
         }
-        return surfaces.get_mut(index);
+        if let Some(index) = found {
+            return Ok(surfaces.get_mut(index));
+        }
     }
-    None
+    Ok(None)
 }
 
 /// Reconcile the signed frame of a radius-zero support cone from a pcurve
@@ -761,7 +768,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
 
     let mut reconciled = 0;
     for (face_id, face_witnesses) in witnesses {
-        let Some(surface) = unique_model_surface_mut(&mut ir.model.surfaces, face_id) else {
+        let Some(surface) = unique_model_surface_mut(ctx, &mut ir.model.surfaces, face_id)? else {
             continue;
         };
         let source_geometry = source_carriers.surface_geometry(surface);
@@ -819,7 +826,7 @@ fn map_pcurve_paths(
             continue;
         };
         let face_id = face_id.get();
-        let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+        let Some(surface) = unique_model_surface(ctx, &ir.model.surfaces, face_id)? else {
             result.missing_surfaces += 1;
             continue;
         };
@@ -1584,7 +1591,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             if ignored_surface_ids.contains(&face_id) {
                 return Ok(());
             }
-            let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+            let Some(surface) = unique_model_surface(ctx, &ir.model.surfaces, face_id)? else {
                 return Ok(());
             };
             let geometry = source_carriers.surface_geometry(surface);
@@ -2053,7 +2060,7 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
 
     let mut selected = None;
     for face_id in faces {
-        let Some(surface) = unique_model_surface(surfaces, face_id)
+        let Some(surface) = unique_model_surface(ctx, surfaces, face_id)?
             .map(|surface| source_carriers.surface_geometry(surface))
         else {
             continue;

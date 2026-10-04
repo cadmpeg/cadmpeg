@@ -339,20 +339,22 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         else {
             continue;
         };
-        let geometry = |surface_id| {
-            exactly_one(ir.model.surfaces.iter().filter(|surface| {
-                crate::identity::matches_numbered_identity(
-                    surface.id.as_str(),
-                    "creo:visibgeom:surface#",
-                    surface_id,
-                )
-            }))
-            .map(|surface| source_carriers.surface_geometry(surface))
+        let geometry = |surface_id: u32| -> Result<Option<&SurfaceGeometry>, cadmpeg_core::CodecError> {
+            let mut found = None;
+            for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+                if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", surface_id)? {
+                    if found.is_some() {
+                        return Ok(None);
+                    }
+                    found = Some(surface);
+                }
+            }
+            Ok(found.map(|surface| source_carriers.surface_geometry(surface)))
         };
-        let Some(first_geometry) = geometry(first.id) else {
+        let Some(first_geometry) = geometry(first.id)? else {
             continue;
         };
-        let Some(second_geometry) = geometry(second.id) else {
+        let Some(second_geometry) = geometry(second.id)? else {
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();

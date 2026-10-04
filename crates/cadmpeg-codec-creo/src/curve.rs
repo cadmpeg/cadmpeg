@@ -5925,7 +5925,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                     value
                 })
             }
-            byte if byte.is_ascii_digit() || *byte == b'.' => self.number(),
+            byte if byte.is_ascii_digit() || *byte == b'.' => self.number()?,
             b'\'' | b'"' => self.string(),
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function()?,
             _ => None,
@@ -5967,7 +5967,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         V::string(value)
     }
 
-    fn number(&mut self) -> Option<V> {
+    fn number(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
         let start = self.cursor;
         while self
             .source
@@ -5993,11 +5993,13 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 self.cursor += 1;
             }
         }
-        let value = std::str::from_utf8(&self.source[start..self.cursor])
-            .ok()?
-            .parse()
-            .ok()?;
-        V::number(value)
+        let Ok(text) = std::str::from_utf8(&self.source[start..self.cursor]) else {
+            return Ok(None);
+        };
+        let Ok(value) = self.ctx.parse_text(text, "creo scalar text parsing")? else {
+            return Ok(None);
+        };
+        Ok(V::number(value))
     }
 
     fn identifier_or_function(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
@@ -6566,7 +6568,7 @@ fn format_relation_real_admitted(
     let Some((mantissa, exponent)) = formatted.split_once('e') else {
         return Ok(None);
     };
-    let Ok(exponent) = exponent.parse::<i32>() else {
+    let Ok(exponent) = ctx.parse_text::<i32>(exponent, "creo scalar text parsing")? else {
         return Ok(None);
     };
     Ok(Some(ctx.format_retained(

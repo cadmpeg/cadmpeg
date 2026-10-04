@@ -105,16 +105,12 @@ pub(super) fn native_surface_id(
 }
 
 /// Compare a selected native surface identity without constructing one.
-pub(super) fn matches_native_surface_id(
+pub(super) fn matches_native_surface_id(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     scan: &ContainerScan,
     surface_id: u32,
     candidate: &SurfaceId,
-) -> bool {
-    crate::identity::matches_numbered_identity(
-        candidate.as_str(),
-        native_surface_namespace(scan, surface_id).1,
-        surface_id,
-    )
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(crate::identity::matches_numbered_identity(ctx, candidate.as_str(), native_surface_namespace(scan, surface_id).1, surface_id)?)
 }
 
 /// Return a native surface row only when its compact identifier is unique
@@ -312,19 +308,19 @@ mod tests {
             .expect("service native surface identity admitted");
         assert_eq!(native.as_str(), "creo:novisgeom:surface#17");
         let prefix = native_surface_namespace(&scan, 17).1;
-        assert!(crate::identity::matches_numbered_identity(
+        assert!(crate::decode::with_test_decode_ctx(|ctx| crate::identity::matches_numbered_identity(ctx, 
             native.as_str(),
             prefix,
             17,
-        ));
-        assert!(matches_native_surface_id(&scan, 17, &native));
+        )).expect("service profile admits scalar parsing"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(ctx, &scan, 17, &native)).expect("service profile admits scalar parsing"));
         let visible = cadmpeg_ir::ids::SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 17);
-        assert!(!crate::identity::matches_numbered_identity(
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| crate::identity::matches_numbered_identity(ctx, 
             visible.as_str(),
             prefix,
             17,
-        ));
-        assert!(!matches_native_surface_id(&scan, 17, &visible));
+        )).expect("service profile admits scalar parsing"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(ctx, &scan, 17, &visible)).expect("service profile admits scalar parsing"));
     }
 
     #[test]

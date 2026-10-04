@@ -336,20 +336,18 @@ pub(in super::super) fn profile_segment_ids(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut ids = BTreeSet::new();
     for segment in segments {
-        let matches = profiles.iter().flatten().any(|entity_use| {
-            let Some(suffix) = entity_use
-                .entity
-                .as_str()
-                .strip_prefix("creo:featdefs:sketch_entity#")
-            else {
-                return false;
-            };
-            let Some((scope, external)) = suffix.split_once(':') else {
-                return false;
-            };
-            crate::identity::matches_numbered_identity(scope, "", definition_id)
-                && crate::identity::matches_numbered_identity(external, "", segment.external_id)
-        });
+        let matches = ctx.any_by(profiles, |profile| {
+            ctx.any_by(profile, |entity_use| {
+                let Some(suffix) = entity_use.entity.as_str().strip_prefix("creo:featdefs:sketch_entity#") else {
+                    return Ok(false);
+                };
+                let Some((scope, external)) = suffix.split_once(':') else {
+                    return Ok(false);
+                };
+                Ok(crate::identity::matches_numbered_identity(ctx, scope, "", definition_id)?
+                    && crate::identity::matches_numbered_identity(ctx, external, "", segment.external_id)?)
+            }, "creo profile segment identity scan")
+        }, "creo profile segment profile scan")?;
         if matches {
             ctx.insert_btree_set(
                 &mut ids,

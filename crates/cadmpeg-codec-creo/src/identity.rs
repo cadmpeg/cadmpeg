@@ -146,9 +146,9 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
 }
 
 /// Compare a numbered identity without constructing a temporary identity string.
-pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32) -> bool {
+pub(crate) fn matches_numbered_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>, actual: &str, prefix: &str, number: u32) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(suffix) = actual.strip_prefix(prefix) else {
-        return false;
+        return Ok(false);
     };
     let mut digits = 1;
     let mut remaining = number;
@@ -156,7 +156,7 @@ pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32)
         remaining /= 10;
         digits += 1;
     }
-    suffix.len() == digits && suffix.parse::<u32>().ok() == Some(number)
+    Ok(suffix.len() == digits && ctx.parse_text::<u32>(suffix, "creo scalar text parsing")?.ok() == Some(number))
 }
 
 pub(crate) const VISIBGEOM_BODY: IdentityNamespace =
@@ -386,30 +386,41 @@ mod tests {
     #[test]
     fn numbered_identity_match_requires_canonical_decimal_bytes() {
         let prefix = "creo:visibgeom:surface#";
-        assert!(matches_numbered_identity(
+        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
             "creo:visibgeom:surface#0",
             prefix,
             0
-        ));
-        assert!(matches_numbered_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
             "creo:visibgeom:surface#4294967295",
             prefix,
             u32::MAX
-        ));
-        assert!(!matches_numbered_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
             "creo:visibgeom:surface#01",
             prefix,
             1
-        ));
-        assert!(!matches_numbered_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
             "creo:visibgeom:surface#+1",
             prefix,
             1
-        ));
-        assert!(!matches_numbered_identity(
+        )).expect("service profile admits scalar parsing"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
             "creo:visibgeom:face#1",
             prefix,
             1
-        ));
+        )).expect("service profile admits scalar parsing"));
     }
+    #[test]
+    fn numbered_identity_parse_refuses_before_false() {
+        let error = crate::test_support::last_refusal_at(
+            &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
+            |ctx| matches_numbered_identity(ctx, "id:x", "id:", 1),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo scalar text parsing"));
+    }
+
 }

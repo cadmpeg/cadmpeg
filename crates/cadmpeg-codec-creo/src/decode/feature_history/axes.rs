@@ -105,14 +105,17 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let mut surfaces = ir.model.surfaces.iter().filter(|surface| {
-            crate::identity::matches_numbered_identity(
-                surface.id.as_str(),
-                "creo:visibgeom:surface#",
-                row.id,
-            )
-        });
-        let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
+        let mut found = None;
+        for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+            if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", row.id)? {
+                if found.is_some() {
+                    found = None;
+                    break;
+                }
+                found = Some(surface);
+            }
+        }
+        let Some(surface) = found else {
             return Ok(None);
         };
         match source_carriers.surface_geometry(surface) {

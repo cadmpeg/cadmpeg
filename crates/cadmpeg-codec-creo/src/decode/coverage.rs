@@ -376,9 +376,10 @@ pub(super) fn design_constraint_transfer_coverage(
             }
             _ => None,
         };
-        let native_kind = native_kind_text
-            .and_then(|kind| kind.strip_prefix(native_kind_prefix))
-            .and_then(|kind| kind.parse().ok());
+        let native_kind = match native_kind_text.and_then(|kind| kind.strip_prefix(native_kind_prefix)) {
+            Some(kind) => ctx.parse_text::<u32>(kind, "creo scalar text parsing")?.ok(),
+            None => None,
+        };
         if native_kind_text.is_some() {
             coverage.native += 1;
         }
@@ -448,49 +449,39 @@ pub(super) fn curve_transfer_coverage(
 ) -> Result<CurveTransferCoverage, CodecError> {
     let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut transferred_ids = BTreeSet::new();
-    for id in curves
-        .iter()
-        .filter(|curve| {
-            !matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
-        .filter_map(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
-                .object_id
-                .as_str()
-                .strip_prefix("VisibGeom:")?
-                .parse::<u32>()
-                .ok()
-        })
-    {
+    for curve in curves.iter().filter(|curve| {
+        !matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )
+    }) {
+        let Some(digits) = curve.source_object.as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
+            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
+        else {
+            continue;
+        };
+        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
+            continue;
+        };
         ctx.insert_btree_set(&mut transferred_ids, id, "creo transferred curve ID nodes")?;
     }
     let mut unknown_ids = BTreeSet::new();
-    for id in curves
-        .iter()
-        .filter(|curve| {
-            matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
-        .filter_map(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
-                .object_id
-                .as_str()
-                .strip_prefix("VisibGeom:")?
-                .parse::<u32>()
-                .ok()
-        })
-    {
+    for curve in curves.iter().filter(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )
+    }) {
+        let Some(digits) = curve.source_object.as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
+            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
+        else {
+            continue;
+        };
+        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
+            continue;
+        };
         ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown curve ID nodes")?;
     }
     let mut coverage = CurveTransferCoverage::default();
@@ -550,13 +541,13 @@ pub(super) fn surface_transfer_coverage(
     }
     let mut transferred = Vec::new();
     for surface in surfaces {
-        let Some(id) = surface
-            .source_object
-            .as_ref()
+        let Some(digits) = surface.source_object.as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
             .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
-            .and_then(|id| id.parse::<u32>().ok())
         else {
+            continue;
+        };
+        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
         let Some(kind) = surface_kind_for_geometry(&surface.geometry) else {
@@ -569,26 +560,21 @@ pub(super) fn surface_transfer_coverage(
         transferred.push((id, [Some(kind), extra]));
     }
     let mut unknown_ids = BTreeSet::new();
-    for id in surfaces
-        .iter()
-        .filter(|surface| {
-            matches!(
-                surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-            )
-        })
-        .filter_map(|surface| {
-            surface
-                .source_object
-                .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
-                .object_id
-                .as_str()
-                .strip_prefix("VisibGeom:")?
-                .parse::<u32>()
-                .ok()
-        })
-    {
+    for surface in surfaces.iter().filter(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )
+    }) {
+        let Some(digits) = surface.source_object.as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
+            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
+        else {
+            continue;
+        };
+        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
+            continue;
+        };
         ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes")?;
     }
     let mut coverage = SurfaceTransferCoverage::default();

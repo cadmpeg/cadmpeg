@@ -995,31 +995,23 @@ struct NativeCurveEvidence<'a> {
     source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
 }
 
-fn native_circle_loop_geometry(
+fn native_circle_loop_geometry(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     lp: &crate::topology::Loop,
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Option<NativeCircleLoop> {
+) -> Result<Option<NativeCircleLoop>, cadmpeg_core::CodecError> {
     let [first, second] = lp.half_edges() else {
-        return None;
+        return Ok(None);
     };
     if first.curve_id == second.curve_id {
-        return None;
+        return Ok(None);
     }
-    let first = exactly_one(model_curves.iter().filter(|curve| {
-        crate::identity::matches_numbered_identity(
-            curve.id.as_str(),
-            "creo:visibgeom:curve#",
-            first.curve_id,
-        )
-    }))?;
-    let second = exactly_one(model_curves.iter().filter(|curve| {
-        crate::identity::matches_numbered_identity(
-            curve.id.as_str(),
-            "creo:visibgeom:curve#",
-            second.curve_id,
-        )
-    }))?;
+    let first = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(model_curves)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let curve = &numbered_identity_candidate; 
+        Ok(if crate::identity::matches_numbered_identity(ctx, curve.id.as_str(), "creo:visibgeom:curve#", first.curve_id)? { Some(numbered_identity_candidate) } else { None })
+    }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
+    let second = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(model_curves)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let curve = &numbered_identity_candidate; 
+        Ok(if crate::identity::matches_numbered_identity(ctx, curve.id.as_str(), "creo:visibgeom:curve#", second.curve_id)? { Some(numbered_identity_candidate) } else { None })
+    }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
@@ -1028,7 +1020,7 @@ fn native_circle_loop_geometry(
         source_carriers.curve_geometry(second),
     )
     else {
-        return None;
+        return Ok(None);
     };
     let first_center = circle_curve.center();
     let first_axis = circle_curve.frame().axis().as_raw();
@@ -1040,13 +1032,13 @@ fn native_circle_loop_geometry(
         || !points_are_geometrically_coincident(first_center, second_center)
         || !vectors_are_parallel(*first_axis, *second_axis)
     {
-        return None;
+        return Ok(None);
     }
-    Some(NativeCircleLoop {
+    Ok(Some(NativeCircleLoop {
         center: first_center,
         axis: *first_axis,
         radius: first_radius,
-    })
+    }))
 }
 
 fn ordered_two_edge_circle_loops<'a>(
@@ -1067,7 +1059,7 @@ fn ordered_two_edge_circle_loops<'a>(
     let normal = plane_surface.frame().axis().as_raw();
     let mut circle_loops = Vec::new();
     for lp in loops {
-        let Some(circle) = native_circle_loop_geometry(lp, model_curves, source_carriers) else {
+        let Some(circle) = native_circle_loop_geometry(ctx, lp, model_curves, source_carriers)? else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut circle_loops, 1, "creo native circle loop geometry")?;
@@ -1407,18 +1399,14 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         let mut model_surface_counts = BTreeMap::new();
         for face_id in &candidate_face_ids {
             let prefix = native_surface_namespace(scan, *face_id).1;
-            let count = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| {
-                    crate::identity::matches_numbered_identity(
-                        surface.id.as_str(),
-                        prefix,
-                        *face_id,
-                    )
-                })
-                .count();
+            let mut count = 0usize;
+            for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity count scan")? {
+                if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), prefix, *face_id)? {
+                    count = count.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("creo numbered identity count", u64::MAX, u64::MAX)
+                    })?;
+                }
+            }
             ctx.insert_btree_map(
                 &mut model_surface_counts,
                 *face_id,
@@ -1486,18 +1474,14 @@ impl BrepEdgeIndexes {
         let mut model_curve_counts = BTreeMap::new();
         let mut admitted_edge_curves = BTreeSet::new();
         for curve_id in edge_vertices.keys() {
-            let count = ir
-                .model
-                .curves
-                .iter()
-                .filter(|curve| {
-                    crate::identity::matches_numbered_identity(
-                        curve.id.as_str(),
-                        "creo:visibgeom:curve#",
-                        *curve_id,
-                    )
-                })
-                .count();
+            let mut count = 0usize;
+            for curve in ctx.admit_iter(&ir.model.curves, "creo numbered identity count scan")? {
+                if crate::identity::matches_numbered_identity(ctx, curve.id.as_str(), "creo:visibgeom:curve#", *curve_id)? {
+                    count = count.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("creo numbered identity count", u64::MAX, u64::MAX)
+                    })?;
+                }
+            }
             ctx.insert_btree_map(
                 &mut model_curve_counts,
                 *curve_id,
@@ -2233,12 +2217,8 @@ pub(in super::super) fn transfer_native_brep(
         }
         let mut two_edge_loops_are_proven = true;
         for lp in loops.iter().filter(|lp| lp.half_edges().len() == 2) {
-            let Some(surface) = exactly_one(
-                ir.model
-                    .surfaces
-                    .iter()
-                    .filter(|candidate| matches_native_surface_id(scan, face_id, &candidate.id)),
-            ) else {
+            let Some(surface) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model
+                    .surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let candidate = &numbered_identity_candidate;  Ok(if matches_native_surface_id(ctx, scan, face_id, &candidate.id)? { Some(numbered_identity_candidate) } else { None }) }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else {
                 two_edge_loops_are_proven = false;
                 break;
             };
@@ -2273,9 +2253,9 @@ pub(in super::super) fn transfer_native_brep(
                 ordered
             } else {
                 let surface =
-                    exactly_one(ir.model.surfaces.iter().filter(|candidate| {
-                        matches_native_surface_id(scan, face_id, &candidate.id)
-                    }));
+                    { let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let candidate = &numbered_identity_candidate; 
+                        Ok(if matches_native_surface_id(ctx, scan, face_id, &candidate.id)? { Some(numbered_identity_candidate) } else { None })
+                    }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique };
                 if let Some(surface) = surface {
                     ordered_native_parameter_face_loops(
                         ctx,
@@ -2346,13 +2326,9 @@ pub(in super::super) fn transfer_native_brep(
         };
     let solved_point_count = solved_vertices.len();
     for (vertex_id, position) in solved_vertices {
-        if ir.model.points.iter().any(|item| {
-            crate::identity::matches_numbered_identity(
-                item.id.as_str(),
-                "creo:visibgeom:point#",
-                *vertex_id,
-            )
-        }) {
+        if ctx.any_by(&(ir.model.points)[..], |item| -> Result<bool, cadmpeg_core::CodecError> {
+            Ok(crate::identity::matches_numbered_identity(ctx, item.id.as_str(), "creo:visibgeom:point#", *vertex_id)?)
+        }, "creo numbered identity candidate scan")? {
             continue;
         }
         let point_id = crate::identity::compose_checked::<PointId>(
@@ -2423,13 +2399,9 @@ pub(in super::super) fn transfer_native_brep(
     let used_vertices = used_brep_vertices(ctx, &neutral_edge_curves, &edge_vertices)?;
 
     for vertex_id in used_vertices {
-        if ir.model.vertices.iter().any(|item| {
-            crate::identity::matches_numbered_identity(
-                item.id.as_str(),
-                "creo:visibgeom:vertex#",
-                vertex_id,
-            )
-        }) {
+        if ctx.any_by(&(ir.model.vertices)[..], |item| -> Result<bool, cadmpeg_core::CodecError> {
+            Ok(crate::identity::matches_numbered_identity(ctx, item.id.as_str(), "creo:visibgeom:vertex#", vertex_id)?)
+        }, "creo numbered identity candidate scan")? {
             continue;
         }
         let vertex = crate::identity::compose_checked::<VertexId>(
@@ -2965,19 +2937,19 @@ pub(in super::super) fn transfer_native_brep(
                     let refusal_cell = &mut refusal;
                     let mut planar_resource_error = None;
                     let native_selection = if let Some(candidates) = native_candidates {
-                        let inputs = (|| {
-                            let binding = incidence.get(half_edge)?;
-                            let end = binding.end_vertex_id?;
+                        let inputs = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                            let binding = { let Some(value) = incidence.get(half_edge) else { return Ok(None); }; value };
+                            let end = { let Some(value) = binding.end_vertex_id else { return Ok(None); }; value };
                             let traversal = [
                                 solved_vertices[&binding.start_vertex_id.get()],
                                 solved_vertices[&end.get()],
                             ];
                             let surface =
-                                exactly_one(ir.model.surfaces.iter().filter(|candidate| {
-                                    matches_native_surface_id(scan, *face_id, &candidate.id)
-                                }))?;
-                            Some((source_carriers.surface_geometry(surface), traversal))
-                        })();
+                                { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let candidate = &numbered_identity_candidate; 
+                                    Ok(if matches_native_surface_id(ctx, scan, *face_id, &candidate.id)? { Some(numbered_identity_candidate) } else { None })
+                                }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
+                            Ok(Some((source_carriers.surface_geometry(surface), traversal)))
+                        })()?;
                         match inputs {
                             Some((surface, traversal)) => {
                                 unique_oriented_native_pcurve(ctx, surface, candidates, traversal)?
@@ -2987,7 +2959,7 @@ pub(in super::super) fn transfer_native_brep(
                     } else {
                         None
                     };
-                    let pcurve_geometry = native_selection
+                    let pcurve_geometry = match native_selection
                         .and_then(
                             |crate::decode::analytic::pcurves::OrientedNativePcurve {
                                  endpoints,
@@ -3000,27 +2972,18 @@ pub(in super::super) fn transfer_native_brep(
                                     "native_endpoint_pcurve",
                                 ))
                             },
-                        )
-                        .or_else(|| {
-                            native_candidates.is_none().then_some(())?;
+                        ) { Some(numbered_identity_candidate) => Some(numbered_identity_candidate), None => (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                            { let Some(value) = native_candidates.is_none().then_some(()) else { return Ok(None); }; value };
                             let surface =
-                                exactly_one(ir.model.surfaces.iter().filter(|candidate| {
-                                    matches_native_surface_id(scan, *face_id, &candidate.id)
-                                }))?;
-                            let curve = exactly_one(ir.model.curves.iter().filter(|candidate| {
-                                crate::identity::matches_numbered_identity(
-                                    candidate.id.as_str(),
-                                    "creo:visibgeom:curve#",
-                                    half_edge.curve_id,
-                                )
-                            }))?;
-                            let edge = exactly_one(ir.model.edges.iter().filter(|candidate| {
-                                crate::identity::matches_numbered_identity(
-                                    candidate.id.as_str(),
-                                    "creo:visibgeom:edge#",
-                                    half_edge.curve_id,
-                                )
-                            }))?;
+                                { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let candidate = &numbered_identity_candidate; 
+                                    Ok(if matches_native_surface_id(ctx, scan, *face_id, &candidate.id)? { Some(numbered_identity_candidate) } else { None })
+                                }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
+                            let curve = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.curves)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let candidate = &numbered_identity_candidate; 
+                                Ok(if crate::identity::matches_numbered_identity(ctx, candidate.id.as_str(), "creo:visibgeom:curve#", half_edge.curve_id)? { Some(numbered_identity_candidate) } else { None })
+                            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
+                            let edge = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.edges)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let candidate = &numbered_identity_candidate; 
+                                Ok(if crate::identity::matches_numbered_identity(ctx, candidate.id.as_str(), "creo:visibgeom:edge#", half_edge.curve_id)? { Some(numbered_identity_candidate) } else { None })
+                            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
                             let planar = match planar_curve_pcurve(
                                 ctx,
                                 source_carriers.surface_geometry(surface),
@@ -3038,9 +3001,9 @@ pub(in super::super) fn transfer_native_brep(
                                 }
                             };
                             if planar_resource_error.is_some() {
-                                return None;
+                                return Ok(None);
                             }
-                            let (geometry, tag) = planar
+                            let (geometry, tag) = { let Some(value) = planar
                                 .map(|geometry| (geometry, "projected_planar_pcurve"))
                                 .or_else(|| {
                                     surface_of_revolution_parallel_pcurve(
@@ -3062,14 +3025,14 @@ pub(in super::super) fn transfer_native_brep(
                                         source_carriers.curve_geometry(curve),
                                     )
                                     .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
-                                })?;
-                            Some((
+                                }) else { return Ok(None); }; value };
+                            Ok(Some((
                                 geometry,
                                 source_carriers.source_edge_parameter_range(edge),
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
                                 tag,
-                            ))
-                        });
+                            )))
+                        })()? };
                     if let Some(error) = planar_resource_error {
                         return Err(error);
                     }

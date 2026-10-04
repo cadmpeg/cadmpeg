@@ -711,7 +711,7 @@ pub(in super::super) fn schema_feature_definition(
                     "creo unresolved section profile identity",
                 )?,
             };
-            let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+            let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
             return Ok(circular_sweep_feature_definition(
                 profile,
                 &sweep,
@@ -738,7 +738,7 @@ pub(in super::super) fn schema_feature_definition(
             feature_id,
             extent.as_ref(),
         )?;
-        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let profile = profile.and_then(|profile| match profile {
             cadmpeg_ir::features::ProfileRef::Planar(profile) => Some(profile),
             _ => None,
@@ -825,7 +825,7 @@ pub(in super::super) fn schema_feature_definition(
             )?),
             None => None,
         };
-        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -996,7 +996,7 @@ pub(in super::super) fn schema_feature_definition(
     if numbered_feature_name_has_family(kind, "Extrude")
         && !feature_is_sheet_extrusion(scan, feature_id)
     {
-        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -1083,30 +1083,25 @@ fn reconciled_datum_plane_definition(
     surface_id: u32,
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
     let local_planes = placed_planes(ctx, scan)?;
-    let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, surface_id) else {
+    let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)? else {
         return Ok(None);
     };
     let normal = Vector3::from(plane.normal);
     let local_surfaces = placed_plane_surfaces(ctx, scan)?;
-    let u_axis = local_surfaces
+    let u_axis = (match local_surfaces
         .get(&surface_id)
-        .map(|surface| Vector3::from(surface.u_axis))
-        .or_else(|| {
-            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
-                crate::identity::matches_numbered_identity(
-                    surface.id.as_str(),
-                    "creo:visibgeom:surface#",
-                    surface_id,
-                )
-            }))?;
-            match source_carriers.surface_geometry(surface) {
+        .map(|surface| Vector3::from(surface.u_axis)) { Some(numbered_identity_candidate) => Some(numbered_identity_candidate), None => (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+            let surface = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let surface = &numbered_identity_candidate; 
+                Ok(if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", surface_id)? { Some(numbered_identity_candidate) } else { None })
+            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
+            Ok(match source_carriers.surface_geometry(surface) {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                     let u_axis = plane_surface.frame().reference().as_raw();
                     Some(*u_axis)
                 }
                 _ => None,
-            }
-        })
+            })
+        })()? })
         .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
     Ok(cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
         Point3::from(plane.origin),

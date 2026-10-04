@@ -29,7 +29,6 @@ use super::super::holes::counterbore::{
 use super::super::holes::placement::cylinder_from_complementary_outline_bounds;
 use super::super::holes::sweep::{circular_sweep_geometry, simple_hole_geometry};
 use super::super::native::annotate;
-use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
 use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled_model_plane};
 use crate::decode::sketch_transfer::recipe::{
@@ -217,7 +216,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let local_planes = placed_planes(ctx, scan)?;
         let mut planes = Vec::new();
         for id in affected {
-            let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id)
+            let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, *id)?
             else {
                 break;
             };
@@ -233,17 +232,13 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             continue;
         };
         let Some(row) =
-            crate::decode::uniqueness::exactly_one(scan.surfaces.rows.iter().filter(|row| {
-                row.feature_id == feature_id
+            ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(scan.surfaces.rows)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let row = &numbered_identity_candidate; 
+                Ok(if row.feature_id == feature_id
                     && row.kind == crate::surface::SurfaceKind::Cylinder
-                    && !ir.model.surfaces.iter().any(|surface| {
-                        crate::identity::matches_numbered_identity(
-                            surface.id.as_str(),
-                            "creo:visibgeom:surface#",
-                            row.id,
-                        )
-                    })
-            }))
+                    && !ctx.any_by(&(ir.model.surfaces)[..], |surface| -> Result<bool, cadmpeg_core::CodecError> {
+                        Ok(crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", row.id)?)
+                    }, "creo numbered identity candidate scan")? { Some(numbered_identity_candidate) } else { None })
+            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique })
         else {
             continue;
         };
@@ -335,13 +330,9 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         &scan.features.entity_tables,
         &scan.surfaces.rows,
     )? {
-        let Some(cylinder_surface) = exactly_one(ir.model.surfaces.iter().filter(|surface| {
-            crate::identity::matches_numbered_identity(
-                surface.id.as_str(),
-                "creo:visibgeom:surface#",
-                sibling_id,
-            )
-        }))
+        let Some(cylinder_surface) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.surfaces)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let surface = &numbered_identity_candidate; 
+            Ok(if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", sibling_id)? { Some(numbered_identity_candidate) } else { None })
+        }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique })
         .and_then(|surface| match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(*cylinder),
             _ => None,
@@ -577,7 +568,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         else {
             continue;
         };
-        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+        let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, plane_id)?
         else {
             continue;
         };
@@ -1095,7 +1086,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         let mut planes = Vec::new();
         for plane_id in plane_ids {
             if let Some(plane) =
-                reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
+                reconciled_model_plane(ctx, &local_planes, ir, source_carriers, plane_id)?
             {
                 ctx.reserve_vec(&mut planes, 1, "creo positional support planes")?;
                 planes.push(plane);

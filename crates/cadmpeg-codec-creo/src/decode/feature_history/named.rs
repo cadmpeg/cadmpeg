@@ -154,7 +154,7 @@ fn name_only_feature_definition(
         )));
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
-        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -171,7 +171,7 @@ fn name_only_feature_definition(
         )?));
     }
     if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
-        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let op = section_sweep_boolean_operation(
             feature_recipe_effect(scan, feature_id),
             kind,
@@ -235,7 +235,7 @@ pub(super) fn extrude_feature_definition_with_profile(
             "creo unresolved named profile identity",
         )?,
     };
-    let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+    let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
         BooleanOp::NewBody
     } else {
@@ -285,7 +285,7 @@ fn revolve_feature_definition_with_profile(
     op: BooleanOp,
 ) -> Result<IrFeatureDefinition, CodecError> {
     let extent = feature_revolution_extent(scan, feature_id);
-    let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+    let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
     let profile =
         unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| match profile {
             ProfileRef::Planar(planar) => Some(planar),

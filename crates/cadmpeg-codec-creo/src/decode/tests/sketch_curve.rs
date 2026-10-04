@@ -815,16 +815,16 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         ]
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "extrusion", 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "extrusion", 40)).expect("service profile admits scalar parsing"),
         Some(BodyKind::Solid)
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "revolution", 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "revolution", 40)).expect("service profile admits scalar parsing"),
         Some(BodyKind::Solid)
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "extrusion", 43),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "extrusion", 43)).expect("service profile admits scalar parsing"),
         Some(BodyKind::Sheet)
     );
-    assert_eq!(evaluated_sweep_body_kind(&ir, "revolution", 42), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(ctx, &ir, "revolution", 42)).expect("service profile admits scalar parsing"), None);
 }
