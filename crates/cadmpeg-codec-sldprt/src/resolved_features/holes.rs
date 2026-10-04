@@ -56,7 +56,7 @@ pub(crate) fn project_helix_axes(
     let mut records_storage = ctx.reserve_scoped(0, "index SLDPRT helix features")?;
     let mut records = HashMap::new();
 
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             records_storage.with_storage(|| {
                 ctx.insert_hash_map(
@@ -1170,7 +1170,7 @@ fn profiled_hole_construction_with_evidence(
     let mut points = Vec::new();
     for entity in entities {
         ctx.charge_work(1, OPERATION)?;
-        if !ctx.equal(&(entity.sketch), &(*sketch), "compare SLDPRT holes records")?
+        if !ctx.equal(&(entity.sketch), sketch, "compare SLDPRT holes records")?
             || entity.construction
         {
             continue;
@@ -1645,46 +1645,45 @@ pub(crate) fn project_profiled_hole_constructions(
             }
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            }) => {
-                if !ctx.contains_key_hash_map(
-                    &model_sketches,
-                    native,
-                    "resolve SLDPRT holes keys",
-                )? {
+            }) if !ctx.contains_key_hash_map(
+                &model_sketches,
+                native,
+                "resolve SLDPRT holes keys",
+            )? =>
+            {
+                ctx.charge_work(
+                    u64_from_index(native.len())
+                        .checked_add(u64_from_index(sketch.as_str().len()))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                        })?,
+                    OPERATION,
+                )?;
+                model_sketch_storage.with_storage(|| {
+                    let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                    let identity_text =
+                        ctx.format_retained(format_args!("{sketch}"), OPERATION)?;
                     ctx.charge_work(
-                        u64_from_index(native.len())
-                            .checked_add(u64_from_index(sketch.as_str().len()))
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                            })?,
-                        OPERATION,
+                        cadmpeg_core::decode::u64_from_index(identity_text.len()),
+                        "validate SLDPRT holes identity",
                     )?;
-                    model_sketch_storage.with_storage(|| {
-                        let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                        let identity_text =
-                            ctx.format_retained(format_args!("{sketch}"), OPERATION)?;
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                            "validate SLDPRT holes identity",
-                        )?;
-                        let sketch = SketchId::mint(identity_text).map_err(|_| {
-                            CodecError::malformed("invalid admitted SLDPRT sketch identity")
-                        })?;
-                        ctx.insert_hash_map(
-                            &mut model_sketches,
-                            native,
-                            sketch,
-                            "resolve SLDPRT holes keys",
-                        )
+                    let sketch = SketchId::mint(identity_text).map_err(|_| {
+                        CodecError::malformed("invalid admitted SLDPRT sketch identity")
                     })?;
-                }
+                    ctx.insert_hash_map(
+                        &mut model_sketches,
+                        native,
+                        sketch,
+                        "resolve SLDPRT holes keys",
+                    )
+                })?;
             }
             _ => {}
         }
     }
     let mut native_histories = HashMap::new();
     for (history_index, history) in ctx
-        .admit_iter(&histories[..], "scan SLDPRT holes records")?
+        .admit_iter(histories, "scan SLDPRT holes records")?
         .enumerate()
     {
         for feature in &history.features {
@@ -1754,7 +1753,7 @@ pub(crate) fn project_profiled_hole_constructions(
     }
     let mut fallback_constructions = HashMap::new();
     for ((history, ownership_history), holes) in ctx
-        .admit_iter(&(histories)[..], "scan SLDPRT holes records")?
+        .admit_iter(histories, "scan SLDPRT holes records")?
         .zip(&ownership_histories)
         .zip(&mut unowned_incomplete_holes)
     {
@@ -1960,7 +1959,7 @@ fn collect_claimed_hole_profiles<'a>(
         let Some(profile) = unique_hole_child_profile(ctx, history, child)? else {
             continue;
         };
-        if ctx.contains_hash_set(&profiles, profile.id.as_str(), "resolve SLDPRT holes keys")? {
+        if ctx.contains_hash_set(profiles, profile.id.as_str(), "resolve SLDPRT holes keys")? {
             continue;
         }
         ctx.insert_hash_set(profiles, profile.id.as_str(), OPERATION)?;
@@ -1980,7 +1979,7 @@ pub(crate) fn project_hole_position_sketches(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
     let mut native_features = HashMap::new();
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             ctx.insert_hash_map(
                 &mut native_features,
@@ -2093,8 +2092,8 @@ pub(crate) fn project_hole_position_sketches(
             };
             let Some(sketch) = ({
                 let mut search_result = None;
-                for sketch in ctx.admit_iter(&(sketches)[..], "scan SLDPRT holes records")? {
-                    if ctx.equal(&(sketch.id), &(*sketch_id), "compare SLDPRT holes records")? {
+                for sketch in ctx.admit_iter(sketches, "scan SLDPRT holes records")? {
+                    if ctx.equal(&(sketch.id), sketch_id, "compare SLDPRT holes records")? {
                         search_result = Some(sketch);
                         break;
                     }
@@ -2408,7 +2407,10 @@ fn paired_object_locus_markers<'a>(
     {
         let object = &pair[0];
         let anchor = &pair[1];
-        let Some(coordinates) = object.coordinates_m.map(|coordinates| coordinates.get()) else {
+        let Some(coordinates) = object
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+        else {
             continue;
         };
         if ctx.equal(&object.feature_ref.as_deref(), &Some(feature), OPERATION)?
@@ -2456,7 +2458,7 @@ fn hole_position_feature<'a>(
         return Ok(None);
     };
     let mut position = None;
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for candidate in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             if classify(candidate) != Some(FeatureClass::Sketch) {
                 continue;
@@ -2530,7 +2532,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
 ) -> Result<(), CodecError> {
     const INDEX_OPERATION: &str = "index SLDPRT spatial position features";
     let mut native_features = HashMap::new();
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             let key = feature.id.as_str();
             ctx.insert_hash_map(&mut native_features, key, feature, INDEX_OPERATION)?;
@@ -2598,8 +2600,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
         };
         let Some(sketch) = ({
             let mut search_result = None;
-            for sketch in ctx.admit_iter(&(spatial_sketches)[..], "scan SLDPRT holes records")? {
-                if ctx.equal(&(sketch.id), &(*sketch_id), "compare SLDPRT holes records")? {
+            for sketch in ctx.admit_iter(spatial_sketches, "scan SLDPRT holes records")? {
+                if ctx.equal(&(sketch.id), sketch_id, "compare SLDPRT holes records")? {
                     search_result = Some(sketch);
                     break;
                 }
@@ -2956,7 +2958,7 @@ pub(crate) fn project_generated_hole_axes(
     let mut native_features_storage =
         ctx.reserve_scoped(0, "index SLDPRT generated hole features")?;
     let mut native_features = HashMap::new();
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             let key = feature.id.as_str();
             native_features_storage.with_storage(|| {
@@ -3668,7 +3670,7 @@ fn unclaimed_seeded_hole_candidates(
     const OPERATION: &str = "filter SLDPRT seeded drilled bore candidates";
     let mut claimed = HashSet::new();
     for (index, feature) in ctx
-        .admit_iter(&features[..], "scan SLDPRT holes records")?
+        .admit_iter(features, "scan SLDPRT holes records")?
         .enumerate()
     {
         ctx.charge_work(u64_from_index(siblings.len()), OPERATION)?;
@@ -3718,7 +3720,7 @@ fn partition_seeded_hole_axes(
     const KEY_OPERATION: &str = "SLDPRT seeded hole-axis keys";
     let mut candidate_keys = HashSet::new();
     for key in ctx
-        .admit_iter(&(candidates)[..], "scan SLDPRT holes records")?
+        .admit_iter(candidates, "scan SLDPRT holes records")?
         .filter_map(hole_axis_key)
     {
         ctx.insert_hash_set(&mut candidate_keys, key, KEY_OPERATION)?;
@@ -3801,7 +3803,7 @@ fn partition_seeded_hole_axes(
         return Ok(());
     }
     for (&sibling, partition) in ctx
-        .admit_iter(&(siblings)[..], "scan SLDPRT holes records")?
+        .admit_iter(siblings, "scan SLDPRT holes records")?
         .zip(partitions)
     {
         set_hole_placements(&mut features[sibling], partition);
@@ -4032,16 +4034,17 @@ fn direct_hole_position_feature<'a, 's>(
     const OPERATION: &str = "resolve SLDPRT direct hole position";
     let mut history = None;
     for candidate in ctx.admit_iter(histories, "scan SLDPRT holes records")? {
-        if {
+        let contains_hole = {
             let mut search_result = false;
-            for feature in ctx.admit_iter(&(candidate.features)[..], "scan SLDPRT holes records")? {
+            for feature in ctx.admit_iter(&candidate.features, "scan SLDPRT holes records")? {
                 if ctx.equal(&(feature.id), &(hole.id), "compare SLDPRT holes records")? {
                     search_result = true;
                     break;
                 }
             }
             search_result
-        } {
+        };
+        if contains_hole {
             history = Some(candidate);
             break;
         }
@@ -4145,7 +4148,7 @@ pub(crate) fn project_hole_axes(
 
     let surfaces = topology.surfaces;
     let mut native_features = HashMap::new();
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             ctx.insert_hash_map(
                 &mut native_features,
@@ -4263,7 +4266,7 @@ pub(crate) fn project_hole_axes(
                 continue;
             }
             let Some(&range) =
-                ctx.get_hash_map(&ranges, feature.id.as_str(), "resolve SLDPRT holes keys")?
+                ctx.get_hash_map(ranges, feature.id.as_str(), "resolve SLDPRT holes keys")?
             else {
                 continue;
             };
@@ -5005,7 +5008,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         "SLDPRT project_bore_backed_position_sketches lookup storage",
     )?;
     let mut native_features = HashMap::new();
-    for iteration_history in ctx.admit_iter(&histories[..], "scan SLDPRT holes source records")? {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             lookup_storage.with_storage(|| {
                 ctx.insert_hash_map(
@@ -5113,7 +5116,13 @@ pub(crate) fn project_bore_backed_position_sketches(
             };
             let origin = plane.origin().get();
             let normal = *plane.frame().axis().as_raw();
-            if !(normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY) {
+            if !matches!(
+                normal
+                    .dot(canonical)
+                    .abs()
+                    .partial_cmp(&(1.0 - EPS_HOLE_GEOMETRY)),
+                Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+            ) {
                 continue;
             }
             if !axes()?.all(|(point, _)| {
@@ -5356,7 +5365,7 @@ fn marker_pattern_bore_axes(
                     marker.kind(),
                     SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 ) || ctx.contains_hash_set(
-                    &paired,
+                    paired,
                     marker.id(),
                     "resolve SLDPRT holes keys",
                 )?)

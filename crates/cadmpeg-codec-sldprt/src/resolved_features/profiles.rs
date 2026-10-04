@@ -113,9 +113,7 @@ pub(crate) fn bind_sketch_profiles(
     let mut native_features_storage =
         ctx.reserve_scoped(0, "index SLDPRT profile source features")?;
     let mut native_features = HashMap::new();
-    for iteration_history in
-        ctx.admit_iter(&histories[..], "scan SLDPRT profiles source records")?
-    {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT profiles source records")? {
         for feature in
             ctx.admit_iter(&iteration_history.features, "scan SLDPRT profiles records")?
         {
@@ -240,14 +238,13 @@ pub(crate) fn bind_sketch_profiles(
                 FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                     shape.section_is_unresolved()
                 }
-                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                    match profile {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile:
                         cadmpeg_ir::features::ProfileRef::Planar(
                             cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner),
-                        ) => ctx.equal(owner, &native_feature.id, OPERATION)?,
-                        _ => false,
-                    }
-                }
+                        ),
+                    ..
+                }) => ctx.equal(owner, &native_feature.id, OPERATION)?,
                 _ => false,
             };
             if !replace {
@@ -510,9 +507,7 @@ pub(crate) fn project_compact_sketch_profiles(
     let mut native_features_storage =
         ctx.reserve_scoped(0, "index SLDPRT compact profile features")?;
     let mut native_features = HashMap::new();
-    for iteration_history in
-        ctx.admit_iter(&histories[..], "scan SLDPRT profiles source records")?
-    {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT profiles source records")? {
         for feature in
             ctx.admit_iter(&iteration_history.features, "scan SLDPRT profiles records")?
         {
@@ -1207,9 +1202,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 points_storage
                     .with_storage(|| ctx.push_vec(&mut points, (*marker, point), OPERATION))?;
             }
-            let duplicate_adjacent_points = if points.len() != addresses.len() {
-                false
-            } else {
+            let duplicate_adjacent_points = if points.len() == addresses.len() {
                 let mut duplicate = false;
                 for (index, (_, point)) in ctx.admit_iter(&points[..], OPERATION)?.enumerate() {
                     if ctx.equal(
@@ -1222,6 +1215,8 @@ pub(crate) fn project_compact_sketch_profiles(
                     }
                 }
                 duplicate
+            } else {
+                false
             };
             if points.len() != addresses.len() || duplicate_adjacent_points {
                 continue;
@@ -1521,9 +1516,7 @@ pub(crate) fn project_marker_backed_sketches(
     let mut native_features_storage =
         ctx.reserve_scoped(0, "index SLDPRT marker profile native features")?;
     let mut native_features = HashMap::new();
-    for iteration_history in
-        ctx.admit_iter(&histories[..], "scan SLDPRT profiles source records")?
-    {
+    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT profiles source records")? {
         for feature in
             ctx.admit_iter(&iteration_history.features, "scan SLDPRT profiles records")?
         {
@@ -4185,7 +4178,7 @@ fn project_detached_legacy_config_sketches(
                     break 'feature_edit;
                 }
                 let Some(native_feature) = ctx
-                    .get_hash_map(&native_features, native_ref, "resolve SLDPRT profiles keys")?
+                    .get_hash_map(native_features, native_ref, "resolve SLDPRT profiles keys")?
                     .copied()
                 else {
                     break 'feature_edit;
@@ -4206,7 +4199,7 @@ fn project_detached_legacy_config_sketches(
                     break 'feature_edit;
                 }
                 let (origin, normal, u_axis) = ctx
-                    .get_hash_map(&feature_frames, native_ref, "resolve SLDPRT profiles keys")?
+                    .get_hash_map(feature_frames, native_ref, "resolve SLDPRT profiles keys")?
                     .copied()
                     .unwrap_or(detached_frame);
                 let sketch_text = ctx.format_retained(
@@ -4454,7 +4447,7 @@ fn legacy_config_hex_sketch(
     };
     let point = |marker: &SketchInputEntity| project(marker.coordinates_m?.get());
     let sketch_key = ctx
-        .rsplit_once(&sketch.id.as_str(), "#", "resolve SLDPRT profiles keys")?
+        .rsplit_once(sketch.id.as_str(), "#", "resolve SLDPRT profiles keys")?
         .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| -> Result<Option<SketchEntityId>, CodecError> {
         let identity = ctx.format_retained(
@@ -4708,7 +4701,7 @@ fn legacy_config_collinear_sketch(
     }
     let negative = [negative_u, origin.1[1]];
     let sketch_key = ctx
-        .rsplit_once(&sketch.id.as_str(), "#", "resolve SLDPRT profiles keys")?
+        .rsplit_once(sketch.id.as_str(), "#", "resolve SLDPRT profiles keys")?
         .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| -> Result<Option<SketchEntityId>, CodecError> {
         let identity = ctx.format_retained(

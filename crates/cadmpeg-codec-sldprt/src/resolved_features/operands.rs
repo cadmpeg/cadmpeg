@@ -23,7 +23,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     for operand in ctx.admit_iter(operands, "resolve SLDPRT scalar operands")? {
         let marker = resolve_operand_marker_excluding(
             ctx,
-            &entities,
+            entities,
             operand.kind,
             operand.entity_index,
             |_| Ok(false),
@@ -43,7 +43,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
             let alternatives = [
                 resolve_operand_marker_excluding(
                     ctx,
-                    &entities,
+                    entities,
                     first_operand.kind,
                     first_operand.entity_index,
                     |id| ctx.equal(id, second.id(), "compare SLDPRT scalar operand markers"),
@@ -51,7 +51,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
                 .map(|alternative| [alternative, *second]),
                 resolve_operand_marker_excluding(
                     ctx,
-                    &entities,
+                    entities,
                     second_operand.kind,
                     second_operand.entity_index,
                     |id| ctx.equal(id, first.id(), "compare SLDPRT scalar operand markers"),
@@ -112,7 +112,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
         if target.is_none() {
             *target = resolve_operand_marker_excluding(
                 ctx,
-                &entities,
+                entities,
                 operand.kind,
                 operand.entity_index,
                 |id| {

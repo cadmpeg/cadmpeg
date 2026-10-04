@@ -298,22 +298,22 @@ pub(super) fn project_edge(
         v_axis,
     } = frame;
     let Some(start_id) =
-        ctx.get_hash_map(&vertices, &edge.start, "resolve SLDPRT sketch_edges keys")?
+        ctx.get_hash_map(vertices, &edge.start, "resolve SLDPRT sketch_edges keys")?
     else {
         return Ok(None);
     };
     let Some(start_point) =
-        ctx.get_hash_map(&points, start_id, "resolve SLDPRT sketch_edges keys")?
+        ctx.get_hash_map(points, start_id, "resolve SLDPRT sketch_edges keys")?
     else {
         return Ok(None);
     };
     let start = project_point(*start_point, origin, u_axis, v_axis);
     let Some(end_id) =
-        ctx.get_hash_map(&vertices, &edge.end, "resolve SLDPRT sketch_edges keys")?
+        ctx.get_hash_map(vertices, &edge.end, "resolve SLDPRT sketch_edges keys")?
     else {
         return Ok(None);
     };
-    let Some(end_point) = ctx.get_hash_map(&points, end_id, "resolve SLDPRT sketch_edges keys")?
+    let Some(end_point) = ctx.get_hash_map(points, end_id, "resolve SLDPRT sketch_edges keys")?
     else {
         return Ok(None);
     };

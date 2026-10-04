@@ -321,9 +321,10 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<RelationScalars>(wire).is_err());
         }
+        let scalars: &[&super::FeatureInputScalar] = &[];
         assert!(RelationScalars::from_scalars(
             &cadmpeg_test_support::service_decode_context(),
-            &[] as &[&super::FeatureInputScalar],
+            scalars,
             |scalar| *scalar,
         )
         .is_err());

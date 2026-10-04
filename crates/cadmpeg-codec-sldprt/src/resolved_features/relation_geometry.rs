@@ -3326,8 +3326,10 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         )?;
         let class_end = next_class
             .filter(|class| class.offset > slot_class.offset)
-            .map(|class| class.offset)
-            .unwrap_or_else(|| u64_from_index(lane.native_payload.len()))
+            .map_or_else(
+                || u64_from_index(lane.native_payload.len()),
+                |class| class.offset,
+            )
             .min(marker.offset());
         let Ok(class_start) = usize::try_from(slot_class.offset) else {
             return Ok(None);
@@ -4591,7 +4593,7 @@ impl<'source> FeatureInputLaneSource for Vec<&'source FeatureInputLane> {
     where
         Self: 'values,
     {
-        *value
+        value
     }
 }
 

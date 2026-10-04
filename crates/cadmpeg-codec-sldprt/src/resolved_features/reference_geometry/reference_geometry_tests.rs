@@ -640,10 +640,11 @@ fn intersecting_reference_axis_pair_completes_legacy_triad() {
     assert_eq!(
         super::complete_reference_axis_triad(&ctx, frames)
             .expect("reference axis triad scan fits service policy"),
-        Some((
-            1,
-            (Point3::new(0.0, 85.0, 0.0), Vector3::new(0.0, 0.0, -1.0),),
-        ))
+        Some(super::ReferenceAxisCompletion {
+            axis_index: 1,
+            origin: Point3::new(0.0, 85.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, -1.0),
+        })
     );
 }
 

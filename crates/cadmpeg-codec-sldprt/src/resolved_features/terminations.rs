@@ -1593,13 +1593,13 @@ pub(crate) fn project_compact_combine_paths(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodySelection, CombineOperands, GeneratedBodyRef};
-    const OPERATION: &str = "project SLDPRT combine paths";
-    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     struct Projection {
         target: BodySelection,
         tools: BodySelection,
         dependencies: Vec<cadmpeg_ir::features::FeatureId>,
     }
+    const OPERATION: &str = "project SLDPRT combine paths";
+    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut feature_ids_by_native = HashMap::new();
     for feature in ctx.admit_iter(features, OPERATION)? {
         let Some(native) = feature.native_ref.as_deref() else {
@@ -2198,8 +2198,8 @@ pub(super) fn compact_extrusion_offset_from_face_at(
             let Some(open) = open_start.checked_add(relative) else {
                 continue;
             };
-            if !open.checked_add(7).is_some_and(|stop| stop <= end)
-                || !payload.get(open - 1).is_some_and(|byte| byte & 0x80 != 0)
+            if open.checked_add(7).is_none_or(|stop| stop > end)
+                || payload.get(open - 1).is_none_or(|byte| byte & 0x80 == 0)
                 || payload.get(open..open + 7) != Some(&[2, 0, 0, 0, 0x40, 0, 0])
             {
                 continue;
@@ -2548,6 +2548,7 @@ fn legacy_single_face_reference_path_at(
     payload: &[u8],
     body: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    const FILLER_OPERATION: &str = "decode SLDPRT legacy face path controls";
     ctx.charge_work(32, "decode SLDPRT legacy face header")?;
     let header_valid = (|| {
         let header = payload.get(body..body + 19)?;
@@ -2583,7 +2584,6 @@ fn legacy_single_face_reference_path_at(
         let Some(filler) = payload.get(body + 19..control) else {
             continue;
         };
-        const FILLER_OPERATION: &str = "decode SLDPRT legacy face path controls";
         let mut padded = false;
         if filler.len() >= 16 {
             let window_size = std::num::NonZeroUsize::new(16)
@@ -2859,7 +2859,7 @@ pub(crate) fn compact_surface_selection_value(
         }
         match component.local_id {
             Some(local_id) => {
-                ctx.append_formatted_retained(&mut value, format_args!("{local_id}"), OPERATION)?
+                ctx.append_formatted_retained(&mut value, format_args!("{local_id}"), OPERATION)?;
             }
             None => value.push('_'),
         }
