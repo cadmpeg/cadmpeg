@@ -673,9 +673,6 @@ pub(crate) fn summary(
         "push_str" | "extend" | "extend_from_slice" | "append" => {
             (Allocation::Growth, Work::Argument(1))
         }
-        "retain" if owner.is_some_and(|owner| matches!(owner.as_str(), "HashMap" | "HashSet")) => {
-            (Allocation::None, Work::Capacity)
-        }
         "insert" if keyed => (Allocation::Growth, Work::Argument(1)),
         "insert" | "resize" | "resize_with" => (Allocation::Growth, Work::Receiver),
         "contains_key" | "get" | "get_mut" | "contains" | "remove" if keyed => {

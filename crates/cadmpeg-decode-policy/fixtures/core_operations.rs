@@ -15,18 +15,6 @@ pub fn vector_shapes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecE
     Ok(())
 }
 
-pub fn set_shapes(
-    ctx: &DecodeContext<'_>,
-    left: &HashSet<String>,
-    right: &HashSet<String>,
-    optional_left: &Option<HashSet<String>>,
-    optional_right: &Option<HashSet<String>>,
-) -> Result<(), CodecError> {
-    let _equal = ctx.equal_hash_set(left, right, "direct sets")?;
-    let _equal = ctx.equal_hash_set(optional_left, optional_right, "optional sets")?;
-    Ok(())
-}
-
 pub fn scoped_retained_children(ctx: &DecodeContext<'_>, texts: &[String]) -> Result<(), CodecError> {
     let source = ctx.admit_iter(texts, "text source")?;
     let children = source.map(|text| ctx.copy_retained_text(text, "retained child"));
@@ -42,9 +30,7 @@ pub fn owned_key_costs(
     other_finding: &cadmpeg_ir::report::check::Finding,
 ) -> Result<(), CodecError> {
     let _equal = ctx.equal(left, right, "dialect identifiers")?;
-    let _equal = ctx.equal(finding, other_finding, "validation findings")?;
     let _equal = ctx.equal(&finding.check, &other_finding.check, "validation checks")?;
-    let _equal = ctx.equal(&finding.severity, &other_finding.severity, "finding severities")?;
     Ok(())
 }
 
@@ -124,9 +110,9 @@ impl cadmpeg_core::decode::cost::DecodeCost for LookupCostKey<'_> {
 
 pub fn set_cost_callback(
     ctx: &DecodeContext<'_>,
-    left: &HashSet<LookupCostKey<'_>>,
-    right: &HashSet<LookupCostKey<'_>>,
+    values: &HashSet<LookupCostKey<'_>>,
+    key: &LookupCostKey<'_>,
 ) -> Result<(), CodecError> {
-    let _equal = ctx.equal_hash_set(left, right, "custom cost callback")?; // finding: unproven_decode_charge
+    let _found = ctx.contains_hash_set(values, key, "custom cost callback")?; // finding: unproven_decode_charge
     Ok(())
 }

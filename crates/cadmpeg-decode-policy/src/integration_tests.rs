@@ -139,7 +139,7 @@ fn check_fixture(name: &str) {
             | "xml_routes"
             | "adapter_receipts"
             | "matrix_iteration"
-            | "hash_set_callbacks"
+            | "hash_tables"
             | "serde_storage"
             | "collection_sources"
             | "archive_probe"
@@ -308,6 +308,7 @@ fn check_fixture(name: &str) {
                 let line_number = (index + 2).to_string();
                 let replacement = if method.starts_with("DecodeContext::")
                     || method.starts_with("cadmpeg_container::")
+                    || method.contains(' ')
                 {
                     method.to_owned()
                 } else {
@@ -400,7 +401,7 @@ fn check_fixture(name: &str) {
                     | "xml_routes"
                     | "adapter_receipts"
                     | "matrix_iteration"
-                    | "hash_set_callbacks"
+                    | "hash_tables"
                     | "serde_storage"
                     | "collection_sources"
                     | "archive_probe"
@@ -1151,8 +1152,8 @@ fn generic_instance_limits_reject_depth_and_distinct_state_overflow() {
 }
 
 #[test]
-fn hash_set_lookup_requires_bounded_key_and_builder_callbacks() {
-    check_fixture("hash_set_callbacks");
+fn hash_tables_admit_keyed_operations_and_report_traversal() {
+    check_fixture("hash_tables");
 }
 
 #[test]
