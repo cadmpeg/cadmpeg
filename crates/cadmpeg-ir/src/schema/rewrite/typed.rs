@@ -178,7 +178,9 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         }
         let operation = self.operation;
         ctx.charge_work(1, operation)?;
-        let cached = self.context.get_btree_map(&self.targets, source, operation)?;
+        let cached = self
+            .context
+            .get_btree_map(&self.targets, source, operation)?;
         if let Some(target) = cached {
             return target.try_clone_for_decode(ctx, operation);
         }

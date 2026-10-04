@@ -27,7 +27,12 @@ fn presentation_default_native_record_refuses_before_id_creation() {
             terminal_reference: 0,
             suffix: View::over_retained(&bytes),
         },
-        crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+        crate::record_identity::RecordTypeId::from_bytes(
+            &cadmpeg_test_support::service_decode_context(),
+            [0; 16],
+            "retain Inventor fixture type id",
+        )
+        .expect("fixture type id"),
         token
             .try_clone_for_decode(
                 &cadmpeg_test_support::service_decode_context(),
@@ -111,7 +116,12 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 }),
                 suffix: View::over_retained(&suffix),
             },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -137,7 +147,12 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 key: 0,
                 values: [0; 2],
             },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -152,7 +167,12 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 style_references: PmDcPairedReferenceList::new(Some([0; 2]), vec![reference])
                     .expect("paired references"),
             },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -173,7 +193,12 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
                 values: [0; 2],
                 terminal_state: 0,
             },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),
@@ -290,7 +315,12 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
                 extension: None,
                 suffix: View::over_retained(&bytes),
             },
-            crate::record_identity::RecordTypeId::from_bytes([0; 16]),
+            crate::record_identity::RecordTypeId::from_bytes(
+                &cadmpeg_test_support::service_decode_context(),
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
             token
                 .try_clone_for_decode(
                     &cadmpeg_test_support::service_decode_context(),

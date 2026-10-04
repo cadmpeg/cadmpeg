@@ -578,16 +578,8 @@ impl DecodeContext<'_> {
         source: impl ExtendSource<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(count) = source.known_len() {
-            self.admit_vector_extension(target, count, operation)?;
-            target.extend(source.into_values());
-        } else {
-            let mut input = source.into_values();
-            while let Some(value) = self.next_charged(&mut input, operation)? {
-                self.admit_vector_extension(target, 1, operation)?;
-                target.push(value);
-            }
-        }
+        self.admit_vector_extension(target, source.known_len(), operation)?;
+        target.extend(source.into_values());
         Ok(())
     }
 

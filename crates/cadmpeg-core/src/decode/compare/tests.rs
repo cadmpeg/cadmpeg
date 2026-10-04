@@ -227,18 +227,12 @@ fn tree_mutation_refuses_inline_moves_before_insertion_or_removal() {
 
     let mut insertion_policy = DecodePolicy::service();
     insertion_policy.limits.max_work_units = 22;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &insertion_policy)
-            .expect("test operation succeeds");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &insertion_policy)
+        .expect("test operation succeeds");
     let mut insertion = BTreeMap::<u8, [u8; 4096]>::from([(1, [0; 4096])]);
     // The key lookup and stored-key admission fit; movement work must refuse.
     let CodecError::ResourceLimit(insert_refusal) = ctx
-        .insert_btree_map(
-            &mut insertion,
-            2,
-            [0; 4096],
-            "insert without node growth",
-        )
+        .insert_btree_map(&mut insertion, 2, [0; 4096], "insert without node growth")
         .expect_err("movement work refuses before insertion")
     else {
         panic!("resource refusal")

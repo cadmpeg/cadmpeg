@@ -346,6 +346,17 @@ pub(crate) fn summary(
             }
         }
         "from_str_radix" if path.contains("num::") => (Allocation::None, Work::Argument(0)),
+        // Keep the fixed summary scoped to the standard range receiver; a
+        // custom method named `end` may allocate or inspect input.
+        "end"
+            if path.contains("RangeInclusive")
+                && owner.is_some_and(|owner| owner.as_str() == "RangeInclusive")
+                && value.is_some_and(|value| {
+                    matches!(value.kind(), ty::Adt(range, _) if types::standard(tcx, range.did()))
+                }) =>
+        {
+            (Allocation::None, Work::Fixed)
+        }
         _ if (path.contains("num::<impl ")
             || path.contains("f32::<impl f32>")
             || path.contains("f64::<impl f64>")
@@ -636,9 +647,7 @@ pub(crate) fn summary(
             (Allocation::None, Work::Comparison)
         }
         "finish" if path.contains("hash::") => (Allocation::None, Work::Fixed),
-        "write_str" if standard_string => {
-            (Allocation::Growth, Work::Argument(1))
-        }
+        "write_str" if standard_string => (Allocation::Growth, Work::Argument(1)),
         "write_str" if path.contains("fmt::") => (Allocation::None, Work::Argument(1)),
         "debug_struct_field1_finish" if path.contains("fmt::") => {
             (Allocation::None, Work::Argument(3))

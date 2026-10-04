@@ -88,24 +88,3 @@ fn fallible_scoped_vector_refuses_before_source_step() {
     assert!(matches!(ctx.try_collect_scoped_vec(input, "slots"), Err(CodecError::ResourceLimit(_))));
     assert_eq!(calls.get(), 0);
 }
-
-#[test]
-fn vector_extension_admits_mapped_reference_steps_without_proxy_storage() {
-    use crate::decode::iter_source::IncrementalSource;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    let input = [("a", 1_u8), ("b", 2)];
-    let source = ctx.admit_iter(&input, "source visits").expect("source").map(|pair| &pair.0);
-    let mut values = Vec::new();
-    ctx.extend_vec(&mut values, IncrementalSource::new(source), "extend references").expect("extension");
-    assert_eq!(values, [&"a", &"b"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let called = std::cell::Cell::new(false);
-    let source = std::iter::once_with(|| { called.set(true); 1_u8 });
-    let mut target = Vec::new();
-    assert!(matches!(ctx.extend_vec(&mut target, IncrementalSource::new(source), "unknown extension"), Err(CodecError::ResourceLimit(_))));
-    assert!(!called.get());
-    assert!(target.is_empty());
-}

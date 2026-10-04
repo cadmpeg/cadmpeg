@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Vector storage whose reservation follows its values and consuming iterator.
 
+use cadmpeg_core::decode::iter_source::IterSource;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
@@ -43,12 +44,8 @@ impl<'ctx, T> Scratch<'ctx, T> {
         key: impl Fn(&T) -> &K,
         compare: impl FnMut(&K, &K) -> std::cmp::Ordering,
     ) -> Result<(), CodecError> {
-        self.ctx.stable_sort_by(
-            &mut self.values,
-            key,
-            compare,
-            "sort validation scratch",
-        )
+        self.ctx
+            .stable_sort_by(&mut self.values, key, compare, "sort validation scratch")
     }
 
     pub(super) fn push(&mut self, value: T) -> Result<(), CodecError> {
@@ -59,10 +56,16 @@ impl<'ctx, T> Scratch<'ctx, T> {
         })
     }
 
-    pub(super) fn extend(&mut self, values: impl IntoIterator<Item = T>) -> Result<(), CodecError> {
-        for value in values {
-            self.ctx.charge_work(1, "validation extension scan")?;
-            self.push(value)?;
+    pub(super) fn extend<S>(
+        &mut self,
+        values: S,
+        mut project: impl FnMut(<S::Iter as Iterator>::Item) -> T,
+    ) -> Result<(), CodecError>
+    where
+        S: IterSource,
+    {
+        for value in self.ctx.admit_iter(values, "validation extension scan")? {
+            self.push(project(value))?;
         }
         Ok(())
     }
@@ -72,12 +75,6 @@ impl<T> std::ops::Deref for Scratch<'_, T> {
     type Target = [T];
     fn deref(&self) -> &Self::Target {
         &self.values
-    }
-}
-
-impl<T: std::fmt::Debug> std::fmt::Debug for Scratch<'_, T> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.values, formatter)
     }
 }
 
@@ -101,7 +98,7 @@ impl<'ctx, T> IntoIterator for Scratch<'ctx, T> {
     type IntoIter = IntoIter<'ctx, T>;
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            values: self.values.into_iter(),
+            values: IntoIterator::into_iter(self.values),
             _storage: self.storage,
         }
     }

@@ -388,12 +388,15 @@ yielded iteration; a charge in that iteration does not admit those visits.
 
 Use `ctx.admit_iter(source, operation)?` before adapting an input-sized
 source. `IterSource` is implemented by core alone for slices, vectors,
-boxed slices, arrays, text, queues, maps and sets, including owned vectors,
-maps, options and arrays, and mutable slices and vectors. Text admission counts
-bytes for both byte and character traversal. An iterator size hint does
-not establish admission. `AdmittedIter` owns one traversal; its source
-cannot be extracted or cloned. Adapters over a precharged iterator retain
-its source admission. A nested loop
+boxed slices, arrays, text, queues, maps, sets and unsigned integer ranges,
+including owned vectors, maps, options and arrays, and mutable slices and
+vectors. `Range` and `RangeInclusive` support `u8`, `u16`, `u32`, `u64`, `u128`
+and `usize`. Range admission checks the exact remaining visit count before
+the first visit. A count that exceeds `u64` refuses and fuses the caller budget.
+Text admission counts bytes for both byte and character traversal.
+An iterator size hint does not establish admission. `AdmittedIter` owns
+one traversal; its source cannot be extracted or cloned. Adapters over a
+precharged iterator retain its source admission. A nested loop
 or a `flat_map` inner source requires its own admission. Child copies,
 comparisons and callback work require their own operations. Owned sources also
 require bounded item destructors and iterator-state destructors. An outer
@@ -419,6 +422,11 @@ as a decode root. Measuring variable children charges their traversal.
 Key receipts match the exact operand and, for a tree, its comparison-depth
 bound. Each receipt is consumed once. Mutation invalidates it. Map and set
 growth also admits each stored key and its bytes before rehashing.
+Single-character string growth admits the character's UTF-8 length as work
+and storage. Work receipts match the character. Storage receipts also
+identify the output string. Each receipt is consumed once and is invalidated
+by mutation. Scoped text uses the same operation inside
+`reservation.with_storage`.
 Range receipts identify the range kind and each bound. Truncation consumes
 the receipt for the same vector's removed suffix and cutoff.
 
@@ -430,6 +438,11 @@ retains a finding; a fixed custom cost does not bound its callback recursion.
 The lookup builder must be RandomState or BuildHasherDefault<DefaultHasher>.
 The left-hand builder is not invoked. An equality receipt does not admit a
 lookup inside a child cost implementation.
+
+A scoped storage receipt names its live reservation local. Moving that
+reservation into another owner invalidates the local receipt. Keep the
+reservation local through raw allocation and growth, then transfer the lease
+to its returned owner. A wrapper does not establish a new storage receipt.
 
 The operation table gives the core method for each listed shape. A replacement
 message names an operation; it does not establish a missing implementation or
@@ -457,7 +470,7 @@ or exhausted bound retains an unproven finding.
 | Operation shape | Core method |
 | --- | --- |
 | `for loop` | `admit_iter` on the base before adapters |
-| `collection growth outside core operation` | `push_vec`, `reserve_vec`, `append_retained` or the receiver-specific map/set insertion method |
+| `collection growth outside core operation` | `push_vec`, `reserve_vec`, `append_retained`, `push_retained_char` or the receiver-specific map/set insertion method |
 | `into` | `copy_retained_text` for text; `copy_slice` for Copy slices; `into_boxed_slice` for an owned vector |
 | `comparison` | `equal_bytes` for byte equality; `equal_hash_set` for direct or optional hash sets; `equal` for value equality; `compare` for ordering |
 | `insert` | `insert_vec` or `insert_scoped_vec` for indexed vector insertion; `insert_hash_map`, `insert_btree_map`, `insert_hash_set` or `insert_btree_set` for keys |
@@ -478,7 +491,7 @@ or exhausted bound retains an unproven finding.
 | `external operation temporary or result storage` | `reserve_scoped` for a checked temporary bound, or `collection_vec`/`copy_retained_text` for caller-owned output; opaque allocation stays unproven |
 | `eq_ignore_ascii_case` | `eq_ignore_ascii_case` |
 | `parse` | `parse_text` |
-| `extend` | `extend_vec` for vectors, options, arrays and borrowed Copy slices; `collect_text` or charged appends for text fragments |
+| `extend` | `extend_vec` for vectors, options, arrays and borrowed Copy slices; for strings, `collect_text`, or `admit_iter` on the base, then `push_retained_char` for each character or `append_retained` for each text item |
 | `get_mut` | `get_mut_hash_map` or `get_mut_btree_map` |
 | `try_fold` | `fold` for slices; `admit_iter` before iterator consumption |
 | `Display output extent unresolved` | `format_retained` |
@@ -574,7 +587,7 @@ or exhausted bound retains an unproven finding.
 | `custom` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `sort_unstable_by` | `sort_unstable_by` |
 | `from_str` | `parse_text` |
-| `push` | `push_vec`, `push_heap` or `push_back` for the concrete collection |
+| `push` | `push_retained_char` for strings; `push_vec`, `push_heap` or `push_back` for the concrete collection |
 | `pop` | `DecodeContext::pop_heap` for a binary heap; vector and deque pops have fixed work. |
 | `rfind` | `rfind_text` or `rfind_bytes`; `admit_iter` before reverse iterator search |
 | `resize` | `resize_with` |
@@ -588,7 +601,8 @@ or exhausted bound retains an unproven finding.
 | `resize_with` | `resize_with` |
 | `for_each` | `admit_iter` |
 | `split_off` | `split_off_vec` |
-| `write_str` | `format_retained` |
+| `write_str` | `append_retained` for strings; `format_retained` for formatting output |
+| `write_char` | `push_retained_char` for strings; `format_retained` for formatting output |
 | `extend_from_within` | `extend_from_within` |
 | `alloc_filled child Clone` | `alloc_filled` for Copy values; `collect_indexed_vec` for charged child factories |
 | `to_uppercase` | `to_uppercase` |

@@ -141,6 +141,18 @@ pub(crate) fn standard_str_chars_call(
             if physical_item_path(tcx, owner.did(), "core", &["str", "iter", "Chars"]))
 }
 
+pub(crate) fn standard_vector(tcx: TyCtxt<'_>, value: Ty<'_>) -> bool {
+    let ty::Adt(owner, arguments) = value.peel_refs().kind() else {
+        return false;
+    };
+    standard(tcx, owner.did())
+        && tcx.item_name(owner.did()).as_str() == "Vec"
+        && arguments.types().nth(1).is_some_and(|allocator| {
+            matches!(allocator.kind(), ty::Adt(owner, _) if standard(tcx, owner.did())
+                && tcx.item_name(owner.did()).as_str() == "Global")
+        })
+}
+
 pub(crate) fn reveal_opaque<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Ty<'tcx> {
     value.fold_with(&mut RevealOpaque {
         tcx,
@@ -288,6 +300,20 @@ pub(crate) fn has_context<'tcx>(
     seen.push(value);
     match value.kind() {
         ty::Adt(definition, arguments) => {
+            // An optional carrier does not prove that its authority is present.
+            if standard(tcx, definition.did())
+                && tcx.item_name(definition.did()).as_str() == "Option"
+            {
+                return false;
+            }
+            if tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core"
+                && matches!(
+                    tcx.def_path_str(definition.did()).as_str(),
+                    "decode::budget::WorkBudget" | "cadmpeg_core::decode::budget::WorkBudget"
+                )
+            {
+                return false;
+            }
             if standard(tcx, definition.did())
                 && matches!(
                     tcx.item_name(definition.did()).as_str(),
@@ -306,9 +332,15 @@ pub(crate) fn has_context<'tcx>(
             {
                 return arguments.types().any(|inner| has_context(tcx, inner, seen));
             }
-            (tcx.item_name(definition.did()).as_str() == "DecodeContext"
-                && (tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core"
-                    || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()))
+            (tcx.crate_name(definition.did().krate).as_str() == "cadmpeg_core"
+                && (tcx.item_name(definition.did()).as_str() == "DecodeContext"
+                    || matches!(
+                        tcx.def_path_str(definition.did()).as_str(),
+                        "decode::budget::DecodeBudget"
+                            | "cadmpeg_core::decode::budget::DecodeBudget"
+                    )))
+                || (tcx.item_name(definition.did()).as_str() == "DecodeContext"
+                    && std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some())
                 || definition
                     .all_fields()
                     .any(|field| has_context(tcx, field.ty(tcx, arguments).skip_norm_wip(), seen))

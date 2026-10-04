@@ -265,11 +265,7 @@ fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
             ctx: &DecodeContext<'_>,
             operation: &'static str,
         ) -> Result<u64, CodecError> {
-            <u8 as cadmpeg_core::decode::cost::DecodeCost>::decode_cost(
-                &self.0,
-                ctx,
-                operation,
-            )
+            <u8 as cadmpeg_core::decode::cost::DecodeCost>::decode_cost(&self.0, ctx, operation)
         }
     }
     impl RewriteIdentities for OrderedKey {

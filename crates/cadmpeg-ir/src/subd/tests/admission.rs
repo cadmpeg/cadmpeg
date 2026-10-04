@@ -49,9 +49,7 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
         std::mem::align_of::<usize>()
     };
     const NODE_BYTES: u64 = cadmpeg_core::decode::u64_from_index(
-        11 * std::mem::size_of::<u32>()
-            + 16 * std::mem::size_of::<usize>()
-            + 2 * NODE_ALIGNMENT,
+        11 * std::mem::size_of::<u32>() + 16 * std::mem::size_of::<usize>() + 2 * NODE_ALIGNMENT,
     );
     let first_node_work = 4 * NODE_BYTES;
     let second_insert_work = 8 * NODE_BYTES;
@@ -78,7 +76,12 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
         (25, "SubD validation members", 24, first_node_work),
         (26, "SubD validation members", 24, first_node_work),
         (27, "SubD validation members", 24, first_node_work),
-        (after_first_node, "validate SubD grip slots", after_first_node, 1),
+        (
+            after_first_node,
+            "validate SubD grip slots",
+            after_first_node,
+            1,
+        ),
         (
             after_first_node + 1,
             "SubD validation member search",

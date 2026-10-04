@@ -174,7 +174,7 @@ pub(crate) fn project_occurrences(
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
 
-    for source in ufrx_occurrences {
+    for source in ctx.admit_iter(ufrx_occurrences, "visit Inventor assembly items")? {
         let Some(reference) = references
             .get(&source.file_reference_id)
             .and_then(Option::as_ref)
@@ -243,49 +243,60 @@ pub(crate) fn project_occurrences(
             }
         };
 
-        ctx.charge_collection_items(1, "project Inventor occurrence")?;
         ctx.charge_entities(1, "project Inventor occurrence")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                "inventor:assembly:instance#".len()
-                    + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
-                        CodecError::Malformed("Inventor numeric value exceeds target range".into())
-                    })?
-                    + 1,
-            ),
+        let mut key_storage = ctx.reserve_scoped(0, "compose projected Inventor occurrence key")?;
+        let key = key_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("{}", source.occurrence_id),
+                "compose projected Inventor occurrence key",
+            )
+        })?;
+        let id_text = ctx.format_retained(
+            format_args!("inventor:assembly:instance#{key}"),
             "retain projected Inventor occurrence id",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(reference.document_copy_len()),
-            "retain projected Inventor external document",
+        let validation_work = id_text.len().checked_add(key.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "validate projected Inventor occurrence id",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(validation_work),
+            "validate projected Inventor occurrence id",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(source.title.as_ref().map_or(0, String::len)),
-            "retain projected Inventor occurrence title",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(source.id.len()),
-            "retain projected Inventor occurrence native reference",
-        )?;
-        occurrences.push(Occurrence {
-            id: OccurrenceId::compose(
-                &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
-                source.occurrence_id,
-            ),
-            prototype: PrototypeReference::External {
-                document: reference.document(),
-                object: None,
+        let id = OccurrenceId::mint(id_text).map_err(CodecError::malformed)?;
+        ctx.push_vec(
+            &mut occurrences,
+            Occurrence {
+                id,
+                prototype: PrototypeReference::External {
+                    document: reference.document(ctx)?,
+                    object: None,
+                },
+                parent: OccurrenceParent::Root {},
+                ordinal: source.ordinal,
+                transform,
+                linked_prototype: None,
+                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+                name: source
+                    .title
+                    .as_deref()
+                    .filter(|title| !title.is_empty())
+                    .map(|title| {
+                        ctx.copy_retained_text(title, "retain projected Inventor occurrence title")
+                    })
+                    .transpose()?,
+                visible,
+                link: None,
+                native_ref: Some(ctx.copy_retained_text(
+                    &source.id,
+                    "retain projected Inventor occurrence native reference",
+                )?),
             },
-            parent: OccurrenceParent::Root {},
-            ordinal: source.ordinal,
-            transform,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: source.title.clone().filter(|title| !title.is_empty()),
-            visible,
-            link: None,
-            native_ref: Some(source.id.clone()),
-        });
+            "project Inventor occurrence",
+        )?;
     }
 
     Ok(AssemblyProjection {
@@ -301,7 +312,7 @@ pub(crate) fn inventory<'a>(
     let mut occurrences = Vec::new();
     let mut placements = Vec::new();
     let mut issues = Vec::new();
-    for segment in &document.segments {
+    for segment in ctx.admit_iter(&document.segments, "visit Inventor assembly items")? {
         let relevant = matches!(segment.kind, SegmentKind::AmDc | SegmentKind::AmGraphics);
         if !relevant {
             continue;
@@ -312,31 +323,43 @@ pub(crate) fn inventory<'a>(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in &table.records {
-            let result = if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
+        for record in ctx.admit_iter(&table.records, "visit Inventor assembly items")? {
+            let result = if ctx.equal(
+                &segment.kind,
+                &SegmentKind::AmDc,
+                "match Inventor assembly segment kind",
+            )? && record.type_id == OCCURRENCE_TYPE
+            {
                 parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
-                    ctx.charge_collection_items(1, "admit Inventor assembly occurrence record")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
+                    occurrence.segment_token = ctx.copy_retained_text(
+                        segment.pair.token.as_str(),
                         "retain Inventor assembly occurrence token",
                     )?;
-                    occurrence.segment_token = segment.pair.token.as_str().into();
                     occurrence.record_ordinal = record.ordinal;
-                    occurrences.push(occurrence);
+                    ctx.push_vec(
+                        &mut occurrences,
+                        occurrence,
+                        "admit Inventor assembly occurrence record",
+                    )?;
                     Ok(())
                 })
-            } else if segment.kind == SegmentKind::AmGraphics
-                && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
+            } else if ctx.equal(
+                &segment.kind,
+                &SegmentKind::AmGraphics,
+                "match Inventor graphics segment kind",
+            )? && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
                 parse_placement(ctx, record.payload).and_then(|mut placement| {
-                    ctx.charge_collection_items(1, "admit Inventor assembly placement record")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
+                    placement.segment_token = ctx.copy_retained_text(
+                        segment.pair.token.as_str(),
                         "retain Inventor assembly placement token",
                     )?;
-                    placement.segment_token = segment.pair.token.as_str().into();
                     placement.record_ordinal = record.ordinal;
-                    placements.push(placement);
+                    ctx.push_vec(
+                        &mut placements,
+                        placement,
+                        "admit Inventor assembly placement record",
+                    )?;
                     Ok(())
                 })
             } else {
@@ -346,22 +369,23 @@ pub(crate) fn inventory<'a>(
                 if matches!(error, CodecError::ResourceLimit(_)) {
                     return Err(error);
                 }
-                ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
                 ctx.charge_entities(1, "admit Inventor assembly issue")?;
-                ctx.charge_formatted_retained(
-                    format_args!("{error}"),
-                    "retain Inventor assembly issue detail",
+                let detail =
+                    crate::issue_detail(ctx, error, "retain Inventor assembly issue detail")?;
+                ctx.push_vec(
+                    &mut issues,
+                    RecordIssue {
+                        family: RecordIssueFamily::Assembly,
+                        segment_token: segment
+                            .pair
+                            .token
+                            .key()
+                            .try_clone_for_decode(ctx, "retain Inventor assembly issue token")?,
+                        record_ordinal: record.ordinal,
+                        detail,
+                    },
+                    "admit Inventor assembly issue",
                 )?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
-                    "retain Inventor assembly issue token",
-                )?;
-                issues.push(RecordIssue {
-                    family: RecordIssueFamily::Assembly,
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: crate::issue_detail(error)?,
-                });
             }
         }
     }
@@ -404,10 +428,6 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(related_count),
-        "admit Inventor occurrence related references",
-    )?;
     let mut related_references = ctx.vector_storage(
         related_count,
         "admit Inventor occurrence related references",
@@ -415,8 +435,15 @@ fn parse_occurrence<'a>(
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
-        for _ in 0..related_count {
-            related_references.push(cursor.u32("occurrence related reference")?);
+        for _ in ctx.admit_iter(
+            &(0..related_count),
+            "visit Inventor occurrence related references",
+        )? {
+            ctx.push_vec(
+                &mut related_references,
+                cursor.u32("occurrence related reference")?,
+                "admit Inventor occurrence related references",
+            )?;
         }
     }
     let child_reference = cursor.u32("occurrence child reference")?;
@@ -469,7 +496,7 @@ fn parse_placement<'a>(
     let owner_reference = cursor.u32("placement owner reference")?;
     let attribute_reference = cursor.u32("placement attribute reference")?;
     let state = cursor.u8("placement state")?;
-    let (transform_prefix, transform) = cursor.transform()?;
+    let (transform_prefix, transform) = cursor.transform(ctx)?;
     let branch = cursor.u8("placement branch")?;
     let graphics_state = cursor.u8("placement graphics state")?;
     let occurrence_id = cursor.u32("placement occurrence id")?;
@@ -572,7 +599,7 @@ impl<'a> Cursor<'a> {
         )
     }
 
-    fn transform(&mut self) -> Result<(bool, CompactMatrix), CodecError> {
+    fn transform(&mut self, ctx: &DecodeContext<'_>) -> Result<(bool, CompactMatrix), CodecError> {
         let mut peek = self.source;
         let prefixed = peek.u32_le() == Some(0x0000_0203);
         if prefixed {
@@ -582,7 +609,7 @@ impl<'a> Cursor<'a> {
         }
         let set = self.u16("placement transform set mask")?;
         let zero = self.u16("placement transform zero mask")?;
-        let matrix = CompactMatrix::try_new(set, zero, |index| {
+        let matrix = CompactMatrix::try_new(ctx, set, zero, |index| {
             let value = self.source.req_f64_le()?;
             cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
                 CodecError::malformed(format_args!("compact matrix[{index}] is not finite"))
@@ -1028,8 +1055,13 @@ mod tests {
         let mut rows = placement.transform.rows();
         rows[0][3] = 1.25;
         rows[1][3] = -2.0;
-        placement.transform =
-            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
+        placement.transform = CompactMatrix::try_from_rows(
+            &cadmpeg_test_support::service_decode_context(),
+            0,
+            0,
+            rows,
+        )
+        .expect("finite explicit matrix fixture");
 
         let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
@@ -1073,13 +1105,23 @@ mod tests {
         let mut first = assembly_placement(7);
         let mut rows = first.transform.rows();
         rows[0][3] = 1.0;
-        first.transform =
-            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
+        first.transform = CompactMatrix::try_from_rows(
+            &cadmpeg_test_support::service_decode_context(),
+            0,
+            0,
+            rows,
+        )
+        .expect("finite explicit matrix fixture");
         let mut second = assembly_placement(8);
         let mut rows = second.transform.rows();
         rows[0][3] = 2.0;
-        second.transform =
-            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
+        second.transform = CompactMatrix::try_from_rows(
+            &cadmpeg_test_support::service_decode_context(),
+            0,
+            0,
+            rows,
+        )
+        .expect("finite explicit matrix fixture");
 
         let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 
@@ -1191,7 +1233,7 @@ mod tests {
         occurrence_id: u32,
         ordinal: u32,
     ) -> UfrxOccurrenceRecord {
-        UfrxOccurrenceRecord::try_from(crate::native::ufrx::UfrxOccurrenceRecordWire {
+        crate::native::ufrx::UfrxOccurrenceRecordWire {
             id: format!("inventor:ufrx:occurrence#{ordinal}"),
             ordinal,
             end_string_flag: 0,
@@ -1202,7 +1244,8 @@ mod tests {
             header_padding_words: 0,
             record_len: 1,
             record_sha256: "0".repeat(64),
-        })
+        }
+        .into_record(&cadmpeg_test_support::service_decode_context())
         .expect("valid native record fixture")
     }
 
@@ -1220,9 +1263,7 @@ mod tests {
         state: [u16; 2],
         document_id: &str,
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire::<
-            String,
-        > {
+        crate::native::ufrx::ExternalReferenceRecordWire {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),
@@ -1237,7 +1278,8 @@ mod tests {
             occurrence_count: 1,
             version: 0,
             flags: 0,
-        })
+        }
+        .into_record(&cadmpeg_test_support::service_decode_context())
         .expect("valid reference fixture")
     }
 
@@ -1261,7 +1303,7 @@ mod tests {
     }
 
     fn assembly_placement(occurrence_id: u32) -> AssemblyPlacementRecord {
-        AssemblyPlacementRecord::try_from(crate::native::AssemblyPlacementRecordWire {
+        crate::native::AssemblyPlacementRecordWire {
             id: format!("inventor:assembly:placement#{occurrence_id}"),
             segment_token: "synthetic".into(),
             record_ordinal: occurrence_id,
@@ -1270,8 +1312,8 @@ mod tests {
             attribute_reference: 0,
             state: 0,
             transform_prefix: false,
-            transform: CompactMatrix::try_from_rows(0, 0, Transform::identity().rows())
-                .expect("finite explicit matrix fixture"),
+            transform_encoding: [0, 0],
+            transform: Transform::identity().rows(),
             branch: 0,
             graphics_state: 0,
             occurrence_id,
@@ -1279,7 +1321,8 @@ mod tests {
             object_reference: 0,
             suffix_len: 48,
             suffix_sha256: "0".repeat(64),
-        })
+        }
+        .into_record(&cadmpeg_test_support::service_decode_context())
         .expect("valid placement fixture")
     }
 

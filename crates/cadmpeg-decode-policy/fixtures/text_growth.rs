@@ -45,11 +45,7 @@ pub fn reused(ctx: &DecodeContext, value: &mut String, suffix: &str) -> Result<(
     Ok(())
 }
 
-pub fn admitted_char(
-    ctx: &DecodeContext,
-    output: &mut String,
-    character: char,
-) -> Result<(), ()> {
+pub fn admitted_char(ctx: &DecodeContext, output: &mut String, character: char) -> Result<(), ()> {
     ctx.charge_work(character.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, character.len_utf8(), "retained char")?;
     output.push(character);
@@ -126,11 +122,7 @@ pub fn missing_char_work(
     Ok(())
 }
 
-pub fn one_byte_storage(
-    ctx: &DecodeContext,
-    output: &mut String,
-    choose: bool,
-) -> Result<(), ()> {
+pub fn one_byte_storage(ctx: &DecodeContext, output: &mut String, choose: bool) -> Result<(), ()> {
     let character = if choose { 'é' } else { 'ö' };
     ctx.charge_work(character.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, 1, "retained char")?;
@@ -175,11 +167,7 @@ pub fn reused_char_receipts(
     Ok(())
 }
 
-pub fn stale_character(
-    ctx: &DecodeContext,
-    output: &mut String,
-    input: char,
-) -> Result<(), ()> {
+pub fn stale_character(ctx: &DecodeContext, output: &mut String, input: char) -> Result<(), ()> {
     let mut character = input;
     ctx.charge_work(character.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, character.len_utf8(), "retained char")?;
@@ -188,10 +176,7 @@ pub fn stale_character(
     Ok(())
 }
 
-pub fn stale_literal_character(
-    ctx: &DecodeContext,
-    output: &mut String,
-) -> Result<(), ()> {
+pub fn stale_literal_character(ctx: &DecodeContext, output: &mut String) -> Result<(), ()> {
     let mut character = 'é';
     ctx.charge_work(character.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, character.len_utf8(), "retained char")?;
@@ -228,10 +213,8 @@ pub fn stale_box_character_field(
     Ok(())
 }
 
-static ALTERNATING_FIELD_TARGETS: [CharacterField; 2] = [
-    CharacterField { value: 'é' },
-    CharacterField { value: 'ö' },
-];
+static ALTERNATING_FIELD_TARGETS: [CharacterField; 2] =
+    [CharacterField { value: 'é' }, CharacterField { value: 'ö' }];
 
 pub struct AlternatingField(std::cell::Cell<usize>);
 
@@ -360,7 +343,10 @@ pub fn admitted_nested_indexed_character(
     ctx: &DecodeContext,
     output: &mut String,
 ) -> Result<(), ()> {
-    let rows = [[IndexedCharacter { value: 'é' }], [IndexedCharacter { value: 'ö' }]];
+    let rows = [
+        [IndexedCharacter { value: 'é' }],
+        [IndexedCharacter { value: 'ö' }],
+    ];
     ctx.charge_work(rows[0][0].value.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, rows[0][0].value.len_utf8(), "retained char")?;
     output.push(rows[0][0].value);
@@ -371,7 +357,10 @@ pub fn different_nested_indexed_character(
     ctx: &DecodeContext,
     output: &mut String,
 ) -> Result<(), ()> {
-    let rows = [[IndexedCharacter { value: 'é' }], [IndexedCharacter { value: 'ö' }]];
+    let rows = [
+        [IndexedCharacter { value: 'é' }],
+        [IndexedCharacter { value: 'ö' }],
+    ];
     ctx.charge_work(rows[0][0].value.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, rows[0][0].value.len_utf8(), "retained char")?;
     output.push(rows[1][0].value); // finding: unproven_decode_charge, uncharged_decode_work
@@ -382,7 +371,10 @@ pub fn changed_nested_indexed_character(
     ctx: &DecodeContext,
     output: &mut String,
 ) -> Result<(), ()> {
-    let mut rows = [[IndexedCharacter { value: 'é' }], [IndexedCharacter { value: 'ö' }]];
+    let mut rows = [
+        [IndexedCharacter { value: 'é' }],
+        [IndexedCharacter { value: 'ö' }],
+    ];
     ctx.charge_work(rows[0][0].value.len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, rows[0][0].value.len_utf8(), "retained char")?;
     rows[0][0].value = 'x';
@@ -394,10 +386,7 @@ pub struct IndexedCharacter {
     pub value: char,
 }
 
-pub fn different_index_different_width(
-    ctx: &DecodeContext,
-    output: &mut String,
-) -> Result<(), ()> {
+pub fn different_index_different_width(ctx: &DecodeContext, output: &mut String) -> Result<(), ()> {
     let characters = ['a', '🦀'];
     ctx.charge_work(characters[0].len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, characters[0].len_utf8(), "retained char")?;
@@ -405,10 +394,7 @@ pub fn different_index_different_width(
     Ok(())
 }
 
-pub fn different_index_same_width(
-    ctx: &DecodeContext,
-    output: &mut String,
-) -> Result<(), ()> {
+pub fn different_index_same_width(ctx: &DecodeContext, output: &mut String) -> Result<(), ()> {
     let characters = ['é', 'ö'];
     ctx.charge_work(characters[0].len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, characters[0].len_utf8(), "retained char")?;
@@ -429,10 +415,7 @@ pub fn changed_character_index(
     Ok(())
 }
 
-pub fn changed_indexed_character(
-    ctx: &DecodeContext,
-    output: &mut String,
-) -> Result<(), ()> {
+pub fn changed_indexed_character(ctx: &DecodeContext, output: &mut String) -> Result<(), ()> {
     let mut characters = ['é', 'ö'];
     ctx.charge_work(characters[0].len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, characters[0].len_utf8(), "retained char")?;
@@ -469,10 +452,7 @@ impl std::ops::Index<usize> for AlternatingCharacters {
     }
 }
 
-pub fn custom_index_reads_are_unproven(
-    ctx: &DecodeContext,
-    output: &mut String,
-) -> Result<(), ()> {
+pub fn custom_index_reads_are_unproven(ctx: &DecodeContext, output: &mut String) -> Result<(), ()> {
     let characters = AlternatingCharacters(std::cell::Cell::new(0));
     ctx.charge_work(characters[0].len_utf8() as u64, "retained char")?;
     ctx.try_reserve_retained_text(output, characters[0].len_utf8(), "retained char")?;
@@ -480,10 +460,7 @@ pub fn custom_index_reads_are_unproven(
     Ok(())
 }
 
-pub fn admitted_custom_index_snapshot(
-    ctx: &DecodeContext,
-    output: &mut String,
-) -> Result<(), ()> {
+pub fn admitted_custom_index_snapshot(ctx: &DecodeContext, output: &mut String) -> Result<(), ()> {
     let characters = AlternatingCharacters(std::cell::Cell::new(0));
     let character = characters[0];
     ctx.charge_work(character.len_utf8() as u64, "retained char")?;
@@ -533,11 +510,7 @@ pub fn wrong_fmt_char_output(
     Ok(())
 }
 
-pub fn admitted_fmt_str(
-    ctx: &DecodeContext,
-    output: &mut String,
-    suffix: &str,
-) -> Result<(), ()> {
+pub fn admitted_fmt_str(ctx: &DecodeContext, output: &mut String, suffix: &str) -> Result<(), ()> {
     use std::fmt::Write as _;
 
     ctx.charge_work(suffix.len() as u64, "text")?;
