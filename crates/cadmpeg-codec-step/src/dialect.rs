@@ -366,7 +366,7 @@ with the entity vocabulary verified for {FORMAT}:{}",
 /// caller owns the exact resource identities, row-to-occurrence map,
 /// schema/unit/context agreement, conflict policy, and retention of both source
 /// graphs.
-pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
+pub(crate) fn refuse_alternate_encoding(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
     let encoding = if crate::codec::is_part26_hdf5(bytes) {
         AlternateEncoding::Part26Hdf5
     } else if crate::codec::is_part28_xml(bytes) {
@@ -378,7 +378,7 @@ pub(crate) fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> 
     };
     Err(CodecError::UnsupportedDialect {
         dialects: Box::new(DialectLayers::of(encoding.refused_match())),
-        message: encoding.refusal_message().into(),
+        message: ctx.copy_retained_text(encoding.refusal_message(), "STEP alternate encoding refusal message")?,
     })
 }
 

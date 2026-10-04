@@ -2505,7 +2505,7 @@ pub(crate) fn project(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: kind.into(),
+                    kind: cadmpeg_ir::features::NativeFeatureKind::Other(kind),
                     parameters,
                 }),
             ),

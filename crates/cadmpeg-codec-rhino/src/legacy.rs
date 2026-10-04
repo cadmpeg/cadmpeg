@@ -345,16 +345,9 @@ fn v1_string(
         cadmpeg_core::decode::u64_from_index(count),
         "Rhino V1 source text",
     )?;
-    let text_bytes = count.checked_mul(3).ok_or_else(|| {
-        CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
-    })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(text_bytes),
-        "Rhino V1 decoded text",
-    )?;
     let bytes = ctx.copy_retained(source, "Rhino V1 source text")?;
     Ok(V1String {
-        text: String::from_utf8_lossy(&bytes).into_owned(),
+        text: ctx.copy_retained_lossy_utf8(&bytes, "Rhino V1 decoded text")?,
         bytes,
     })
 }
@@ -1722,7 +1715,8 @@ fn append_legacy_brep(
     let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
     let model = draft.model_mut();
-    let suffix_key = legacy_identity_key(suffix.to_owned())?;
+    let mut suffix_key_storage = ctx.reserve_scoped(0, "Rhino append_legacy_brep text copy")?;
+    let suffix_key = legacy_identity_key(suffix_key_storage.with_storage(|| ctx.copy_retained_text(suffix, "Rhino append_legacy_brep text copy"))?)?;
     let body_id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
         copied_storage.with_storage(|| {
@@ -3642,6 +3636,26 @@ fn v1_nurbs_object<T>(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn v1_text_charges_source_and_decoded_bytes_once() {
+        let mut bytes = 3_i32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(b"abc");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // Six bytes hold the three source bytes and three UTF-8 text bytes.
+        policy.limits.max_retained_bytes = 6;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("text frame");
+        let value = super::v1_string(&ctx, &mut reader, "text").expect("two three-byte fields fit");
+        assert_eq!(value.text, "abc");
+        assert_eq!(value.bytes, b"abc");
+        let refusal = ctx.charge_retained(1, "next text byte").expect_err("six bytes fill the retained limit");
+        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.used == 6 && limit.additional == 1));
+    }
+
     use super::{
         TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_COMMENT, TCODE_ENDOFFILE,
         TCODE_ENDOFTABLE, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF, TCODE_LEGACY_CRV,

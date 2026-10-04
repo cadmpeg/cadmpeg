@@ -3695,6 +3695,7 @@ fn build_one(
             ctx.push_vec(&mut face_ids, fid, "step_brep_face_ids")?;
             ctx.insert_hash_set(&mut typed, face_step, "step_brep_typed")?;
         }
+        let mut component_edge_text_storage = ctx.reserve_scoped(0, "STEP component edge identity")?;
         let mut component_edge_vertices = BTreeMap::new();
         for (used_shell, edge_id) in &used_e {
             if *used_shell != shell_step {
@@ -3720,7 +3721,9 @@ fn build_one(
             }
             ctx.insert_btree_map(
                 &mut component_edge_vertices,
-                edge_id.as_str().to_owned(),
+                component_edge_text_storage.with_storage(|| {
+                    ctx.copy_retained_text(edge_id.as_str(), "STEP component edge identity")
+                })?,
                 (
                     scoped_poly_vertex_id(*start, id, shell_step, scope_edges, scope_root)
                         .into_string(),

@@ -426,7 +426,7 @@ fn read_revolution(
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
     let angular_interval =
-        increasing_interval(interval(ctx, reader)?.0, reader.position(), "revolution angle")?;
+        increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "revolution angle")?;
     if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACE_DEGENERATE {
         return Err(error(
             reader.position(),
@@ -434,7 +434,7 @@ fn read_revolution(
         ));
     }
     let parameter_interval = if major >= 2 {
-        increasing_interval(
+        increasing_interval(ctx, 
             interval(ctx, reader)?.0,
             reader.position(),
             "revolution parameter interval",
@@ -1008,8 +1008,8 @@ fn read_nurbs_curve_inner(
     }
     let dimension = reader.i32()?;
     let rational = reader.i32()?;
-    let order = checked_positive(reader.i32()?, reader.position(), "curve order")?;
-    let cv_count = checked_positive(reader.i32()?, reader.position(), "curve CV count")?;
+    let order = checked_positive(ctx, reader.i32()?, reader.position(), "curve order")?;
+    let cv_count = checked_positive(ctx, reader.i32()?, reader.position(), "curve CV count")?;
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
@@ -1091,10 +1091,10 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let dimension = reader.i32()?;
     let rational = reader.i32()?;
-    let u_order = checked_positive(reader.i32()?, reader.position(), "surface U order")?;
-    let v_order = checked_positive(reader.i32()?, reader.position(), "surface V order")?;
-    let u_count = checked_positive(reader.i32()?, reader.position(), "surface U CV count")?;
-    let v_count = checked_positive(reader.i32()?, reader.position(), "surface V CV count")?;
+    let u_order = checked_positive(ctx, reader.i32()?, reader.position(), "surface U order")?;
+    let v_order = checked_positive(ctx, reader.i32()?, reader.position(), "surface V order")?;
+    let u_count = checked_positive(ctx, reader.i32()?, reader.position(), "surface U CV count")?;
+    let v_count = checked_positive(ctx, reader.i32()?, reader.position(), "surface V CV count")?;
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
@@ -1196,12 +1196,12 @@ fn read_plane_surface_with_parameterization(ctx: &cadmpeg_core::decode::DecodeCo
     }
     let native_plane = plane(ctx, reader)?;
     let frame = validate_plane(native_plane, reader.position())?;
-    let domain = increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane U domain")?;
-    let v_domain = increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane V domain")?;
+    let domain = increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane U domain")?;
+    let v_domain = increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane V domain")?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
         (
-            increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane U extents")?,
-            increasing_interval(interval(ctx, reader)?.0, reader.position(), "plane V extents")?,
+            increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane U extents")?,
+            increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane V extents")?,
         )
     } else {
         (domain, v_domain)
@@ -1493,14 +1493,14 @@ fn validate_stored_domain(
     }
 }
 
-fn checked_positive(value: i32, offset: usize, label: &str) -> Result<usize, GeometryError> {
+fn checked_positive(ctx: &DecodeContext<'_>, value: i32, offset: usize, label: &str) -> Result<usize, GeometryError> {
     if value < 2 && label.ends_with("order") || value <= 0 {
-        return Err(error(offset, label));
+        return Err(error(offset, ctx.copy_retained_text(label, "Rhino surface invariant message")?));
     }
-    usize::try_from(value).map_err(|_| error(offset, label))
+    usize::try_from(value).or_else(|_| Err(error(offset, ctx.copy_retained_text(label, "Rhino surface invariant message")?)))
 }
 
-fn increasing_interval(
+fn increasing_interval(ctx: &DecodeContext<'_>, 
     value: FiniteVector<2>,
     offset: usize,
     label: &str,
@@ -1509,7 +1509,7 @@ fn increasing_interval(
     if value[0] < value[1] {
         Ok(value)
     } else {
-        Err(error(offset, label))
+        Err(error(offset, ctx.copy_retained_text(label, "Rhino surface invariant message")?))
     }
 }
 

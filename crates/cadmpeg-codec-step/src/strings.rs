@@ -23,34 +23,41 @@ pub(crate) enum StringDecodeFailure {
     Resource(CodecError),
 }
 
+impl From<CodecError> for StringDecodeFailure {
+    fn from(error: CodecError) -> Self { Self::Resource(error) }
+}
+
+impl From<StringError> for StringDecodeFailure {
+    fn from(error: StringError) -> Self { Self::Invalid(error) }
+}
+
 pub(crate) fn decode_with_context(
     input: &[u8],
     level: ImplementationLevel,
     ctx: &DecodeContext<'_>,
 ) -> Result<String, StringDecodeFailure> {
-    let len = decoded_len(input, level).map_err(StringDecodeFailure::Invalid)?;
+    let len = decoded_len(ctx, input, level)?;
     let operation = "step_string_text";
     let mut output = ctx
         .retained_string(len, operation)
         .map_err(StringDecodeFailure::Resource)?;
 
-    decode_chars(input, level, |character| output.push(character))
-        .map_err(StringDecodeFailure::Invalid)?;
+    decode_chars(ctx, input, level, |character| output.push(character))?;
     Ok(output)
 }
 
-fn decoded_len(input: &[u8], level: ImplementationLevel) -> Result<usize, StringError> {
+fn decoded_len(ctx: &DecodeContext<'_>, input: &[u8], level: ImplementationLevel) -> Result<usize, StringDecodeFailure> {
     // One source byte expands to at most two UTF-8 bytes, so this sum fits usize.
     let mut len = 0usize;
-    decode_chars(input, level, |character| len += character.len_utf8())?;
+    decode_chars(ctx, input, level, |character| len += character.len_utf8())?;
     Ok(len)
 }
 
-fn decode_chars(
+fn decode_chars(ctx: &DecodeContext<'_>, 
     input: &[u8],
     level: ImplementationLevel,
     mut emit: impl FnMut(char),
-) -> Result<(), StringError> {
+) -> Result<(), StringDecodeFailure> {
     let mut at = 0;
     let mut page = b'A';
     while at < input.len() {
@@ -73,38 +80,38 @@ fn decode_chars(
                 if !matches!(input.get(at + 2), Some(b'A'..=b'I'))
                     || input.get(at + 3) != Some(&b'\\')
                 {
-                    return error(at, "invalid page-selection escape");
+                    return error(ctx, at, "invalid page-selection escape");
                 }
                 page = input[at + 2];
                 at += 4;
             }
             b'\\' if input.get(at + 1) == Some(&b'S') => {
                 if input.get(at + 2) != Some(&b'\\') {
-                    return error(at, "invalid S escape");
+                    return error(ctx, at, "invalid S escape");
                 }
                 let Some(&code) = input.get(at + 3) else {
-                    return error(at, "truncated S escape");
+                    return error(ctx, at, "truncated S escape");
                 };
-                emit(decode_page_byte(page, code | 0x80, at)?);
+                emit(decode_page_byte(ctx, page, code | 0x80, at)?);
                 at += 4;
             }
             b'\\' if input.get(at + 1) == Some(&b'X') => match input.get(at + 2) {
                 Some(b'\\') => {
-                    let byte = hex_byte(input, at + 3)?;
+                    let byte = hex_byte(ctx, input, at + 3)?;
                     emit(char::from(byte));
                     at += 5;
                 }
                 Some(b'2') if input.get(at + 3) == Some(&b'\\') => {
-                    at = decode_wide(input, at + 4, 4, &mut emit)?;
+                    at = decode_wide(ctx, input, at + 4, 4, &mut emit)?;
                 }
                 Some(b'4') if input.get(at + 3) == Some(&b'\\') => {
-                    at = decode_wide(input, at + 4, 8, &mut emit)?;
+                    at = decode_wide(ctx, input, at + 4, 8, &mut emit)?;
                 }
-                _ => return error(at, "invalid X escape"),
+                _ => return error(ctx, at, "invalid X escape"),
             },
-            b'\'' => return error(at, "unpaired apostrophe"),
+            b'\'' => return error(ctx, at, "unpaired apostrophe"),
             byte if byte.is_ascii_control() => at += 1,
-            b'\\' => return error(at, "unknown reverse-solidus escape"),
+            b'\\' => return error(ctx, at, "unknown reverse-solidus escape"),
             _ => {
                 let start = at;
                 while at < input.len() && !matches!(input[at], b'\'' | b'\\') {
@@ -130,7 +137,7 @@ fn decode_chars(
     Ok(())
 }
 
-fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringError> {
+fn decode_page_byte(ctx: &DecodeContext<'_>, page: u8, byte: u8, offset: usize) -> Result<char, StringDecodeFailure> {
     let part = page - b'A' + 1;
     if byte < 0xa0 || part == 1 {
         return Ok(char::from(byte));
@@ -155,7 +162,7 @@ fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringErr
     let bytes = [byte];
     let (decoded, had_errors) = encoding.decode_without_bom_handling(&bytes);
     if had_errors {
-        return error(
+        return error(ctx, 
             offset,
             "S escape is undefined in the selected ISO 8859 part",
         );
@@ -163,7 +170,7 @@ fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringErr
     decoded.chars().next().ok_or_else(|| StringError {
         offset,
         message: "S escape decoded to no character".into(),
-    })
+    }).map_err(StringDecodeFailure::Invalid)
 }
 
 /// Encode text as bytes suitable between Part 21 apostrophe delimiters.
@@ -197,21 +204,21 @@ fn push_hex_digits(output: &mut String, bytes: &[u8]) {
     }
 }
 
-fn decode_wide(
+fn decode_wide(ctx: &DecodeContext<'_>, 
     input: &[u8],
     start: usize,
     width: usize,
     emit: &mut impl FnMut(char),
-) -> Result<usize, StringError> {
+) -> Result<usize, StringDecodeFailure> {
     let Some(relative_end) = input[start..]
         .windows(4)
         .position(|bytes| bytes == b"\\X0\\")
     else {
-        return error(start, "unterminated wide escape");
+        return error(ctx, start, "unterminated wide escape");
     };
     let end = start + relative_end;
     if !(end - start).is_multiple_of(width) {
-        return error(start, "wide escape has incomplete code unit");
+        return error(ctx, start, "wide escape has incomplete code unit");
     }
     let mut high_surrogate = None;
     for offset in (start..end).step_by(width) {
@@ -224,31 +231,31 @@ fn decode_wide(
             })?;
         if width == 4 {
             let Ok(unit) = u16::try_from(raw) else {
-                return error(offset, "wide escape contains non-hexadecimal digits");
+                return error(ctx, offset, "wide escape contains non-hexadecimal digits");
             };
             match unit {
                 0xd800..=0xdbff => {
                     if high_surrogate.replace(unit).is_some() {
-                        return error(start, "wide escape contains an isolated surrogate");
+                        return error(ctx, start, "wide escape contains an isolated surrogate");
                     }
                 }
                 0xdc00..=0xdfff => {
                     let Some(high) = high_surrogate.take() else {
-                        return error(start, "wide escape contains an isolated surrogate");
+                        return error(ctx, start, "wide escape contains an isolated surrogate");
                     };
                     let scalar =
                         0x10000 + ((u32::from(high) - 0xd800) << 10) + (u32::from(unit) - 0xdc00);
                     let Some(character) = char::from_u32(scalar) else {
-                        return error(start, "wide escape contains an isolated surrogate");
+                        return error(ctx, start, "wide escape contains an isolated surrogate");
                     };
                     emit(character);
                 }
                 _ => {
                     if high_surrogate.is_some() {
-                        return error(start, "wide escape contains an isolated surrogate");
+                        return error(ctx, start, "wide escape contains an isolated surrogate");
                     }
                     let Some(character) = char::from_u32(u32::from(unit)) else {
-                        return error(start, "wide escape contains an isolated surrogate");
+                        return error(ctx, start, "wide escape contains an isolated surrogate");
                     };
                     emit(character);
                 }
@@ -262,14 +269,14 @@ fn decode_wide(
         }
     }
     if high_surrogate.is_some() {
-        return error(start, "wide escape contains an isolated surrogate");
+        return error(ctx, start, "wide escape contains an isolated surrogate");
     }
     Ok(end + 4)
 }
 
-fn hex_byte(input: &[u8], offset: usize) -> Result<u8, StringError> {
+fn hex_byte(ctx: &DecodeContext<'_>, input: &[u8], offset: usize) -> Result<u8, StringDecodeFailure> {
     let Some(bytes) = input.get(offset..offset + 2) else {
-        return error(offset, "truncated byte escape");
+        return error(ctx, offset, "truncated byte escape");
     };
     std::str::from_utf8(bytes)
         .ok()
@@ -277,14 +284,14 @@ fn hex_byte(input: &[u8], offset: usize) -> Result<u8, StringError> {
         .ok_or_else(|| StringError {
             offset,
             message: "byte escape contains non-hexadecimal digits".into(),
-        })
+        }).map_err(StringDecodeFailure::Invalid)
 }
 
-fn error<T>(offset: usize, message: &str) -> Result<T, StringError> {
-    Err(StringError {
+fn error<T>(ctx: &DecodeContext<'_>, offset: usize, message: &str) -> Result<T, StringDecodeFailure> {
+    Err(StringDecodeFailure::Invalid(StringError {
         offset,
-        message: message.into(),
-    })
+        message: ctx.copy_retained_text(message, "STEP string error message")?,
+    }))
 }
 
 #[cfg(test)]

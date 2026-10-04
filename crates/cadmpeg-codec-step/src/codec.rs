@@ -121,7 +121,7 @@ impl CodecBackend for StepCodec {
         if archive::has_zip_magic(bytes) {
             return decode_zip(ctx, root);
         }
-        refuse_alternate_encoding(bytes)?;
+        refuse_alternate_encoding(ctx, bytes)?;
         if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
@@ -174,7 +174,7 @@ fn inspect_exchange(
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<InspectedExchange, CodecError> {
     let bytes = root.window();
-    refuse_alternate_encoding(bytes)?;
+    refuse_alternate_encoding(ctx, bytes)?;
     if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
@@ -447,7 +447,7 @@ fn inspect_zip(
         data_start: root_data_offset,
     } = archive::open_root(ctx, root)?;
     let root_bytes = root_view.window();
-    refuse_alternate_encoding(root_bytes)?;
+    refuse_alternate_encoding(ctx, root_bytes)?;
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }

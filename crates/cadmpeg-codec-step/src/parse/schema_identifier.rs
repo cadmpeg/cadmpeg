@@ -54,15 +54,15 @@ enum AdmittedSchemaState {
 
 impl AdmittedSchemaIdentifier {
     /// Admit one decoded identifier, or reject it.
-    pub(super) fn admit(identifier: String) -> Option<Self> {
+    pub(super) fn admit(ctx: &DecodeContext<'_>, identifier: String) -> Result<Option<Self>, CodecError> {
         let out_of_range = match schema_identifier_form(&identifier) {
             SchemaIdentifierForm::Valid => None,
             SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component } => {
-                Some((name.to_owned(), component.to_owned()))
+                Some((ctx.copy_retained_text(name, "STEP admit text copy")?, ctx.copy_retained_text(component, "STEP admit text copy")?))
             }
-            SchemaIdentifierForm::Invalid => return None,
+            SchemaIdentifierForm::Invalid => return Ok(None),
         };
-        Some(Self {
+        Ok(Some(Self {
             state: match out_of_range {
                 None => AdmittedSchemaState::Valid { text: identifier },
                 Some((name, component)) => AdmittedSchemaState::ObjectIdentifierOutOfRange {
@@ -71,7 +71,7 @@ impl AdmittedSchemaIdentifier {
                     component,
                 },
             },
-        })
+        }))
     }
 
     /// The decoded identifier text, as the source states it.

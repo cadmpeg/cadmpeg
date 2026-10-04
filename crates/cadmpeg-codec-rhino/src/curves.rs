@@ -927,7 +927,7 @@ fn insert_knot_once(
     let k = knots
         .iter()
         .rposition(|knot| *knot <= value)
-        .ok_or_else(|| error(offset, failure))?;
+        .map_or_else(|| Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?)), Ok)?;
     let k = if degree == 0 { k.min(n) } else { k };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
     if multiplicity > degree
@@ -935,13 +935,13 @@ fn insert_knot_once(
         || k - degree > n
         || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
     {
-        return Err(error(offset, failure));
+        return Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?));
     }
     let mut output = ctx.alloc_filled(
         points
             .len()
             .checked_add(1)
-            .ok_or_else(|| error(offset, failure))?,
+            .map_or_else(|| Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?)), Ok)?,
         points[0],
         "Rhino polycurve knot insertion points",
     )?;
@@ -950,7 +950,7 @@ fn insert_knot_once(
     for index in k - degree + 1..=k - multiplicity {
         let denominator = knots[index + degree] - knots[index];
         if denominator <= 0.0 || !denominator.is_finite() {
-            return Err(error(offset, failure));
+            return Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?));
         }
         let alpha = (value - knots[index]) / denominator;
         output[index] = points[index - 1].blend(points[index], alpha);

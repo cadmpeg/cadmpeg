@@ -467,3 +467,13 @@ fn real_lexeme_preserves_finite_bits() {
         assert_eq!(real.get().to_bits(), number.to_bits());
     }
 }
+
+#[test]
+fn lexer_error_message_copy_refusal_reaches_codec_result() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let error = lex_under_policy(b"?", policy, false).expect_err("error message has no retained storage");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "STEP lexer error message"));
+}

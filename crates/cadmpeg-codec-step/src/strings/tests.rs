@@ -410,3 +410,18 @@ fn legacy_direct_single_byte_text_uses_cadir_iso_8859_1_salvage() {
         .expect("product definition");
     assert_eq!(product.part_number.as_deref(), Some("Pé"));
 }
+
+#[test]
+fn string_error_message_copy_refusal_stays_resource() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let result = crate::test_support::with_policy_context(b"\\Q\\", &policy, |input, ctx| {
+        crate::strings::decode_with_context(input, crate::parse::implementation_level::ImplementationLevel::LegacyEdition1, ctx)
+    });
+    assert!(matches!(result, Err(crate::strings::StringDecodeFailure::Resource(CodecError::ResourceLimit(limit)))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "STEP string error message"));
+}
