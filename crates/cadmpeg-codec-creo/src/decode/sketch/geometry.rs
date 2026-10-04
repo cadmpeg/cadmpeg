@@ -237,43 +237,41 @@ pub(in crate::decode) fn section_segment_geometry(
 }
 
 pub(in crate::decode) fn saved_section_line_geometry(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    matches!(
-        segment.kind,
-        crate::feature::definitions::FeatureSegmentKind::Line(_)
-    )
-    .then_some(())?;
-    saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
-    let order_table = definition.order_table.as_ref()?;
-    let internal_id = order_table
-        .internal_id(segment.external_id)
-        .or_else(|| {
+) -> Result<Option<SketchGeometry>, CodecError> {
+    let Some(order_table) = (|| {
+        matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)).then_some(())?;
+        saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
+        definition.order_table.as_ref()
+    })() else { return Ok(None); };
+    let mut internal_id = order_table.internal_id(ctx, segment.external_id)?;
+    if internal_id.is_none() {
+        let interpolation = (|| {
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
-            let position = segment_table
-                .rows
-                .ordinary()
-                .position(|candidate| candidate.external_id == segment.external_id)?;
-            let previous = segment_table
-                .rows
-                .ordinary()
-                .take(position)
-                .filter_map(|candidate| order_table.internal_id(candidate.external_id))
-                .last()?;
-            let next = segment_table
-                .rows
-                .ordinary()
-                .skip(position + 1)
-                .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
-            let internal_id = previous.checked_add(1)?;
-            (next == internal_id.checked_add(1)?
-                && semantic_saved_section_entities(definition).any(|entity| {
+            let position = segment_table.rows.ordinary().position(|candidate| candidate.external_id == segment.external_id)?;
+            Some((segment_table, position))
+        })();
+        if let Some((segment_table, position)) = interpolation {
+            let mut previous = None;
+            for candidate in segment_table.rows.ordinary().take(position) {
+                if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? { previous = Some(id); }
+            }
+            let mut next = None;
+            for candidate in segment_table.rows.ordinary().skip(position + 1) {
+                if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? { next = Some(id); break; }
+            }
+            internal_id = (|| {
+                let internal_id = previous?.checked_add(1)?;
+                (next? == internal_id.checked_add(1)? && semantic_saved_section_entities(definition).any(|entity| {
                     matches!(entity, crate::feature::definitions::FeatureSavedEntity::Line(line) if line.entity_id == internal_id)
-                }))
-            .then_some(internal_id)
-        })
+                })).then_some(internal_id)
+            })();
+        }
+    }
+    let internal_id = internal_id
         .or_else(|| {
             order_table.is_complete().then_some(())?;
             let trimmed = definition.trim_entities.as_ref()?;
@@ -300,6 +298,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
                 }))?;
             (external_id == segment.external_id).then_some(internal_id)
         });
+    Ok((|| {
     let internal_id = internal_id?;
     saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
     let line = semantic_saved_section_entities(definition).find_map(|entity| match entity {
@@ -317,23 +316,21 @@ pub(in crate::decode) fn saved_section_line_geometry(
         start: cadmpeg_ir::math::Point2::new(start_u, start_v),
         end: cadmpeg_ir::math::Point2::new(end_u, end_v),
     })
-    .ok()
+    .ok()    })())
 }
 
 pub(super) fn saved_section_arc_record<'a>(
+    ctx: &DecodeContext<'_>,
     definition: &'a crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<&'a crate::feature::definitions::FeatureSavedArc> {
-    (matches!(
-        segment.kind,
-        crate::feature::definitions::FeatureSegmentKind::Arc(_)
-    ) && segment.arc_orientation == Some(0))
-    .then_some(())?;
-    saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
-    let internal_id = definition
-        .order_table
-        .as_ref()?
-        .internal_id(segment.external_id)?;
+) -> Result<Option<&'a crate::feature::definitions::FeatureSavedArc>, CodecError> {
+    let Some(order) = (|| {
+        (matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_)) && segment.arc_orientation == Some(0)).then_some(())?;
+        saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
+        definition.order_table.as_ref()
+    })() else { return Ok(None); };
+    let Some(internal_id) = order.internal_id(ctx, segment.external_id)? else { return Ok(None); };
+    Ok((|| {
     saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
     semantic_saved_section_entities(definition).find_map(|entity| match entity {
         crate::feature::definitions::FeatureSavedEntity::Arc(arc)
@@ -343,6 +340,7 @@ pub(super) fn saved_section_arc_record<'a>(
         }
         _ => None,
     })
+    })())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -366,10 +364,12 @@ impl SectionArcCarrier {
 }
 
 pub(in crate::decode) fn saved_section_arc_carrier(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SectionArcCarrier> {
-    let arc = saved_section_arc_record(definition, segment)?;
+) -> Result<Option<SectionArcCarrier>, CodecError> {
+    let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else { return Ok(None); };
+    Ok((|| {
     let [center_u, center_v, _] = arc.center;
     if let ([Some(center_u), Some(center_v)], Some(radius)) = (
         [center_u, center_v],
@@ -426,6 +426,7 @@ pub(in crate::decode) fn saved_section_arc_carrier(
     }
     let radius = arc.radius.unwrap_or(first_radius);
     SectionArcCarrier::new([center_u, center_v], radius)
+    })())
 }
 
 /// The arc facts recovered from a saved-section row.
@@ -450,11 +451,13 @@ impl SavedSectionArc {
 }
 
 pub(in crate::decode) fn saved_section_arc(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SavedSectionArc> {
-    let arc = saved_section_arc_record(definition, segment)?;
-    let carrier = saved_section_arc_carrier(definition, segment)?;
+) -> Result<Option<SavedSectionArc>, CodecError> {
+    let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else { return Ok(None); };
+    let Some(carrier) = saved_section_arc_carrier(ctx, definition, segment)? else { return Ok(None); };
+    Ok((|| {
     let ([center_u, center_v], radius) = carrier.raw();
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
     else {
@@ -483,16 +486,18 @@ pub(in crate::decode) fn saved_section_arc(
         start_angle: Angle::new(start)?,
         end_angle: Angle::new(end)?,
     })
+    })())
 }
 
 pub(in crate::decode) fn saved_section_segment_point_coordinates(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<impl Iterator<Item = (u32, [f64; 2])>> {
+) -> Result<Option<impl Iterator<Item = (u32, [f64; 2])>>, CodecError> {
     let coordinates = match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
-            let geometry = saved_section_line_geometry(definition, segment)?;
-            let [start, end] = saved_geometry_endpoints(&geometry)?;
+            let Some(geometry) = saved_section_line_geometry(ctx, definition, segment)? else { return Ok(None); };
+            let Some([start, end]) = saved_geometry_endpoints(&geometry) else { return Ok(None); };
             Some([
                 Some((segment.point_ids()[0], start)),
                 Some((segment.point_ids()[1], end)),
@@ -500,36 +505,40 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
-            let center = *saved_section_arc(definition, segment)?.center.as_raw();
-            let arc = saved_section_arc_record(definition, segment)?;
+            let Some(saved_arc) = saved_section_arc(ctx, definition, segment)? else { return Ok(None); };
+            let center = *saved_arc.center.as_raw();
+            let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else { return Ok(None); };
             let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
                 arc.endpoints
             else {
-                return None;
+                return Ok(None);
             };
+            let Some(center_id) = segment.center_id else { return Ok(None); };
             Some([
                 Some((segment.point_ids()[0], [first_u, first_v])),
                 Some((segment.point_ids()[1], [second_u, second_v])),
-                Some((segment.center_id?, [center.u, center.v])),
+                Some((center_id, [center.u, center.v])),
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
     };
-    coordinates.map(|points| points.into_iter().flatten())
+    Ok(coordinates.map(|points| points.into_iter().flatten()))
 }
 
 pub(in crate::decode) fn saved_section_circle_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureCircleSegment,
-) -> Option<([f64; 2], f64)> {
-    let segments = definition.segments.as_ref()?;
-    segments.rows.get(segment.external_id)?;
-    let entity = section_saved_entity(definition, segment.external_id)?;
+) -> Result<Option<([f64; 2], f64)>, CodecError> {
+    if definition.segments.as_ref().and_then(|segments| segments.rows.get(segment.external_id)).is_none() { return Ok(None); }
+    let Some(entity) = section_saved_entity(ctx, definition, segment.external_id)? else { return Ok(None); };
+    Ok((|| {
     let (_, geometry, _) = saved_section_entity_geometry(entity)?;
     let SketchGeometryDefinition::Circle { center, radius } = geometry.definition() else {
         return None;
     };
     Some(([center.u, center.v], radius.get()))
+    })())
 }
 
 pub(in crate::decode) fn saved_section_entity_geometry(
@@ -784,17 +793,16 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
             "creo missing-line trimmed ID nodes",
         )?;
     }
-    let Some(missing) =
-        crate::decode::uniqueness::exactly_one(segments.rows.ordinary().filter(|candidate| {
-            matches!(
-                candidate.kind,
-                crate::feature::definitions::FeatureSegmentKind::Line(_)
-            ) && order.internal_id(candidate.external_id).is_none()
-                && trimmed_external_ids.contains(&candidate.external_id)
-        }))
-    else {
-        return Ok(None);
-    };
+    let mut missing = None;
+    for candidate in segments.rows.ordinary() {
+        if matches!(candidate.kind, crate::feature::definitions::FeatureSegmentKind::Line(_))
+            && order.internal_id(ctx, candidate.external_id)?.is_none()
+            && trimmed_external_ids.contains(&candidate.external_id) {
+            if missing.is_some() { return Ok(None); }
+            missing = Some(candidate);
+        }
+    }
+    let Some(missing) = missing else { return Ok(None); };
     let Some(fixed_coordinate) = missing
         .vertical_horizontal
         .and_then(SectionAxis::from_selector)
@@ -1015,29 +1023,33 @@ pub(in crate::decode) fn resolved_section_segment_geometry(
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
-    Ok(resolved_section_segment_geometry_with_missing_line(
+    resolved_section_segment_geometry_with_missing_line(
+        ctx,
         definition,
         points,
         segment,
         missing_line.as_ref(),
-    ))
+    )
 }
 
 pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, CodecError> {
     let stored = section_segment_geometry(points, segment);
-    let saved = saved_section_line_geometry(definition, segment)
-        .or_else(|| saved_section_arc(definition, segment).and_then(SavedSectionArc::into_geometry))
+    let saved = match saved_section_line_geometry(ctx, definition, segment)? {
+        Some(geometry) => Some(geometry),
+        None => saved_section_arc(ctx, definition, segment)?.and_then(SavedSectionArc::into_geometry),
+    }
         .or_else(|| {
             missing_line
                 .filter(|(offset, _)| *offset == segment.offset)
                 .map(|(_, geometry)| geometry.clone())
         });
-    match (stored, saved) {
+    Ok(match (stored, saved) {
         (Some(stored), Some(saved)) => {
             let agree = match (stored.definition(), saved.definition()) {
                 (
@@ -1091,7 +1103,7 @@ pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
         }
         (Some(geometry), None) | (None, Some(geometry)) => Some(geometry),
         (None, None) => None,
-    }
+    })
 }
 
 #[cfg(test)]

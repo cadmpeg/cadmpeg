@@ -223,12 +223,12 @@ pub(in super::super) fn transfer_sketches(
             ctx.insert_btree_map(
                 &mut resolved_segment_geometries,
                 segment.offset,
-                resolved_section_segment_geometry_with_missing_line(
+                resolved_section_segment_geometry_with_missing_line(ctx,
                     definition,
                     &points,
                     segment,
                     missing_line_geometry.as_ref(),
-                ),
+                )?,
                 "creo resolved section geometry nodes",
             )?;
         }
@@ -625,7 +625,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             ctx.charge_entities(1, "admit Creo model sketch_entities")?;
             ctx.reserve_vec(&mut entities, 1, "creo solver-only sketch entities")?;
-            let native_kind = match solver_only_section_entity_family(definition, external_id) {
+            let native_kind = match solver_only_section_entity_family(ctx, definition, external_id)? {
                 Some(SectionEntityIncidenceFamily::Point) => "point",
                 Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
                 Some(SectionEntityIncidenceFamily::LineOrArc) => "line_or_arc",

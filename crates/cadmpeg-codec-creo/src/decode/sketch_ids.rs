@@ -215,10 +215,8 @@ pub(super) fn feature_definition_record_id(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<String, CodecError> {
-    if scan
-        .features
-        .definitions
-        .iter()
+    if ctx
+        .admit_iter(&scan.features.definitions, "creo feature definition identity count")?
         .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
@@ -248,13 +246,8 @@ pub(super) fn feature_sketch_record_id_in_scan(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<String, CodecError> {
-    let count = u64::try_from(scan.features.definitions.len())
-        .map_err(|_| CodecError::malformed("Creo feature definition count exceeds u64"))?;
-    ctx.charge_work(count, "creo native sketch identity uniqueness")?;
-    if scan
-        .features
-        .definitions
-        .iter()
+    if ctx
+        .admit_iter(&scan.features.definitions, "creo native sketch identity uniqueness")?
         .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
@@ -278,13 +271,8 @@ pub(super) fn model_sketch_id(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<Option<SketchId>, CodecError> {
-    let count = u64::try_from(scan.features.definitions.len())
-        .map_err(|_| CodecError::malformed("Creo feature definition count exceeds u64"))?;
-    ctx.charge_work(count, "creo model sketch identity uniqueness")?;
-    let ambiguous = scan
-        .features
-        .definitions
-        .iter()
+    let ambiguous = ctx
+        .admit_iter(&scan.features.definitions, "creo model sketch identity uniqueness")?
         .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1

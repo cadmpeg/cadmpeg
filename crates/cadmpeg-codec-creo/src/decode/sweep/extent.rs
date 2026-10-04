@@ -1054,7 +1054,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|row| row.feature_id == feature_id)
     };
-    if rows().count() < 4 || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane) {
+    if ctx.admit_iter(&scan.surfaces.rows, "creo rectilinear source row count")?
+        .filter(|row| row.feature_id == feature_id).count() < 4
+        || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane) {
         return Ok(None);
     }
 
@@ -1150,8 +1152,8 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         }
     }
     if !(families.len() >= 2
-        && families
-            .iter()
+        && ctx
+            .admit_iter(&families, "creo rectilinear family count")?
             .filter(|family| family.stations.len() >= 2)
             .count()
             >= 2)

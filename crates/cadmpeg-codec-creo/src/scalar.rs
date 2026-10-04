@@ -1366,8 +1366,10 @@ pub(crate) fn decode_plane_support_local_system(
     let Some((values, cursor, layout)) = primary else {
         return Ok(None);
     };
-    let primary_frame = finite_local_system_slots(values)
-        .filter(|frame| plane_support_values_have_valid_frame(frame.as_raw(), layout));
+    let primary_frame = match finite_local_system_slots(values) {
+        Some(frame) if plane_support_values_have_valid_frame(ctx, frame.as_raw(), layout)? => Some(frame),
+        _ => None,
+    };
     if let Some(frame) = primary_frame {
         return Ok((cursor == body.len()).then_some((frame, layout)));
     }
@@ -1411,26 +1413,26 @@ pub(crate) fn decode_plane_support_local_system(
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
 
 fn plane_support_values_have_valid_frame(
+    ctx: &DecodeContext<'_>,
     values: &[f64; 12],
     layout: PlaneSupportFrameLayout,
-) -> bool {
+) -> Result<bool, CodecError> {
     if matches!(layout, PlaneSupportFrameLayout::MatrixColumns) {
         let first = [values[0], values[3], values[6]];
         let second = [values[2], values[5], values[8]];
-        return valid_equal_scale_orthogonal_directions(first, second);
+        return Ok(valid_equal_scale_orthogonal_directions(first, second));
     }
     let supports = [
         [values[0], values[1], values[2]],
         [values[3], values[4], values[5]],
         [values[6], values[7], values[8]],
     ];
-    [(0, 1), (0, 2), (1, 2)]
-        .into_iter()
+    Ok(ctx.admit_iter(&[(0usize, 1usize), (0, 2), (1, 2)], "creo plane support frame pair count")?
         .filter(|(first, second)| {
             valid_equal_scale_orthogonal_directions(supports[*first], supports[*second])
         })
         .count()
-        == 1
+        == 1)
 }
 
 fn plane_support_coordinate_variants(
@@ -1504,7 +1506,7 @@ fn decode_plane_support_lane_variants(
             };
             let layout = plane_support_layout(values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
-                && plane_support_values_have_valid_frame(values, layout)
+                && plane_support_values_have_valid_frame(ctx, values, layout)?
                 && !results[..*count]
                     .iter()
                     .flatten()

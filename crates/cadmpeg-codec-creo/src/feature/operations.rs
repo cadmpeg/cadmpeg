@@ -793,8 +793,8 @@ pub(crate) fn operations(
     }
     let mut current = Vec::new();
     for states in by_feature.into_values() {
-        let display_count = states
-            .iter()
+        let display_count = ctx
+            .admit_iter(&states, "creo operation display name count")?
             .filter(|state| state.display_name_stored())
             .count();
         let projection = match display_count {

@@ -679,7 +679,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         for (internal_id, section_geometry, offset) in
             semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
         {
-            let Some(external_id) = order_table.external_id(internal_id) else {
+            let Some(external_id) = order_table.external_id(ctx, internal_id)? else {
                 continue;
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(
@@ -751,24 +751,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
-            .filter_map(|spline| {
-                let internal_id = spline.entity_id?;
-                let external_id = order_table.external_id(internal_id)?;
-                let surface_id = generated_surface_id_for_feature(
-                    &scan.features.entity_tables,
-                    feature_id,
-                    external_id,
-                )?;
-                unique_feature_surface_row(
-                    &scan.surfaces.rows,
-                    surface_id,
-                    feature_id,
-                    crate::surface::SurfaceKind::Extrusion(
-                        crate::surface::ExtrusionVariant::Linear,
-                    ),
-                )
-                .then_some((surface_id, internal_id, spline))
-            });
+;
         let Some(span) =
             resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
@@ -778,7 +761,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        for (native_surface_id, internal_id, spline) in splines {
+        for spline in splines {
+            let Some(internal_id) = spline.entity_id else { continue; };
+            let Some(external_id) = order_table.external_id(ctx, internal_id)? else { continue; };
+            let Some(native_surface_id) = generated_surface_id_for_feature(&scan.features.entity_tables, feature_id, external_id) else { continue; };
+            if !unique_feature_surface_row(&scan.surfaces.rows, native_surface_id, feature_id,
+                crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)) { continue; }
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
                 let records = refusal.take_records_checked()?;

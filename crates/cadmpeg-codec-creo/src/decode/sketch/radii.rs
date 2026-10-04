@@ -76,7 +76,7 @@ pub(in crate::decode) fn resolved_section_radii(
         .iter()
         .flat_map(|table| table.rows.circles())
     {
-        if let Some((_, radius)) = saved_section_circle_values(definition, segment) {
+        if let Some((_, radius)) = saved_section_circle_values(ctx, definition, segment)? {
             append_radius_candidate(ctx, &mut candidates, segment.radius_ref, radius)?;
         }
     }
@@ -300,10 +300,10 @@ pub(in crate::decode) fn resolved_section_radii(
         if skamp.kind != 6 || first.sense != 0 || second.sense != 0 {
             continue;
         }
-        let Some(first_radius) = section_skamp_radius_source(definition, first) else {
+        let Some(first_radius) = section_skamp_radius_source(ctx, definition, first)? else {
             continue;
         };
-        let Some(second_radius) = section_skamp_radius_source(definition, second) else {
+        let Some(second_radius) = section_skamp_radius_source(ctx, definition, second)? else {
             continue;
         };
         match (first_radius, second_radius) {
@@ -466,30 +466,31 @@ enum SectionRadiusSource {
 }
 
 fn section_skamp_radius_source(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SectionRadiusSource> {
+) -> Result<Option<SectionRadiusSource>, cadmpeg_core::CodecError> {
     if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
-        return Some(SectionRadiusSource::Reference(circle.radius_ref));
+        return Ok(Some(SectionRadiusSource::Reference(circle.radius_ref)));
     }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return matches!(
+        return Ok(matches!(
             segment.kind,
             crate::feature::definitions::FeatureSegmentKind::Arc(_)
         )
         .then_some(segment.radius_ref)
         .flatten()
-        .map(SectionRadiusSource::Reference);
+        .map(SectionRadiusSource::Reference));
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return None;
+        return Ok(None);
     }
-    let radius = match section_saved_entity(definition, item.entity_id)? {
+    let radius = match match match section_saved_entity(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) } {
         crate::feature::definitions::FeatureSavedEntity::Arc(arc) => arc.radius,
         crate::feature::definitions::FeatureSavedEntity::Circle(circle) => circle.radius,
         _ => None,
-    }?;
-    PositiveLength::new(radius).map(SectionRadiusSource::Value)
+    } { Some(value) => value, None => return Ok(None) };
+    Ok(PositiveLength::new(radius).map(SectionRadiusSource::Value))
 }
 
 pub(super) fn section_arc_carrier(
@@ -639,12 +640,12 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-    if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
+    if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(ctx,
         definition,
         points,
         segment,
         missing_line,
-    ) {
+    )? {
         return Ok(Some(geometry));
     }
     if let Some(geometry) =
@@ -652,9 +653,12 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
     {
         return Ok(Some(geometry));
     }
+    let carrier = match section_arc_carrier(radii, points, segment) {
+        Some(carrier) => Some(carrier),
+        None => saved_section_arc_carrier(ctx, definition, segment)?,
+    };
     Ok((|| {
-        let carrier = section_arc_carrier(radii, points, segment)
-            .or_else(|| saved_section_arc_carrier(definition, segment))?;
+        let carrier = carrier?;
         SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
             center: carrier.center,
             radius: carrier.radius,
@@ -1153,13 +1157,13 @@ mod tests {
             std::collections::BTreeMap::from([(42, 3.0)])
         );
         assert!(matches!(
-            section_skamp_radius_source(
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_radius_source(ctx, 
                 &definition,
                 &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 10,
                     sense: 0,
                 },
-            ),
+            )).expect("admitted section lookup"),
             Some(SectionRadiusSource::Reference(42))
         ));
     }

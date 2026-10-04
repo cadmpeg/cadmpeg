@@ -262,15 +262,16 @@ pub(in super::super) fn section_generated_profile_surface_kinds(
 }
 
 pub(in super::super) fn ordered_analytic_surface_id_for_feature(
+    ctx: &DecodeContext<'_>,
     surface_rows: &[crate::surface::SurfaceRow],
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
     order: &crate::feature::definitions::FeatureOrderTable,
     external_id: u32,
     geometry: &SurfaceGeometry,
-) -> Option<u32> {
-    order.internal_id(external_id)?;
-    analytic_surface_id_for_feature(surface_rows, tables, feature_id, external_id, geometry)
+) -> Result<Option<u32>, CodecError> {
+    if order.internal_id(ctx, external_id)?.is_none() { return Ok(None); }
+    Ok(analytic_surface_id_for_feature(surface_rows, tables, feature_id, external_id, geometry))
 }
 
 pub(in super::super) fn analytic_surface_id_for_feature(
@@ -299,7 +300,7 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
     let mut bindings = BTreeMap::new();
     let mut bound_surfaces = BTreeSet::new();
     for external_id in external_ids {
-        if order.internal_id(external_id).is_none() {
+        if order.internal_id(ctx, external_id)?.is_none() {
             return Ok(BTreeMap::new());
         }
         let Some(surface_id) = generated_surface_id_for_feature(tables, feature_id, external_id)

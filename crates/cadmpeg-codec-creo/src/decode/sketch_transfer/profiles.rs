@@ -432,20 +432,21 @@ impl FromIterator<SectionEntityIncidenceFamily> for IncidenceEvidence {
 }
 
 fn section_skamp_has_proven_point_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     if item.sense == 0 {
-        return unique_point_segment(definition, item.entity_id).is_some()
+        return Ok(unique_point_segment(definition, item.entity_id).is_some()
             || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
                 matches!(
                     segment.kind,
                     crate::feature::definitions::FeatureSegmentKind::Point(_)
                 ) && !section_degenerate_axis_line(definition, segment)
-            });
+            }));
     }
     let solver_family =
-        section_incidence_curve_family_evidence_without_type35(definition, item.entity_id);
+        section_incidence_curve_family_evidence_without_type35(ctx, definition, item.entity_id)?;
     if solver_family.len() == 1
         && ((solver_family.contains(SectionEntityIncidenceFamily::BoundedCurve)
             || solver_family.contains(SectionEntityIncidenceFamily::Line)
@@ -455,10 +456,10 @@ fn section_skamp_has_proven_point_locus(
                 || solver_family.contains(SectionEntityIncidenceFamily::Circular))
                 && matches!(item.sense, 2..=4))
     {
-        return true;
+        return Ok(true);
     }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return matches!(
+        return Ok(matches!(
             (segment.kind, item.sense),
             (
                 crate::feature::definitions::FeatureSegmentKind::Line(_),
@@ -467,29 +468,29 @@ fn section_skamp_has_proven_point_locus(
                 crate::feature::definitions::FeatureSegmentKind::Arc(_),
                 2..=4
             )
-        );
+        ));
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
-        return matches!(item.sense, 2..=4);
+        return Ok(matches!(item.sense, 2..=4));
     }
     if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
-        return match item.sense {
+        return Ok(match item.sense {
             2 => segment.point_ids[0].is_some(),
             3 => segment.point_ids[1].is_some(),
             _ => false,
-        };
+        });
     }
     if unique_bounded_curve_segment(definition, item.entity_id).is_some() {
-        return matches!(item.sense, 2 | 3);
+        return Ok(matches!(item.sense, 2 | 3));
     }
     if unique_circle_segment(definition, item.entity_id).is_some() {
-        return item.sense == 4;
+        return Ok(item.sense == 4);
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return false;
+        return Ok(false);
     }
-    matches!(
-        (section_saved_entity(definition, item.entity_id), item.sense),
+    Ok(matches!(
+        (section_saved_entity(ctx, definition, item.entity_id)?, item.sense),
         (
             Some(crate::feature::definitions::FeatureSavedEntity::Line(_)),
             2 | 3
@@ -503,14 +504,16 @@ fn section_skamp_has_proven_point_locus(
             ),
             4,
         )
-    )
+    ))
 }
 
 fn section_incidence_curve_family_evidence(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> IncidenceEvidence {
+) -> Result<IncidenceEvidence, cadmpeg_core::CodecError> {
     section_incidence_curve_family_evidence_with_solver_roles(
+        ctx,
         definition,
         entity_id,
         SolverRoles::Extended,
@@ -518,10 +521,12 @@ fn section_incidence_curve_family_evidence(
 }
 
 fn section_incidence_curve_family_evidence_without_type35(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> IncidenceEvidence {
+) -> Result<IncidenceEvidence, cadmpeg_core::CodecError> {
     section_incidence_curve_family_evidence_with_solver_roles(
+        ctx,
         definition,
         entity_id,
         SolverRoles::Strict,
@@ -540,10 +545,11 @@ enum SolverRoles {
 }
 
 fn section_incidence_curve_family_evidence_with_solver_roles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     solver_roles: SolverRoles,
-) -> IncidenceEvidence {
+) -> Result<IncidenceEvidence, cadmpeg_core::CodecError> {
     let mut evidence = IncidenceEvidence::default();
     if complete_section_skamps(definition).any(|skamp| {
         matches!(
@@ -570,20 +576,20 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         if matches!(solver_roles, SolverRoles::Extended) {
             let type35_target_role =
                 |target: &crate::feature::definitions::FeatureSkampItem,
-                 point: &crate::feature::definitions::FeatureSkampItem| {
+                 point: &crate::feature::definitions::FeatureSkampItem| -> Result<bool, cadmpeg_core::CodecError> {
                     if target.sense != 0
                         || (point.sense == 4
                             && unique_centered_line_segment(definition, point.entity_id).is_some())
-                        || !section_skamp_has_proven_point_locus(definition, point)
+                        || !section_skamp_has_proven_point_locus(ctx, definition, point)?
                     {
-                        return false;
+                        return Ok(false);
                     }
-                    unique_opaque_section_entity(definition, target.entity_id)
-                        || solver_only_section_entity_offset(definition, target.entity_id).is_some()
+                    Ok(unique_opaque_section_entity(definition, target.entity_id)
+                        || solver_only_section_entity_offset(definition, target.entity_id).is_some())
                 };
             if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                if (first.entity_id == entity_id && type35_target_role(first, second))
-                    || (second.entity_id == entity_id && type35_target_role(second, first))
+                if (first.entity_id == entity_id && type35_target_role(first, second)?)
+                    || (second.entity_id == entity_id && type35_target_role(second, first)?)
                 {
                     evidence.insert(SectionEntityIncidenceFamily::LineOrArc);
                 }
@@ -595,16 +601,16 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         ) {
             let type_zero_point_role =
                 |target: &crate::feature::definitions::FeatureSkampItem,
-                 point: &crate::feature::definitions::FeatureSkampItem| {
-                    target.sense == 0
-                        && section_skamp_has_proven_point_locus(definition, point)
+                 point: &crate::feature::definitions::FeatureSkampItem| -> Result<bool, cadmpeg_core::CodecError> {
+                    Ok(target.sense == 0
+                        && section_skamp_has_proven_point_locus(ctx, definition, point)?
                         && (unique_opaque_section_entity(definition, target.entity_id)
                             || solver_only_section_entity_offset(definition, target.entity_id)
-                                .is_some())
+                                .is_some()))
                 };
             if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                if (first.entity_id == entity_id && type_zero_point_role(first, second))
-                    || (second.entity_id == entity_id && type_zero_point_role(second, first))
+                if (first.entity_id == entity_id && type_zero_point_role(first, second)?)
+                    || (second.entity_id == entity_id && type_zero_point_role(second, first)?)
                 {
                     evidence.insert(SectionEntityIncidenceFamily::Point);
                 }
@@ -633,7 +639,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         }
     }
     normalize_section_incidence_curve_family_evidence(&mut evidence);
-    evidence
+    Ok(evidence)
 }
 
 fn unique_opaque_section_entity(
@@ -647,26 +653,29 @@ fn unique_opaque_section_entity(
 }
 
 pub(in super::super) fn unique_section_incidence_curve_family(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> Option<SectionEntityIncidenceFamily> {
-    exactly_one(section_incidence_curve_family_evidence(definition, entity_id).iter())
+) -> Result<Option<SectionEntityIncidenceFamily>, cadmpeg_core::CodecError> {
+    Ok(exactly_one(section_incidence_curve_family_evidence(ctx, definition, entity_id)?.iter()))
 }
 
 /// The unique incidence family of an entity when its sense-zero type-35
 /// target roles supply no evidence.
 pub(in super::super) fn unique_section_incidence_curve_family_without_type35_target(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> Option<SectionEntityIncidenceFamily> {
-    exactly_one(
+) -> Result<Option<SectionEntityIncidenceFamily>, cadmpeg_core::CodecError> {
+    Ok(exactly_one(
         section_incidence_curve_family_evidence_with_solver_roles(
+            ctx,
             definition,
             entity_id,
             SolverRoles::WithoutType35Target,
-        )
+        )?
         .iter(),
-    )
+    ))
 }
 
 /// Narrow the endpoint-bearing families. Line evidence narrows a bounded
@@ -692,11 +701,12 @@ pub(in super::super) fn normalize_section_incidence_curve_family_evidence(
 }
 
 pub(in super::super) fn solver_only_section_entity_family(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> Option<SectionEntityIncidenceFamily> {
-    solver_only_section_entity_offset(definition, entity_id)?;
-    let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
+) -> Result<Option<SectionEntityIncidenceFamily>, cadmpeg_core::CodecError> {
+    if solver_only_section_entity_offset(definition, entity_id).is_none() { return Ok(None); }
+    let mut evidence = section_incidence_curve_family_evidence(ctx, definition, entity_id)?;
     if !evidence.contains(SectionEntityIncidenceFamily::Arc)
         && complete_section_skamps(definition).any(|skamp| {
             skamp
@@ -727,48 +737,31 @@ pub(in super::super) fn solver_only_section_entity_family(
         evidence.insert(SectionEntityIncidenceFamily::Point);
     }
     if !evidence.contains(SectionEntityIncidenceFamily::Point) {
-        let solver_only_point_from_midpoint = complete_section_skamps(definition).any(|skamp| {
-            let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
-                return false;
-            };
-            [(first, second), (second, first)]
-                .into_iter()
-                .filter(|(point, target)| {
-                    point.sense == 0
-                        && point.entity_id == entity_id
-                        && target.sense == 0
-                        && (unique_decoded_section_segment(definition, target.entity_id)
-                            .is_some_and(|segment| {
-                                matches!(
-                                    segment.kind,
-                                    crate::feature::definitions::FeatureSegmentKind::Line(_)
-                                        | crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                                )
-                            })
-                            || (saved_section_entity_fallback_allowed(
-                                definition,
-                                target.entity_id,
-                            ) && section_saved_entity(definition, target.entity_id)
-                                .is_some_and(|saved| {
-                                    matches!(
-                                        saved,
-                                        crate::feature::definitions::FeatureSavedEntity::Line(_)
-                                            | crate::feature::definitions::FeatureSavedEntity::Arc(
-                                                _
-                                            )
-                                    )
-                                })))
-                })
-                .count()
-                == 1
-        });
+        let mut solver_only_point_from_midpoint = false;
+        for skamp in complete_section_skamps(definition) {
+            let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else { continue; };
+            let mut matching_roles = 0usize;
+            for (point, target) in [(first, second), (second, first)] {
+                if point.sense != 0 || point.entity_id != entity_id || target.sense != 0 { continue; }
+                let decoded = unique_decoded_section_segment(definition, target.entity_id).is_some_and(|segment| {
+                    matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_) | crate::feature::definitions::FeatureSegmentKind::Arc(_))
+                });
+                let saved = if !decoded && saved_section_entity_fallback_allowed(definition, target.entity_id) {
+                    section_saved_entity(ctx, definition, target.entity_id)?.is_some_and(|saved| {
+                        matches!(saved, crate::feature::definitions::FeatureSavedEntity::Line(_) | crate::feature::definitions::FeatureSavedEntity::Arc(_))
+                    })
+                } else { false };
+                if decoded || saved { matching_roles = matching_roles.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo midpoint role count", u64::MAX, u64::MAX))?; }
+            }
+            if matching_roles == 1 { solver_only_point_from_midpoint = true; break; }
+        }
         if solver_only_point_from_midpoint {
             evidence.insert(SectionEntityIncidenceFamily::Point);
         }
     }
     let mut evidence = evidence.iter();
-    let family = evidence.next()?;
-    evidence.next().is_none().then_some(family)
+    let Some(family) = evidence.next() else { return Ok(None); };
+    Ok(evidence.next().is_none().then_some(family))
 }
 
 #[cfg(test)]
@@ -1054,17 +1047,17 @@ mod tests {
     fn type35_point_locus_establishes_unique_native_line_or_arc_family() {
         let opaque_target = definition(101, true);
         assert_eq!(
-            unique_section_incidence_curve_family(&opaque_target, 101),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &opaque_target, 101)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::LineOrArc)
         );
 
         let solver_only_target = definition(201, false);
         assert_eq!(
-            unique_section_incidence_curve_family(&solver_only_target, 201),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &solver_only_target, 201)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::LineOrArc)
         );
         assert_eq!(
-            solver_only_section_entity_family(&solver_only_target, 201),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_only_target, 201)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::LineOrArc)
         );
     }
@@ -1108,9 +1101,9 @@ mod tests {
         let opaque_target = with_target_role(101, true, kind, sense);
         let solver_only_target = with_target_role(201, false, kind, sense);
         [
-            unique_section_incidence_curve_family(&opaque_target, 101),
-            unique_section_incidence_curve_family(&solver_only_target, 201),
-            solver_only_section_entity_family(&solver_only_target, 201),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &opaque_target, 101)).expect("admitted section lookup"),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &solver_only_target, 201)).expect("admitted section lookup"),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_only_target, 201)).expect("admitted section lookup"),
         ]
     }
 
@@ -1150,10 +1143,10 @@ mod tests {
                 entity_id: target,
                 sense: 0,
             };
-            assert!(!super::super::loci::section_skamp_is_line(
+            assert!(!crate::decode::with_test_decode_ctx(|ctx| super::super::loci::section_skamp_is_line(ctx, 
                 &definition,
                 &item
-            ));
+            )).expect("admitted section lookup"));
             assert!(super::super::loci::with_test_locus(|ctx, refusal| {
                 super::super::loci::section_skamp_curve_entity(
                     ctx,
@@ -1161,7 +1154,7 @@ mod tests {
                     &definition,
                     &sketch,
                     &item,
-                )
+                ).expect("admitted section lookup")
             })
             .is_some());
         }
@@ -1178,7 +1171,7 @@ mod tests {
             )));
         segments.declared_count = 2;
         assert_eq!(
-            unique_section_incidence_curve_family(&definition, 101),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 101)).expect("admitted section lookup"),
             None
         );
     }
@@ -1196,7 +1189,7 @@ mod tests {
             .rows_mut()[0]
             .kind = 0;
         assert_eq!(
-            unique_section_incidence_curve_family(&opaque_target, 101),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &opaque_target, 101)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::Point)
         );
 
@@ -1211,11 +1204,11 @@ mod tests {
             .rows_mut()[0]
             .kind = 0;
         assert_eq!(
-            unique_section_incidence_curve_family(&solver_only_target, 201),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &solver_only_target, 201)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::Point)
         );
         assert_eq!(
-            solver_only_section_entity_family(&solver_only_target, 201),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_only_target, 201)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::Point)
         );
     }
@@ -1240,7 +1233,7 @@ mod tests {
             .rows_mut()[0]
             .kind = 0;
         assert_eq!(
-            unique_section_incidence_curve_family(&definition, 101),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 101)).expect("admitted section lookup"),
             None
         );
     }
@@ -1303,7 +1296,7 @@ mod tests {
         crate::decode::tests::synchronize_skamp_count(&mut definition);
 
         assert_eq!(
-            solver_only_section_entity_family(&definition, 21),
+            crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &definition, 21)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::Arc)
         );
     }

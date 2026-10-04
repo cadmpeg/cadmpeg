@@ -657,9 +657,7 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             continue;
         };
-        let kind = unique_external_id
-            .then(|| unique_section_incidence_curve_family(definition, segment.external_id))
-            .flatten();
+        let kind = if unique_external_id { unique_section_incidence_curve_family(ctx, definition, segment.external_id)? } else { None };
         let static_kind = match kind {
             Some(SectionEntityIncidenceFamily::Point) => Some("point"),
             Some(SectionEntityIncidenceFamily::BoundedCurve) => Some("bounded_curve"),
@@ -717,14 +715,10 @@ pub(super) fn transfer_section_entities(
     {
         let unique_internal_id = unique_saved_ids.contains(&internal_id);
         let external_id = if unique_internal_id {
-            definition.order_table.as_ref().and_then(|order| {
-                saved_section_external_id(
-                    order,
-                    unique_saved_ids,
-                    ambiguous_segment_ids,
-                    internal_id,
-                )
-            })
+            match definition.order_table.as_ref() {
+                Some(order) => saved_section_external_id(ctx, order, unique_saved_ids, ambiguous_segment_ids, internal_id)?,
+                None => None,
+            }
         } else {
             None
         };
@@ -841,16 +835,10 @@ pub(super) fn transfer_section_entities(
                 "creo saved spline suffix",
             )?,
         };
-        let external_id = unique_internal_id.and_then(|internal_id| {
-            definition.order_table.as_ref().and_then(|order| {
-                saved_section_external_id(
-                    order,
-                    unique_saved_ids,
-                    ambiguous_segment_ids,
-                    internal_id,
-                )
-            })
-        });
+        let external_id = match (unique_internal_id, definition.order_table.as_ref()) {
+            (Some(internal_id), Some(order)) => saved_section_external_id(ctx, order, unique_saved_ids, ambiguous_segment_ids, internal_id)?,
+            _ => None,
+        };
         let generated = external_id.is_some_and(|external_id| {
             let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) else {
                 return false;

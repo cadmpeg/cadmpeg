@@ -2688,12 +2688,12 @@ fn section_owner_ranges(
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
 ) -> Result<Vec<(usize, usize)>, CodecError> {
-    let count = sections
-        .iter()
+    let count = ctx
+        .admit_iter(sections, "creo section owner count")?
         .filter(|section| section.section.name() == "DEPDB_DATA")
         .count()
         .checked_add(feature_rows.len())
-        .ok_or_else(|| CodecError::malformed("feature owner range count exceeds usize"))?;
+        .ok_or_else(|| ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX))?;
     let mut ranges = Vec::new();
     ctx.reserve_vec(&mut ranges, count, "creo section owner ranges")?;
     ranges.extend(

@@ -382,9 +382,8 @@ fn curve_expression_emitted_ordinals(
     record: &crate::curve::CurveExpressionRecord,
     parameter_ordinals: &[u32],
 ) -> Result<BTreeMap<usize, u32>, CodecError> {
-    let count = record
-        .assignments
-        .iter()
+    let count = ctx
+        .admit_iter(&record.assignments, "creo emitted assignment count")?
         .filter(|assignment| assignment.parameter_target().is_some())
         .count();
     let mut indices = Vec::new();

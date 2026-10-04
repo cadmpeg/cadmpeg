@@ -123,7 +123,7 @@ fn saved_line_joins_through_order_table() {
     };
 
     assert_eq!(
-        saved_section_line_geometry(&definition, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &definition, &segment)).expect("admitted saved section geometry"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
@@ -280,7 +280,7 @@ fn saved_line_joins_through_order_table() {
             offset: 11,
         });
     assert_eq!(
-        saved_section_line_geometry(&duplicate_order_row, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &duplicate_order_row, &segment)).expect("admitted saved section geometry"),
         None
     );
     let mut duplicate_saved_line = definition.clone();
@@ -297,11 +297,11 @@ fn saved_line_joins_through_order_table() {
         .entities
         .push(duplicate);
     assert_eq!(
-        saved_section_line_geometry(&duplicate_saved_line, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &duplicate_saved_line, &segment)).expect("admitted saved section geometry"),
         None
     );
     assert_eq!(
-        saved_section_external_id(
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_external_id(ctx,
             definition.order_table.as_ref().expect("order table"),
             &crate::decode::with_test_decode_ctx(|ctx| unique_saved_section_internal_ids(
                 ctx,
@@ -314,7 +314,7 @@ fn saved_line_joins_through_order_table() {
             ))
             .expect("service ambiguous identities"),
             3,
-        ),
+        )).expect("admitted order identity"),
         Some(42)
     );
     let mut constrained = definition.clone();
@@ -617,7 +617,7 @@ fn saved_line_joins_through_order_table() {
             offset: 32,
         }];
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     solver_families
@@ -648,7 +648,7 @@ fn saved_line_joins_through_order_table() {
         .rows_mut()[0]
         .status = 0;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     solver_families
@@ -662,7 +662,7 @@ fn saved_line_joins_through_order_table() {
         .items[0]
         .sense = 4;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Circular)
     );
     solver_families
@@ -685,7 +685,7 @@ fn saved_line_joins_through_order_table() {
         .rows_mut()[0]
         .status = 1;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
@@ -702,7 +702,7 @@ fn saved_line_joins_through_order_table() {
             offset: 32,
         }];
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Line)
     );
     let solver_geometry = BTreeMap::from([(
@@ -769,7 +769,7 @@ fn saved_line_joins_through_order_table() {
             offset: 32,
         }];
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     solver_families
@@ -782,7 +782,7 @@ fn saved_line_joins_through_order_table() {
         .rows_mut()[0]
         .status = 1;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Point)
     );
     let solver_geometry = BTreeMap::from([
@@ -832,7 +832,7 @@ fn saved_line_joins_through_order_table() {
                 &solver_families,
                 &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
                 point_item,
-            )
+            ).expect("admitted section lookup")
         })
         .is_some()
     );
@@ -845,7 +845,7 @@ fn saved_line_joins_through_order_table() {
                 &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
                 line_item,
                 Some(&solver_geometry),
-            )
+            ).expect("admitted section lookup")
         })
         .is_some()
     );
@@ -884,7 +884,7 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let mut disabled_line_family = solver_families.clone();
@@ -911,7 +911,7 @@ fn saved_line_joins_through_order_table() {
         offset: 34,
     };
     assert_eq!(
-        solver_only_section_entity_family(&disabled_line_family, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &disabled_line_family, 99)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Line)
     );
     let mut disabled_circular_family = constrained.clone();
@@ -964,7 +964,7 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        unique_section_incidence_curve_family(&disabled_circular_family, 101),
+        crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &disabled_circular_family, 101)).expect("admitted section lookup"),
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
@@ -995,7 +995,7 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp header")
         .declared_count = 2;
     assert_eq!(
-        solver_only_section_entity_family(&solver_families, 99),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entity_family(ctx, &solver_families, 99)).expect("admitted section lookup"),
         None
     );
     let mut duplicate_incidence = constrained.clone();
@@ -1115,7 +1115,7 @@ fn saved_line_joins_through_order_table() {
         offset: 5,
     });
     assert_eq!(
-        saved_section_line_geometry(&completed, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &completed, &segment)).expect("admitted saved section geometry"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
@@ -1143,7 +1143,7 @@ fn saved_line_joins_through_order_table() {
         Some(42)
     );
     assert_eq!(
-        saved_section_line_geometry(&replay_mismatched, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &replay_mismatched, &segment)).expect("admitted saved section geometry"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
@@ -1159,7 +1159,7 @@ fn saved_line_joins_through_order_table() {
         .expect("test definition has an order table")
         .declared_count = 1;
     assert_eq!(
-        saved_section_line_geometry(&incomplete_order, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &incomplete_order, &segment)).expect("admitted saved section geometry"),
         None
     );
     let mut incomplete_segments = completed.clone();
@@ -1169,7 +1169,7 @@ fn saved_line_joins_through_order_table() {
         .expect("segment table")
         .declared_count = 2;
     assert_eq!(
-        saved_section_line_geometry(&incomplete_segments, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_line_geometry(ctx, &incomplete_segments, &segment)).expect("admitted saved section geometry"),
         None
     );
     let trim = completed.trim_entities.as_ref().expect("trim table").rows[0].clone();
@@ -1389,7 +1389,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         offset: 0,
     };
     assert_eq!(
-        saved_section_circle_values(&definition, &circle),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_circle_values(ctx, &definition, &circle)).expect("admitted saved section geometry"),
         Some(([2.0, -3.0], 4.5))
     );
     assert_eq!(

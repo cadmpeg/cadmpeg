@@ -4463,10 +4463,8 @@ pub(super) fn sketch_records<'a>(
         if !feature_definition_has_sketch_design(ctx, definition)? {
             continue;
         }
-        let id = if scan
-            .features
-            .definitions
-            .iter()
+        let id = if ctx
+            .admit_iter(&scan.features.definitions, "creo sketch record identity count")?
             .filter(|candidate| candidate.identity.id() == definition.identity.id())
             .count()
             != 1

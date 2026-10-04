@@ -72,21 +72,26 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
                 .iter()
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
-        .filter_map(|segment| saved_section_segment_point_coordinates(definition, segment))
-        .flatten();
+;
+    let mut witnesses = Vec::new();
+    for segment in ordinary {
+        if let Some(points) = saved_section_segment_point_coordinates(ctx, definition, segment)? {
+            for point in points { ctx.push_vec(&mut witnesses, point, "creo saved section coordinate witnesses")?; }
+        }
+    }
     let circles = definition
         .segments
         .iter()
         .flat_map(|table| table.rows.circles())
-        .filter_map(|segment| {
-            (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;
-            let (center, _) = saved_section_circle_values(definition, segment)?;
-            Some((segment.center_id, center))
-        });
-    ctx.collect_vec(
-        ordinary.chain(circles),
-        "creo saved section coordinate witnesses",
-    )
+;
+    for segment in circles {
+        if !ambiguous_point_ids.contains(&segment.center_id) {
+            if let Some((center, _)) = saved_section_circle_values(ctx, definition, segment)? {
+                ctx.push_vec(&mut witnesses, (segment.center_id, center), "creo saved section coordinate witnesses")?;
+            }
+        }
+    }
+    Ok(witnesses)
 }
 
 fn append_point_on_line_equations(
@@ -339,15 +344,15 @@ pub(in crate::decode) fn resolved_section_coordinates(
             }),
         "creo section line segments",
     )?;
-    let coincident_points = ctx.collect_vec(
-        active_complete_section_skamps(definition).filter_map(|skamp| {
+    let coincident_points = ctx.try_collect_vec(
+        active_complete_section_skamps(definition).map(|skamp| -> Result<Option<_>, cadmpeg_core::CodecError> {
             let [first, second] = skamp.items.as_slice() else {
-                return None;
+                return Ok(None);
             };
-            let pair = match skamp.kind {
+            let pair = match match skamp.kind {
                 0 => Some([
-                    section_skamp_incidence_point(definition, first)?,
-                    section_skamp_incidence_point(definition, second)?,
+                    (match section_skamp_incidence_point(ctx, definition, first)? { Some(value) => value, None => return Ok(None) }),
+                    (match section_skamp_incidence_point(ctx, definition, second)? { Some(value) => value, None => return Ok(None) }),
                 ]),
                 3 => {
                     let first_point = section_skamp_point_entity_id(definition, first);
@@ -359,32 +364,32 @@ pub(in crate::decode) fn resolved_section_coordinates(
                         ]),
                         (Some(point), None) => Some([
                             SectionPointSource::Point(point),
-                            section_skamp_incidence_point(definition, second)?,
+                            (match section_skamp_incidence_point(ctx, definition, second)? { Some(value) => value, None => return Ok(None) }),
                         ]),
                         (None, Some(point)) => Some([
-                            section_skamp_incidence_point(definition, first)?,
+                            (match section_skamp_incidence_point(ctx, definition, first)? { Some(value) => value, None => return Ok(None) }),
                             SectionPointSource::Point(point),
                         ]),
                         _ => None,
                     }
                 }
                 _ => None,
-            }?;
-            (pair
+            } { Some(value) => value, None => return Ok(None) };
+            Ok((pair
                 .iter()
                 .any(|point| matches!(point, SectionPointSource::Point(_)))
                 && pair.iter().all(|point| match point {
                     SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
                     SectionPointSource::Value(_) => true,
                 }))
-            .then_some(pair)
-        }),
+            .then_some(pair))
+        }) .filter_map(|result| match result { Ok(Some(value)) => Some(Ok(value)), Ok(None) => None, Err(error) => Some(Err(error)) }),
         "creo section coincident point pairs",
     )?;
-    let same_coordinate_points = ctx.collect_vec(
+    let same_coordinate_points = ctx.try_collect_vec(
         active_complete_section_skamps(definition)
-            .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
-            .filter(|(pair, _)| {
+            .map(|skamp| -> Result<Option<_>, CodecError> {
+                Ok(section_skamp_same_coordinate_sources(ctx, definition, skamp)?.filter(|(pair, _)| {
                 pair.iter()
                     .any(|point| matches!(point, SectionPointSource::Point(_)))
                     && pair.iter().all(|point| match point {
@@ -393,6 +398,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
                         }
                         SectionPointSource::Value(_) => true,
                     })
+            }))
+            })
+            .filter_map(|result| match result {
+                Ok(Some(value)) => Some(Ok(value)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
             }),
         "creo section same-coordinate pairs",
     )?;
@@ -424,10 +435,10 @@ pub(in crate::decode) fn resolved_section_coordinates(
             }
         }
     }
-    let line_midpoint_constraints = ctx.collect_vec(
+    let line_midpoint_constraints = ctx.try_collect_vec(
         active_complete_section_skamps(definition)
-            .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
-            .filter(|(point_sources, point)| {
+            .map(|skamp| -> Result<Option<_>, CodecError> {
+                Ok(section_skamp_line_midpoint_sources(ctx, definition, skamp)?.filter(|(point_sources, point)| {
                 point_sources.iter().all(|source| match source {
                     SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
                     SectionPointSource::Value(_) => true,
@@ -435,6 +446,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
                     SectionPointSource::Value(_) => true,
                 }
+            }))
+            })
+            .filter_map(|result| match result {
+                Ok(Some(value)) => Some(Ok(value)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
             }),
         "creo section line midpoint constraints",
     )?;
@@ -465,10 +482,10 @@ pub(in crate::decode) fn resolved_section_coordinates(
             symmetric_point_constraints.push((axis, first, second, coordinate));
         }
     }
-    let point_symmetric_constraints = ctx.collect_vec(
+    let point_symmetric_constraints = ctx.try_collect_vec(
         active_complete_section_skamps(definition)
-            .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
-            .filter(|(center, first, second)| {
+            .map(|skamp| -> Result<Option<_>, CodecError> {
+                Ok(section_skamp_point_symmetry(ctx, definition, skamp)?.filter(|(center, first, second)| {
                 !ambiguous_point_ids.contains(center)
                     && [first, second].into_iter().all(|point| match point {
                         SectionPointSource::Point(point_id) => {
@@ -476,6 +493,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
                         }
                         SectionPointSource::Value(_) => true,
                     })
+            }))
+            })
+            .filter_map(|result| match result {
+                Ok(Some(value)) => Some(Ok(value)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
             }),
         "creo section point symmetry constraints",
     )?;
@@ -868,16 +891,20 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     )?;
-    let arc_midpoint_constraints = ctx.collect_vec(
+    let arc_midpoint_constraints = ctx.try_collect_vec(
         active_complete_section_skamps(definition)
-            .filter_map(|skamp| {
-                section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
-            })
-            .filter_map(|(point, midpoint)| match point {
+            .map(|skamp| -> Result<Option<_>, CodecError> {
+                Ok(section_skamp_arc_midpoint_source(ctx, definition, skamp, &solved_coordinates)?.and_then(|(point, midpoint)| match point {
                 SectionPointSource::Point(point_id) if !ambiguous_point_ids.contains(&point_id) => {
                     Some((point_id, midpoint))
                 }
                 SectionPointSource::Point(_) | SectionPointSource::Value(_) => None,
+            }))
+            })
+            .filter_map(|result| match result {
+                Ok(Some(value)) => Some(Ok(value)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
             }),
         "creo section arc midpoint constraints",
     )?;

@@ -247,13 +247,13 @@ pub(in super::super) fn section_skamp_locus(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchLocus> {
-    let entity = admitted_entity(ctx, refusal, sketch, item.entity_id)?;
-    if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
-        return section_entity_family_locus(family, entity, item.sense);
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    let entity = match admitted_entity(ctx, refusal, sketch, item.entity_id) { Some(value) => value, None => return Ok(None) };
+    if let Some(family) = solver_only_section_entity_family(ctx, definition, item.entity_id)? {
+        return Ok(section_entity_family_locus(family, entity, item.sense));
     }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return match (segment.kind, item.sense) {
+        return Ok(match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
             (crate::feature::definitions::FeatureSegmentKind::Arc(_), 2) => {
                 Some(SketchLocus::End(entity))
@@ -267,52 +267,52 @@ pub(in super::super) fn section_skamp_locus(
             (_, 2) => Some(SketchLocus::Start(entity)),
             (_, 3) => Some(SketchLocus::End(entity)),
             _ => None,
-        };
+        });
     }
     if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
-        return match item.sense {
+        return Ok(match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             2 if segment.point_ids[0].is_some() => Some(SketchLocus::Start(entity)),
             3 if segment.point_ids[1].is_some() => Some(SketchLocus::End(entity)),
             _ => None,
-        };
+        });
     }
     if unique_bounded_curve_segment(definition, item.entity_id).is_some() {
-        return match item.sense {
+        return Ok(match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             2 => Some(SketchLocus::Start(entity)),
             3 => Some(SketchLocus::End(entity)),
             _ => None,
-        };
+        });
     }
     if unique_point_segment(definition, item.entity_id).is_some() {
-        return matches!(item.sense, 0 | 4).then_some(SketchLocus::Entity(entity));
+        return Ok(matches!(item.sense, 0 | 4).then_some(SketchLocus::Entity(entity)));
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
-        return match item.sense {
+        return Ok(match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             2 => Some(SketchLocus::Start(entity)),
             3 => Some(SketchLocus::End(entity)),
             4 => Some(SketchLocus::Center(entity)),
             _ => None,
-        };
+        });
     }
     if unique_circle_segment(definition, item.entity_id).is_some() {
-        return match item.sense {
+        return Ok(match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             4 => Some(SketchLocus::Center(entity)),
             _ => None,
-        };
+        });
     }
     if definition
         .segments
         .as_ref()
         .is_some_and(|segments| segments.rows.contains_id(item.entity_id))
     {
-        return section_incidence_curve_locus(definition, entity, item);
+        return section_incidence_curve_locus(ctx, definition, entity, item);
     }
-    let saved = section_saved_entity(definition, item.entity_id)?;
-    match (saved, item.sense) {
+    let saved = match section_saved_entity(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) };
+    Ok(match (saved, item.sense) {
         (_, 0) => Some(SketchLocus::Entity(entity)),
         (crate::feature::definitions::FeatureSavedEntity::Line(_), 2) => {
             Some(SketchLocus::Start(entity))
@@ -333,19 +333,20 @@ pub(in super::super) fn section_skamp_locus(
             4,
         ) => Some(SketchLocus::Center(entity)),
         _ => None,
-    }
+    })
 }
 
 fn section_incidence_curve_locus(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     entity: SketchEntityId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchLocus> {
-    section_entity_family_locus(
-        unique_section_incidence_curve_family(definition, item.entity_id)?,
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    Ok(section_entity_family_locus(
+        match unique_section_incidence_curve_family(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) },
         entity,
         item.sense,
-    )
+    ))
 }
 
 fn section_entity_family_locus(
@@ -390,10 +391,8 @@ pub(in super::super) fn section_skamp_endpoint(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchLocus> {
-    matches!(item.sense, 2 | 3)
-        .then(|| section_skamp_locus(ctx, refusal, definition, sketch, item))
-        .flatten()
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    if matches!(item.sense, 2 | 3) { section_skamp_locus(ctx, refusal, definition, sketch, item) } else { Ok(None) }
 }
 
 fn section_skamp_shared_endpoint(
@@ -403,27 +402,27 @@ fn section_skamp_shared_endpoint(
     sketch: &SketchId,
     entity: &crate::feature::definitions::FeatureSkampItem,
     selected: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchLocus> {
-    (entity.sense == 0).then_some(())?;
-    let segment = unique_decoded_section_segment(definition, entity.entity_id)?;
-    matches!(
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    (match (entity.sense == 0).then_some(()) { Some(value) => value, None => return Ok(None) });
+    let segment = match unique_decoded_section_segment(definition, entity.entity_id) { Some(value) => value, None => return Ok(None) };
+    (match matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Line(_)
             | crate::feature::definitions::FeatureSegmentKind::Arc(_)
     )
-    .then_some(())?;
-    let selected_point = section_skamp_selected_point_id_with_ordinary_segment(
+    .then_some(()) { Some(value) => value, None => return Ok(None) });
+    let selected_point = match section_skamp_selected_point_id_with_ordinary_segment(
         definition,
         selected,
         unique_decoded_section_segment(definition, selected.entity_id),
-    )?;
+    ) { Some(value) => value, None => return Ok(None) };
     let mut endpoints = segment
         .point_ids()
         .into_iter()
         .enumerate()
         .filter(|(_, point_id)| *point_id == selected_point);
-    let (endpoint, _) = endpoints.next()?;
-    endpoints.next().is_none().then_some(())?;
+    let (endpoint, _) = match endpoints.next() { Some(value) => value, None => return Ok(None) };
+    (match endpoints.next().is_none().then_some(()) { Some(value) => value, None => return Ok(None) });
     section_skamp_locus(
         ctx,
         refusal,
@@ -441,43 +440,30 @@ pub(super) fn section_skamp_tangent_loci(
     refusal: &std::cell::Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-    items: (
-        &crate::feature::definitions::FeatureSkampItem,
-        &crate::feature::definitions::FeatureSkampItem,
-    ),
+    items: (&crate::feature::definitions::FeatureSkampItem, &crate::feature::definitions::FeatureSkampItem),
     active: bool,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
-) -> Option<[SketchLocus; 2]> {
+) -> Result<Option<[SketchLocus; 2]>, cadmpeg_core::CodecError> {
     let (first, second) = items;
-
-    let selected_locus = |item| {
+    let selected_locus = |item: &crate::feature::definitions::FeatureSkampItem| {
         if active {
             section_skamp_endpoint(ctx, refusal, definition, sketch, item)
         } else if matches!(item.sense, 2 | 3) {
             section_skamp_incidence_locus(ctx, refusal, definition, sketch, item, geometry)
         } else {
-            None
+            Ok(None)
         }
     };
-    if let (Some(first), Some(second)) = (selected_locus(first), selected_locus(second)) {
-        return Some([first, second]);
+    if let (Some(first), Some(second)) = (selected_locus(first)?, selected_locus(second)?) {
+        return Ok(Some([first, second]));
     }
-    [(first, second), (second, first)]
-        .into_iter()
-        .find_map(|(entity, selected)| {
-            Some([
-                section_skamp_shared_endpoint(ctx, refusal, definition, sketch, entity, selected)?,
-                selected_locus(selected)?,
-            ])
-        })
-        .map(|loci| {
-            if first.sense == 0 {
-                loci
-            } else {
-                let [first, second] = loci;
-                [second, first]
-            }
-        })
+    for (entity, selected) in [(first, second), (second, first)] {
+        let Some(shared) = section_skamp_shared_endpoint(ctx, refusal, definition, sketch, entity, selected)? else { continue; };
+        let Some(selected) = selected_locus(selected)? else { continue; };
+        let loci = if first.sense == 0 { [shared, selected] } else { [selected, shared] };
+        return Ok(Some(loci));
+    }
+    Ok(None)
 }
 
 pub(in super::super) fn section_skamp_point_locus(
@@ -486,13 +472,11 @@ pub(in super::super) fn section_skamp_point_locus(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchLocus> {
-    if item.sense == 0 && section_skamp_is_point(definition, item) {
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    if item.sense == 0 && section_skamp_is_point(ctx, definition, item)? {
         return section_skamp_locus(ctx, refusal, definition, sketch, item);
     }
-    matches!(item.sense, 2..=4)
-        .then(|| section_skamp_locus(ctx, refusal, definition, sketch, item))
-        .flatten()
+    if matches!(item.sense, 2..=4) { section_skamp_locus(ctx, refusal, definition, sketch, item) } else { Ok(None) }
 }
 
 pub(in super::super) fn section_skamp_incidence_locus(
@@ -502,8 +486,8 @@ pub(in super::super) fn section_skamp_incidence_locus(
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
-) -> Option<SketchLocus> {
-    section_skamp_point_locus(ctx, refusal, definition, sketch, item).or_else(|| {
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    Ok(section_skamp_point_locus(ctx, refusal, definition, sketch, item)?.or_else(|| {
         let entity = admitted_entity(ctx, refusal, sketch, item.entity_id)?;
         let native = geometry?.get(&entity).is_some_and(|geometry| {
             matches!(
@@ -519,7 +503,7 @@ pub(in super::super) fn section_skamp_incidence_locus(
             3 => Some(SketchLocus::End(entity)),
             _ => None,
         }
-    })
+    }))
 }
 
 pub(super) fn section_skamp_line_pair(
@@ -529,18 +513,18 @@ pub(super) fn section_skamp_line_pair(
     sketch: &SketchId,
     first: &crate::feature::definitions::FeatureSkampItem,
     second: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<[SketchEntityId; 2]> {
+) -> Result<Option<[SketchEntityId; 2]>, cadmpeg_core::CodecError> {
     if first.sense != 0
         || second.sense != 0
-        || !section_skamp_is_line(definition, first)
-        || !section_skamp_is_line(definition, second)
+        || !section_skamp_is_line(ctx, definition, first)?
+        || !section_skamp_is_line(ctx, definition, second)?
     {
-        return None;
+        return Ok(None);
     }
-    Some([
-        admitted_entity(ctx, refusal, sketch, first.entity_id)?,
-        admitted_entity(ctx, refusal, sketch, second.entity_id)?,
-    ])
+    Ok(Some([
+        (match admitted_entity(ctx, refusal, sketch, first.entity_id) { Some(value) => value, None => return Ok(None) }),
+        (match admitted_entity(ctx, refusal, sketch, second.entity_id) { Some(value) => value, None => return Ok(None) }),
+    ]))
 }
 
 pub(super) fn section_skamp_oriented_line(
@@ -550,51 +534,48 @@ pub(super) fn section_skamp_oriented_line(
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
-) -> Option<SketchEntityId> {
-    (item.sense == 0).then_some(())?;
-    let entity = admitted_entity(ctx, refusal, sketch, item.entity_id)?;
-    if section_skamp_is_line(definition, item) {
-        return Some(entity);
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    (match (item.sense == 0).then_some(()) { Some(value) => value, None => return Ok(None) });
+    let entity = match admitted_entity(ctx, refusal, sketch, item.entity_id) { Some(value) => value, None => return Ok(None) };
+    if section_skamp_is_line(ctx, definition, item)? {
+        return Ok(Some(entity));
     }
-    if section_skamp_is_point(definition, item)
-        || section_skamp_is_circular(definition, item)
-        || section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+    if section_skamp_is_point(ctx, definition, item)?
+        || section_skamp_is_circular(ctx, definition, item)?
+        || section_saved_entity(ctx, definition, item.entity_id)?.is_some_and(|entity| {
             matches!(
                 entity,
                 crate::feature::definitions::FeatureSavedEntity::Spline(_)
             )
         })
     {
-        return None;
+        return Ok(None);
     }
     if solver_only_section_entity_offset(definition, item.entity_id).is_some() {
-        return Some(entity);
+        return Ok(Some(entity));
     }
-    let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
-        skamp.items.iter().any(|candidate| {
-            candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
-        }) || match (skamp.kind, skamp.items.as_slice()) {
-            (35, [first, second]) => {
-                (first.entity_id == item.entity_id
-                    && first.sense == 0
-                    && section_skamp_point_locus(ctx, refusal, definition, sketch, second)
-                        .is_some())
-                    || (second.entity_id == item.entity_id
-                        && second.sense == 0
-                        && section_skamp_point_locus(ctx, refusal, definition, sketch, first)
-                            .is_some())
+    let mut line_role_evidence = false;
+    for skamp in complete_section_skamps(definition) {
+        let direct = skamp.items.iter().any(|candidate| candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3));
+        let midpoint = if direct { false } else {
+            match (skamp.kind, skamp.items.as_slice()) {
+                (35, [first, second]) => {
+                    (first.entity_id == item.entity_id && first.sense == 0 && section_skamp_point_locus(ctx, refusal, definition, sketch, second)?.is_some())
+                    || (second.entity_id == item.entity_id && second.sense == 0 && section_skamp_point_locus(ctx, refusal, definition, sketch, first)?.is_some())
+                }
+                _ => false,
             }
-            _ => false,
-        }
-    });
-    (line_role_evidence
-        && geometry?.get(&entity).is_some_and(|geometry| {
+        };
+        if direct || midpoint { line_role_evidence = true; break; }
+    }
+    Ok((line_role_evidence
+        && (match geometry { Some(value) => value, None => return Ok(None) }).get(&entity).is_some_and(|geometry| {
             matches!(
                 geometry.definition(),
                 SketchGeometryDefinition::Native { .. }
             )
         }))
-    .then_some(entity)
+    .then_some(entity))
 }
 
 pub(super) fn section_skamp_same_coordinate(
@@ -605,18 +586,18 @@ pub(super) fn section_skamp_same_coordinate(
     skamp: &crate::feature::definitions::FeatureSkamp,
     require_satisfied: bool,
     resolved_points: Option<&BTreeMap<u32, [f64; 2]>>,
-) -> Option<(SketchLocus, SketchLocus, SketchCoordinateAxis)> {
+) -> Result<Option<(SketchLocus, SketchLocus, SketchCoordinateAxis)>, cadmpeg_core::CodecError> {
     let [first, second] = skamp.items.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let first_locus = section_skamp_point_locus(ctx, refusal, definition, sketch, first)?;
-    let second_locus = section_skamp_point_locus(ctx, refusal, definition, sketch, second)?;
-    let coordinate = section_skamp_same_coordinate_axis(skamp)?;
+    let first_locus = match section_skamp_point_locus(ctx, refusal, definition, sketch, first)? { Some(value) => value, None => return Ok(None) };
+    let second_locus = match section_skamp_point_locus(ctx, refusal, definition, sketch, second)? { Some(value) => value, None => return Ok(None) };
+    let coordinate = match section_skamp_same_coordinate_axis(skamp) { Some(value) => value, None => return Ok(None) };
     let axis = [SketchCoordinateAxis::U, SketchCoordinateAxis::V][coordinate.index()];
     if require_satisfied {
         let ([first_source, second_source], _) =
-            section_skamp_same_coordinate_sources(definition, skamp)?;
-        let points = resolved_points?;
+            match section_skamp_same_coordinate_sources(ctx, definition, skamp)? { Some(value) => value, None => return Ok(None) };
+        let points = match resolved_points { Some(value) => value, None => return Ok(None) };
         let point = |source| {
             Some(match source {
                 SectionPointSource::Point(point_id) => *points.get(&point_id)?,
@@ -630,25 +611,27 @@ pub(super) fn section_skamp_same_coordinate(
                 .chain(&second_point)
                 .map(|coordinate| coordinate.abs())
                 .fold(1.0, f64::max);
-            ((first_point[coordinate.index()] - second_point[coordinate.index()]).abs()
+            (match ((first_point[coordinate.index()] - second_point[coordinate.index()]).abs()
                 <= EPS_LOCUS_COORDINATE * scale)
-                .then_some(())?;
+                .then_some(()) { Some(value) => value, None => return Ok(None) });
         }
     }
-    Some((first_locus, second_locus, axis))
+    Ok(Some((first_locus, second_locus, axis)))
 }
 
 pub(in super::super) fn section_skamp_same_coordinate_sources(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<([SectionPointSource; 2], SectionAxis)> {
+) -> Result<Option<([SectionPointSource; 2], SectionAxis)>, cadmpeg_core::CodecError> {
     if matches!(skamp.kind, 12 | 13) {
         let [item] = skamp.items.as_slice() else {
-            return None;
+            return Ok(None);
         };
-        (item.sense == 0 && section_skamp_is_arc(definition, item)).then_some(())?;
+        (match (item.sense == 0 && section_skamp_is_arc(ctx, definition, item)?).then_some(()) { Some(value) => value, None => return Ok(None) });
         let endpoint = |sense| {
             section_skamp_incidence_point(
+                ctx,
                 definition,
                 &crate::feature::definitions::FeatureSkampItem {
                     entity_id: item.entity_id,
@@ -656,22 +639,22 @@ pub(in super::super) fn section_skamp_same_coordinate_sources(
                 },
             )
         };
-        return Some((
-            [endpoint(2)?, endpoint(3)?],
-            section_skamp_same_coordinate_axis(skamp)?,
-        ));
+        return Ok(Some((
+            [(match endpoint(2)? { Some(value) => value, None => return Ok(None) }), (match endpoint(3)? { Some(value) => value, None => return Ok(None) })],
+            (match section_skamp_same_coordinate_axis(skamp) { Some(value) => value, None => return Ok(None) }),
+        )));
     }
     let [first, second] = skamp.items.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let coordinate = section_skamp_same_coordinate_axis(skamp)?;
-    Some((
+    let coordinate = match section_skamp_same_coordinate_axis(skamp) { Some(value) => value, None => return Ok(None) };
+    Ok(Some((
         [
-            section_skamp_incidence_point(definition, first)?,
-            section_skamp_incidence_point(definition, second)?,
+            (match section_skamp_incidence_point(ctx, definition, first)? { Some(value) => value, None => return Ok(None) }),
+            (match section_skamp_incidence_point(ctx, definition, second)? { Some(value) => value, None => return Ok(None) }),
         ],
         coordinate,
-    ))
+    )))
 }
 
 pub(super) fn section_skamp_same_coordinate_axis(
@@ -689,37 +672,38 @@ pub(super) fn section_skamp_same_coordinate_axis(
 }
 
 pub(in super::super) fn section_skamp_is_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return matches!(
+        return Ok(matches!(
             segment.kind,
             crate::feature::definitions::FeatureSegmentKind::Line(_)
-        ) || section_degenerate_axis_line(definition, segment);
+        ) || section_degenerate_axis_line(definition, segment));
     }
-    if solver_only_section_entity_family(definition, item.entity_id)
+    if solver_only_section_entity_family(ctx, definition, item.entity_id)?
         == Some(SectionEntityIncidenceFamily::Line)
-        || unique_section_incidence_curve_family(definition, item.entity_id)
+        || unique_section_incidence_curve_family(ctx, definition, item.entity_id)?
             == Some(SectionEntityIncidenceFamily::Line)
     {
-        return true;
+        return Ok(true);
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
-        return true;
+        return Ok(true);
     }
     if unique_reference_line_segment(definition, item.entity_id).is_some() {
-        return true;
+        return Ok(true);
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return false;
+        return Ok(false);
     }
-    section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+    Ok(section_saved_entity(ctx, definition, item.entity_id)?.is_some_and(|entity| {
         matches!(
             entity,
             crate::feature::definitions::FeatureSavedEntity::Line(_)
         )
-    })
+    }))
 }
 
 pub(in super::super) fn section_degenerate_axis_line(
@@ -754,12 +738,13 @@ pub(in super::super) fn section_degenerate_axis_line(
 }
 
 pub(in super::super) fn section_skamp_is_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> bool {
-    solver_only_section_entity_family(definition, item.entity_id)
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(solver_only_section_entity_family(ctx, definition, item.entity_id)?
         == Some(SectionEntityIncidenceFamily::Point)
-        || unique_section_incidence_curve_family(definition, item.entity_id)
+        || unique_section_incidence_curve_family(ctx, definition, item.entity_id)?
             == Some(SectionEntityIncidenceFamily::Point)
         || unique_point_segment(definition, item.entity_id).is_some()
         || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
@@ -767,34 +752,35 @@ pub(in super::super) fn section_skamp_is_point(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Point(_)
             ) && !section_degenerate_axis_line(definition, segment)
-        })
+        }))
 }
 
 pub(super) fn section_skamp_is_arc(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> bool {
-    if solver_only_section_entity_family(definition, item.entity_id)
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if solver_only_section_entity_family(ctx, definition, item.entity_id)?
         == Some(SectionEntityIncidenceFamily::Arc)
-        || unique_section_incidence_curve_family(definition, item.entity_id)
+        || unique_section_incidence_curve_family(ctx, definition, item.entity_id)?
             == Some(SectionEntityIncidenceFamily::Arc)
     {
-        return true;
+        return Ok(true);
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+        return Ok(unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
             matches!(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Arc(_)
             )
-        });
+        }));
     }
-    section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+    Ok(section_saved_entity(ctx, definition, item.entity_id)?.is_some_and(|entity| {
         matches!(
             entity,
             crate::feature::definitions::FeatureSavedEntity::Arc(_)
         )
-    })
+    }))
 }
 
 pub(super) fn section_skamp_curve_entity(
@@ -803,22 +789,22 @@ pub(super) fn section_skamp_curve_entity(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchEntityId> {
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
     if item.sense != 0 {
-        return None;
+        return Ok(None);
     }
-    let is_curve = section_skamp_is_line(definition, item)
+    let is_curve = section_skamp_is_line(ctx, definition, item)?
         || unique_bounded_curve_segment(definition, item.entity_id).is_some()
         || matches!(
-            unique_section_incidence_curve_family(definition, item.entity_id),
+            unique_section_incidence_curve_family(ctx, definition, item.entity_id)?,
             Some(
                 SectionEntityIncidenceFamily::BoundedCurve
                     | SectionEntityIncidenceFamily::LineOrArc
             )
         )
-        || section_skamp_is_circular(definition, item)
+        || section_skamp_is_circular(ctx, definition, item)?
         || matches!(
-            solver_only_section_entity_family(definition, item.entity_id),
+            solver_only_section_entity_family(ctx, definition, item.entity_id)?,
             Some(
                 SectionEntityIncidenceFamily::BoundedCurve
                     | SectionEntityIncidenceFamily::LineOrArc
@@ -827,16 +813,16 @@ pub(super) fn section_skamp_curve_entity(
             )
         )
         || (saved_section_entity_fallback_allowed(definition, item.entity_id)
-            && section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+            && section_saved_entity(ctx, definition, item.entity_id)?.is_some_and(|entity| {
                 matches!(
                     entity,
                     crate::feature::definitions::FeatureSavedEntity::Conic(_)
                         | crate::feature::definitions::FeatureSavedEntity::Spline(_)
                 )
             }));
-    is_curve
+    Ok(is_curve
         .then(|| admitted_entity(ctx, refusal, sketch, item.entity_id))
-        .flatten()
+        .flatten())
 }
 
 pub(in super::super) fn section_skamp_midpoint(
@@ -847,57 +833,52 @@ pub(in super::super) fn section_skamp_midpoint(
     first: &crate::feature::definitions::FeatureSkampItem,
     second: &crate::feature::definitions::FeatureSkampItem,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
-) -> Option<(SketchLocus, SketchEntityId)> {
-    let target = |item: &crate::feature::definitions::FeatureSkampItem| {
+) -> Result<Option<(SketchLocus, SketchEntityId)>, cadmpeg_core::CodecError> {
+    let target = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
         if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
-            return admitted_entity(ctx, refusal, sketch, item.entity_id);
+            return Ok(admitted_entity(ctx, refusal, sketch, item.entity_id));
         }
-        (item.sense == 0).then_some(())?;
-        if section_skamp_is_arc(definition, item) {
-            return admitted_entity(ctx, refusal, sketch, item.entity_id);
+        if item.sense != 0 { return Ok(None); }
+        if section_skamp_is_arc(ctx, definition, item)? {
+            return Ok(admitted_entity(ctx, refusal, sketch, item.entity_id));
         }
         // A type-25 section-reference line and an axis line anchored at one
         // section point are unbounded, so neither is a midpoint target.
         if unique_reference_line_segment(definition, item.entity_id).is_some()
             || unique_decoded_section_segment(definition, item.entity_id)
                 .is_some_and(|segment| section_degenerate_axis_line(definition, segment))
-        {
-            return None;
-        }
-        let line = section_skamp_oriented_line(ctx, refusal, definition, sketch, item, geometry)?;
-        section_skamp_line_without_type35_target(definition, item).then_some(line)
+        { return Ok(None); }
+        let Some(line) = section_skamp_oriented_line(ctx, refusal, definition, sketch, item, geometry)? else { return Ok(None); };
+        Ok(section_skamp_line_without_type35_target(ctx, definition, item)?.then_some(line))
     };
-    let point = |item: &crate::feature::definitions::FeatureSkampItem| {
-        section_skamp_point_locus(ctx, refusal, definition, sketch, item).or_else(|| {
-            (item.sense == 0 && section_skamp_is_circular(definition, item))
-                .then(|| {
-                    admitted_entity(ctx, refusal, sketch, item.entity_id).map(SketchLocus::Center)
-                })
-                .flatten()
-        })
+    let point = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+        if let Some(point) = section_skamp_point_locus(ctx, refusal, definition, sketch, item)? { return Ok(Some(point)); }
+        Ok(if item.sense == 0 && section_skamp_is_circular(ctx, definition, item)? {
+            admitted_entity(ctx, refusal, sketch, item.entity_id).map(SketchLocus::Center)
+        } else { None })
     };
     let centered_target = |item: &crate::feature::definitions::FeatureSkampItem| {
         item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some()
     };
     if centered_target(first) || centered_target(second) {
-        let candidate = crate::decode::uniqueness::exactly_one(
-            [(first, second), (second, first)]
-                .into_iter()
-                .filter(|(target, point)| centered_target(target) && point.sense == 0)
-                .filter_map(|(target_item, point_item)| {
-                    Some((point(point_item)?, target(target_item)?))
-                }),
-        )?;
-        return Some(candidate);
+        let mut first_candidate = None;
+        for (target_item, point_item) in [(first, second), (second, first)] {
+            if !centered_target(target_item) || point_item.sense != 0 { continue; }
+            let Some(point) = point(point_item)? else { continue; };
+            let Some(target) = target(target_item)? else { continue; };
+            if first_candidate.is_some() { return Ok(None); }
+            first_candidate = Some((point, target));
+        }
+        return Ok(first_candidate);
     }
     let candidate = |target, point| Some((point?, target?));
-    match (
-        candidate(target(first), point(second)),
-        candidate(target(second), point(first)),
+    Ok(match (
+        candidate(target(first)?, point(second)?),
+        candidate(target(second)?, point(first)?),
     ) {
         (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
         _ => None,
-    }
+    })
 }
 
 /// Whether the entity is a line by evidence other than a sense-zero type-35
@@ -905,31 +886,34 @@ pub(in super::super) fn section_skamp_midpoint(
 /// line family from its other incidence roles. An endpoint role alone
 /// establishes a bounded curve, not a line.
 fn section_skamp_line_without_type35_target(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> bool {
-    unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
         matches!(
             segment.kind,
             crate::feature::definitions::FeatureSegmentKind::Line(_)
         )
     }) || unique_centered_line_segment(definition, item.entity_id).is_some()
-        || unique_section_incidence_curve_family_without_type35_target(definition, item.entity_id)
+        || unique_section_incidence_curve_family_without_type35_target(ctx, definition, item.entity_id)?
             == Some(SectionEntityIncidenceFamily::Line)
         || (saved_section_entity_fallback_allowed(definition, item.entity_id)
-            && section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+            && section_saved_entity(ctx, definition, item.entity_id)?.is_some_and(|entity| {
                 matches!(
                     entity,
                     crate::feature::definitions::FeatureSavedEntity::Line(_)
                 )
-            }))
+            })))
 }
 
-pub(in super::super) fn section_saved_entity(
-    definition: &crate::feature::definitions::FeatureDefinition,
+pub(in super::super) fn section_saved_entity<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &'a crate::feature::definitions::FeatureDefinition,
     external_id: u32,
-) -> Option<&crate::feature::definitions::FeatureSavedEntity> {
-    let internal_id = definition.order_table.as_ref()?.internal_id(external_id)?;
+) -> Result<Option<&'a crate::feature::definitions::FeatureSavedEntity>, cadmpeg_core::CodecError> {
+    let Some(order) = definition.order_table.as_ref() else { return Ok(None); };
+    let Some(internal_id) = order.internal_id(ctx, external_id)? else { return Ok(None); };
     let mut matches = semantic_saved_section_entities(definition).filter(|entity| match entity {
         crate::feature::definitions::FeatureSavedEntity::Line(line) => {
             line.entity_id == internal_id
@@ -948,8 +932,8 @@ pub(in super::super) fn section_saved_entity(
             dummy.entity_id == Some(internal_id)
         }
     });
-    let entity = matches.next()?;
-    matches.next().is_none().then_some(entity)
+    let Some(entity) = matches.next() else { return Ok(None); };
+    Ok(matches.next().is_none().then_some(entity))
 }
 
 pub(super) fn section_skamp_circular_entity(
@@ -958,13 +942,13 @@ pub(super) fn section_skamp_circular_entity(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchEntityId> {
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
     if item.sense != 0 {
-        return None;
+        return Ok(None);
     }
-    section_skamp_is_circular(definition, item)
+    Ok(section_skamp_is_circular(ctx, definition, item)?
         .then(|| admitted_entity(ctx, refusal, sketch, item.entity_id))
-        .flatten()
+        .flatten())
 }
 
 pub(super) fn section_skamp_center_entity(
@@ -973,37 +957,38 @@ pub(super) fn section_skamp_center_entity(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> Option<SketchEntityId> {
-    (item.sense == 4 && section_skamp_is_circular(definition, item))
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    Ok((item.sense == 4 && section_skamp_is_circular(ctx, definition, item)?)
         .then(|| admitted_entity(ctx, refusal, sketch, item.entity_id))
-        .flatten()
+        .flatten())
 }
 
 pub(in super::super) fn section_skamp_is_circular(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     if solver_only_section_entity_offset(definition, item.entity_id).is_some() {
-        return solver_only_section_entity_family(definition, item.entity_id).is_some_and(
+        return Ok(solver_only_section_entity_family(ctx, definition, item.entity_id)?.is_some_and(
             |family| {
                 matches!(
                     family,
                     SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular
                 )
             },
-        );
+        ));
     }
     if matches!(
-        unique_section_incidence_curve_family(definition, item.entity_id),
+        unique_section_incidence_curve_family(ctx, definition, item.entity_id)?,
         Some(SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular)
     ) {
-        return true;
+        return Ok(true);
     }
     if unique_circle_segment(definition, item.entity_id).is_some() {
-        return true;
+        return Ok(true);
     }
-    if saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+    Ok(if saved_section_entity_fallback_allowed(definition, item.entity_id) {
+        section_saved_entity(ctx, definition, item.entity_id)?.is_some_and(|entity| {
             matches!(
                 entity,
                 crate::feature::definitions::FeatureSavedEntity::Arc(_)
@@ -1017,124 +1002,122 @@ pub(in super::super) fn section_skamp_is_circular(
                 crate::feature::definitions::FeatureSegmentKind::Arc(_)
             )
         })
-    }
+    })
 }
 
 pub(in super::super) fn section_skamp_line_midpoint_sources(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
-) -> Option<([SectionPointSource; 2], SectionPointSource)> {
+) -> Result<Option<([SectionPointSource; 2], SectionPointSource)>, cadmpeg_core::CodecError> {
     let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
-        return None;
+        return Ok(None);
     };
-    let target = |item: &crate::feature::definitions::FeatureSkampItem| {
+    let target = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<Option<_>, cadmpeg_core::CodecError> {
         if item.sense == 4 {
-            return unique_centered_line_segment(definition, item.entity_id).map(|line| {
+            return Ok(unique_centered_line_segment(definition, item.entity_id).map(|line| {
                 [
                     SectionPointSource::Point(line.center_id),
                     SectionPointSource::Point(line.center_id),
                 ]
-            });
+            }));
         }
         if item.sense != 0 {
-            return None;
+            return Ok(None);
         }
         if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-            return matches!(
+            return Ok(matches!(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Line(_)
             )
-            .then_some(segment.point_ids().map(SectionPointSource::Point));
+            .then_some(segment.point_ids().map(SectionPointSource::Point)));
         }
         if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-            return None;
+            return Ok(None);
         }
         let crate::feature::definitions::FeatureSavedEntity::Line(line) =
-            section_saved_entity(definition, item.entity_id)?
+            (match section_saved_entity(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) })
         else {
-            return None;
+            return Ok(None);
         };
         let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
             line.endpoints
         else {
-            return None;
+            return Ok(None);
         };
         let scale = [first_u, first_v, second_u, second_v]
             .into_iter()
             .map(f64::abs)
             .fold(1.0, f64::max);
-        let midpoint = FiniteVector::new([
+        let midpoint = match FiniteVector::new([
             f64::midpoint(first_u, second_u),
             f64::midpoint(first_v, second_v),
-        ])?;
-        ((second_u - first_u).hypot(second_v - first_v) > EPS_NONDEGENERATE_LINE * scale).then_some(
+        ]) { Some(value) => value, None => return Ok(None) };
+        Ok(((second_u - first_u).hypot(second_v - first_v) > EPS_NONDEGENERATE_LINE * scale).then_some(
             [
                 SectionPointSource::Value(midpoint),
                 SectionPointSource::Value(midpoint),
             ],
-        )
+        ))
     };
-    let point = |item: &crate::feature::definitions::FeatureSkampItem| {
-        section_skamp_incidence_point(definition, item)
-    };
-    let candidate =
-        crate::decode::uniqueness::exactly_one(
-            [(first, second), (second, first)].into_iter().filter_map(
-                |(target_item, point_item)| Some((target(target_item)?, point(point_item)?)),
-            ),
-        )?;
-    Some(candidate)
+    let mut candidate = None;
+    for (target_item, point_item) in [(first, second), (second, first)] {
+        let Some(target) = target(target_item)? else { continue; };
+        let Some(point) = section_skamp_incidence_point(ctx, definition, point_item)? else { continue; };
+        if candidate.is_some() { return Ok(None); }
+        candidate = Some((target, point));
+    }
+    Ok(candidate)
 }
 
 pub(in super::super) fn section_skamp_arc_midpoint_source(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<(SectionPointSource, FiniteVector<2>)> {
+) -> Result<Option<(SectionPointSource, FiniteVector<2>)>, cadmpeg_core::CodecError> {
     let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
-        return None;
+        return Ok(None);
     };
-    let candidate = crate::decode::uniqueness::exactly_one(
-        [(first, second), (second, first)]
-            .into_iter()
-            .filter_map(|(target, point)| {
-                (target.sense == 0 && section_skamp_is_arc(definition, target)).then_some(())?;
-                Some((
-                    section_skamp_incidence_point(definition, point)?,
-                    section_skamp_arc_midpoint(definition, target, coordinates)?,
-                ))
-            }),
-    )?;
-    Some(candidate)
+    let mut candidate = None;
+    for (target, point) in [(first, second), (second, first)] {
+        if target.sense != 0 || !section_skamp_is_arc(ctx, definition, target)? { continue; }
+        let Some(point) = section_skamp_incidence_point(ctx, definition, point)? else { continue; };
+        let Some(midpoint) = section_skamp_arc_midpoint(ctx, definition, target, coordinates)? else { continue; };
+        if candidate.is_some() { return Ok(None); }
+        candidate = Some((point, midpoint));
+    }
+    Ok(candidate)
 }
 
 fn section_skamp_arc_midpoint(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<FiniteVector<2>> {
+) -> Result<Option<FiniteVector<2>>, cadmpeg_core::CodecError> {
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         if !matches!(
             segment.kind,
             crate::feature::definitions::FeatureSegmentKind::Arc(_)
         ) || segment.arc_orientation != Some(0)
         {
-            return None;
+            return Ok(None);
         }
-        let center = complete_section_coordinate(coordinates, segment.center_id?)?;
-        let first = complete_section_coordinate(coordinates, segment.point_ids()[0])?;
-        let second = complete_section_coordinate(coordinates, segment.point_ids()[1])?;
-        return oriented_arc_midpoint(center, first, second, None);
+        let center = match complete_section_coordinate(coordinates, match segment.center_id { Some(value) => value, None => return Ok(None) }) { Some(value) => value, None => return Ok(None) };
+        let first = match complete_section_coordinate(coordinates, segment.point_ids()[0]) { Some(value) => value, None => return Ok(None) };
+        let second = match complete_section_coordinate(coordinates, segment.point_ids()[1]) { Some(value) => value, None => return Ok(None) };
+        return Ok(oriented_arc_midpoint(center, first, second, None));
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
-        return None;
+        return Ok(None);
     }
     let crate::feature::definitions::FeatureSavedEntity::Arc(arc) =
-        section_saved_entity(definition, item.entity_id)?
+        (match section_saved_entity(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) })
     else {
-        return None;
+        return Ok(None);
     };
-    saved_arc_midpoint(arc)
+    Ok(saved_arc_midpoint(arc))
 }
 
 fn complete_section_coordinate(
@@ -1290,7 +1273,7 @@ mod tests {
         policy.limits.max_retained_bytes = need - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let refusal = std::cell::Cell::new(None);
-        assert!(section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item).is_none());
+        assert!(section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item).expect("admitted section lookup").is_none());
         assert!(
             matches!(refusal.into_inner(), Some(cadmpeg_core::CodecError::ResourceLimit(resource))
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -1299,7 +1282,7 @@ mod tests {
         policy.limits.max_retained_bytes = need;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let refusal = std::cell::Cell::new(None);
-        assert!(section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item).is_none());
+        assert!(section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item).expect("admitted section lookup").is_none());
         assert!(refusal.into_inner().is_none());
     }
 
@@ -1751,21 +1734,21 @@ mod tests {
             sense: 0,
         };
         assert_eq!(
-            unique_section_incidence_curve_family(&definition, 101),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 101)).expect("admitted section lookup"),
             None
         );
-        assert!(!section_skamp_is_line(&definition, &line));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(ctx, &definition, &line)).expect("admitted section lookup"));
         assert_eq!(
-            unique_section_incidence_curve_family(&definition, 102),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 102)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::Arc)
         );
-        assert!(section_skamp_is_arc(&definition, &arc));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_arc(ctx, &definition, &arc)).expect("admitted section lookup"));
         let bounded_curve = crate::feature::definitions::FeatureSkampItem {
             entity_id: 103,
             sense: 0,
         };
         assert_eq!(
-            unique_section_incidence_curve_family(&definition, 103),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &definition, 103)).expect("admitted section lookup"),
             Some(SectionEntityIncidenceFamily::BoundedCurve)
         );
         assert_eq!(
@@ -1775,7 +1758,7 @@ mod tests {
                 &definition,
                 &sketch,
                 &bounded_curve
-            )),
+            ).expect("admitted section lookup")),
             Some(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:103".to_string(),)
                     .expect("valid test fixture")
@@ -1791,7 +1774,7 @@ mod tests {
                     entity_id: 102,
                     sense: 2,
                 },
-            )),
+            ).expect("admitted section lookup")),
             Some(SketchLocus::Start(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:102".to_string(),)
                     .expect("valid test fixture")
@@ -1850,11 +1833,11 @@ mod tests {
             sense: 0,
         };
         assert_eq!(
-            unique_section_incidence_curve_family(&decoded_arc, 104),
+            crate::decode::with_test_decode_ctx(|ctx| unique_section_incidence_curve_family(ctx, &decoded_arc, 104)).expect("admitted section lookup"),
             None
         );
-        assert!(!section_skamp_is_line(&decoded_arc, &decoded_arc_item));
-        assert!(section_skamp_is_arc(&decoded_arc, &decoded_arc_item));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(ctx, &decoded_arc, &decoded_arc_item)).expect("admitted section lookup"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_arc(ctx, &decoded_arc, &decoded_arc_item)).expect("admitted section lookup"));
     }
 
     #[test]
@@ -1952,7 +1935,7 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
-        assert!(section_skamp_is_point(&definition, &item));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_point(ctx, &definition, &item)).expect("admitted section lookup"));
         assert_eq!(
             super::with_test_locus(|ctx, refusal| section_skamp_point_locus(
                 ctx,
@@ -1960,7 +1943,7 @@ mod tests {
                 &definition,
                 &sketch,
                 &item
-            )),
+            ).expect("admitted section lookup")),
             Some(SketchLocus::Entity(
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string(),)
                     .expect("valid test fixture")
@@ -2035,7 +2018,7 @@ mod tests {
                 ),
                 true,
                 None,
-            )),
+            ).expect("admitted section lookup")),
             Some([
                 SketchLocus::Start(
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:10".to_string(),)
@@ -2132,7 +2115,7 @@ mod tests {
             offset: 0,
         };
         let Some(([first, second], coordinate)) =
-            section_skamp_same_coordinate_sources(&definition, &same_coordinate)
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_same_coordinate_sources(ctx, &definition, &same_coordinate)).expect("admitted section lookup")
         else {
             panic!("same-coordinate sources");
         };
@@ -2149,7 +2132,7 @@ mod tests {
             offset: 0,
         };
         let Some(([first, second], coordinate)) =
-            section_skamp_same_coordinate_sources(&definition, &arc_alignment)
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_same_coordinate_sources(ctx, &definition, &arc_alignment)).expect("admitted section lookup")
         else {
             panic!("arc alignment sources");
         };
@@ -2166,7 +2149,7 @@ mod tests {
             offset: 0,
         };
         let Some(([first, second], point)) =
-            section_skamp_line_midpoint_sources(&definition, &line_midpoint)
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_line_midpoint_sources(ctx, &definition, &line_midpoint)).expect("admitted section lookup")
         else {
             panic!("line midpoint sources");
         };
@@ -2188,7 +2171,7 @@ mod tests {
             (7, [Some(0.0), Some(0.0)]),
         ]);
         let (point, midpoint) =
-            section_skamp_arc_midpoint_source(&definition, &arc_midpoint, &coordinates)
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_arc_midpoint_source(ctx, &definition, &arc_midpoint, &coordinates)).expect("admitted section lookup")
                 .expect("arc midpoint");
         assert!(matches!(point, SectionPointSource::Point(3)));
         assert!(midpoint[0] < 0.0 && midpoint[1] < 0.0);
@@ -2202,10 +2185,10 @@ mod tests {
                 None,
             )),
         );
-        assert!(section_skamp_same_coordinate_sources(&duplicate, &same_coordinate).is_none());
-        assert!(section_skamp_line_midpoint_sources(&duplicate, &line_midpoint).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_same_coordinate_sources(ctx, &duplicate, &same_coordinate)).expect("admitted section lookup").is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_line_midpoint_sources(ctx, &duplicate, &line_midpoint)).expect("admitted section lookup").is_none());
         assert!(
-            section_skamp_arc_midpoint_source(&duplicate, &arc_midpoint, &coordinates).is_none()
+            crate::decode::with_test_decode_ctx(|ctx| section_skamp_arc_midpoint_source(ctx, &duplicate, &arc_midpoint, &coordinates)).expect("admitted section lookup").is_none()
         );
 
         let mut cross_family = definition.clone();
@@ -2221,7 +2204,7 @@ mod tests {
                     offset: 99,
                 },
             ));
-        assert!(section_skamp_same_coordinate_sources(&cross_family, &same_coordinate).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_same_coordinate_sources(ctx, &cross_family, &same_coordinate)).expect("admitted section lookup").is_none());
     }
 
     #[test]
@@ -2298,8 +2281,8 @@ mod tests {
             entity_id: 10,
             sense: 0,
         };
-        assert!(!section_skamp_is_line(&definition, &special_item));
-        assert!(!section_skamp_is_arc(&definition, &special_item));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_line(ctx, &definition, &special_item)).expect("admitted section lookup"));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_arc(ctx, &definition, &special_item)).expect("admitted section lookup"));
 
         let midpoint = crate::feature::definitions::FeatureSkamp {
             id: 35,
@@ -2315,6 +2298,6 @@ mod tests {
             ],
             offset: 0,
         };
-        assert!(section_skamp_line_midpoint_sources(&definition, &midpoint).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_line_midpoint_sources(ctx, &definition, &midpoint)).expect("admitted section lookup").is_none());
     }
 }
