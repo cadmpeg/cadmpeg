@@ -124,10 +124,21 @@ pub(crate) fn project_decal_images(
         let asset_id = asset
             .id
             .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
-        let native_id = String::from_utf8(
-            ctx.copy_retained(operand.id.as_bytes(), "f3d Decal native operand identifier")?,
-        )
-        .map_err(|_| CodecError::malformed("F3D Decal operand identifier must be UTF-8"))?;
+        let native_id = ctx.copy_retained_text(
+            &operand.id,
+            "f3d Decal native operand identifier",
+        )?;
+        match ctx.validate_utf8(
+            native_id.as_bytes(),
+            "validate F3D Decal native operand identifier",
+        )? {
+            Ok(_) => {}
+            Err(_) => {
+                return Err(CodecError::malformed(
+                    "F3D Decal operand identifier must be UTF-8",
+                ));
+            }
+        }
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -717,6 +728,30 @@ mod tests {
                     "operation {operation}: {result:?}"
                 );
             }
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "validate F3D Decal native operand identifier",
+                0,
+                |ctx| {
+                    super::project_decal_images(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&image),
+                        std::slice::from_ref(&group),
+                        std::slice::from_ref(&operand),
+                        &mut [feature()],
+                    )
+                    .map(|_| ())
+                },
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "validate F3D Decal native operand identifier"
+                        && limit.additional == u64::try_from(operand.id.len()).unwrap()
+            ));
             let assets = super::project_decal_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,

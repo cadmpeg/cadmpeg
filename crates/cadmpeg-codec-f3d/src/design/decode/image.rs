@@ -77,23 +77,33 @@ pub(super) fn embedded_image_asset(
     let (Some(entry), None) = (entries.next(), entries.next()) else {
         return Ok(None);
     };
-    let media_type = std::path::Path::new(asset_name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .and_then(|extension| {
-            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                Some("image/jpeg")
-            } else if extension.eq_ignore_ascii_case("png") {
-                Some("image/png")
-            } else {
-                None
+    let media_type = match std::path::Path::new(asset_name).extension() {
+        Some(extension) => match ctx.validate_utf8(
+            extension.as_encoded_bytes(),
+            "validate F3D embedded image extension",
+        )? {
+            Ok(extension) => {
+                if extension.eq_ignore_ascii_case("jpg")
+                    || extension.eq_ignore_ascii_case("jpeg")
+                {
+                    Some("image/jpeg")
+                } else if extension.eq_ignore_ascii_case("png") {
+                    Some("image/png")
+                } else {
+                    None
+                }
             }
-        })
-        .map(str::to_owned);
+            Err(_) => None,
+        },
+        None => None,
+    }
+    .map(str::to_owned);
     let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
-    let name =
-        String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)
-            .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
+    let name = ctx.copy_retained_text(asset_name, "f3d embedded image name")?;
+    match ctx.validate_utf8(name.as_bytes(), "validate F3D embedded image name")? {
+        Ok(_) => {}
+        Err(_) => return Err(CodecError::Malformed("asset name must be UTF-8".into())),
+    }
     let native_ref = native_scope_charged(ctx, &entry.name)?;
     Ok(Some(Asset::try_new(
         ctx,
@@ -193,6 +203,32 @@ mod tests {
                             && failure.operation == operation
                 ));
             }
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "validate F3D embedded image name",
+                0,
+                |ctx| super::embedded_image_asset(ctx, scan, NAME).map(|_| ()),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "validate F3D embedded image name"
+                        && limit.additional == u64_from_index(NAME.len())
+            ));
+            let extension_error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "validate F3D embedded image extension",
+                0,
+                |ctx| super::embedded_image_asset(ctx, scan, NAME).map(|_| ()),
+            );
+            assert!(matches!(
+                extension_error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "validate F3D embedded image extension"
+                        && limit.additional == 3
+            ));
             crate::design::test_support::with_test_decode_context(|ctx| {
                 assert!(super::embedded_image_asset(ctx, scan, NAME)
                     .unwrap()

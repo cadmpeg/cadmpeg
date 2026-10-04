@@ -521,8 +521,9 @@ fn recipe_design_id<'a>(
             .admit_iter(candidate, "scan F3D body recipe Design ID")?
             .all(u8::is_ascii_digit)
         {
-            let Ok(id) = std::str::from_utf8(candidate) else {
-                return Ok(None);
+            let id = match ctx.validate_utf8(candidate, "validate F3D body recipe Design ID")? {
+                Ok(id) => id,
+                Err(_) => return Ok(None),
             };
             return Ok(Some((id, offset - 23)));
         }
@@ -553,8 +554,9 @@ fn ascii_id_at<'bytes>(
     {
         return Ok(None);
     }
-    let Ok(value) = std::str::from_utf8(value) else {
-        return Ok(None);
+    let value = match ctx.validate_utf8(value, "validate F3D body recipe ID")? {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
     };
     Ok(Some((value, length_offset + 4)))
 }
@@ -1822,6 +1824,7 @@ fn is_utf16_guid(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecErr
 mod tests {
     mod extend_slice;
     mod map_limits;
+    mod utf8;
 
     use cadmpeg_core::decode::u64_from_index;
 

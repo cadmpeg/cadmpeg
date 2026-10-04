@@ -418,8 +418,9 @@ fn indexed_class_tag(
     else {
         return Ok(None);
     };
-    let Ok(tag) = std::str::from_utf8(tag_bytes) else {
-        return Ok(None);
+    let tag = match ctx.validate_utf8(tag_bytes, "validate F3D mesh indexed class tag")? {
+        Ok(tag) => tag,
+        Err(_) => return Ok(None),
     };
     let tag = ctx.copy_retained_text(tag, "copy F3D mesh indexed class tag")?;
     Ok(crate::records::references::DesignClassTag::try_from(tag).ok())

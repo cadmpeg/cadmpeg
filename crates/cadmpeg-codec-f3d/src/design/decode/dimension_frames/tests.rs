@@ -1874,6 +1874,39 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
             && failure.operation == "f3d dimension geometry indices"));
 }
 
+#[test]
+fn packed_recipe_reference_utf8_validation_refuses_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut prefix = Vec::new();
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(b"12");
+    prefix.extend_from_slice(&[0; 4]);
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&77u32.to_le_bytes());
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D packed recipe reference token",
+        0,
+        |ctx| {
+            super::scan_recipe_reference_operand(
+                ctx,
+                &prefix,
+                0,
+                super::RecipeReferenceTokenFrame::Packed,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D packed recipe reference token"
+                && limit.additional == 2
+    ));
+}
+
 mod companion_limits;
 
 mod loci;

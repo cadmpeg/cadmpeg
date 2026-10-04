@@ -271,7 +271,15 @@ pub(super) fn exact_move_operation(
                 return None;
             }
             let after_tag = start.checked_add(4)?.checked_add(class_tag_len)?;
-            let class_tag = std::str::from_utf8(bytes.get(start + 4..after_tag)?).ok()?;
+            let class_tag_bytes = bytes.get(start + 4..after_tag)?;
+            let class_tag = match ctx.validate_utf8(
+                class_tag_bytes,
+                "validate F3D Move class tag UTF-8",
+            ) {
+                Ok(Ok(class_tag)) => class_tag,
+                Ok(Err(_)) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let graphic = match ctx.admit_iter(
                 class_tag.as_bytes(),
                 "validate F3D Move class tag",

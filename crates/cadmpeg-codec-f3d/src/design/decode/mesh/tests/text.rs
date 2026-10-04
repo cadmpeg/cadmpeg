@@ -34,3 +34,24 @@ fn mesh_guid_ownership_preserves_retained_refusals() {
         }
     }
 }
+
+#[test]
+fn mesh_indexed_class_tag_utf8_validation_refuses_work() {
+    let mut record = Vec::new();
+    record.extend_from_slice(&3u32.to_le_bytes());
+    record.extend_from_slice(b"307");
+    record.extend_from_slice(&42u32.to_le_bytes());
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D mesh indexed class tag",
+        0,
+        |ctx| super::super::indexed_class_tag(ctx, &record, 0).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D mesh indexed class tag"
+                && limit.additional == 3
+    ));
+}

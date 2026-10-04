@@ -553,3 +553,24 @@ fn indexed_record_header_class_tag_copy_refuses_retained_bytes() {
                 && limit.additional == 3
     ));
 }
+
+#[test]
+fn indexed_record_header_class_tag_validation_refuses_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use crate::design::decode::sketch::indexed_record_header_at;
+
+    let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D indexed record class tag",
+        0,
+        |ctx| indexed_record_header_at(ctx, &header, 0).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D indexed record class tag"
+                && limit.additional == 3
+    ));
+}

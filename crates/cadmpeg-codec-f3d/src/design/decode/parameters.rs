@@ -248,7 +248,11 @@ pub(in crate::design) fn parse_design_parameter(
         if !raw_tag.iter().all(u8::is_ascii_graphic) {
             return None;
         }
-        let raw_tag = std::str::from_utf8(raw_tag).ok()?;
+        let raw_tag = match ctx.validate_utf8(raw_tag, "validate F3D Design parameter class tag") {
+            Ok(Ok(raw_tag)) => raw_tag,
+            Ok(Err(_)) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let class_tag = match ctx.copy_retained_text(raw_tag, "copy F3D Design parameter class tag") {
             Ok(class_tag) => class_tag,
             Err(error) => return Some(Err(error)),
@@ -1310,11 +1314,21 @@ fn companion_payload<S: std::hash::BuildHasher>(
         .admit_iter(&owned, "scan F3D companion owned recipe IDs")?
         .copied()
     {
-        let id = String::from_utf8(ctx.copy_retained(
-            recipe.id.as_bytes(),
+        let id = ctx.copy_retained_text(
+            &recipe.id,
             "f3d companion owned recipe identifier",
-        )?)
-        .map_err(|_| CodecError::malformed("F3D companion recipe ID must be UTF-8"))?;
+        )?;
+        match ctx.validate_utf8(
+            id.as_bytes(),
+            "validate F3D companion owned recipe identifier",
+        )? {
+            Ok(_) => {}
+            Err(_) => {
+                return Err(CodecError::malformed(
+                    "F3D companion recipe ID must be UTF-8",
+                ));
+            }
+        }
 
         ctx.reserve_vec(&mut owned_ids, 1, "f3d companion owned recipe identifiers")?;
         owned_ids.push(id);

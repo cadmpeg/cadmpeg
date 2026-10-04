@@ -427,6 +427,27 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
+        if ordinal == 0 {
+            let offsets = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                "validate F3D Move class tag UTF-8",
+                0,
+                |ctx| {
+                    crate::design::decode::scopes::direct_face::exact_move_operation(
+                        ctx, &bytes, &offsets, &scope,
+                    )
+                    .map(|_| ())
+                },
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && limit.operation == "validate F3D Move class tag UTF-8"
+                        && limit.additional == 3
+            ));
+        }
 let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
 &cadmpeg_test_support::service_decode_context(),
 &bytes,

@@ -121,10 +121,15 @@ fn copy_design_type(
         copied.extend(design_type.entities.values().copied());
         ReferenceRun::unlocated(copied)
     };
-    let module = String::from_utf8(
-        ctx.copy_retained(design_type.module.as_bytes(), "f3d design type module")?,
-    )
-    .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
+    let module = ctx.copy_retained_text(&design_type.module, "f3d design type module")?;
+    match ctx.validate_utf8(module.as_bytes(), "validate F3D Design type module")? {
+        Ok(_) => {}
+        Err(_) => {
+            return Err(CodecError::Malformed(
+                "F3D Design module text is invalid UTF-8".into(),
+            ));
+        }
+    }
     let id = design_record_id_charged(
         ctx,
         stream,
