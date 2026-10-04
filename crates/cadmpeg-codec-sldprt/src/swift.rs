@@ -743,7 +743,7 @@ fn read_strings(
         };
         let name = ctx.format_retained(format_args!("{name}"), "copy SWIFT string key")?;
         let value = ctx.format_retained(format_args!("{value}"), "copy SWIFT string value")?;
-        if values.contains_key(&name) {
+        if ctx.contains_key_btree_map(&(values), &name, "test SLDPRT map key")? {
             return Ok(None);
         }
         ctx.insert_btree_map(&mut values, name, value, "collect SWIFT string properties")?;
@@ -771,7 +771,7 @@ fn read_integers(
             return Ok(None);
         };
         let name = ctx.format_retained(format_args!("{name}"), "copy SWIFT integer key")?;
-        if values.contains_key(&name) {
+        if ctx.contains_key_btree_map(&(values), &name, "test SLDPRT map key")? {
             return Ok(None);
         }
         ctx.insert_btree_map(&mut values, name, value, "collect SWIFT integer properties")?;
@@ -799,7 +799,7 @@ fn read_doubles(
             return Ok(None);
         };
         let name = ctx.format_retained(format_args!("{name}"), "copy SWIFT double key")?;
-        if values.contains_key(&name) {
+        if ctx.contains_key_btree_map(&(values), &name, "test SLDPRT map key")? {
             return Ok(None);
         }
         ctx.insert_btree_map(&mut values, name, value, "collect SWIFT double properties")?;

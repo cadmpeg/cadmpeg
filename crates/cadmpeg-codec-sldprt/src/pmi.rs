@@ -286,7 +286,7 @@ pub(crate) fn enrich_history_parameters_with_features(
             cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
         };
         let parameters = &mut histories[*history_index].features[*feature_index].parameters;
-        if parameters.contains_key(name) {
+        if ctx.contains_key_btree_map(&(parameters), name, "test SLDPRT map key")? {
             continue;
         }
         let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(

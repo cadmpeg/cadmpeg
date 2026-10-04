@@ -388,7 +388,7 @@ pub(super) fn native_parameter_is_length(ctx: &cadmpeg_core::decode::DecodeConte
                     Some("Blind" | "Symmetric")
                 )
                 && feature.parameters.len() == 1
-                && feature.parameters.contains_key(name)
+                && ctx.contains_key_btree_map(&(feature.parameters), name, "test SLDPRT map key")?
         }
     })
 }

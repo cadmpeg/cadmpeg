@@ -43,7 +43,7 @@ fn keyed_attributes<'name, 'value>(
             report_unkeyed_property(ctx, losses, record, None)?;
             continue;
         }
-        if kept.contains_key(name) {
+        if ctx.contains_key_btree_map(&(kept), name, "test SLDPRT map key")? {
             report_unkeyed_property(ctx, losses, record, Some(name))?;
             continue;
         }

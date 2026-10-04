@@ -1513,7 +1513,7 @@ fn scan_solidworks_envelopes<'a>(
                 ("swConfigurationAlternateName", "alternate_name"),
             ] {
                 if let Some(value) = configuration.attribute(source) {
-                    if !source_attributes.contains_key(&(slot, target)) {
+                    if !ctx.contains_key_btree_map(&(source_attributes), &(slot, target), "test SLDPRT map key")? {
                         ctx.charge_collection_items(1, "collect SLDPRT configuration attributes")?;
                     }
                     source_attributes.insert((slot, target), value);
