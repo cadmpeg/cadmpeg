@@ -224,11 +224,14 @@ pub(crate) fn validate_native(
     })?;
     for (history, expected_history) in ctx
         .admit_iter(&native.feature_histories, "scan SLDPRT expected histories")?
-        .zip(&expected_histories)
+        .zip(ctx.admit_iter(&expected_histories, "scan SLDPRT expected history copies")?)
     {
         for (feature, expected_feature) in ctx
             .admit_iter(&history.features, "scan SLDPRT expected history features")?
-            .zip(&expected_history.features)
+            .zip(ctx.admit_iter(
+                &expected_history.features,
+                "scan SLDPRT expected history feature copies",
+            )?)
         {
             if !ctx.equal(
                 &feature.input_class,
@@ -256,7 +259,10 @@ pub(crate) fn validate_native(
                 &lane.sketch_entities,
                 "scan SLDPRT expected sketch entities",
             )?
-            .zip(&expected_lane.sketch_entities)
+            .zip(ctx.admit_iter(
+                &expected_lane.sketch_entities,
+                "scan SLDPRT expected sketch entity copies",
+            )?)
         {
             if !ctx.equal(
                 &entity.feature_ref,
