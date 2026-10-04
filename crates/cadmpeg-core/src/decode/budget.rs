@@ -126,6 +126,25 @@ impl DecodeBudget {
         policy_limit.min(proportional)
     }
 
+    /// The policy leaves this dimension unlimited, which marks the budget a
+    /// refusal probe searches.
+    #[cfg(any(test, feature = "test-support"))]
+    fn unlimited_by_policy(&self, dimension: ResourceDimension) -> bool {
+        let limits = &self.policy.limits;
+        let limit = match dimension {
+            ResourceDimension::InputBytes => limits.max_input_bytes,
+            ResourceDimension::DecompressedBytes => limits.max_decompressed_bytes_total,
+            ResourceDimension::MaterializedBytes => limits.max_materialized_bytes,
+            ResourceDimension::RetainedBytes => limits.max_retained_bytes,
+            ResourceDimension::Entities => limits.max_entities,
+            ResourceDimension::CollectionItems => limits.max_collection_items,
+            ResourceDimension::RecursionDepth => limits.max_recursion_depth,
+            ResourceDimension::WorkUnits => limits.max_work_units,
+            ResourceDimension::Codec(_) => return false,
+        };
+        limit == u64::MAX
+    }
+
     fn charge(
         &self,
         dimension: ResourceDimension,
@@ -139,8 +158,18 @@ impl DecodeBudget {
         }
         let before = used.get();
         #[cfg(any(test, feature = "test-support"))]
-        if let Some(peak) =
-            super::refusal_probe::refusal_limit(dimension, before, amount, operation)
+        if let Some(peak) = self
+            .unlimited_by_policy(dimension)
+            .then(|| {
+                super::refusal_probe::refusal_limit(
+                    std::ptr::from_ref(self).addr(),
+                    dimension,
+                    before,
+                    amount,
+                    operation,
+                )
+            })
+            .flatten()
         {
             return Err(self.refuse_limit(
                 dimension,
