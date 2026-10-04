@@ -473,15 +473,25 @@ mod tests {
 
     #[test]
     fn bezier_knot_insertion_preserves_every_caller_work_refusal() {
-        const WORK: u64 = 76;
+        const FIXED_WORK: u64 = 76;
+        const FOUR_SLOT_MOVE: u64 =
+            4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
+        const FIVE_SLOT_MOVE: u64 =
+            5 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
+        const FOUR_SLOT_WORK: u64 = FIXED_WORK + FOUR_SLOT_MOVE;
+        const MAX_WORK: u64 = FIXED_WORK + FIVE_SLOT_MOVE;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let knots = [-1.0, 0.0, 1.0, 2.0];
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
-        // Initial scans and copies use 21 units. Endpoint multiplicities,
-        // searches and shifts use 44. Six internal-knot visits and three
-        // active-span visits plus two output-row copies complete extraction.
-        for cap in 0..WORK {
+        // Scans and input copies use 21 units; endpoint multiplicities,
+        // searches and shifts use 44; internal-knot scanning uses 6; and
+        // active-span visits and output-row copies use 5. Knot-vector growth
+        // can also move 0, 4, or 5 f64 slots: the initial capacity is at least
+        // 4, and the two insertions need slots 5 and 6. Work is therefore the
+        // fixed amount, the fixed amount plus four moved slots, or the fixed
+        // amount plus five moved slots. MAX_WORK covers each capacity branch.
+        for cap in 0..FIXED_WORK {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let arena = DecodeArena::new();
@@ -494,15 +504,57 @@ mod tests {
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
             );
         }
+
+        // At the fixed-work cap, the no-growth allocator branch succeeds.
+        // Capacity 4 instead charges 32 moved knot bytes and refuses the next
+        // multiplicity scan; capacity 5 charges 40 moved bytes on the second
+        // insertion and refuses that reservation.
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = WORK;
+        policy.limits.max_work_units = FIXED_WORK;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let refusal = match homogeneous_spans(&ctx, 1, &knots, &controls) {
+            Ok(Some(output)) => {
+                assert_eq!(output.len(), 1);
+                assert_eq!(output[0].domain, [0.0, 1.0]);
+                assert_eq!(output[0].controls, controls);
+                drop(output);
+                None
+            }
+            Err(limit) => {
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.limit, FIXED_WORK);
+                assert!(
+                    (limit.used == 75
+                        && limit.additional == 5
+                        && limit.operation == "Bezier knot multiplicity scan")
+                        || (limit.used == 55
+                            && limit.additional == FIVE_SLOT_MOVE
+                            && limit.operation == "Bezier inserted knot")
+                );
+                Some(limit)
+            }
+            Ok(None) => panic!("valid unclamped endpoints produce an active span"),
+        };
+        match refusal {
+            Some(limit) => assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+            ),
+            None => ctx.finish_session().expect("fixed insertion work"),
+        }
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = MAX_WORK;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let output = homogeneous_spans(&ctx, 1, &knots, &controls)
-            .expect("exact insertion work")
+            .expect("bounded insertion work")
             .expect("one active span");
         assert_eq!(output.len(), 1);
         assert_eq!(output[0].domain, [0.0, 1.0]);
@@ -512,7 +564,28 @@ mod tests {
             .reserve_scoped_limit(4096, "test inserted Bezier scratch released")
             .expect("all working and output scratch released");
         drop(reuse);
-        ctx.finish_session().expect("exact admitted insertion");
+        ctx.finish_session().expect("admitted insertion");
+
+        let arena = DecodeArena::new();
+        let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let probe_output = homogeneous_spans(&probe_ctx, 1, &knots, &controls)
+            .expect("bounded insertion work")
+            .expect("one active span");
+        drop(probe_output);
+        let actual = probe_ctx
+            .charge_work_limit(MAX_WORK + 1, "test bounded Bezier insertion work")
+            .expect_err("the probe exceeds the caller's work limit");
+        assert_eq!(actual.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(actual.limit, MAX_WORK);
+        assert_eq!(actual.additional, MAX_WORK + 1);
+        assert!(matches!(
+            actual.used,
+            FIXED_WORK | FOUR_SLOT_WORK | MAX_WORK
+        ));
+        assert!(matches!(
+            probe_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == actual
+        ));
     }
 
     #[test]
