@@ -190,7 +190,6 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                         reference_count_at,
                         &reference_members,
                     )
-                    .transpose()
                 });
             }
         }
@@ -1513,23 +1512,6 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         );
     }
 
-    let ordered_bytes = make_bytes(b"357", b"258", 2);
-    for operation in [
-        "search F3D shifted reference-aware Extrude slot members",
-        "search F3D shifted reference-aware tail references",
-        "search F3D shifted reference-aware trailing reference",
-    ] {
-        super::assert_work_refusal(operation, |ctx| {
-            super::super::exact_shifted_reference_aware_extrude_prologue(
-                ctx,
-                &ordered_bytes,
-                0,
-                REFERENCE_COUNT_OFFSET,
-                &REFERENCE_MEMBERS,
-            )
-        });
-    }
-
     let mut invalid_class_397 = make_bytes(b"397", b"262", 2);
     invalid_class_397[135..139].copy_from_slice(&2u32.to_le_bytes());
     let invalid_scope = parse_parameter_scope(
@@ -1741,19 +1723,6 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         })
     );
 
-    super::assert_work_refusal(
-        "search F3D shifted reference-aware unordered trailing reference",
-        |ctx| {
-            super::super::exact_shifted_reference_aware_extrude_prologue(
-                ctx,
-                &bytes,
-                0,
-                layout::REFERENCE_COUNT,
-                &REFERENCE_MEMBERS,
-            )
-        },
-    );
-
     let mut invalid_trailing_reference = bytes.clone();
     invalid_trailing_reference
         [class_323_tail::TRAILING_REFERENCE + 1..class_323_tail::TRAILING_REFERENCE + 5]
@@ -1916,19 +1885,6 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: u64_from_index(layout::START_SUPPORT),
         })
-    );
-
-    super::assert_work_refusal(
-        "search F3D shifted reference-aware symmetric tail references",
-        |ctx| {
-            super::super::exact_shifted_reference_aware_extrude_prologue(
-                ctx,
-                &bytes,
-                0,
-                symmetric::REFERENCE_COUNT,
-                &REFERENCE_MEMBERS,
-            )
-        },
     );
 
     let mut invalid_extent = bytes.clone();

@@ -133,8 +133,7 @@ fn compact_shifted_extrude_parameter_membership_propagates_work_refusal() {
             0,
             283,
             &SINGLE_REFERENCE,
-        )
-        .transpose(),
+        ),
         Ok(Some(
             crate::records::feature::extrude::DesignExtrudePrologue::LegacyShifted {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
@@ -157,7 +156,6 @@ fn compact_shifted_extrude_parameter_membership_propagates_work_refusal() {
                 283,
                 &SINGLE_REFERENCE,
             )
-            .transpose()
         },
     );
 }
@@ -189,8 +187,7 @@ fn shifted_extrude_parameter_membership_propagates_work_refusal() {
             0,
             272,
             &SINGLE_REFERENCE,
-        )
-        .transpose(),
+        ),
         Ok(Some(
             crate::records::feature::extrude::DesignExtrudePrologue::LegacyShifted {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
@@ -205,12 +202,11 @@ fn shifted_extrude_parameter_membership_propagates_work_refusal() {
     ));
     assert_work_refusal("search F3D shifted Extrude parameter references", |ctx| {
         super::super::exact_legacy_shifted_extrude_prologue(ctx, &bytes, 0, 272, &SINGLE_REFERENCE)
-            .transpose()
     });
 }
 
 #[test]
-fn class_338_extrude_membership_propagates_work_refusal() {
+fn class_338_extrude_reads_its_fixed_references() {
     use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as layout;
     use crate::test_support::lp_utf16;
 
@@ -269,16 +265,4 @@ fn class_338_extrude_membership_propagates_work_refusal() {
             }
         ))
     ));
-    assert_work_refusal("search F3D class-338 Extrude reference members", |ctx| {
-        super::super::exact_class_338_two_sided_distance_extrude_prologue(
-            ctx,
-            &bytes,
-            0,
-            layout::LEN,
-            "338",
-            "262",
-            layout::REFERENCE_COUNT,
-            &REFERENCES,
-        )
-    });
 }
