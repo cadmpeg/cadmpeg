@@ -231,6 +231,34 @@ fn set_insertion_work_does_not_grow_with_the_stored_length() {
         })
     };
     assert_eq!(scoped(1024), scoped(2046));
+    let groups = |len| {
+        insertion_work(len, std::collections::BTreeMap::new, |ctx, groups, key| {
+            let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
+            ctx.push_scoped_btree_group(&mut storage, groups, key, || (), 0, "group")
+                .expect("insertion fits");
+            true
+        })
+    };
+    assert_eq!(groups(1024), groups(2046));
+    let collected = |len: u32| {
+        let used = |count: u32| {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("context");
+            let (map, storage) = ctx
+                .collect_scoped_btree_map((0..count).map(|key| (key, ())), "collect")
+                .expect("collection fits");
+            drop((map, storage));
+            let CodecError::ResourceLimit(limit) =
+                ctx.charge_work(u64::MAX, "probe").expect_err("probe")
+            else {
+                panic!("resource refusal")
+            };
+            limit.used
+        };
+        used(len + 1) - used(len)
+    };
+    assert_eq!(collected(1024), collected(2046));
     // Capacity for every key is reserved first, so no insertion grows the table.
     let hash = |len| {
         insertion_work(
