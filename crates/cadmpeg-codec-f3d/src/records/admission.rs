@@ -54,7 +54,7 @@ impl RecordAdmission<'_, '_> {
         }
     }
 
-    pub(crate) fn reserve_set<T: Eq + Hash>(
+    pub(crate) fn reserve_set<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         self,
         values: &mut HashSet<T>,
         count: usize,
@@ -110,7 +110,7 @@ impl RecordAdmission<'_, '_> {
         }
     }
 
-    pub(crate) fn alloc_filled<T: Clone>(
+    pub(crate) fn alloc_filled<T: Copy>(
         self,
         count: usize,
         value: T,
@@ -121,14 +121,14 @@ impl RecordAdmission<'_, '_> {
             Self::Admitted => {
                 let mut values = self.collection_vec(count, operation)?;
                 for _ in 0..count {
-                    values.push(value.clone());
+                    values.push(value);
                 }
                 Ok(values)
             }
         }
     }
 
-    pub(crate) fn insert_btree_map<K: Ord, V>(
+    pub(crate) fn insert_btree_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
         self,
         values: &mut BTreeMap<K, V>,
         key: K,

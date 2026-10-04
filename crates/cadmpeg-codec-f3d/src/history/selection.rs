@@ -214,8 +214,8 @@ pub(super) fn historical_edge_context(
     )?;
     decode.stable_sort_by(
         &mut incident_loops,
-        |left, right| left.coedge_slot.cmp(&right.coedge_slot),
-        |_| 0,
+        |value| &value.coedge_slot,
+        Ord::cmp,
         "sort F3D historical incident loops",
     )?;
     Ok(
@@ -632,8 +632,8 @@ impl HistoricalIdentityIndex {
             )?;
             decode.sort_unstable_by(
                 &mut revision.states,
+                |value| value,
                 Ord::cmp,
-                |_| 0,
                 "sort F3D reconstructed revision states",
             )?;
             revision.states.dedup();
@@ -825,8 +825,8 @@ fn component_histories<'a>(
     }
     decode.stable_sort_by(
         &mut selected,
-        |left, right| left.id.cmp(&right.id),
-        |history| history.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort F3D component histories",
     )?;
     selected.dedup_by(|left, right| left.id == right.id);
@@ -1158,8 +1158,8 @@ fn hole_transition_face_candidate(
     )?;
     decode.sort_unstable_by(
         &mut candidates,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sort F3D Hole transition faces",
     )?;
     candidates.dedup();
@@ -1639,8 +1639,8 @@ pub(super) fn unique_mirror_plane_candidate(
 > {
     decode.stable_sort_by(
         &mut primary,
-        |left, right| left.history_id.cmp(&right.history_id),
-        |candidate| candidate.history_id.len(),
+        |value| &value.history_id,
+        Ord::cmp,
         "f3d mirror plane primary candidates sort",
     )?;
     primary.dedup();
@@ -1651,8 +1651,8 @@ pub(super) fn unique_mirror_plane_candidate(
     });
     decode.stable_sort_by(
         &mut persistent,
-        |left, right| left.history_id.cmp(&right.history_id),
-        |candidate| candidate.history_id.len(),
+        |value| &value.history_id,
+        Ord::cmp,
         "f3d mirror plane persistent candidates sort",
     )?;
     persistent.dedup();
@@ -2102,8 +2102,8 @@ pub(super) fn entity_selection_edge_candidates(
         )?;
         decode.sort_unstable_by(
             &mut edge_slots,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "sort F3D selected identity edges",
         )?;
         if edge_slots.is_empty() {

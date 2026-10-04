@@ -164,6 +164,22 @@ pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
 pub(crate) struct SketchPlacementMatrix(DesignAffineTransform);
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchPlacementMatrix {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl SketchPlacementMatrix {
     /// The identity placement.
     pub(crate) const IDENTITY: Self = Self(DesignAffineTransform::IDENTITY);

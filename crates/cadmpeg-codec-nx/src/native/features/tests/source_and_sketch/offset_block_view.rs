@@ -57,7 +57,12 @@ fn offset_block_view_refuses_scoped_limit() {
 
 #[test]
 fn offset_block_view_refuses_work_limit() {
-    let error = offset_block_view_refusal(|policy| policy.limits.max_work_units = 0);
+    let error = offset_block_view_refusal(|policy| {
+        // The first empty-tree insertion admits four node passes before the next index visit.
+        let node =
+            11 * std::mem::size_of::<(String, (&[u8], u64))>() + 18 * std::mem::size_of::<usize>();
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(4 * node);
+    });
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index NX offset block view"));

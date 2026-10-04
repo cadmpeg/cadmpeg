@@ -241,12 +241,10 @@ pub(crate) fn consolidated_owner_packets(
                     )
                 }),
         ), "catia_native_owner_packet_rows")?;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut packets,
-        |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
-            (left_pos, left_source).cmp(&(right_pos, right_source))
-        },
-        |_| 0,
+        |value| (value.0, value.1),
+        Ord::cmp,
         "catia_native_owner_packet_sort",
     )?;
     let mut output = Vec::new();
@@ -870,7 +868,7 @@ pub(crate) fn resolve_owner_chart_support_aliases(
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = if let Some(row) = unique_by_tag.get(&reference.value).copied().flatten() {
                 let id = ctx.copy_retained_text(&row.id, "catia_owner_alias_binding_id")?;
-                cadmpeg_core::text::NonBlankString::new(id)
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, id, "validate nonblank text")?
                     .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
             } else {
                 None

@@ -146,7 +146,12 @@ fn extra_dialect_collection_refuses_limit() {
         cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
         crate::container::KernelFraming::as_header_ref,
     );
-    let kernel_entries = cadmpeg_asm::dialect::classify(header).declared().len() + 1;
+    let kernel_entries =
+        cadmpeg_asm::dialect::classify(&cadmpeg_test_support::service_decode_context(), header)
+            .unwrap()
+            .declared()
+            .len()
+            + 1;
     // Admit declarations before testing the next destination slot.
     policy.limits.max_collection_items =
         u64::try_from(scan.kind.dialect().declared().len() + kernel_entries).unwrap();
@@ -177,7 +182,12 @@ fn dialect_collision_loss_refuses_collection_limit() {
         cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
         crate::container::KernelFraming::as_header_ref,
     );
-    let kernel_entries = cadmpeg_asm::dialect::classify(header).declared().len() + 1;
+    let kernel_entries =
+        cadmpeg_asm::dialect::classify(&cadmpeg_test_support::service_decode_context(), header)
+            .unwrap()
+            .declared()
+            .len()
+            + 1;
     // Admit declarations before testing the next destination slot.
     policy.limits.max_collection_items = u64::try_from(
         scan.kind.dialect().declared().len()
@@ -222,7 +232,9 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     assert_eq!(matched.dialect().as_str(), "f3d:unknown");
     assert!(matches!(matched.admission(), Admission::Unverified { .. }));
     assert_eq!(
-        matched.using(),
+        matched
+            .using(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
         Some(cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"))
     );
 
@@ -296,13 +308,17 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
 fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
     let matched = DialectMatch::unverified(
         cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+        cadmpeg_core::dialect::Grammar::of(
+            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+        )
+        .unwrap(),
     )
     .with_declared(BTreeMap::from([(
         cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_CARRIER),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat".to_owned(),
     )]))
-    .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");
+    .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat".to_owned());
 
     let loss = with_context(|ctx| kernel_dialect_loss(ctx, &matched).unwrap())
         .expect("unknown kernel grammar is unverified");
@@ -329,7 +345,11 @@ fn dialect_recovery_loss_refuses_collection_limit() {
 fn kernel_recovery_text_refuses_retained_limit() {
     let matched = DialectMatch::unverified(
         cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+        cadmpeg_core::dialect::Grammar::of(
+            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+        )
+        .unwrap(),
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -347,7 +367,11 @@ fn kernel_recovery_text_refuses_retained_limit() {
 fn kernel_recovery_text_matches_shared_dialect_message() {
     let matched = DialectMatch::unverified(
         cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+        cadmpeg_core::dialect::Grammar::of(
+            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218,
+        )
+        .unwrap(),
     )
     .with_declared(BTreeMap::from([
         (
@@ -365,8 +389,12 @@ fn kernel_recovery_text_matches_shared_dialect_message() {
     ]));
     let loss = with_context(|ctx| kernel_dialect_loss(ctx, &matched).unwrap())
         .expect("unverified kernel loss");
-    let expected =
-        cadmpeg_asm::dialect::unverified_message("the kernel carrier Body.sat", &matched)
-            .expect("shared kernel message");
+    let expected = cadmpeg_asm::dialect::unverified_message(
+        &cadmpeg_test_support::service_decode_context(),
+        "the kernel carrier Body.sat",
+        &matched,
+    )
+    .unwrap()
+    .expect("shared kernel message");
     assert_eq!(loss.message, expected);
 }

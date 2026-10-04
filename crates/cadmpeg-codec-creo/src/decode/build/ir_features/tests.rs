@@ -203,7 +203,7 @@ fn feature_output_refresh_preserves_feature_order() {
 }
 
 fn property_key(value: &str) -> cadmpeg_core::text::NonBlankString {
-    cadmpeg_core::text::NonBlankString::new(value).expect("fixture property key is nonblank")
+    cadmpeg_core::text::NonBlankString::try_from(value).expect("fixture property key is nonblank")
 }
 
 #[test]

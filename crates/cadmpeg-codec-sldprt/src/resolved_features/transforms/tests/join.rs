@@ -209,7 +209,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     assert!(matches!(
         typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &nested_horizontal, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { ref native_kind, .. })
-            if native_kind == "sldprt:marker-relation:25"
+            if native_kind.as_str() == "sldprt:marker-relation:25"
     ));
     let mut nested_native = nested_reference.clone();
     nested_native.reclassify(SketchInputKind::from_native_code(28));
@@ -222,7 +222,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         )
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:28")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:28")
                 .unwrap(),
             native_state: None,
             native_flags: None,
@@ -231,15 +231,19 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             parameter: None,
             operands: vec![
                 SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
                     field: None,
                     object_index: Some(1),
                     native_ref: Some("wrapper".into()),
                 },
                 SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
                     field: None,
                     object_index: Some(2),
                     native_ref: Some("marker-b".into()),
@@ -355,7 +359,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         )
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:11")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("sldprt:marker-relation:11")
                 .unwrap(),
             native_state: None,
             native_flags: None,
@@ -367,15 +371,19 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             parameter: None,
             operands: vec![
                 cadmpeg_ir::sketches::SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
                     field: None,
                     object_index: Some(1),
                     native_ref: Some("marker-a".into()),
                 },
                 cadmpeg_ir::sketches::SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from(
+                        "sldprt:marker-local-id"
+                    )
+                    .expect("source operand kind is nonempty"),
                     field: None,
                     object_index: Some(3),
                     native_ref: Some("marker-c".into()),

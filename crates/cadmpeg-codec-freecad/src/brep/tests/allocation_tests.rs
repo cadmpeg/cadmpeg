@@ -373,7 +373,7 @@ fn plane_surface() -> TextSurface {
 fn source_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new("Owner").expect("nonblank object"),
+        object_id: cadmpeg_core::text::NonBlankString::try_from("Owner").expect("nonblank object"),
         name: None,
         color: None,
         visible: None,

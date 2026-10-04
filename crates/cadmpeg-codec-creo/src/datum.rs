@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard model-space datum planes stored in `ActDatums`.
 
-use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -380,8 +379,10 @@ pub(crate) fn named_plane(
     payload: &[u8],
 ) -> Result<Option<DatumPlaneRecord>, CodecError> {
     let marker = b"outline\0\xf9\x02\x03";
+    let Some(outline) = ctx.find_bytes_from(payload, marker, 0, "find Creo datum outline")? else {
+        return Ok(None);
+    };
     let Some((outline, id, feature_id)) = (|| {
-        let outline = find(payload, marker, 0)?;
         let id_marker = b"\xe0\x01geom_id\0";
         let id_at = payload[..outline]
             .windows(id_marker.len())

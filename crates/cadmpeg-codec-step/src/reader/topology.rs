@@ -333,8 +333,8 @@ fn shape_representation_relationships(
     for representations in related.values_mut() {
         ctx.sort_unstable_by(
             representations,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "step_shape_relationship_sort",
         )?;
         representations.dedup();
@@ -2570,6 +2570,20 @@ struct RootKey {
     shell_keys: Vec<(u64, Option<bool>)>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for RootKey {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.root_kind, &self.shell_keys),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Clone)]
 struct RootBuilt {
     body_ids: Vec<BodyId>,
@@ -2636,6 +2650,7 @@ fn root_shell_steps(
         // and canonicalizes the void suffix by resolved shell identity.
         ctx.sort_unstable_by(
             &mut ids[1..],
+            |value| value,
             |left, right| {
                 let key = |reference: &u64| {
                     shell_definitions
@@ -2646,7 +2661,6 @@ fn root_shell_steps(
                 };
                 key(left).cmp(&key(right))
             },
-            |_| 0,
             "step_root_shell_steps_sort",
         )?;
         return Ok(Some(ids));
@@ -2699,8 +2713,8 @@ fn root_key(
     }
     ctx.sort_unstable_by(
         &mut shell_keys,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "step_root_shell_keys_sort",
     )?;
     Ok(Some(RootKey {
@@ -4015,11 +4029,10 @@ fn connected_face_components(
     edge_vertices: &BTreeMap<String, (String, String)>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
-    let mut neighbors = ctx.alloc_filled(
-        face_ids.len(),
-        BTreeSet::new(),
-        "STEP connected-face neighbors",
-    )?;
+    let mut neighbors =
+        ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| {
+            Ok(BTreeSet::new())
+        })?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in face_ids.iter().enumerate() {
         ctx.insert_btree_map(
@@ -4089,8 +4102,8 @@ fn connected_face_components(
         }
         ctx.sort_unstable_by(
             &mut component,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "STEP connected-face component sort",
         )?;
         ctx.push_vec(&mut components, component, "STEP connected-face components")?;
@@ -4347,15 +4360,15 @@ fn implicit_face_plane(
     for point in loops.iter().flatten().copied() {
         ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut points,
+        |value| (value.x, value.y, value.z),
         |left, right| {
-            left.x
-                .total_cmp(&right.x)
-                .then_with(|| left.y.total_cmp(&right.y))
-                .then_with(|| left.z.total_cmp(&right.z))
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.total_cmp(&right.1))
+                .then_with(|| left.2.total_cmp(&right.2))
         },
-        |_| 0,
         "step_implicit_face_plane_sort",
     )?;
     let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
@@ -4744,8 +4757,8 @@ fn pcurve_locus_witness(
     )?;
     ctx.stable_sort_by(
         &mut fractions,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "step_pcurve_locus_fractions_sort",
     )?;
     fractions.dedup_by(|left, right| *left == *right);
@@ -5267,8 +5280,8 @@ fn pcurve_selection_seeds(
         pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
         ctx.stable_sort_by(
             &mut fractions,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "step_pcurve_selection_fractions_sort",
         )?;
         fractions.dedup_by(|left, right| *left == *right);

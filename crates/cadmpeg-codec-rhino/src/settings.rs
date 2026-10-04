@@ -775,11 +775,48 @@ pub(crate) struct LayerPerViewportSettings {
     pub(crate) persistent_visibility: Option<LayerVisibility>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for LayerPerViewportSettings {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (&self.viewport_id, &self.color, &self.plot_color),
+                (
+                    &self.plot_weight_mm,
+                    &self.visible,
+                    &self.persistent_visibility,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// A nonnegative per-viewport plot weight or the source's exact unset sentinel.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum LayerPlotWeight {
     Unset,
     Millimeters(NonNegativeReal),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for LayerPlotWeight {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 impl LayerPlotWeight {
@@ -811,6 +848,22 @@ impl Serialize for LayerPlotWeight {
 pub(crate) enum LayerVisibility {
     Visible,
     Hidden,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for LayerVisibility {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 impl LayerVisibility {
@@ -1223,6 +1276,7 @@ fn parse_layer_extensions(
     outer_reader.skip_remaining()?;
     ctx.stable_sort_by(
         &mut values,
+        |value| value,
         |a, b| {
             a.viewport_id
                 .cmp(&b.viewport_id)
@@ -1250,7 +1304,6 @@ fn parse_layer_extensions(
                     (Some(_), None) => std::cmp::Ordering::Greater,
                 })
         },
-        |_| 0,
         "Rhino layer per-viewport settings sort",
     )?;
     Ok(values)

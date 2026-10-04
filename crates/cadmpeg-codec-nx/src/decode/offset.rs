@@ -710,8 +710,8 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             .charges
             .stable_sort_by(
                 &mut u_breaks,
+                |value| value,
                 f64::total_cmp,
-                |_| 0,
                 "nx offset u breaks sort",
             )
             .is_err()
@@ -741,8 +741,8 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             .charges
             .stable_sort_by(
                 &mut v_breaks,
+                |value| value,
                 f64::total_cmp,
-                |_| 0,
                 "nx offset v breaks sort",
             )
             .is_err()

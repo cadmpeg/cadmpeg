@@ -76,17 +76,16 @@ pub(in crate::native) fn attach_expression_parameters(
         uses.push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             uses,
-            |first, second| {
-                first
-                    .bindings
-                    .first()
-                    .map(|binding| binding.source_offset)
-                    .cmp(&second.bindings.first().map(|binding| binding.source_offset))
-                    .then_with(|| first.id.cmp(&second.id))
+            |value| {
+                let record = *value;
+                (
+                    record.bindings.first().map(|binding| binding.source_offset),
+                    record.id.as_str(),
+                )
             },
-            |item| item.id.len(),
+            Ord::cmp,
             "NX expression use sort",
         )?;
     }
@@ -101,28 +100,25 @@ pub(in crate::native) fn attach_expression_parameters(
         ordered_tables.push(entry);
     }
     for (_, expressions) in &mut ordered_tables {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             expressions,
-            |first, second| {
-                first
-                    .source_offset
-                    .cmp(&second.source_offset)
-                    .then_with(|| first.id.cmp(&second.id))
+            |value| {
+                let record = *value;
+                (record.source_offset, record.id.as_str())
             },
-            |item| item.id.len(),
+            Ord::cmp,
             "NX expression table sort",
         )?;
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered_tables,
-        |(first_table, first), (second_table, second)| {
-            first
-                .first()
-                .map(|expression| expression.source_offset)
-                .cmp(&second.first().map(|expression| expression.source_offset))
-                .then_with(|| first_table.cmp(second_table))
+        |value| {
+            (
+                value.1.first().map(|expression| expression.source_offset),
+                value.0,
+            )
         },
-        |(table, _)| table.len(),
+        Ord::cmp,
         "NX ordered table sort",
     )?;
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());

@@ -490,7 +490,7 @@ fn text_frame_curve_records_refuse_collection_limit() {
         byte_offset: 30,
         state_offset: 0,
         owner_reference: 42,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("Sketch_42").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
             crate::records::identity::Located {
                 value: 20,

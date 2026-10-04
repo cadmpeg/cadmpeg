@@ -139,8 +139,15 @@ fn missing_line_refuses_endpoint_vec_growth() {
 #[test]
 fn missing_line_refuses_endpoint_pair_work() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let error = run(&policy).expect_err("two endpoints need two ordered comparisons");
+    // All identity-tree shifts and key reads are admitted before the endpoint-pair comparison.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo missing-line endpoint pairs",
+        |cap| {
+            policy.limits.max_work_units = cap;
+            run(&policy)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo missing-line endpoint pairs"));

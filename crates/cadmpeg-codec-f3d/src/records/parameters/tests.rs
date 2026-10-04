@@ -10,7 +10,7 @@ use crate::records::identity::{Located, RecordedValue};
 
 fn parameter(owned: bool) -> DesignParameter {
     let source = if owned {
-        DesignParameterSource::new("Feature Dimension".into(), Some(4), None).unwrap()
+        DesignParameterSource::new::<String>("Feature Dimension".into(), Some(4), None).unwrap()
     } else {
         DesignParameterSource::User {
             family_discriminator: Located {
@@ -19,7 +19,7 @@ fn parameter(owned: bool) -> DesignParameter {
             },
         }
     };
-    DesignParameter::try_from(DesignParameterDraft {
+    DesignParameter::try_from(DesignParameterDraft::<String> {
         id: "f3d:native:parameter#0".into(),
         byte_offset: 100,
         class_tag: DesignClassTag::try_from("305".to_owned()).unwrap(),

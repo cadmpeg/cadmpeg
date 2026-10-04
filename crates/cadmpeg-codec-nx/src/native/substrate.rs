@@ -967,11 +967,15 @@ mod tests {
                 crate::test_support::with_decode_context_over(
                     &[],
                     |policy| {
-                        policy.limits.max_work_units = 1;
+                        // One examined stream plus four passes over one usize-set node.
+                        let node =
+                            11 * std::mem::size_of::<usize>() + 18 * std::mem::size_of::<usize>();
+                        policy.limits.max_work_units =
+                            cadmpeg_core::decode::u64_from_index(1 + 4 * node);
                     },
                     |ctx| {
                         let pairs = super::paired_delta_streams(ctx, &scan)
-                            .expect("the first stream matches within one work unit");
+                            .expect("the first stream matches within one stream visit and its candidate insertion");
                         assert!(pairs.is_empty());
                     },
                 );

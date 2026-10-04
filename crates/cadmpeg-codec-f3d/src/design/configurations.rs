@@ -31,7 +31,7 @@ fn configuration_property_key(
     let mut key = ctx.retained_string(len, operation)?;
     key.push_str(prefix);
     key.push_str(suffix);
-    cadmpeg_core::text::NonBlankString::new(key)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("configuration property key is blank"))
 }
 
@@ -396,8 +396,8 @@ pub(crate) fn project_configurations(
     }
     ctx.stable_sort_by(
         &mut projected,
-        |left, right| left.id.cmp(&right.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d configuration variants",
     )?;
     Ok(projected)
@@ -1722,7 +1722,7 @@ mod tests {
         .unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        // The sort scratch holds two index vectors for the 21 projected variants.
+        // The allowance is below index scratch and the earlier replacement-vector peak.
         policy.limits.max_materialized_bytes =
             u64::try_from(21 * 2 * std::mem::size_of::<usize>() - 1).unwrap();
 
@@ -1730,7 +1730,7 @@ mod tests {
         assert!(
             matches!(project_configurations(&ctx, std::slice::from_ref(&table)),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::MaterializedBytes
-                && failure.operation == "sort f3d configuration variants")
+                && failure.operation == "f3d projected configuration")
         );
     }
 }

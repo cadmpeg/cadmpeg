@@ -28,7 +28,7 @@ impl<'a> InventorContainer<'a> {
     pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let snapshot = CompoundSnapshot::new(ctx, root)?;
         if !matches!(
-            snapshot.entry("RSeStorage"),
+            snapshot.entry(ctx, "RSeStorage")?,
             Some(CompoundEntry::Storage(_))
         ) {
             return Err(CodecError::Malformed(
@@ -50,7 +50,7 @@ impl<'a> InventorContainer<'a> {
 
     pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
         admit_container_entries(ctx, &self.snapshot)?;
-        let mut entries = self.snapshot.container_entries(classify);
+        let mut entries = self.snapshot.container_entries(ctx, classify)?;
         for segment in &self.rse.segments {
             let Some(entry) =
                 find_summary_entry(ctx, &mut entries, segment.pair.metadata.directory_id())?

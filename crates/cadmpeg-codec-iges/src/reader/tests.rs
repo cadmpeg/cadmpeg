@@ -423,7 +423,12 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
         &ctx,
         &global,
         representation,
-        dialect::classify(representation, &global),
+        dialect::classify(
+            &cadmpeg_test_support::service_decode_context(),
+            representation,
+            &global,
+        )
+        .unwrap(),
     );
     assert!(matches!(
         result,
@@ -440,7 +445,12 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
         &ctx,
         &global,
         representation,
-        dialect::classify(representation, &global),
+        dialect::classify(
+            &cadmpeg_test_support::service_decode_context(),
+            representation,
+            &global,
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(meta.attributes["representation"], representation.as_str());

@@ -9,6 +9,22 @@ pub(in crate::decode) enum SectionAxis {
     V,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SectionAxis {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl SectionAxis {
     /// The section axes in coordinate order.
     pub(super) const ALL: [Self; 2] = [Self::U, Self::V];

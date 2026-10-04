@@ -40,6 +40,7 @@ fn decode_asm_binary(
     let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
+            ctx,
             &StreamEvidence::Binary {
                 family: Family::Asm,
                 header,
@@ -95,7 +96,7 @@ fn decode_asm_binary(
         header,
         stream: Some(stream),
     };
-    let (matched, kernel) = layers(&evidence);
+    let (matched, kernel) = layers(ctx, &evidence)?;
     build_result(
         ctx,
         payload,
@@ -115,6 +116,7 @@ fn decode_acis_binary(
     let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
+            ctx,
             &StreamEvidence::Binary {
                 family: Family::Acis,
                 header,
@@ -171,7 +173,7 @@ fn decode_acis_binary(
         header,
         stream: Some(stream),
     };
-    let (matched, kernel) = layers(&evidence);
+    let (matched, kernel) = layers(ctx, &evidence)?;
     build_result(
         ctx,
         payload,
@@ -188,6 +190,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 unsupported_unframed(
+                    ctx,
                     &StreamEvidence::Text(None),
                     format!("text container does not frame: {error}"),
                 )
@@ -198,6 +201,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         let stream = sat::parse(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 unsupported_unframed(
+                    ctx,
                     &StreamEvidence::Text(None),
                     format!("text stream does not frame: {error}"),
                 )
@@ -221,7 +225,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         branch,
         header: &header,
     }));
-    let (matched, kernel) = layers(&evidence);
+    let (matched, kernel) = layers(ctx, &evidence)?;
     let payload = match records {
         Some(records) => Some(decode_with_header(
             ctx,
@@ -247,8 +251,15 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
 /// frame. Inspection reports the same primary match.
-fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
-    let (matched, kernel) = layers(evidence);
+fn unsupported_unframed(
+    ctx: &DecodeContext<'_>,
+    evidence: &StreamEvidence<'_>,
+    message: impl Into<String>,
+) -> CodecError {
+    let (matched, kernel) = match layers(ctx, evidence) {
+        Ok(layers) => layers,
+        Err(error) => return error,
+    };
     let dialects = match DialectLayers::of(matched).with(kernel) {
         Ok(dialects) => dialects,
         Err(rejected) => {
@@ -332,7 +343,7 @@ fn build_result(
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
-    losses.extend(dialect_loss(kernel));
+    losses.extend(dialect_loss(ctx, kernel)?);
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))

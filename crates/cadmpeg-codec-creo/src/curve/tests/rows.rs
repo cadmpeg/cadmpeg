@@ -1183,12 +1183,24 @@ fn curve_scalar_claims_refuse_collection_limit() {
 fn row_terminator_selects_the_first_short_or_long_marker() {
     let short_then_long = [0xe1, 0xe3, 0, 0xe1, 0xf5, 0x05, 0xf6, 0xe3];
     assert_eq!(
-        row_terminator(&short_then_long, 0, short_then_long.len()),
+        crate::decode::with_test_decode_ctx(|ctx| row_terminator(
+            ctx,
+            &short_then_long,
+            0,
+            short_then_long.len()
+        ))
+        .expect("row search admitted"),
         Some((0, 2))
     );
     let long_then_short = [0xe1, 0xf5, 0x05, 0xf6, 0xe3, 0, 0xe1, 0xe3];
     assert_eq!(
-        row_terminator(&long_then_short, 0, long_then_short.len()),
+        crate::decode::with_test_decode_ctx(|ctx| row_terminator(
+            ctx,
+            &long_then_short,
+            0,
+            long_then_short.len()
+        ))
+        .expect("row search admitted"),
         Some((0, 5))
     );
 }

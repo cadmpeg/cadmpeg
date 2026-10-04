@@ -452,7 +452,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
             target: cadmpeg_ir::features::BinderTarget::Feature {
                 feature: source.clone(),
             },
-            subelements: vec![cadmpeg_core::text::NonBlankString::new("Face1").unwrap()],
+            subelements: vec![cadmpeg_core::text::NonBlankString::try_from("Face1").unwrap()],
         }]),
     ));
     ir.model.features.push(feature(
@@ -461,7 +461,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         Vec::new(),
         shape(vec![cadmpeg_ir::features::BinderSource {
             target: cadmpeg_ir::features::BinderTarget::Native {
-                reference: cadmpeg_core::text::NonBlankString::new("source").unwrap(),
+                reference: cadmpeg_core::text::NonBlankString::try_from("source").unwrap(),
             },
             subelements: Vec::new(),
         }]),
@@ -473,15 +473,15 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         shape(vec![
             cadmpeg_ir::features::BinderSource {
                 target: cadmpeg_ir::features::BinderTarget::External {
-                    document: cadmpeg_core::text::NonBlankString::new("a.FCStd").unwrap(),
-                    object: cadmpeg_core::text::NonBlankString::new("Body").unwrap(),
+                    document: cadmpeg_core::text::NonBlankString::try_from("a.FCStd").unwrap(),
+                    object: cadmpeg_core::text::NonBlankString::try_from("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },
             cadmpeg_ir::features::BinderSource {
                 target: cadmpeg_ir::features::BinderTarget::External {
-                    document: cadmpeg_core::text::NonBlankString::new("b.FCStd").unwrap(),
-                    object: cadmpeg_core::text::NonBlankString::new("Body").unwrap(),
+                    document: cadmpeg_core::text::NonBlankString::try_from("b.FCStd").unwrap(),
+                    object: cadmpeg_core::text::NonBlankString::try_from("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },

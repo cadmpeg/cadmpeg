@@ -133,14 +133,14 @@ pub(crate) fn validate_native(
             .collect::<Vec<_>>();
         ctx.sort_unstable_by(
             &mut missing,
+            |value| value,
             Ord::cmp,
-            |item| item.len(),
             "Inventor missing arena sort",
         )?;
         ctx.sort_unstable_by(
             &mut unexpected,
+            |value| value,
             Ord::cmp,
-            |item| item.len(),
             "Inventor unexpected arena sort",
         )?;
         return Ok(vec![finding(
@@ -2118,8 +2118,8 @@ fn validate_assembly(
     )?;
     ctx.stable_sort_by(
         &mut projected.occurrences,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "Inventor projected occurrence sort",
     )?;
     if ir.model.occurrences != projected.occurrences {

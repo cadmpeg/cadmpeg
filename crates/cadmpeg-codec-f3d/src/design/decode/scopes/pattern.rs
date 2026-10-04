@@ -49,10 +49,10 @@ pub(super) fn exact_rectangular_pattern_construction(
         if lanes.next().is_some() {
             return None;
         }
-        if let Err(error) = ctx.stable_sort_by(
+        if let Err(error) = ctx.stable_sort_by_key(
             &mut ordered_lanes,
-            |left, right| left.local_ordinal().cmp(&right.local_ordinal()),
-            |_| 0,
+            |value| value.local_ordinal(),
+            Ord::cmp,
             "sort f3d rectangular pattern lanes",
         ) {
             return Some(Err(error));
@@ -307,12 +307,12 @@ fn exact_rectangular_pattern_instances(
         }
         if let Err(error) = ctx.stable_sort_by(
             &mut runs[..],
+            |value| value,
             |a, b| {
                 a.iter()
                     .map(|(_, offset)| *offset)
                     .cmp(b.iter().map(|(_, offset)| *offset))
             },
-            |_| 0,
             "sort f3d design pattern 1",
         ) {
             return Some(Err(error));
@@ -551,8 +551,8 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         }
         if let Err(error) = ctx.sort_unstable_by(
             &mut count_candidates,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "sort f3d circular pattern count candidates",
         ) {
             return Some(Err(error));
@@ -605,16 +605,15 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 angle_candidates.push((angle, *record_index, scalar.value_offset));
             }
         }
-        if let Err(error) = ctx.stable_sort_by(
+        if let Err(error) = ctx.stable_sort_by_key(
             &mut angle_candidates[..],
+            |value| (value.0.get(), value.1, value.2),
             |left, right| {
                 left.0
-                    .get()
-                    .total_cmp(&right.0.get())
+                    .total_cmp(&right.0)
                     .then_with(|| left.1.cmp(&right.1))
                     .then_with(|| left.2.cmp(&right.2))
             },
-            |_| 0,
             "sort f3d design pattern 2",
         ) {
             return Some(Err(error));

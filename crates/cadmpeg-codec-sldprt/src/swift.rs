@@ -3013,8 +3013,9 @@ fn targets(
 fn shape_aspect_target(ctx: &DecodeContext<'_>, source_id: &str) -> Result<PmiTarget, CodecError> {
     let source_id =
         ctx.format_retained(format_args!("{source_id}"), "copy SWIFT shape-aspect ID")?;
-    let source_id = cadmpeg_core::text::NonBlankString::new(source_id)
-        .ok_or_else(|| CodecError::malformed("invalid SWIFT shape-aspect ID"))?;
+    let source_id =
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, source_id, "validate nonblank text")?
+            .ok_or_else(|| CodecError::malformed("invalid SWIFT shape-aspect ID"))?;
     Ok(PmiTarget::ShapeAspect { source_id })
 }
 

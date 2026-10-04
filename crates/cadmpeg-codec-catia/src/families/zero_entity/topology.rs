@@ -276,14 +276,10 @@ fn endpoint_pair_candidates_with_budget(
             if radial_matches[pair[0]].len() == 1 && radial_matches[pair[1]].len() == 1 {
                 continue;
             }
-            ctx.stable_sort_by(
+            ctx.stable_sort_by_key(
                 &mut pair,
-                |left, right| {
-                    occurrences[*left]
-                        .support_record_ordinal
-                        .cmp(&occurrences[*right].support_record_ordinal)
-                },
-                |_| 0,
+                |value| occurrences[*value].support_record_ordinal,
+                Ord::cmp,
                 "catia_zero_pair_support_order",
             )?;
             let [first, second] = [occurrences[pair[0]], occurrences[pair[1]]];
@@ -304,11 +300,8 @@ fn endpoint_pair_candidates_with_budget(
     }
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| {
-            left.support_record_ordinals
-                .cmp(&right.support_record_ordinals)
-        },
-        |_| 0,
+        |value| &value.support_record_ordinals,
+        Ord::cmp,
         "catia_zero_endpoint_pairs_sort",
     )?;
     Ok(Some(candidates))
@@ -354,7 +347,9 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         }
     }
     let mut neighbors =
-        ctx.alloc_filled(endpoints.len(), Vec::new(), "catia_zero_locus_neighbors")?;
+        ctx.collect_indexed_vec(endpoints.len(), "catia_zero_locus_neighbors", |_| {
+            Ok(Vec::new())
+        })?;
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         let Some(cell) = endpoint_cell(*point) else {
             return Ok(None);
@@ -414,8 +409,8 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         }
         ctx.sort_unstable_by(
             &mut component,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_zero_locus_component_sort",
         )?;
         let representative_point = endpoints[component[0]].2;
@@ -473,7 +468,10 @@ fn endpoint_match_graph(
             }
         }
     }
-    let mut matches = ctx.alloc_filled(occurrences.len(), Vec::new(), "catia_zero_match_rows")?;
+    let mut matches =
+        ctx.collect_indexed_vec(occurrences.len(), "catia_zero_match_rows", |_| {
+            Ok(Vec::new())
+        })?;
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {
@@ -517,7 +515,12 @@ fn endpoint_match_graph(
         }
     }
     for neighbors in &mut matches {
-        ctx.sort_unstable_by(neighbors, Ord::cmp, |_| 0, "catia_zero_match_edges_sort")?;
+        ctx.sort_unstable_by(
+            neighbors,
+            |value| value,
+            Ord::cmp,
+            "catia_zero_match_edges_sort",
+        )?;
     }
     Ok(Some(matches))
 }

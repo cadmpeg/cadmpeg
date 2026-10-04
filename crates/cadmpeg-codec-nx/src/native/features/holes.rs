@@ -1259,16 +1259,18 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         )?;
         chronology.push((index, label, first_offset));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut chronology,
-        |(left_index, left, left_first), (right_index, right, right_first)| {
-            left_first
-                .cmp(right_first)
-                .then_with(|| left.section_link.cmp(&right.section_link))
-                .then_with(|| right.source_offset.cmp(&left.source_offset))
-                .then_with(|| left_index.cmp(right_index))
+        |value| {
+            let record = value.1;
+            (
+                value.2,
+                record.section_link.as_str(),
+                std::cmp::Reverse(record.source_offset),
+                value.0,
+            )
         },
-        |(_, label, _)| label.section_link.len(),
+        Ord::cmp,
         "sort NX hole operation chronology",
     )?;
     let group_work = references
@@ -1370,15 +1372,13 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         if missing {
             continue;
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut positioned,
-            |(left_pos, left_index, left, _), (right_pos, right_index, right, _)| {
-                left_pos
-                    .cmp(right_pos)
-                    .then_with(|| left.operation_label.cmp(&right.operation_label))
-                    .then_with(|| left_index.cmp(right_index))
+            |value| {
+                let reference = value.2;
+                (value.0, reference.operation_label.as_str(), value.1)
             },
-            |(_, _, reference, _)| reference.operation_label.len(),
+            Ord::cmp,
             "sort NX simple hole group members",
         )?;
         if positioned.len() < 2
@@ -1619,15 +1619,13 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         )?;
         matches.push((group, lane));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut matches,
-        |(left, _), (right, _)| simple_hole_group_key(left).cmp(&simple_hole_group_key(right)),
-        |(group, _)| {
-            simple_hole_group_key(group)
-                .iter()
-                .map(|part| part.len())
-                .sum::<usize>()
+        |value| {
+            let (left, _) = value;
+            simple_hole_group_key(left)
         },
+        Ord::cmp,
         "sort NX hole package groups",
     )?;
     let mut uses = Vec::new();

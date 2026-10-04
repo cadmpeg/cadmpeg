@@ -453,11 +453,10 @@ fn project_qualified_operands(
                                 return Ok(None);
                             };
                             JointOperand::external(
-                                ExternalDocument::document_id(copy_assembly_text(
+                                ExternalDocument::document_id(
                                     ctx,
-                                    identity_guid.value.as_str(),
-                                    false,
-                                )?),
+                                    copy_assembly_text(ctx, identity_guid.value.as_str(), false)?,
+                                )?,
                                 object,
                                 subelements,
                             )

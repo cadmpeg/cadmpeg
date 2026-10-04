@@ -19,7 +19,6 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
@@ -46,7 +45,7 @@ use crate::feature::rows::{
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
 use crate::legacy::type_code::LegacyTypeCode;
-use crate::loop_array::{self, LoopArrayFrame, LoopArrayRecord, LoopArrayScan};
+use crate::loop_array::{self, LoopArrayScan};
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
@@ -617,11 +616,9 @@ pub(crate) fn looks_like_creo(prefix: &[u8]) -> bool {
 }
 
 fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(data.len() - start),
-        "creo version line scan",
-    )?;
-    let end = find(data, b"\n", start).unwrap_or(data.len());
+    let end = ctx
+        .find_bytes_from(data, b"\n", start, "creo version line scan")?
+        .unwrap_or(data.len());
     let bytes = &data[start..end];
     let text_work = cadmpeg_core::decode::u64_from_index(bytes.len())
         .checked_mul(8)
@@ -687,11 +684,9 @@ fn scan_sections<'a>(
         }
         let hash_off = i + 1; // offset of the section-header '#'
         let name_start = i + 2;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len() - name_start),
-            "creo section name boundary scan",
-        )?;
-        let Some(nl) = find(data, b"\n", name_start) else {
+        let Some(nl) =
+            ctx.find_bytes_from(data, b"\n", name_start, "creo section name boundary scan")?
+        else {
             break;
         };
         let name_bytes = &data[name_start..nl];
@@ -759,20 +754,13 @@ fn toc_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut sections = Vec::new();
     let mut toc_from = 0;
-    loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len() - toc_from),
-            "creo TOC discovery scan",
-        )?;
-        let Some(toc_offset) = find(data, TOC_START, toc_from) else {
-            break;
-        };
+    while let Some(toc_offset) =
+        ctx.find_bytes_from(data, TOC_START, toc_from, "creo TOC discovery scan")?
+    {
         toc_from = toc_offset + TOC_START.len();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len() - toc_offset),
-            "creo TOC header scan",
-        )?;
-        let Some(line_end) = find(data, b"\n", toc_offset) else {
+        let Some(line_end) =
+            ctx.find_bytes_from(data, b"\n", toc_offset, "creo TOC header scan")?
+        else {
             continue;
         };
         let Ok(header) = std::str::from_utf8(&data[toc_offset..line_end]) else {
@@ -889,10 +877,10 @@ fn toc_sections<'a>(
             ));
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         sections.as_mut_slice(),
-        |left, right| left.section.offset().cmp(&right.section.offset()),
-        |_| 0,
+        |value| value.section.offset(),
+        Ord::cmp,
         "creo toc sections sections ordering",
     )?;
     sections.dedup_by_key(|section| section.section.offset());
@@ -910,7 +898,15 @@ fn legacy_toc_sections<'a>(
             .ok_or_else(|| ctx.refuse_codec_limit("creo legacy TOC framing", u64::MAX, u64::MAX))?,
         "creo legacy TOC framing",
     )?;
-    let Some(toc_offset) = find(data, b"\n@Toc ", banner_offset).map(|offset| offset + 1) else {
+    let Some(toc_offset) = ctx
+        .find_bytes_from(
+            data,
+            b"\n@Toc ",
+            banner_offset,
+            "find Creo container marker",
+        )?
+        .map(|offset| offset + 1)
+    else {
         return Ok(Vec::new());
     };
     let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
@@ -1067,10 +1063,10 @@ fn legacy_toc_sections<'a>(
         ctx.reserve_vec(&mut sections, 1, "creo legacy TOC sections")?;
         sections.extend(Section::scan(raw_name, offset, end, None, data));
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         sections.as_mut_slice(),
-        |left, right| left.section.offset().cmp(&right.section.offset()),
-        |_| 0,
+        |value| value.section.offset(),
+        Ord::cmp,
         "creo legacy toc sections sections ordering",
     )?;
     sections.dedup_by_key(|section| section.section.offset());
@@ -1203,8 +1199,9 @@ fn legacy_ascii_framing(
     ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Option<LegacyAsciiFraming>, CodecError> {
-    let Some(header_end) =
-        find(data, UGC_HEADER_END, 0).and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))
+    let Some(header_end) = ctx
+        .find_bytes_from(data, UGC_HEADER_END, 0, "find Creo container marker")?
+        .and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))
     else {
         return Ok(None);
     };
@@ -1217,7 +1214,13 @@ fn legacy_ascii_framing(
     if !body.starts_with(LEGACY_OBJECT_START) {
         return Ok(None);
     }
-    let Some(object_header_end) = find(body, b"\n", LEGACY_OBJECT_START.len()) else {
+    let Some(object_header_end) = ctx.find_bytes_from(
+        body,
+        b"\n",
+        LEGACY_OBJECT_START.len(),
+        "find Creo container marker",
+    )?
+    else {
         return Ok(None);
     };
     let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
@@ -1228,14 +1231,18 @@ fn legacy_ascii_framing(
         std::str::from_utf8(schema).map_err(|_| CodecError::malformed("non-ASCII Creo schema"))?;
     let schema = ctx.copy_retained_text(schema, "creo legacy schema")?;
     let mut from = object_header_end + 1;
-    while let Some(object_end) = find(body, LEGACY_OBJECT_END, from) {
+    while let Some(object_end) =
+        ctx.find_bytes_from(body, LEGACY_OBJECT_END, from, "find Creo container marker")?
+    {
         if let Some(banner) = object_end
             .checked_add(LEGACY_OBJECT_END.len())
             .and_then(|banner| body.get(banner..))
             .and_then(|tail| tail.strip_prefix(b"\n"))
             .filter(|tail| tail.starts_with(LEGACY_BANNER_START))
         {
-            let banner_end = find(banner, b"\n", 0).unwrap_or(banner.len());
+            let banner_end = ctx
+                .find_bytes_from(banner, b"\n", 0, "find Creo container marker")?
+                .unwrap_or(banner.len());
             let banner_offset = data.len() - banner.len();
             return Ok(Some(LegacyAsciiFraming {
                 schema,
@@ -1343,14 +1350,7 @@ fn read_array_count(
     let mut from = 0;
     let mut total = 0u32;
     let mut found = false;
-    loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(region.len() - from),
-            "creo geometry census search",
-        )?;
-        let Some(pos) = find(region, label, from) else {
-            break;
-        };
+    while let Some(pos) = ctx.find_bytes_from(region, label, from, "creo geometry census search")? {
         let mut p = pos + label.len();
         // Require the NUL that terminates the namespace label.
         if region.get(p) == Some(&0) {
@@ -1423,14 +1423,12 @@ fn binary_principal_unit(
     let mut selector = None;
     let mut conflicting = false;
     let mut from = 0;
-    loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len() - from),
-            "creo binary unit declaration scan",
-        )?;
-        let Some(found) = find(data, PRINCIPAL_UNIT_ID, from) else {
-            break;
-        };
+    while let Some(found) = ctx.find_bytes_from(
+        data,
+        PRINCIPAL_UNIT_ID,
+        from,
+        "creo binary unit declaration scan",
+    )? {
         let start = found + PRINCIPAL_UNIT_ID.len();
         let Some(&value) = data.get(start) else {
             return Ok(BinaryUnitSelection::Unsupported);
@@ -1464,21 +1462,34 @@ fn binary_principal_unit(
 fn cmnm_model_name(
     ctx: &DecodeContext<'_>,
     data: &[u8],
-) -> Option<Result<(String, usize), CodecError>> {
+) -> Result<Option<(String, usize)>, CodecError> {
     const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
-    let marker = find(data, PREFIX, 0)?;
+    let Some(marker) = ctx.find_bytes_from(data, PREFIX, 0, "creo container model-name scan")?
+    else {
+        return Ok(None);
+    };
     let start = marker + cmnm::NAME_LENGTH_HEX;
-    find(data, PREFIX, start).is_none().then_some(())?;
-    let length_bytes = data.get(start..marker + cmnm::LEN)?;
-    let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
-    let name = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length)?;
-    (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
-        .then_some(())?;
-    let name = std::str::from_utf8(name).ok()?;
-    Some(
-        ctx.copy_retained_text(name, "creo CMNM model name")
-            .map(|name| (name, marker + cmnm::LEN)),
-    )
+    if ctx
+        .find_bytes_from(data, PREFIX, start, "creo container model-name scan")?
+        .is_some()
+    {
+        return Ok(None);
+    }
+    let Some(name) = (|| {
+        let length_bytes = data.get(start..marker + cmnm::LEN)?;
+        let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
+        let name = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length)?;
+        (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
+            .then_some(())?;
+        let name = std::str::from_utf8(name).ok()?;
+        Some(name)
+    })() else {
+        return Ok(None);
+    };
+    Ok(Some((
+        ctx.copy_retained_text(name, "creo CMNM model name")?,
+        marker + cmnm::LEN,
+    )))
 }
 
 /// Find the root model name stored by binary sections that do not carry a
@@ -1486,7 +1497,7 @@ fn cmnm_model_name(
 fn native_model_name(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
-) -> Option<Result<(String, usize), CodecError>> {
+) -> Result<Option<(String, usize)>, CodecError> {
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
@@ -1495,13 +1506,21 @@ fn native_model_name(
         }
         let region = section.region;
         let mut from = 0;
-        while let Some(field) = find(region, FIELD, from) {
+        while let Some(field) =
+            ctx.find_bytes_from(region, FIELD, from, "find Creo native model-name field")?
+        {
             let value_start = field + FIELD.len();
             if region.get(value_start) == Some(&0xe1) {
                 from = value_start + 1;
                 continue;
             }
-            let Some(value_end) = find(region, b"\0", value_start) else {
+            let Some(value_end) = ctx.find_bytes_from(
+                region,
+                b"\0",
+                value_start,
+                "find Creo native model-name end",
+            )?
+            else {
                 break;
             };
             let mut name_start = value_start;
@@ -1511,16 +1530,16 @@ fn native_model_name(
             let value = &region[name_start..value_end];
             if let Ok(name) = std::str::from_utf8(value) {
                 if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
-                    return Some(
-                        ctx.copy_retained_text(name, "creo native model name")
-                            .map(|name| (name, section.section.offset() + name_start)),
-                    );
+                    return Ok(Some((
+                        ctx.copy_retained_text(name, "creo native model name")?,
+                        section.section.offset() + name_start,
+                    )));
                 }
             }
             from = value_end + 1;
         }
     }
-    None
+    Ok(None)
 }
 
 fn relation_model_name(filename: &str) -> Option<&str> {
@@ -1537,30 +1556,48 @@ fn relation_model_name(filename: &str) -> Option<&str> {
     (!name.is_empty()).then_some(name)
 }
 
-fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTableRecord> {
-    let section = sections
+fn family_table(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    sections: &[ScannedSection<'_>],
+) -> Result<Option<FamilyTableRecord>, CodecError> {
+    let Some(section) = sections
         .iter()
-        .find(|section| section.section.name() == "FamilyInf")?;
+        .find(|section| section.section.name() == "FamilyInf")
+    else {
+        return Ok(None);
+    };
     let end = section.section.end();
     let label = b"drv_tbl_ptr\0";
-    let offset = find(data, label, section.section.offset())? + label.len();
-    if offset >= end {
-        return None;
-    }
-    let pointer = match data[offset] {
-        0xe1 => FamilyTablePointer::Null,
-        psb::token::ENTITY_REF => {
-            let Ok((id, after)) = psb::reference_id(data, offset + 1) else {
-                return None;
-            };
-            if after > end {
-                return None;
-            }
-            FamilyTablePointer::Entity(id)
-        }
-        _ => return None,
+    let Some(label_offset) = ctx.find_bytes_from(
+        data,
+        label,
+        section.section.offset(),
+        "find Creo family table",
+    )?
+    else {
+        return Ok(None);
     };
-    Some(FamilyTableRecord { pointer, offset })
+    let offset = label_offset + label.len();
+    Ok((|| {
+        if offset >= end {
+            return None;
+        }
+        let pointer = match data[offset] {
+            0xe1 => FamilyTablePointer::Null,
+            psb::token::ENTITY_REF => {
+                let Ok((id, after)) = psb::reference_id(data, offset + 1) else {
+                    return None;
+                };
+                if after > end {
+                    return None;
+                }
+                FamilyTablePointer::Entity(id)
+            }
+            _ => return None,
+        };
+        Some(FamilyTableRecord { pointer, offset })
+    })())
 }
 
 fn model_geometry_sections<'a>(
@@ -1573,7 +1610,12 @@ fn model_geometry_sections<'a>(
         .filter(|candidate| candidate.section.name() == VISIBGEOM)
     {
         let payload = candidate.region;
-        if find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
+        if ctx
+            .find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?
+            .is_some()
+            || ctx
+                .find_bytes_from(payload, b"crv_array\0", 0, "find Creo container marker")?
+                .is_some()
         {
             visible_namespace_present = true;
             break;
@@ -1585,7 +1627,11 @@ fn model_geometry_sections<'a>(
             section.section.name() == VISIBGEOM
         } else if section.section.name() == "DEPDB_DATA" {
             let payload = section.region;
-            find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
+            ctx.find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?
+                .is_some()
+                || ctx
+                    .find_bytes_from(payload, b"crv_array\0", 0, "find Creo container marker")?
+                    .is_some()
         } else {
             false
         };
@@ -1627,15 +1673,23 @@ fn loop_array_sections<'a>(
         .iter()
         .filter(|section| section.section.name() == "Xsections")
     {
-        if find(section.region, b"Sld_Xsections\0", 0).is_some() {
+        if ctx
+            .find_bytes_from(
+                section.region,
+                b"Sld_Xsections\0",
+                0,
+                "find Creo container marker",
+            )?
+            .is_some()
+        {
             ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
             selected.push(section.copy_retained(ctx)?);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         selected.as_mut_slice(),
-        |left, right| left.section.offset().cmp(&right.section.offset()),
-        |_| 0,
+        |value| value.section.offset(),
+        Ord::cmp,
         "creo loop array sections selected ordering",
     )?;
     selected.dedup_by_key(|section| section.section.offset());
@@ -1648,7 +1702,7 @@ fn surface_rows(
 ) -> Result<Vec<SurfaceRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::rows(ctx, bytes),
         |row, base| row.offset += base,
         |row| row.offset,
@@ -1661,20 +1715,23 @@ fn cross_section_surface_rows(
 ) -> Result<Vec<SurfaceRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| surface::cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )
 }
 
-fn surface_prototype_count(sections: &[ScannedSection<'_>]) -> usize {
+fn surface_prototype_count(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<usize, CodecError> {
     let mut total = 0usize;
     for section in sections {
         let section_bytes = section.region;
-        total += surface::prototype_count(section_bytes);
+        total += surface::prototype_count(ctx, section_bytes)?;
     }
-    total
+    Ok(total)
 }
 
 fn surface_prototype_records(
@@ -1684,7 +1741,7 @@ fn surface_prototype_records(
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
@@ -1703,7 +1760,7 @@ fn surface_parameters(
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::parameter_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1719,7 +1776,7 @@ fn cross_section_surface_parameters(
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| surface::cross_section_parameter_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1735,7 +1792,7 @@ fn surface_contours(
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::contour_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1752,7 +1809,7 @@ fn cross_section_surface_contours(
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| surface::cross_section_contour_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1797,14 +1854,14 @@ fn loop_array_scan(
     }
     ctx.stable_sort_by(
         frames.as_mut_slice(),
-        |left: &LoopArrayFrame, right: &LoopArrayFrame| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo loop array scan frames ordering",
     )?;
     ctx.stable_sort_by(
         records.as_mut_slice(),
-        |left: &LoopArrayRecord, right: &LoopArrayRecord| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo loop array scan records ordering",
     )?;
     Ok(LoopArrayScan { frames, records })
@@ -1816,7 +1873,7 @@ fn tabulated_cylinder_curve_replays(
 ) -> Result<Vec<TabulatedCylinderCurveReplay>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::tabulated_cylinder_curve_replays(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1832,7 +1889,7 @@ fn plane_local_systems(
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::plane_local_systems(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1848,7 +1905,7 @@ fn cross_section_plane_local_systems(
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| surface::cross_section_plane_local_systems(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1864,7 +1921,7 @@ fn plane_envelopes(
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| surface::plane_envelopes(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1880,7 +1937,7 @@ fn cross_section_plane_envelopes(
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| surface::cross_section_plane_envelopes(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -1893,7 +1950,7 @@ fn curve_prototypes(
 ) -> Result<Vec<CurvePrototype>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::prototypes(ctx, bytes),
         |prototype, base| prototype.offset += base,
         |prototype| prototype.offset,
@@ -1907,7 +1964,7 @@ fn curve_expressions(
 ) -> Result<Vec<CurveExpressionRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::expression_records_with_model_name(ctx, bytes, model_name),
         |record, base| {
             record.offset += base;
@@ -1940,7 +1997,7 @@ fn curve_parameters(
 ) -> Result<Vec<CurveParameterRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::parameter_records_with_face_ids(ctx, bytes, Some(face_ids)),
         |record, base| {
             record.offset += base;
@@ -1958,7 +2015,7 @@ fn two_chart_pcurves(
 ) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
     let mut records = collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids)),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -1982,7 +2039,7 @@ fn prototype_pcurves(
 ) -> Result<Vec<PrototypePcurveEndpoints>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::prototype_pcurve_endpoints(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -1995,7 +2052,7 @@ fn curve_prototype_topology(
 ) -> Result<Vec<CurvePrototypeTopology>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::prototype_topology(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2009,7 +2066,7 @@ fn curve_topology_rows(
 ) -> Result<Vec<CurveTopologyRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter(),
+        sections.iter().map(Ok),
         |bytes| curve::topology_rows_with_face_ids(ctx, bytes, Some(face_ids)),
         |row, base| row.offset += base,
         |row| row.offset,
@@ -2022,7 +2079,7 @@ fn cross_section_curve_rows(
 ) -> Result<Vec<DepdbCurveRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| curve::depdb_cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2035,7 +2092,7 @@ fn cross_section_curve_prototypes(
 ) -> Result<Vec<CurvePrototype>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(sections),
+        cross_sections(ctx, sections),
         |bytes| curve::prototypes(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2050,7 +2107,8 @@ fn datum_planes(
         ctx,
         sections
             .iter()
-            .filter(|section| section.section.name() == "ActDatums"),
+            .filter(|section| section.section.name() == "ActDatums")
+            .map(Ok),
         |bytes| {
             let mut planes = datum::planes(ctx, bytes)?;
             if let Some(plane) = datum::named_plane(ctx, bytes)? {
@@ -2072,7 +2130,8 @@ fn datum_cylinders(
         ctx,
         sections
             .iter()
-            .filter(|section| section.section.name() == "ActDatums"),
+            .filter(|section| section.section.name() == "ActDatums")
+            .map(Ok),
         |bytes| datum::cylinders(ctx, bytes),
         |cylinder, base| cylinder.offset_in_payload += base,
         |cylinder| cylinder.offset_in_payload,
@@ -2118,14 +2177,12 @@ fn structural_feature_ids(
     {
         let payload = section.region;
         let mut from = 0;
-        loop {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(payload.len() - from),
-                "creo parent-feature search",
-            )?;
-            let Some(found) = find(payload, b"parent_feats\0", from) else {
-                break;
-            };
+        while let Some(found) = ctx.find_bytes_from(
+            payload,
+            b"parent_feats\0",
+            from,
+            "creo parent-feature search",
+        )? {
             let start = found + b"parent_feats\0".len();
             let Some(&psb::token::ARRAY_OPEN) = payload.get(start) else {
                 from = start;
@@ -2299,7 +2356,8 @@ fn feature_entity_tables(
         ctx,
         sections
             .iter()
-            .filter(|section| section.section.name() == "AllFeatur"),
+            .filter(|section| section.section.name() == "AllFeatur")
+            .map(Ok),
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
@@ -2330,8 +2388,8 @@ fn feature_rows(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature rows rows ordering",
     )?;
     Ok(rows)
@@ -2350,7 +2408,9 @@ fn feature_entity_graph(
     let section_bytes = section.region;
     // The payload follows the `#<name>\n` section header. A section without
     // that newline carries no header, so the whole region is the payload.
-    let header_length = find(section_bytes, b"\n", 0).map_or(0, |newline| newline + 1);
+    let header_length = ctx
+        .find_bytes_from(section_bytes, b"\n", 0, "find Creo container marker")?
+        .map_or(0, |newline| newline + 1);
     let payload_start = section.section.offset() + header_length;
     let (mut entities, mut references) =
         feature::entity::entity_graph(ctx, &section_bytes[header_length..])?;
@@ -2499,8 +2559,8 @@ fn feature_definitions(
     }
     ctx.stable_sort_by(
         definitions.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature definitions definitions ordering",
     )?;
     Ok(definitions)
@@ -2523,8 +2583,8 @@ fn feature_row_definitions(
     }
     ctx.stable_sort_by(
         definitions.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature row definitions definitions ordering",
     )?;
     Ok(definitions)
@@ -2570,8 +2630,8 @@ fn feature_geometry_tables(
     tables.extend(depdb_tables);
     ctx.stable_sort_by(
         tables.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature geometry tables tables ordering",
     )?;
     Ok(tables)
@@ -2592,8 +2652,8 @@ fn feature_affected_ids(
     records.extend(depdb_records);
     ctx.stable_sort_by(
         records.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature affected ids records ordering",
     )?;
     Ok(records)
@@ -2616,8 +2676,8 @@ fn feature_revolution_extents(
     extents.extend(definition_extents);
     ctx.stable_sort_by(
         extents.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature revolution extents extents ordering",
     )?;
     Ok(extents)
@@ -2660,7 +2720,8 @@ fn positional_replay_definitions(
         ctx,
         sections
             .iter()
-            .filter(|section| section.section.name() == "FeatDefs"),
+            .filter(|section| section.section.name() == "FeatDefs")
+            .map(Ok),
         |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
         offset_feature_definition,
         |definition| definition.offset,
@@ -2673,9 +2734,12 @@ fn feature_operations(
 ) -> Result<Vec<FeatureOperation>, CodecError> {
     let records = collect_section_records_result(
         ctx,
-        sections.iter().filter(|section| {
-            section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
-        }),
+        sections
+            .iter()
+            .filter(|section| {
+                section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
+            })
+            .map(Ok),
         |bytes| feature::operations::operations(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2701,8 +2765,8 @@ fn feature_operations(
     current.extend(by_feature.into_values());
     ctx.stable_sort_by(
         current.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo feature operations current ordering",
     )?;
     Ok(current)
@@ -2734,9 +2798,12 @@ fn feature_operation_states(
 ) -> Result<Vec<FeatureOperationState>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().filter(|section| {
-            section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
-        }),
+        sections
+            .iter()
+            .filter(|section| {
+                section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
+            })
+            .map(Ok),
         |bytes| feature::operations::operation_states(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2750,16 +2817,6 @@ fn depdb_recipe_rows(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<FeatureRow>, CodecError> {
-    fn recipe_end(payload: &[u8], search_start: usize, recipe: FeatureRecipe) -> Option<usize> {
-        let name = match recipe {
-            FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
-            FeatureRecipe::CutExtrude => b"cutextrude\0",
-            FeatureRecipe::ProtrudeRevolve => b"protrevolve\0",
-            FeatureRecipe::CutRevolve => b"cutrevolve\0",
-        };
-        find(payload, name, search_start)?.checked_add(name.len())
-    }
-
     let mut rows = Vec::new();
     for section in sections
         .iter()
@@ -2778,7 +2835,16 @@ fn depdb_recipe_rows(
             });
         let mut body_start = 0;
         for (operation, recipe) in recipe_operations {
-            let Some(body_end) = recipe_end(payload, operation.offset, recipe) else {
+            let name = match recipe {
+                FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
+                FeatureRecipe::CutExtrude => b"cutextrude\0",
+                FeatureRecipe::ProtrudeRevolve => b"protrevolve\0",
+                FeatureRecipe::CutRevolve => b"cutrevolve\0",
+            };
+            let Some(body_end) = ctx
+                .find_bytes_from(payload, name, operation.offset, "find Creo recipe end")?
+                .and_then(|offset| offset.checked_add(name.len()))
+            else {
                 continue;
             };
             let Some(body_bytes) = payload
@@ -2805,21 +2871,32 @@ fn depdb_recipe_rows(
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo depdb recipe rows rows ordering",
     )?;
     Ok(rows)
 }
 
-fn geomlists_value(sections: &[ScannedSection<'_>], label: &[u8]) -> Option<u32> {
-    let section = sections
+fn geomlists_value(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+    label: &[u8],
+) -> Result<Option<u32>, CodecError> {
+    let Some(section) = sections
         .iter()
-        .find(|section| section.section.name() == "Geomlists")?;
+        .find(|section| section.section.name() == "Geomlists")
+    else {
+        return Ok(None);
+    };
     let payload = section.region;
-    let value_offset = find(payload, label, 0)? + label.len();
+    let Some(offset) = ctx.find_bytes_from(payload, label, 0, "find Creo geometry-list value")?
+    else {
+        return Ok(None);
+    };
+    let value_offset = offset + label.len();
     let (count, after) = psb::compact_int(payload, value_offset);
-    (after > value_offset).then_some(count)
+    Ok((after > value_offset).then_some(count))
 }
 
 /// Read one scalar integer owned by the unique legacy `Sld_GeomDepend` root.
@@ -2927,8 +3004,8 @@ fn append_topology_rows(
     rows.extend(additional);
     ctx.stable_sort_by(
         rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo append topology rows rows ordering",
     )?;
     rows.dedup_by_key(|row| row.offset);
@@ -2956,8 +3033,8 @@ fn append_legacy_curve_witnesses(
     pcurves.extend(legacy_pcurves.iter().cloned());
     ctx.stable_sort_by(
         pcurves.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo append legacy curve witnesses pcurves ordering",
     )?;
     pcurves.dedup_by_key(|pcurve| pcurve.offset);
@@ -2980,37 +3057,30 @@ pub(crate) fn scan_bytes<'a>(
         ));
     }
 
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(data.len()),
-        "creo container model-name scan",
-    )?;
     let version_line = line_at(ctx, &data, 0)?;
-    let mut model_name = cmnm_model_name(ctx, &data)
-        .transpose()?
-        .map(|(name, offset)| ModelName { name, offset });
+    let mut model_name =
+        cmnm_model_name(ctx, &data)?.map(|(name, offset)| ModelName { name, offset });
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
-    let framing_work = cadmpeg_core::decode::u64_from_index(data.len());
-    ctx.charge_work(
-        framing_work.checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("creo container header scans", u64::MAX, u64::MAX)
-        })?,
-        "creo container header scans",
-    )?;
-    let header_end = find(&data, UGC_HEADER_END, 0)
-        .and_then(|p| find(&data, b"\n", p))
-        .map(|nl| nl + 1);
-    ctx.charge_work(
-        framing_work.checked_mul(3).ok_or_else(|| {
-            ctx.refuse_codec_limit("creo container TOC scans", u64::MAX, u64::MAX)
-        })?,
-        "creo container TOC scans",
-    )?;
-    let toc_end = find(&data, TOC_START, 0)
-        .and_then(|toc| find(&data, TOC_END, toc))
-        .and_then(|p| find(&data, b"\n", p))
-        .map(|nl| nl + 1);
+    let header_end =
+        match ctx.find_bytes_from(&data, UGC_HEADER_END, 0, "creo container header scans")? {
+            Some(offset) => ctx
+                .find_bytes_from(&data, b"\n", offset, "creo container header scans")?
+                .map(|newline| newline + 1),
+            None => None,
+        };
+    let toc_end = match ctx.find_bytes_from(&data, TOC_START, 0, "creo container TOC scans")? {
+        Some(offset) => {
+            match ctx.find_bytes_from(&data, TOC_END, offset, "creo container TOC scans")? {
+                Some(end) => ctx
+                    .find_bytes_from(&data, b"\n", end, "creo container TOC scans")?
+                    .map(|newline| newline + 1),
+                None => None,
+            }
+        }
+        None => None,
+    };
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
     let mut legacy_ascii = legacy_ascii_framing(ctx, &data)?;
@@ -3053,7 +3123,7 @@ pub(crate) fn scan_bytes<'a>(
     let references = reference_scan(ctx, &sections)?;
     let layout = identify_layout(ctx, &data, &sections, legacy_ascii)?;
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
-        if let Some((name, offset)) = native_model_name(ctx, &sections).transpose()? {
+        if let Some((name, offset)) = native_model_name(ctx, &sections)? {
             model_name = Some(ModelName { name, offset });
         }
     }
@@ -3080,7 +3150,7 @@ pub(crate) fn scan_bytes<'a>(
             .flatten(),
         BinaryUnitSelection::Unsupported | BinaryUnitSelection::Conflicting => None,
     };
-    let family_table = family_table(&data, &sections);
+    let family_table = family_table(ctx, &data, &sections)?;
     let legacy_family_table = legacy_ascii
         .map(|framing| crate::legacy_family::parse(ctx, &framing.persistence))
         .transpose()?
@@ -3103,8 +3173,8 @@ pub(crate) fn scan_bytes<'a>(
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     ctx.stable_sort_by(
         nonvisible_surface_rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan bytes nonvisible surface rows ordering",
     )?;
     let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
@@ -3116,8 +3186,8 @@ pub(crate) fn scan_bytes<'a>(
     surface_rows.extend(legacy_geometry.rows);
     ctx.stable_sort_by(
         surface_rows.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan bytes surface rows ordering",
     )?;
     let cross_section_surface_rows = cross_section_surface_rows(ctx, &sections)?;
@@ -3144,7 +3214,7 @@ pub(crate) fn scan_bytes<'a>(
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
     )?;
-    let surface_prototype_count = surface_prototype_count(&model_geometry_sections);
+    let surface_prototype_count = surface_prototype_count(ctx, &model_geometry_sections)?;
     let mut nonvisible_prototype_refusals = crate::lane_refusal::LaneRefusals::new();
     let nonvisible_surface_prototype_records = surface_prototype_records(
         ctx,
@@ -3280,8 +3350,8 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     ctx.stable_sort_by(
         feature_definitions.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
     let claimed_definition_owners = claimed_definition_owners(ctx, &feature_definitions)?;
@@ -3299,8 +3369,8 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     ctx.stable_sort_by(
         feature_definitions.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
     let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
@@ -3367,8 +3437,8 @@ pub(crate) fn scan_bytes<'a>(
         &feature_entity_tables,
     )?;
     let (feature_entities, feature_entity_references) = feature_entity_graph(ctx, &sections)?;
-    let declared_body_count = geomlists_value(&sections, b"n_bodies\0");
-    let first_quilt_ptr = geomlists_value(&sections, b"first_quilt_ptr\0").or_else(|| {
+    let declared_body_count = geomlists_value(ctx, &sections, b"n_bodies\0")?;
+    let first_quilt_ptr = geomlists_value(ctx, &sections, b"first_quilt_ptr\0")?.or_else(|| {
         legacy_ascii
             .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
     });
@@ -3541,24 +3611,37 @@ fn scan_primitives(
     })
 }
 
-fn cross_sections<'a, 'data>(
+fn cross_sections<'a, 'data, 'ctx>(
+    ctx: &'a DecodeContext<'ctx>,
     sections: &'a [ScannedSection<'data>],
-) -> impl Iterator<Item = &'a ScannedSection<'data>> {
-    sections.iter().filter(|section| {
-        section.section.name() == "Xsections"
-            && find(section.region, b"Sld_Xsections\0", 0).is_some()
+) -> impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx> {
+    sections.iter().filter_map(move |section| {
+        if section.section.name() != "Xsections" {
+            return None;
+        }
+        match ctx.find_bytes_from(
+            section.region,
+            b"Sld_Xsections\0",
+            0,
+            "find Creo cross-section namespace",
+        ) {
+            Ok(Some(_)) => Some(Ok(section)),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        }
     })
 }
 
 fn collect_section_records_result<'a, 'data: 'a, T>(
     ctx: &DecodeContext<'_>,
-    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    sections: impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>>,
     mut decode: impl FnMut(&[u8]) -> Result<Vec<T>, CodecError>,
     relocate: impl Fn(&mut T, usize),
     offset: impl Fn(&T) -> usize,
 ) -> Result<Vec<T>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
+        let section = section?;
         let decoded = decode(section.region)?;
         ctx.reserve_vec(
             &mut records,
@@ -3570,10 +3653,10 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
             record
         }));
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         records.as_mut_slice(),
-        |left, right| offset(left).cmp(&offset(right)),
-        |_| 0,
+        offset,
+        Ord::cmp,
         "creo collect section records result records ordering",
     )?;
     Ok(records)
@@ -3598,7 +3681,10 @@ pub(crate) fn scan_bytes_ok<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan
 }
 
 /// Return whether a thumbnail section contains a JPEG start marker.
-pub(crate) fn has_thumbnail(scan: &ContainerScan) -> bool {
+pub(crate) fn has_thumbnail(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<bool, CodecError> {
     for section in scan
         .framing
         .sections
@@ -3613,18 +3699,29 @@ pub(crate) fn has_thumbnail(scan: &ContainerScan) -> bool {
         let raw_is_compressed = raw
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC));
-        let expanded_carries_jpeg = expanded_section_for(scan, section)
-            .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some());
+        let expanded_carries_jpeg = match expanded_section_for(scan, section) {
+            Some(expanded) => ctx
+                .find_bytes_from(
+                    &expanded.data,
+                    JPEG_MAGIC,
+                    0,
+                    "find Creo expanded thumbnail",
+                )?
+                .is_some(),
+            None => false,
+        };
         let carries_jpeg = if raw_is_compressed {
             expanded_carries_jpeg
         } else {
-            find(raw, JPEG_MAGIC, 0).is_some() || expanded_carries_jpeg
+            ctx.find_bytes_from(raw, JPEG_MAGIC, 0, "find Creo thumbnail")?
+                .is_some()
+                || expanded_carries_jpeg
         };
         if carries_jpeg {
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
@@ -3803,7 +3900,7 @@ pub(crate) fn notes(
         }
     }
 
-    if has_thumbnail(scan) {
+    if has_thumbnail(ctx, scan)? {
         push_note(
             ctx,
             &mut notes,

@@ -269,7 +269,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:skamp:1"
+        } if native_kind.as_str() == "creo:skamp:1"
     ));
     let mut duplicate_entity = definition.clone();
     let mut duplicate_line = duplicate_entity
@@ -318,7 +318,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
-        } if native_kind == "creo:skamp:1"
+        } if native_kind.as_str() == "creo:skamp:1"
     ));
     let opaque_segment = crate::feature::definitions::FeatureOpaqueSegment {
         kind: 25,
@@ -442,7 +442,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("point")
                             .expect("nonempty source identity"),
                     })
                     .expect("valid test fixture"),
@@ -790,7 +790,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("point")
                             .expect("nonempty source identity"),
                     })
                     .expect("valid test fixture"),
@@ -868,7 +868,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                 SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
                     .expect("valid test fixture"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("line")
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from("line")
                         .expect("nonempty source identity"),
                 })
                 .expect("valid test fixture"),
@@ -899,7 +899,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     SketchEntityId::mint("creo:featdefs:sketch_entity#917:101".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("line")
+                        native_kind: cadmpeg_core::text::NonBlankString::try_from("line")
                             .expect("nonempty source identity"),
                     })
                     .expect("valid test fixture"),

@@ -409,7 +409,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
     assert_eq!(
         *(relations[0].0.definition).kind(),
         SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("creo:relation:99")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("creo:relation:99")
                 .expect("nonempty native kind"),
             native_state: Some(1),
             native_flags: None,
@@ -423,7 +423,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                     .expect("identity grammar")
             ),
             operands: vec![SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::new("relat_ptr")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("relat_ptr")
                     .expect("source operand kind is nonempty"),
                 field: None,
                 object_index: Some(8),

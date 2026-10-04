@@ -277,8 +277,8 @@ pub(super) fn real_roots(
     }
     ctx.stable_sort_by(
         &mut roots,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "creo quadratic roots sort",
     )?;
     roots.dedup_by(|second, first| *second == *first);

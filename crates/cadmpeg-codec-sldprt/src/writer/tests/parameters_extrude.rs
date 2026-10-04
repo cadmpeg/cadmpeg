@@ -1631,7 +1631,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     assert!(!parameters
         .keys()
         .any(|name| name.as_str().starts_with("Position")));
-    assert!(!parameters.keys().any(|name| name == "Radius0"));
+    assert!(!parameters.keys().any(|name| name.as_str() == "Radius0"));
 }
 
 #[test]

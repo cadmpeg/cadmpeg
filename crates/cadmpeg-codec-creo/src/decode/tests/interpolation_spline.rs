@@ -100,7 +100,9 @@ fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12>
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Geometry closure owns this assertion; all sampled-carrier sort work is admitted.
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
@@ -169,7 +171,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .sketch_entities
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
-
     let profiles = crate::decode::with_test_decode_ctx(|ctx| {
         resolved_sketch_profiles(
             ctx,
@@ -232,7 +233,6 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profile_segments_intersect(&ctx, &diagonal, &crossing_line, 1.0e-9, [None, None])
             .expect("service intersection resources")
     );
-
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };

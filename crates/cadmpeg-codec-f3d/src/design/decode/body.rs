@@ -18,7 +18,6 @@ use crate::records::{
     recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -261,8 +260,8 @@ pub(crate) fn decode_body_bounds(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id().cmp(b.id()),
-        |value| value.id().len(),
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design body 1",
     )?;
     Ok(out)
@@ -330,7 +329,9 @@ pub(super) fn decode_stream(
     let mut counters: HashMap<(ConstructionRecipeKind, Option<&str>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
-        while let Some(offset) = find_from(bytes, name, cursor) {
+        while let Some(offset) =
+            ctx.find_bytes_from(bytes, name, cursor, "find F3D construction recipe")?
+        {
             cursor = offset + 1;
             if kind == ConstructionRecipeKind::Face
                 && offset >= 8
@@ -403,24 +404,15 @@ pub(super) fn decode_stream(
             out.push(recipe);
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut out[..],
-        |left, right| {
-            let left_key = {
-                let recipe = left;
-                {
-                    recipe.record_index.map(|index| index.value)
-                }
-            };
-            let right_key = {
-                let recipe = right;
-                {
-                    recipe.record_index.map(|index| index.value)
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let recipe = value;
+            {
+                recipe.record_index.map(|index| index.value)
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design body 2",
     )?;
     Ok(())
@@ -1059,7 +1051,12 @@ pub(crate) fn design_model_blob_names(
         let mut names = Vec::new();
         ctx.reserve_vec(&mut names, archive_counts.len(), "f3d archive BREP names")?;
         names.extend(archive_counts.into_keys());
-        ctx.stable_sort_by(&mut names[..], Ord::cmp, |_| 0, "sort f3d design body 3")?;
+        ctx.stable_sort_by(
+            &mut names[..],
+            |value| value,
+            Ord::cmp,
+            "sort f3d design body 3",
+        )?;
         return Ok(names);
     }
     if carrier_counts != archive_counts {
@@ -1069,8 +1066,8 @@ pub(crate) fn design_model_blob_names(
     }
     ctx.stable_sort_by(
         &mut model_names[..],
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sort f3d design body 4",
     )?;
     model_names.dedup();
@@ -1269,7 +1266,10 @@ pub(crate) fn decode_design_body_bindings(
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
-                        stream: ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?,
+                        stream: ctx.validate_nonblank_text(
+                            ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?,
+                            "validate stream",
+                        )?,
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
@@ -1292,8 +1292,8 @@ pub(crate) fn decode_design_body_bindings(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id().cmp(b.id()),
-        |value| value.id().len(),
+        |value| value.id(),
+        Ord::cmp,
         "sort f3d design body 5",
     )?;
     Ok(out)
@@ -1321,24 +1321,15 @@ pub(crate) fn bind_body_bounds(
             ctx.reserve_vec(&mut matches, 1, "f3d matching body bounds bindings")?;
             matches.push(binding);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut matches[..],
-            |left, right| {
-                let left_key = {
-                    let binding = left;
-                    {
-                        binding.asm_body_key_offset()
-                    }
-                };
-                let right_key = {
-                    let binding = right;
-                    {
-                        binding.asm_body_key_offset()
-                    }
-                };
-                left_key.cmp(&right_key)
+            |value| {
+                let binding = value;
+                {
+                    binding.asm_body_key_offset()
+                }
             },
-            |_| 0,
+            Ord::cmp,
             "sort f3d design body 6",
         )?;
         let mut ids = Vec::new();
@@ -1464,20 +1455,13 @@ fn typed_browser_node_hidden_flags(
             ctx.reserve_vec(&mut linked, 1, "f3d linked browser visibility nodes")?;
             linked.push(node);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut linked[..],
-            |left, right| {
-                let left_key = {
-                    let node = left;
-                    node.record_index
-                };
-                let right_key = {
-                    let node = right;
-                    node.record_index
-                };
-                left_key.cmp(&right_key)
+            |value| {
+                let node = value;
+                node.record_index
             },
-            |_| 0,
+            Ord::cmp,
             "sort f3d design body 7",
         )?;
         linked.dedup_by_key(|node| node.record_index);
@@ -2974,7 +2958,7 @@ mod tests {
             DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire,
         };
         const STREAM: &str = "Design/BulkStream.dat";
-        let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+        let binding = DesignBodyBinding::try_from(DesignBodyBindingWire::<String> {
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,

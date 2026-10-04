@@ -1,0 +1,262 @@
+// SPDX-License-Identifier: Apache-2.0
+pub struct DecodeContext;
+impl DecodeContext {
+    pub fn charge_retained(&self, _bytes: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
+}
+pub fn reserve<T>(ctx: &DecodeContext, values: &mut Vec<T>, count: usize) -> Result<(), ()> {
+    let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "slots")?;
+    values.try_reserve_exact(count).map_err(|_| ())?;
+    Ok(())
+}
+pub fn callers(
+    ctx: &DecodeContext,
+    small: &mut Vec<u8>,
+    large: &mut Vec<[u64; 8]>,
+    n: usize,
+) -> Result<(), ()> {
+    let _uncharged = no_charge::<u8>;
+    reserve(ctx, small, n)?;
+    reserve(ctx, large, n)?;
+    Ok(())
+}
+#[derive(Clone, PartialEq)]
+pub struct Owned {
+    pub values: Vec<u8>,
+}
+pub fn compare(ctx: &DecodeContext, left: &Owned, right: &Owned) -> bool {
+    let _ctx = ctx;
+    left == right // finding: uncharged_decode_work
+}
+
+pub fn wrong_count<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    n: usize,
+    other: usize,
+) -> Result<(), ()> {
+    let bytes = other.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "wrong slots")?;
+    values.try_reserve_exact(n).map_err(|_| ())?; // finding: unproven_decode_charge
+    Ok(())
+}
+pub fn wrong_type<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
+    let bytes = n.checked_mul(std::mem::size_of::<u8>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "wrong type")?;
+    values.try_reserve_exact(n).map_err(|_| ())?; // finding: unproven_decode_charge
+    Ok(())
+}
+pub fn no_charge<T>(values: &mut Vec<T>, value: T) {
+    values.push(value); // finding: uncharged_decode_allocation
+}
+pub fn duplicate<T>(ctx: &DecodeContext, values: &mut Vec<T>, n: usize) -> Result<(), ()> {
+    let bytes = n.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "one use")?;
+    values.try_reserve_exact(n).map_err(|_| ())?;
+    values.try_reserve_exact(n).map_err(|_| ())?; // finding: unproven_decode_charge
+    Ok(())
+}
+
+impl DecodeContext {
+    fn reserve_vec<T>(&self, _values: &mut Vec<T>, _count: usize) -> Result<(), ()> {
+        Ok(())
+    }
+    fn collection_vec<T>(&self, _count: usize) -> Result<Vec<T>, ()> {
+        Ok(Vec::new())
+    }
+    fn scoped_vector_storage<T>(&self, _count: usize) -> Result<(Vec<T>, ()), ()> {
+        Ok((Vec::new(), ()))
+    }
+    fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> {
+        Ok(())
+    }
+}
+pub fn pushed<T>(ctx: &DecodeContext, values: &mut Vec<T>, value: T) -> Result<(), ()> {
+    ctx.reserve_vec(values, 1)?;
+    values.push(value);
+    Ok(())
+}
+pub fn copied<T: Copy>(ctx: &DecodeContext, values: &[T]) -> Result<Vec<T>, ()> {
+    ctx.charge_work(u64::try_from(values.len()).map_err(|_| ())?, "copy")?;
+    let mut copy = ctx.collection_vec(values.len())?;
+    copy.extend_from_slice(values);
+    Ok(copy)
+}
+pub fn indexed<T>(
+    ctx: &DecodeContext,
+    count: usize,
+    mut value: impl FnMut(usize) -> T,
+) -> Result<Vec<T>, ()> {
+    let mut values = ctx.collection_vec(count)?;
+    for index in 0..count {
+        ctx.charge_work(1, "each")?;
+        values.push(value(index)); // finding: unproven_decode_charge
+    }
+    Ok(values)
+}
+pub fn wrong_target<T>(
+    ctx: &DecodeContext,
+    first: &mut Vec<T>,
+    second: &mut Vec<T>,
+    value: T,
+) -> Result<(), ()> {
+    ctx.reserve_vec(first, 1)?;
+    second.push(value); // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn growth_delta<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    capacity: usize,
+) -> Result<(), ()> {
+    let added = capacity - values.capacity();
+    let bytes = added.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "delta")?;
+    values
+        .try_reserve_exact(capacity - values.len())
+        .map_err(|_| ())?;
+    Ok(())
+}
+
+pub fn filled<T: Clone>(ctx: &DecodeContext, count: usize, value: T) -> Result<Vec<T>, ()> {
+    ctx.charge_work(u64::try_from(count).map_err(|_| ())?, "fill")?;
+    let mut values = ctx.collection_vec(count)?;
+    values.resize(count, value);
+    Ok(values)
+}
+pub fn fills(ctx: &DecodeContext, count: usize, text: String) -> Result<(), ()> {
+    let _fixed = filled(ctx, count, 0u8)?;
+    let _owned = filled(ctx, count, text)?; // finding: uncharged_decode_allocation, unproven_decode_charge
+    Ok(())
+}
+
+pub fn double_push<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    first: T,
+    second: T,
+) -> Result<(), ()> {
+    ctx.reserve_vec(values, 1)?;
+    values.push(first);
+    values.push(second); // finding: unproven_decode_charge
+    Ok(())
+}
+pub fn conditional<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    value: T,
+    yes: bool,
+) -> Result<(), ()> {
+    if yes {
+        ctx.reserve_vec(values, 1)?;
+    }
+    values.push(value); // finding: unproven_decode_charge
+    Ok(())
+}
+pub fn unrelated_result<T>(ctx: &DecodeContext, count: usize, value: T) -> Result<(), ()> {
+    fn discard<T>(_: Vec<T>) -> Vec<T> {
+        Vec::new()
+    }
+    let mut values = discard(ctx.collection_vec(count)?);
+    values.push(value); // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn computed_delta<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    requested: usize,
+    exact: bool,
+) -> Result<(), ()> {
+    let capacity = if exact {
+        requested
+    } else {
+        requested.max(values.capacity())
+    };
+    let added = capacity - values.capacity();
+    let bytes = added.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "computed delta")?;
+    values
+        .try_reserve_exact(capacity - values.len())
+        .map_err(|_| ())?;
+    Ok(())
+}
+
+pub fn duplicate_terms<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    count: usize,
+) -> Result<(), ()> {
+    let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or(())?;
+    ctx.charge_retained(u64::try_from(bytes).map_err(|_| ())?, "one extent")?;
+    let doubled = count.checked_add(count).ok_or(())?;
+    values.try_reserve_exact(doubled).map_err(|_| ())?; // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn partial_slots(ctx: &DecodeContext, values: &mut Vec<u8>) -> Result<(), ()> {
+    ctx.reserve_vec(values, 2)?;
+    values.push(1);
+    values.push(2);
+    values.push(3); // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn scoped_slack(ctx: &DecodeContext, count: usize) -> Result<Vec<u8>, ()> {
+    let capacity = count.checked_add(4).ok_or(())?;
+    let (mut values, _storage) = ctx.scoped_vector_storage(capacity)?;
+    for index in 0..count {
+        ctx.charge_work(1, "initialize")?;
+        values.push(u8::from(index != 0));
+    }
+    values.push(1);
+    values.push(2);
+    values.push(3);
+    values.push(4);
+    values.push(5); // finding: unproven_decode_charge
+    Ok(values)
+}
+
+impl DecodeContext {
+    fn reserve_hash_set_storage<T>(
+        &self,
+        _values: &mut std::collections::HashSet<T>,
+        _count: usize,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
+    fn reserve_hash_map_storage<K, V>(
+        &self,
+        _values: &mut std::collections::HashMap<K, V>,
+        _count: usize,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
+}
+
+pub fn hash_storage_only(
+    ctx: &DecodeContext,
+    set: &mut std::collections::HashSet<u8>,
+    map: &mut std::collections::HashMap<u8, u8>,
+    other: &mut std::collections::HashSet<u8>,
+) -> Result<(), ()> {
+    ctx.reserve_hash_set_storage(set, 1)?;
+    set.insert(1);
+    ctx.reserve_hash_map_storage(map, 1)?;
+    map.insert(1, 2);
+    other.insert(1); // finding: unproven_decode_charge
+    Ok(())
+}
+
+pub fn mapped_error_keeps_admission<T>(
+    ctx: &DecodeContext,
+    values: &mut Vec<T>,
+    value: T,
+) -> Result<(), &'static str> {
+    ctx.reserve_vec(values, 1).map_err(|_| "refusal")?;
+    values.push(value);
+    Ok(())
+}

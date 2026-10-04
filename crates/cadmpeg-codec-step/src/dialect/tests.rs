@@ -340,7 +340,9 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
                 case.identifiers
             );
             assert_eq!(
-                matched.using(),
+                matched
+                    .using(&cadmpeg_test_support::service_decode_context())
+                    .unwrap(),
                 Some(NEAREST_STRATEGY.id()),
                 "FILE_SCHEMA {:?}: `using` names the strategy actually applied",
                 case.identifiers

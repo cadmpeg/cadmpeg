@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-decode-policy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[dev-dependencies]
+memchr = "=2.8.3"
+roxmltree = "=0.21.1"
+serde_json = "=1.0.151"
+serde = { version = "=1.0.229", features = ["derive"] }
+
+zstd-safe = "=7.3.0"
+flate2 = "=1.1.10"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2", "zstd"] }
+
+[workspace]

@@ -113,8 +113,8 @@ fn agreed_dimension_records<'a>(
     for mut group in groups.into_values() {
         ctx.sort_unstable_by(
             &mut group,
-            |left, right| left.id.cmp(&right.id),
-            |record| record.id.len(),
+            |value| &value.id,
+            Ord::cmp,
             "sort SLDPRT PMI dimension group",
         )?;
         let Some(&canonical) = group.first() else {
@@ -135,8 +135,8 @@ fn agreed_dimension_records<'a>(
     }
     ctx.sort_unstable_by(
         &mut representatives,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort SLDPRT PMI agreed dimensions",
     )?;
     Ok(representatives)
@@ -297,11 +297,12 @@ pub(crate) fn enrich_history_parameters_with_features(
         if parameters.contains_key(name) {
             continue;
         }
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(copy_pmi_text(
+        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
-            name,
-            "retain SLDPRT PMI history parameter name",
-        )?) else {
+            copy_pmi_text(ctx, name, "retain SLDPRT PMI history parameter name")?,
+            "validate nonblank text",
+        )?
+        else {
             continue;
         };
         ctx.insert_btree_map(
@@ -696,8 +697,8 @@ pub(crate) fn dimensions(
     }
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort SLDPRT PMI records",
     )?;
     Ok(records)
@@ -732,8 +733,8 @@ pub(crate) fn parse_payload(
     )?;
     ctx.stable_sort_by(
         &mut records,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort SLDPRT PMI records",
     )?;
     Ok(records)

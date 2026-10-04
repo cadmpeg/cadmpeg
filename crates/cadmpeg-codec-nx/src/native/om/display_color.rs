@@ -111,10 +111,10 @@ fn finalize_assignments(
     ctx: &DecodeContext<'_>,
     mut assignments: Vec<RmDisplayColorAssignment>,
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut assignments,
-        |first, second| first.frame.offset().cmp(&second.frame.offset()),
-        |_| 0,
+        |value| value.frame.offset(),
+        Ord::cmp,
         "sort NX display color assignments",
     )?;
     for (ordinal, assignment) in assignments.iter_mut().enumerate() {

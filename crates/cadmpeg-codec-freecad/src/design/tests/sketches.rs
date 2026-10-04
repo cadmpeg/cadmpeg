@@ -657,7 +657,7 @@ fn distinguishes_missing_malformed_and_explicit_constraint_types() {
         else {
             panic!("invalid or future family selected a neutral constraint");
         };
-        assert_eq!(native_kind, expected_kind);
+        assert_eq!(native_kind.as_str(), expected_kind);
         assert_valid_document(result.ir());
     }
 
@@ -700,11 +700,11 @@ fn retains_unknown_and_ambiguous_sketch_carriers_as_native() {
     assert_eq!(entities.len(), 2);
     assert!(matches!(entities[0].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind }
-            if native_kind == "Vendor::GeomLineSegment"
+            if native_kind.as_str() == "Vendor::GeomLineSegment"
     ));
     assert!(matches!(entities[1].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind }
-            if native_kind == "Part::GeomLineSegment"
+            if native_kind.as_str() == "Part::GeomLineSegment"
     ));
     assert_valid_document(result.ir());
 }

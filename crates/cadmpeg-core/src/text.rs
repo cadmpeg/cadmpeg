@@ -4,8 +4,10 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::decode::text::TextSource;
 use crate::decode::DecodeContext;
 use crate::CodecError;
 
@@ -51,6 +53,25 @@ impl std::fmt::Display for NonWhitespaceChar {
     }
 }
 
+/// Static text whose leading byte is a non-whitespace ASCII character.
+/// The proof is Copy so constant initializers need no destructor evaluation.
+#[derive(Debug, Clone, Copy)]
+pub struct StaticNonBlankText(&'static str);
+
+impl StaticNonBlankText {
+    /// Validate at most one byte and retain the static borrow.
+    pub const fn new(value: &'static str) -> Option<Self> {
+        let bytes = value.as_bytes();
+        if bytes.is_empty() {
+            return None;
+        }
+        match NonWhitespaceChar::from_ascii(bytes[0]) {
+            Some(_) => Some(Self(value)),
+            None => None,
+        }
+    }
+}
+
 /// A source string that holds at least one non-whitespace character.
 ///
 /// A selection id, an external document identity and a native name are read
@@ -58,7 +79,7 @@ impl std::fmt::Display for NonWhitespaceChar {
 /// here rather than by each reader.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
-pub struct NonBlankString(String);
+pub struct NonBlankString(Cow<'static, str>);
 
 #[cfg(feature = "schema")]
 impl JsonSchema for NonBlankString {
@@ -75,33 +96,114 @@ impl JsonSchema for NonBlankString {
     }
 }
 
+impl crate::decode::cost::DecodeCost for NonBlankString {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        crate::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
+
+/// Owned or borrowed text whose non-blank scan was admitted by the caller.
+/// The token preserves blank spelling and cannot be cloned or mutated.
+#[derive(Debug)]
+pub struct NonBlankText<S> {
+    pub(crate) source: S,
+    pub(crate) nonblank: bool,
+}
+
+impl<S: TextSource> AsRef<str> for NonBlankText<S> {
+    fn as_ref(&self) -> &str {
+        self.source.as_text()
+    }
+}
+
+impl TryFrom<NonBlankText<String>> for NonBlankString {
+    type Error = &'static str;
+
+    fn try_from(value: NonBlankText<String>) -> Result<Self, Self::Error> {
+        if value.nonblank {
+            Ok(Self(Cow::Owned(value.source)))
+        } else {
+            Err("source identity must not be blank")
+        }
+    }
+}
+
+impl TryFrom<String> for NonBlankString {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.chars().any(|character| !character.is_whitespace()) {
+            Ok(Self(Cow::Owned(value)))
+        } else {
+            Err("source identity must not be blank")
+        }
+    }
+}
+
+impl TryFrom<&str> for NonBlankString {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::try_from(String::from(value))
+    }
+}
+
 impl NonBlankString {
-    /// Constructs a source string that is not blank.
-    ///
-    /// Absent when the value holds no non-whitespace character, the empty
-    /// string included.
-    pub fn new(value: impl Into<String>) -> Option<Self> {
-        let value = value.into();
-        value
-            .chars()
-            .any(|character| !character.is_whitespace())
-            .then_some(Self(value))
+    /// Validate UTF-8 text before transferring owned or copying borrowed storage.
+    /// The caller admits existing owned storage; a blank borrow needs no copy.
+    pub fn for_decode<S: TextSource>(
+        ctx: &DecodeContext<'_>,
+        value: S,
+        operation: &'static str,
+    ) -> Result<Option<Self>, crate::decode::ResourceLimit> {
+        let value = ctx.validate_nonblank_text(value, operation)?;
+        if !value.nonblank {
+            return Ok(None);
+        }
+        Ok(Some(Self(Cow::Owned(
+            value.source.into_retained_text(ctx, operation)?,
+        ))))
     }
 
-    /// Constructs a non-blank string from a leading character and a suffix.
-    ///
-    /// Total: the prefix is non-whitespace, so the result holds it whatever
-    /// the suffix renders to.
-    pub fn prefixed(prefix: NonWhitespaceChar, suffix: impl std::fmt::Display) -> Self {
-        Self(format!("{prefix}{suffix}"))
+    /// Transfer owned text whose first byte is a non-whitespace ASCII character.
+    /// Validation reads at most one byte and does not copy the owned buffer.
+    pub fn from_ascii_leading(value: String) -> Option<Self> {
+        NonWhitespaceChar::from_ascii(*value.as_bytes().first()?)?;
+        Some(Self(Cow::Owned(value)))
     }
 
-    /// Append text while retaining the admitted non-whitespace character.
-    #[must_use]
-    pub fn with_suffix(&self, suffix: &str) -> Self {
-        let mut value = self.0.clone();
-        value.push_str(suffix);
-        Self(value)
+    /// Borrow static text with an existing leading-byte proof.
+    pub const fn from_static(value: StaticNonBlankText) -> Self {
+        Self(Cow::Borrowed(value.0))
+    }
+
+    /// Format retained text and verify its leading non-whitespace character.
+    /// The prefix check reads at most one Unicode scalar after charged formatting.
+    pub fn formatted(
+        ctx: &DecodeContext<'_>,
+        leading: NonWhitespaceChar,
+        arguments: std::fmt::Arguments<'_>,
+    ) -> Result<Self, CodecError> {
+        let value = ctx.format_retained(arguments, "format nonblank text")?;
+        if !value.starts_with(leading.0) {
+            return Err(CodecError::malformed(
+                "formatted nonblank text has a different prefix",
+            ));
+        }
+        Ok(Self(Cow::Owned(value)))
+    }
+
+    /// Format a non-whitespace prefix and a suffix through the caller budget.
+    pub fn prefixed(
+        ctx: &DecodeContext<'_>,
+        prefix: NonWhitespaceChar,
+        suffix: impl std::fmt::Display,
+    ) -> Result<Self, CodecError> {
+        Self::formatted(ctx, prefix, format_args!("{prefix}{suffix}"))
     }
 
     /// Returns the source string.
@@ -116,13 +218,20 @@ impl NonBlankString {
         operation: &'static str,
     ) -> Result<Self, crate::CodecError> {
         let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        Self::new(text).ok_or_else(|| crate::CodecError::malformed("non-blank text copy changed"))
+        Ok(Self(Cow::Owned(text)))
     }
 
     /// Consumes the value and returns the source string.
-    #[must_use]
-    pub fn into_string(self) -> String {
-        self.0
+    pub fn into_string(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        ctx.charge_work(0, operation)?;
+        match self.0 {
+            Cow::Owned(value) => Ok(value),
+            Cow::Borrowed(value) => ctx.copy_retained_text(value, operation),
+        }
     }
 }
 
@@ -134,10 +243,12 @@ impl NonBlankString {
 /// byte or with a `{` placeholder fails `cargo check` with E0080, not only a
 /// codegen build. (An inline `const { … }` block is evaluated at codegen, so
 /// `check` would pass a whitespace literal.) Formatted arguments follow that
-/// literal prefix and cannot make the result blank.
+/// literal prefix and cannot make the result blank. Static templates borrow
+/// their rendered literal. Templates with arguments take the caller context
+/// as their first argument and return `Result<NonBlankString, CodecError>`.
 ///
 /// ```compile_fail
-/// let _ = cadmpeg_core::nonblank_literal!(" {}", "name");
+/// let _ = cadmpeg_core::nonblank_literal!(ctx, " {}", "name");
 /// ```
 ///
 /// ```compile_fail
@@ -145,7 +256,24 @@ impl NonBlankString {
 /// ```
 #[macro_export]
 macro_rules! nonblank_literal {
-    ($template:literal $(, $argument:expr)* $(,)?) => {{
+    ($template:literal $(,)?) => {{
+        const NONBLANK_LITERAL_TEXT: &str = {
+            let bytes = $template.as_bytes();
+            assert!(!bytes.is_empty() && bytes[0] != b'{',
+                "a nonblank literal must start with literal ASCII text");
+            match format_args!($template).as_str() {
+                Some(text) => text,
+                None => panic!("a formatted nonblank literal requires a decode context"),
+            }
+        };
+        const NONBLANK_LITERAL_VALUE: $crate::text::StaticNonBlankText =
+            match $crate::text::StaticNonBlankText::new(NONBLANK_LITERAL_TEXT) {
+                Some(value) => value,
+                None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
+            };
+        $crate::text::NonBlankString::from_static(NONBLANK_LITERAL_VALUE)
+    }};
+    ($ctx:expr, $template:literal $(, $argument:expr)* $(,)?) => {{
         const NONBLANK_LITERAL_LEADING: $crate::text::NonWhitespaceChar = {
             let bytes = $template.as_bytes();
             assert!(
@@ -157,14 +285,14 @@ macro_rules! nonblank_literal {
                 None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
             }
         };
-        let rendered = format!($template $(, $argument)*);
-        $crate::text::NonBlankString::prefixed(NONBLANK_LITERAL_LEADING, &rendered[1..])
+        $crate::text::NonBlankString::formatted($ctx, NONBLANK_LITERAL_LEADING,
+            format_args!($template $(, $argument)*))
     }};
 }
 
 /// Lookup by the plain string the key spells.
 ///
-/// `Ord` and `Hash` are derived over the same `String`, so a map keyed by this
+/// `Ord` and `Hash` are derived over the same text, so a map keyed by this
 /// type answers `get`, `contains_key` and indexing with a `&str` and orders its
 /// keys exactly as a `String` key would.
 impl std::borrow::Borrow<str> for NonBlankString {
@@ -264,30 +392,23 @@ pub fn named_entries_reporting<V>(
 ) -> Result<(BTreeMap<NonBlankString, V>, Vec<NamedEntryError>), CodecError> {
     let mut kept = BTreeMap::new();
     let mut refused = Vec::new();
-    for (name, value) in entries {
-        ctx.charge_work(
-            crate::decode::u64_from_index(name.len()),
-            "named entry key scan",
-        )?;
-        match NonBlankString::new(name) {
-            Some(key) => match kept.entry(key) {
-                std::collections::btree_map::Entry::Vacant(slot) => {
-                    ctx.admit_retained_btree_record::<NonBlankString, V>(
-                        0,
-                        "named entry map nodes",
-                    )?;
-                    slot.insert(value);
-                }
-                std::collections::btree_map::Entry::Occupied(slot) => {
+    let mut entries = entries.into_iter();
+    loop {
+        let Some((name, value)) = ctx.next_charged(&mut entries, "named entry key scan")? else {
+            break;
+        };
+        match NonBlankString::for_decode(ctx, name, "named entry key scan")? {
+            Some(key) => {
+                if ctx.contains_key_btree_map(&kept, &key, "named entry key comparisons")? {
                     let record = ctx
                         .format_retained(format_args!("{record}"), "named entry refused record")?;
-                    let key = NonBlankString(
-                        ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
-                    );
+                    let key = key.try_clone_for_decode(ctx, "named entry refused key")?;
                     ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
+                } else {
+                    ctx.insert_btree_map(&mut kept, key, value, "named entry map nodes")?;
                 }
-            },
+            }
             None => {
                 let record =
                     ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
@@ -351,31 +472,13 @@ pub fn named_entries<V>(
 #[macro_export]
 macro_rules! nonblank_const {
     ($constant:expr) => {{
-        const NONBLANK_CONST_LEADING: $crate::text::NonWhitespaceChar = {
-            let bytes = $constant.as_bytes();
-            assert!(
-                !bytes.is_empty(),
-                "a nonblank constant must hold at least one character",
-            );
-            match $crate::text::NonWhitespaceChar::from_ascii(bytes[0]) {
-                Some(character) => character,
-                None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
-            }
-        };
-        $crate::text::NonBlankString::prefixed(NONBLANK_CONST_LEADING, &$constant[1..])
+        const NONBLANK_CONST_VALUE: $crate::text::StaticNonBlankText =
+            match $crate::text::StaticNonBlankText::new($constant) {
+                Some(value) => value,
+                None => panic!("a nonblank constant starts with a non-whitespace ASCII character"),
+            };
+        $crate::text::NonBlankString::from_static(NONBLANK_CONST_VALUE)
     }};
-}
-
-impl PartialEq<str> for NonBlankString {
-    fn eq(&self, other: &str) -> bool {
-        self.0 == other
-    }
-}
-
-impl PartialEq<&str> for NonBlankString {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
 }
 
 impl std::fmt::Display for NonBlankString {
@@ -389,14 +492,15 @@ impl<'de> Deserialize<'de> for NonBlankString {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(String::deserialize(deserializer)?)
-            .ok_or_else(|| serde::de::Error::custom("source identity must not be blank"))
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use crate::CodecError;
 
     #[cfg(feature = "schema")]
     use std::collections::BTreeMap;
@@ -427,8 +531,23 @@ mod tests {
     }
 
     #[test]
+    fn named_empty_entry_refuses_iteration_before_validation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        assert!(
+            matches!(named_entries_reporting(&ctx, "record", [(String::new(), 1)]),
+            Err(crate::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "named entry key scan")
+        );
+    }
+
+    #[test]
     fn nonblank_copy_refuses_retained_bytes_before_duplication() {
-        let value = NonBlankString::new("abc").expect("nonblank fixture");
+        let value = NonBlankString::try_from("abc").expect("nonblank fixture");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 2;
@@ -456,17 +575,130 @@ mod tests {
             None => panic!("the literal is an ASCII non-whitespace character"),
         };
         const PINNED: &str = "pinned";
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for (prefix, suffix, expected) in [
             (HASH, "42", "#42"),
             (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
             (NonWhitespaceChar::hex_digit(0xf0), "", "0"),
         ] {
-            let value = NonBlankString::prefixed(prefix, suffix);
+            let value = NonBlankString::prefixed(&ctx, prefix, suffix).unwrap();
             assert_eq!(value.as_str(), expected);
             assert_eq!(serde_json::to_value(&value).unwrap(), expected);
         }
-        assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
+        assert_eq!(
+            crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(),
+            "#42"
+        );
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
+    }
+
+    #[test]
+    fn static_nonblank_text_preserves_wire_equality_and_ownership() {
+        let borrowed = crate::nonblank_literal!("pinned");
+        let owned = NonBlankString::try_from("pinned".to_owned()).unwrap();
+        assert!(matches!(borrowed.0, std::borrow::Cow::Borrowed("pinned")));
+        assert_eq!(borrowed, owned);
+        assert_eq!(borrowed.cmp(&owned), std::cmp::Ordering::Equal);
+        let mut map = std::collections::HashMap::new();
+        map.insert(borrowed.clone(), 7);
+        assert_eq!(map.get(&owned), Some(&7));
+        assert_eq!(map.get("pinned"), Some(&7));
+        assert_eq!(
+            serde_json::to_string(&borrowed).unwrap(),
+            serde_json::to_string(&owned).unwrap()
+        );
+        assert_eq!(
+            crate::nonblank_literal!("key {{value}}").as_str(),
+            "key {value}"
+        );
+        for value in ["", " ", "\t", "é"] {
+            assert!(super::StaticNonBlankText::new(value).is_none());
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            owned.into_string(&ctx, "move owned nonblank").unwrap(),
+            "pinned"
+        );
+        let CodecError::ResourceLimit(refusal) = borrowed
+            .into_string(&ctx, "copy static nonblank")
+            .unwrap_err()
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.additional, 6);
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    }
+
+    #[test]
+    fn formatted_nonblank_text_pins_work_and_retained_bytes() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let value = crate::nonblank_literal!(&ctx, "#{}", 42).unwrap();
+        assert_eq!(value.as_str(), "#42");
+        let CodecError::ResourceLimit(work) = ctx.charge_work(u64::MAX, "probe work").unwrap_err()
+        else {
+            panic!("work refusal")
+        };
+        // The length-counting pass and the formatting pass each visit three output bytes.
+        assert_eq!(work.used, 6);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(
+            crate::nonblank_literal!(&ctx, "#{}", 42).unwrap().as_str(),
+            "#42"
+        );
+        let CodecError::ResourceLimit(storage) =
+            ctx.charge_retained(u64::MAX, "probe storage").unwrap_err()
+        else {
+            panic!("storage refusal")
+        };
+        // One three-byte output buffer; formatting creates no intermediate string.
+        assert_eq!(storage.used, 3);
+    }
+
+    #[test]
+    fn formatted_nonblank_text_refuses_before_suffix_and_preserves_refusal() {
+        struct Suffix<'a>(&'a std::cell::Cell<bool>);
+        impl std::fmt::Display for Suffix<'_> {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.set(true);
+                formatter.write_str("suffix")
+            }
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let called = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(first) =
+            crate::nonblank_literal!(&ctx, "prefix{}", Suffix(&called)).unwrap_err()
+        else {
+            panic!("resource refusal")
+        };
+        assert!(!called.get());
+        assert_eq!(first.operation, "format nonblank text");
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let CodecError::ResourceLimit(second) =
+            crate::nonblank_literal!(&ctx, "other{}", 1).unwrap_err()
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(second, first);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let leading = NonWhitespaceChar::from_ascii(b'#').unwrap();
+        assert!(matches!(
+            NonBlankString::formatted(&ctx, leading, format_args!(" ")),
+            Err(CodecError::Malformed(_))
+        ));
     }
 
     #[test]
@@ -485,12 +717,18 @@ mod tests {
 
     #[test]
     fn every_admitted_prefix_produces_text_accepted_by_the_public_reader() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for byte in u8::MIN..=u8::MAX {
             let Some(prefix) = NonWhitespaceChar::from_ascii(byte) else {
                 continue;
             };
-            let value = NonBlankString::prefixed(prefix, "\t\n\u{85}\u{3000}");
-            assert!(NonBlankString::new(value.as_str()).is_some(), "byte {byte}");
+            let value = NonBlankString::prefixed(&ctx, prefix, "\t\n\u{85}\u{3000}").unwrap();
+            assert!(
+                NonBlankString::try_from(value.as_str()).is_ok(),
+                "byte {byte}"
+            );
             let wire = serde_json::to_string(&value).unwrap();
             assert_eq!(
                 serde_json::from_str::<NonBlankString>(&wire).unwrap(),
@@ -511,18 +749,20 @@ mod tests {
         assert_eq!(map["additionalProperties"], false);
         assert!(map["patternProperties"].get(pattern).is_some());
         for text in [" \tname\n", "\u{feff}", "\0"] {
-            let value = NonBlankString::new(text).unwrap();
+            let value = NonBlankString::try_from(text).unwrap();
             assert_eq!(serde_json::to_value(value).unwrap(), text);
         }
     }
 
     #[test]
     fn a_source_string_of_whitespace_alone_is_blank() {
-        assert!(NonBlankString::new("   ").is_none());
-        assert!(NonBlankString::new("").is_none());
-        assert!(NonBlankString::new("\t\n").is_none());
+        assert!(NonBlankString::try_from("   ").is_err());
+        assert!(NonBlankString::try_from("").is_err());
+        assert!(NonBlankString::try_from("\t\n").is_err());
         assert_eq!(
-            NonBlankString::new(" a ").map(|value| value.as_str().to_owned()),
+            NonBlankString::try_from(" a ")
+                .ok()
+                .map(|value| value.as_str().to_owned()),
             Some(" a ".to_owned())
         );
     }
@@ -575,7 +815,7 @@ mod tests {
             refused[0],
             NamedEntryError::Restated {
                 record: "feature 7".to_owned(),
-                key: NonBlankString::new("k").unwrap(),
+                key: NonBlankString::try_from("k").unwrap(),
             }
         );
         assert_eq!(
@@ -607,7 +847,7 @@ mod tests {
         let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<NonBlankString>().max(std::mem::align_of::<usize>());
-        // One named-entry record admits one backing node before insertion.
+        // The first key allocates one root node in the empty tree.
         let bytes = node_bytes;
         let error = checked_reporting(
             vec![("k".into(), 1)],
@@ -646,6 +886,199 @@ mod tests {
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "named entry key scan"));
+    }
+
+    #[test]
+    fn named_entry_scan_refuses_before_advancing_source() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let advanced = std::cell::Cell::new(false);
+        let entries = std::iter::from_fn(|| {
+            advanced.set(true);
+            Some((String::from("key"), 1))
+        });
+        let CodecError::ResourceLimit(first) =
+            named_entries_reporting(&ctx, "f", entries).unwrap_err()
+        else {
+            panic!("refusal")
+        };
+        assert!(!advanced.get());
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else {
+            panic!("refusal")
+        };
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn nonblank_decode_validation_admits_unicode_bytes_and_keeps_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Three UTF-8 whitespace bytes and one non-whitespace byte.
+        policy.limits.max_work_units = 4;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let value = String::from("\u{2003}a");
+        let pointer = value.as_ptr();
+        let value = NonBlankString::for_decode(&ctx, value, "validate")
+            .unwrap()
+            .unwrap();
+        assert_eq!(value.as_str(), "\u{2003}a");
+        assert_eq!(value.as_str().as_ptr(), pointer);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("refusal")
+        };
+        assert_eq!(limit.used, 4);
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first =
+            NonBlankString::for_decode(&ctx, String::from("\u{2003}a"), "validate").unwrap_err();
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").unwrap_err() else {
+            panic!("refusal")
+        };
+        assert_eq!(first, second);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        for value in ["", "\u{2003}\n", " a "] {
+            assert_eq!(
+                NonBlankString::for_decode(&ctx, String::from(value), "validate")
+                    .unwrap()
+                    .is_some(),
+                NonBlankString::try_from(value).is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn nonblank_borrowed_construction_charges_validation_and_one_copy() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four UTF-8 validation bytes and four copied bytes; one four-byte buffer.
+        policy.limits.max_work_units = 8;
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = String::from("\u{2003}a");
+        let result = NonBlankString::for_decode(&ctx, &source, "borrowed nonblank")
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.as_str(), source);
+        assert_ne!(result.as_str().as_ptr(), source.as_ptr());
+        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("work refusal")
+        };
+        assert_eq!(work.used, 8);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            NonBlankString::for_decode(&ctx, source.as_str(), "borrowed nonblank")
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            source
+        );
+        let CodecError::ResourceLimit(storage) = ctx.charge_retained(1, "probe").unwrap_err()
+        else {
+            panic!("storage refusal")
+        };
+        assert_eq!(storage.used, 4);
+    }
+
+    #[test]
+    fn nonblank_borrowed_refusal_precedes_copy_and_blank_needs_no_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        // Three whitespace bytes are validated without retaining their text.
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(NonBlankString::for_decode(&ctx, "\u{2003}", "blank text")
+            .unwrap()
+            .is_none());
+        let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else {
+            panic!("work refusal")
+        };
+        assert_eq!(work.used, 3);
+        policy.limits.max_work_units = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let first = NonBlankString::for_decode(&ctx, "\u{2003}a", "borrowed text").unwrap_err();
+        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(first.additional, 4);
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let CodecError::ResourceLimit(second) = NonBlankString::try_from("owned")
+            .unwrap()
+            .into_string(&ctx, "later owned move")
+            .unwrap_err()
+        else {
+            panic!("fused refusal")
+        };
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn retained_owned_text_preserves_storage_and_original_refusal() {
+        use crate::decode::text::TextSource;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = String::from("owned");
+        let pointer = source.as_ptr();
+        let result = source.into_retained_text(&ctx, "owned transfer").unwrap();
+        assert_eq!(result.as_ptr(), pointer);
+        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "refuse").unwrap_err() else {
+            panic!("work refusal")
+        };
+        let second = result
+            .into_retained_text(&ctx, "later transfer")
+            .unwrap_err();
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn checked_nonblank_token_keeps_spelling_and_transfers_one_owned_buffer() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four nonblank UTF-8 bytes and three blank UTF-8 bytes; both buffers already exist.
+        policy.limits.max_work_units = 7;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = String::from("\u{2003}a");
+        let pointer = source.as_ptr();
+        let token = ctx
+            .validate_nonblank_text(source, "validate owned token")
+            .unwrap();
+        assert_eq!(token.as_ref(), "\u{2003}a");
+        let value = NonBlankString::try_from(token).unwrap();
+        assert_eq!(value.as_str().as_ptr(), pointer);
+        let blank = ctx
+            .validate_nonblank_text(String::from("\u{2003}"), "validate blank token")
+            .unwrap();
+        assert_eq!(blank.as_ref(), "\u{2003}");
+        assert!(NonBlankString::try_from(blank).is_err());
+        let first = ctx
+            .validate_nonblank_text(String::from("x"), "token refusal")
+            .unwrap_err();
+        assert_eq!(first.used, 7);
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        assert_eq!(
+            ctx.validate_nonblank_text(String::from("later"), "later token")
+                .unwrap_err(),
+            first
+        );
+    }
+
+    #[test]
+    fn ascii_leading_text_checks_one_byte_and_preserves_owned_storage() {
+        for source in ["", " leading", "\u{2003}a", "é"] {
+            assert!(NonBlankString::from_ascii_leading(String::from(source)).is_none());
+        }
+        let source = String::from("f001");
+        let pointer = source.as_ptr();
+        let value = NonBlankString::from_ascii_leading(source).unwrap();
+        assert_eq!(value.as_str(), "f001");
+        assert_eq!(value.as_str().as_ptr(), pointer);
+        assert_eq!(serde_json::to_string(&value).unwrap(), "\"f001\"");
     }
 
     #[test]
@@ -709,12 +1142,13 @@ mod tests {
     #[test]
     fn checked_named_entry_restated_key_refuses_before_text_growth() {
         let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
-        // One backing node and one record byte precede the restated key copy.
-        let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
+        // One root node and the one-byte record consume the retained ceiling before the duplicate key copy.
+        let bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
             + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<NonBlankString>();
+            + 2 * std::mem::align_of::<NonBlankString>()
+            + 1;
         assert!(matches!(
-            checked_reporting(entries, 10, crate::decode::u64_from_index(node_bytes) + 1),
+            checked_reporting(entries, 10, crate::decode::u64_from_index(bytes)),
             Err(crate::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "named entry refused key"

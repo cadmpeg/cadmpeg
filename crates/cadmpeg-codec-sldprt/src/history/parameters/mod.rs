@@ -303,10 +303,11 @@ pub(super) fn apply_evaluated_parameters(
                 )?,
                 _ => format_parameter_value(value),
             };
-            let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
+            let name = cadmpeg_core::text::NonBlankString::for_decode(
                 ctx,
-                name.as_str(),
-            )?)
+                copy_projected_feature_text(ctx, name.as_str())?,
+                "validate nonblank text",
+            )?
             .ok_or_else(|| CodecError::malformed("blank SLDPRT evaluated parameter name"))?;
             ctx.reserve_vec(
                 &mut replacements,

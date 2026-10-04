@@ -628,8 +628,8 @@ pub(crate) fn transfer_parameters(
         ctx.collect_vec(candidates.into_values(), "catia_formula_ordered_parameters")?;
     ctx.stable_sort_by(
         &mut parameters,
-        |left, right| left.source_order.cmp(&right.source_order),
-        |_| 0,
+        |value| &value.source_order,
+        Ord::cmp,
         "catia_formula_ordered_parameters_sort",
     )?;
     for (ordinal, candidate) in parameters.iter_mut().enumerate() {
@@ -1954,8 +1954,11 @@ fn copy_design_parameter(
     let mut properties = BTreeMap::new();
     for (key, value) in &source.properties {
         let key = ctx.copy_retained_text(key.as_str(), operation)?;
-        let key = cadmpeg_core::text::NonBlankString::new(key)
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank CATIA parameter property"))?;
+        let key =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("blank CATIA parameter property")
+                })?;
         let value = ctx.copy_retained_text(value, operation)?;
         ctx.insert_btree_map(&mut properties, key, value, operation)?;
     }
@@ -2050,8 +2053,10 @@ fn insert_parameter_property(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let operation = "catia_formula_property";
     let key = ctx.copy_retained_text(key, operation)?;
-    let key = cadmpeg_core::text::NonBlankString::new(key)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty CATIA formula property key"))?;
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+        .ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("empty CATIA formula property key")
+    })?;
     let value = ctx.format_retained(value, operation)?;
     ctx.insert_btree_map(properties, key, value, operation)?;
     Ok(())

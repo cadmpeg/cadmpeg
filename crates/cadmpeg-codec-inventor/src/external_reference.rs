@@ -123,7 +123,7 @@ pub(crate) fn parse<'a>(
     snapshot: &CompoundSnapshot<'a>,
     document_kind: &DocumentKind,
 ) -> Result<UfrxState<'a>, CodecError> {
-    let Some(stream) = snapshot.stream("UFRxDoc") else {
+    let Some(stream) = snapshot.stream(ctx, "UFRxDoc")? else {
         return Ok(UfrxState::Absent);
     };
     let source = snapshot.open(ctx, stream)?;
@@ -1100,7 +1100,8 @@ mod tests {
             .expect("synthetic compound file fits policy");
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("synthetic compound file parses");
         snapshot
-            .stream("RSeStorage/RSeSegInfo")
+            .stream(&ctx, "RSeStorage/RSeSegInfo")
+            .expect("lookup admission")
             .expect("validated stream entry")
             .id()
     }

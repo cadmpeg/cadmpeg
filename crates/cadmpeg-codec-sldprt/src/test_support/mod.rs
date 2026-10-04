@@ -76,3 +76,26 @@ pub(crate) mod native;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
 pub(crate) mod tessellation;
+
+/// Admit child operations before refusing the selected work boundary.
+pub(crate) fn work_refusal_at<T>(
+    operation: &str,
+    mut decode: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
+) -> CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = decode(&ctx);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    )
+}

@@ -92,19 +92,17 @@ pub(super) fn embedded_image_asset(
         String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)
             .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
-    Ok(Some(
-        Asset::try_new(
-            neutral_asset_id_charged(ctx, &entry.name)?,
-            Some(name),
-            media_type,
-            AssetContent::Embedded {
-                data: cadmpeg_ir::assets::AssetData::new(data)
-                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
-            },
-            Some(native_ref),
-        )
-        .map_err(CodecError::Malformed)?,
-    ))
+    Ok(Some(Asset::try_new(
+        ctx,
+        neutral_asset_id_charged(ctx, &entry.name)?,
+        Some(name),
+        media_type,
+        AssetContent::Embedded {
+            data: cadmpeg_ir::assets::AssetData::new(data)
+                .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+        },
+        Some(native_ref),
+    )?))
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
@@ -141,8 +139,8 @@ pub(super) fn decode_scoped_images<T>(
     }
     ctx.stable_sort_by(
         &mut images[..],
-        |a, b| id(a).cmp(id(b)),
-        |_| 0,
+        |value| id(value),
+        Ord::cmp,
         "sort f3d design image 1",
     )?;
     images.dedup_by(|a, b| id(a) == id(b));

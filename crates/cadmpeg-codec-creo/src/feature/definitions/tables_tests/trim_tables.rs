@@ -105,7 +105,14 @@ macro_rules! trim_bucket_collection_limit_test {
 
 #[test]
 fn trim_bucket_entry_work_refuses_before_scan() {
-    assert!(matches!(trim_bucket_with_limits(u64::MAX, 0),
+    // The allowance admits complete search windows and markers before scanning an entry.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo trim bucket entry scan",
+        |cap| trim_bucket_with_limits(u64::MAX, cap),
+    );
+    let refused: Result<Vec<super::super::FeatureTrimBucket>, _> = Err(error);
+    assert!(matches!(refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::WorkUnits
                 && refusal.operation == "creo trim bucket entry scan"));
@@ -869,7 +876,14 @@ fn trim_vertex_template_identifies_table_and_entry_classes() {
             \xf7\x45\x09\x0a\x03\x00";
 
     assert_eq!(
-        trim_table_header(payload, b"vert_tab\0", 0, payload.len()),
+        crate::decode::with_test_decode_ctx(|ctx| trim_table_header(
+            ctx,
+            payload,
+            b"vert_tab\0",
+            0,
+            payload.len()
+        ))
+        .expect("trim header search admitted"),
         Some(TrimTableHeader {
             declared_count: 19,
             classes: TrimTableClasses {

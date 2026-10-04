@@ -116,7 +116,7 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
             native_kind: Some(native_kind),
             record: None,
         ..
-    } if native_kind == "surf_surf_int_cur"
+    } if native_kind.as_str() == "surf_surf_int_cur"
     ));
     assert_eq!(
         procedural

@@ -691,8 +691,8 @@ fn normalized_span_boundaries(
     }
     ctx.stable_sort_by(
         &mut boundaries,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "iges span boundary sort",
     )?;
     boundaries.dedup();
@@ -788,8 +788,8 @@ fn aligned_homogeneous_spans(
     boundaries.extend(second_boundaries);
     ctx.stable_sort_by(
         &mut boundaries,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "iges span boundary sort",
     )?;
     boundaries.dedup();

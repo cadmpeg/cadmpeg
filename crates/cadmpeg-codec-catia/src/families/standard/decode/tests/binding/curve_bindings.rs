@@ -674,9 +674,8 @@ fn native_edge_support_match_refuses_work_limit() {
         source_object: Some(source),
     });
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
-    let refused = crate::test_support::with_work_limit(
-        cadmpeg_core::decode::u64_from_index(2 * "cgm-surface:00002a".len()),
-        |ctx| {
+    let refused =
+        crate::test_support::with_work_refusal("catia_native_edge_support_source_scan", |ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
             ensure_native_edge_support_surface(
                 &mut ir,
@@ -685,8 +684,7 @@ fn native_edge_support_match_refuses_work_limit() {
                 &carrier,
                 &mut admission,
             )
-        },
-    );
+        });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_edge_support_source_scan")

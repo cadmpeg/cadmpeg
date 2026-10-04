@@ -134,8 +134,8 @@ pub(crate) fn enrich_history_parameters<'a>(
         }
         ctx.stable_sort_by(
             &mut starts,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT feature starts",
         )?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
@@ -269,7 +269,9 @@ pub(crate) fn enrich_history_parameters<'a>(
         let Some(expression) = expression else {
             continue;
         };
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+        let Some(name) =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
+        else {
             continue;
         };
         if replace_existing {
@@ -384,8 +386,8 @@ pub(crate) fn sync_changed_feature_scalars(
             .collect::<Vec<_>>();
         ctx.stable_sort_by(
             &mut starts,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sldprt feature name starts sort",
         )?;
         let mut updates = Vec::<(usize, f64)>::new();

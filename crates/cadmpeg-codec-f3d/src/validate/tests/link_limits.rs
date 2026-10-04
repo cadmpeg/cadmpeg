@@ -21,7 +21,7 @@ fn subentity_tag(
         id: format!("f3d:asm:persistent-subentity-tag#{ordinal}"),
         target,
         selector: 1,
-        token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
+        token: cadmpeg_core::text::NonBlankString::try_from("97").unwrap(),
         design_references: vec![1],
         ordinal,
     }

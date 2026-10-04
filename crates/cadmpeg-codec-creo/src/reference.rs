@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model-space reference entities from `MdlRefInfo`.
 
-use cadmpeg_core::bytes::find_in;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -486,8 +485,8 @@ pub(crate) fn ellipse_carriers(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo ellipse carriers result ordering",
     )?;
     Ok(result)
@@ -551,19 +550,34 @@ const CONIC_FIELD_HEADERS: [&[u8]; 10] = [
     b"\xe0\x02local_sys\0",
 ];
 
-fn next_conic_field(data: &[u8], start: usize, end: usize) -> Option<(usize, usize)> {
-    CONIC_FIELD_HEADERS
-        .iter()
-        .enumerate()
-        .filter_map(|(field, header)| {
-            find_in(data, header, start, end).map(|offset| (offset, field))
-        })
-        .min_by_key(|(offset, _)| *offset)
+fn next_conic_field(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<(usize, usize)>, CodecError> {
+    let mut first: Option<(usize, usize)> = None;
+    for (field, header) in CONIC_FIELD_HEADERS.iter().enumerate() {
+        if let Some(offset) =
+            ctx.find_bytes_in(data, header, start, end, "find Creo conic field")?
+        {
+            if first.is_none_or(|(previous, _)| offset < previous) {
+                first = Some((offset, field));
+            }
+        }
+    }
+    Ok(first)
 }
 
-fn expected_conic_field(data: &[u8], start: usize, end: usize, expected: usize) -> Option<usize> {
-    let (offset, field) = next_conic_field(data, start, end)?;
-    (field == expected).then_some(offset)
+fn expected_conic_field(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+    end: usize,
+    expected: usize,
+) -> Result<Option<usize>, CodecError> {
+    Ok(next_conic_field(ctx, data, start, end)?
+        .and_then(|(offset, field)| (field == expected).then_some(offset)))
 }
 
 fn conic_point_at(
@@ -720,11 +734,24 @@ pub(crate) fn named_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(offset) = find_in(payload, LIST, search, payload.len()) {
+    while let Some(offset) = ctx.find_bytes_in(
+        payload,
+        LIST,
+        search,
+        payload.len(),
+        "find Creo reference conic",
+    )? {
         let fields_start = offset + LIST.len();
-        let block_end =
-            find_in(payload, NEXT_LIST, fields_start, payload.len()).unwrap_or(payload.len());
-        let Some(id_label) = expected_conic_field(payload, fields_start, block_end, 0) else {
+        let block_end = ctx
+            .find_bytes_in(
+                payload,
+                NEXT_LIST,
+                fields_start,
+                payload.len(),
+                "find Creo reference conic",
+            )?
+            .unwrap_or(payload.len());
+        let Some(id_label) = expected_conic_field(ctx, payload, fields_start, block_end, 0)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -734,7 +761,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         }
-        let Some(type_label) = expected_conic_field(payload, after_id, block_end, 1) else {
+        let Some(type_label) = expected_conic_field(ctx, payload, after_id, block_end, 1)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -744,7 +771,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         }
-        let Some(flip_label) = expected_conic_field(payload, after_type, block_end, 2) else {
+        let Some(flip_label) = expected_conic_field(ctx, payload, after_type, block_end, 2)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -754,7 +781,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         }
-        let Some(end1_label) = expected_conic_field(payload, after_flip, block_end, 3) else {
+        let Some(end1_label) = expected_conic_field(ctx, payload, after_flip, block_end, 3)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -763,7 +790,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         };
-        let Some(end2_label) = expected_conic_field(payload, after_end1, block_end, 4) else {
+        let Some(end2_label) = expected_conic_field(ctx, payload, after_end1, block_end, 4)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -773,7 +800,7 @@ pub(crate) fn named_conics(
         };
         let mut parameter_start = None;
         let mut parameter_end = None;
-        if let Some((label, 5)) = next_conic_field(payload, cursor, block_end) {
+        if let Some((label, 5)) = next_conic_field(ctx, payload, cursor, block_end)? {
             let Some((value, next)) =
                 coordinate(payload, label + CONIC_FIELD_HEADERS[5].len(), &cache)
             else {
@@ -791,7 +818,7 @@ pub(crate) fn named_conics(
             parameter_start = Some(value);
             cursor = next;
         }
-        if let Some((label, 6)) = next_conic_field(payload, cursor, block_end) {
+        if let Some((label, 6)) = next_conic_field(ctx, payload, cursor, block_end)? {
             let value_offset = label + CONIC_FIELD_HEADERS[6].len();
             if payload.get(value_offset) == Some(&0x11) {
                 let Some(value) = parameter_start else {
@@ -820,7 +847,7 @@ pub(crate) fn named_conics(
                 continue;
             }
         }
-        let Some(c1_label) = expected_conic_field(payload, cursor, block_end, 7) else {
+        let Some(c1_label) = expected_conic_field(ctx, payload, cursor, block_end, 7)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -830,7 +857,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         };
-        let Some(c2_label) = expected_conic_field(payload, after_c1, block_end, 8) else {
+        let Some(c2_label) = expected_conic_field(ctx, payload, after_c1, block_end, 8)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -840,7 +867,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         };
-        let Some(local_label) = expected_conic_field(payload, after_c2, block_end, 9) else {
+        let Some(local_label) = expected_conic_field(ctx, payload, after_c2, block_end, 9)? else {
             search = block_end.max(fields_start);
             continue;
         };
@@ -863,7 +890,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         };
-        if next_conic_field(payload, local_end, block_end).is_some() {
+        if next_conic_field(ctx, payload, local_end, block_end)?.is_some() {
             search = block_end.max(fields_start);
             continue;
         }
@@ -889,8 +916,8 @@ pub(crate) fn named_conics(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo named conics result ordering",
     )?;
     Ok(result)
@@ -998,10 +1025,23 @@ pub(crate) fn positional_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = find_in(payload, LIST, search, payload.len()) {
+    while let Some(prototype) = ctx.find_bytes_in(
+        payload,
+        LIST,
+        search,
+        payload.len(),
+        "find Creo reference conic",
+    )? {
         let rows_start = prototype + LIST.len();
-        let block_end =
-            find_in(payload, NEXT_LIST, rows_start, payload.len()).unwrap_or(payload.len());
+        let block_end = ctx
+            .find_bytes_in(
+                payload,
+                NEXT_LIST,
+                rows_start,
+                payload.len(),
+                "find Creo reference conic",
+            )?
+            .unwrap_or(payload.len());
         let mut headers = Vec::new();
         for close in rows_start..block_end {
             if payload.get(close) != Some(&0xe3) {
@@ -1041,8 +1081,8 @@ pub(crate) fn positional_conics(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo positional conics result ordering",
     )?;
     result.dedup_by_key(|conic| conic.offset);
@@ -1134,8 +1174,8 @@ pub(crate) fn lines(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo lines result ordering",
     )?;
     result.dedup_by_key(|line| line.offset);
@@ -1266,8 +1306,8 @@ pub(crate) fn line3d_lines(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo line3d lines result ordering",
     )?;
     result.dedup_by_key(|line| line.offset);
@@ -1444,8 +1484,8 @@ pub(crate) fn arc_z_circles(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo arc z circles result ordering",
     )?;
     ctx.charge_work(

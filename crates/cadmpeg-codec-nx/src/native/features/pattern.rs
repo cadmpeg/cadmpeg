@@ -1134,8 +1134,8 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         }
         ctx.stable_sort_by(
             &mut graph,
-            |first, second| first.ordinal.cmp(&second.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             "sort NX pattern construction graph",
         )?;
         if !matches!(graph.len(), 9 | 10)

@@ -689,7 +689,7 @@ fn section_result_collector_refuses_before_output_vec_growth() {
             .expect("root input is admitted");
         super::collect_section_records_result(
             &ctx,
-            sections.iter(),
+            sections.iter().map(Ok),
             |_| Ok(vec![42u32]),
             |_, _| {},
             |_| 0,

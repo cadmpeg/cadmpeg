@@ -633,9 +633,12 @@ fn insert_termination_field(
     value: String,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let name =
-        cadmpeg_core::text::NonBlankString::new(copy_termination_text(ctx, name, operation)?)
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
+    let name = cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        copy_termination_text(ctx, name, operation)?,
+        "validate nonblank text",
+    )?
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
     ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())
 }
@@ -1176,12 +1179,7 @@ fn history_object_offsets(
         ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name.offset, id));
     }
-    ctx.sort_unstable_by(
-        &mut objects,
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
-        operation,
-    )?;
+    ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, operation)?;
     Ok(objects)
 }
 
@@ -1314,12 +1312,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 objects.push((name.offset, *feature));
             }
         }
-        ctx.sort_unstable_by(
-            &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
         for (index, &(start, feature)) in objects.iter().enumerate() {
             ctx.charge_work(
                 u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
@@ -1777,6 +1770,7 @@ pub(crate) fn project_compact_combine_paths(
         }
         ctx.sort_unstable_by(
             &mut ordered,
+            |value| value,
             |(left_order, left_ordinal, _), (right_order, right_ordinal, _)| {
                 (left_order.is_none(), left_order, left_ordinal).cmp(&(
                     right_order.is_none(),
@@ -1784,7 +1778,6 @@ pub(crate) fn project_compact_combine_paths(
                     right_ordinal,
                 ))
             },
-            |_| 0,
             OPERATION,
         )?;
         let mut dependencies = Vec::<cadmpeg_ir::features::FeatureId>::new();

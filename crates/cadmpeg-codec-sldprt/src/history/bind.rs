@@ -344,10 +344,10 @@ fn regeneration_order(
     features: &[cadmpeg_ir::features::Feature],
     model: Option<&cadmpeg_ir::document::Model>,
 ) -> Result<Option<Vec<usize>>, cadmpeg_core::CodecError> {
-    let mut outgoing = ctx.alloc_filled(
+    let mut outgoing = ctx.collect_indexed_vec(
         features.len(),
-        Vec::<usize>::new(),
         "sldprt feature regeneration adjacency",
+        |_| Ok(Vec::<usize>::new()),
     )?;
     let mut indegree = ctx.alloc_filled(
         features.len(),
@@ -866,14 +866,11 @@ mod tests {
 
     #[test]
     fn feature_regeneration_index_refuses_work_limit() {
-        let mut features = [ordering_feature()];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .unwrap_or_else(|error| panic!("test context failed: {error}"));
-        let error = order_features_for_regeneration(&ctx, &mut features)
-            .expect_err("one feature must exceed the work limit");
+        // Admit adjacency fills and key copies before the selected graph gate.
+        let error =
+            crate::test_support::work_refusal_at("index SLDPRT feature regeneration IDs", |ctx| {
+                order_features_for_regeneration(ctx, &mut [ordering_feature()])
+            });
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -884,15 +881,12 @@ mod tests {
 
     #[test]
     fn model_regeneration_parent_scan_refuses_work_limit() {
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model.features.push(ordering_feature());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .unwrap_or_else(|error| panic!("test context failed: {error}"));
-        let error = order_model_features_for_regeneration(&ctx, &mut ir)
-            .expect_err("the parent scan must exceed the remaining work limit");
+        // Admit adjacency fills and key copies before the selected graph gate.
+        let error = crate::test_support::work_refusal_at("scan SLDPRT feature parents", |ctx| {
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.model.features.push(ordering_feature());
+            order_model_features_for_regeneration(ctx, &mut ir)
+        });
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

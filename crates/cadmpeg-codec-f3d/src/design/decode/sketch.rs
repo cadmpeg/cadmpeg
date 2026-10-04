@@ -33,7 +33,6 @@ use crate::records::{
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
 };
-use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -481,8 +480,8 @@ pub(crate) fn decode_sketch_placements(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 1",
     )?;
     Ok(out)
@@ -904,24 +903,15 @@ fn finish_persistent_references(
     ctx: &DecodeContext<'_>,
     mut out: Vec<(usize, PersistentReference)>,
 ) -> Result<Vec<PersistentReference>, CodecError> {
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut out[..],
-        |left, right| {
-            let left_key = {
-                let (entry_ordinal, reference) = left;
-                {
-                    (*entry_ordinal, reference.byte_offset)
-                }
-            };
-            let right_key = {
-                let (entry_ordinal, reference) = right;
-                {
-                    (*entry_ordinal, reference.byte_offset)
-                }
-            };
-            left_key.cmp(&right_key)
+        |value| {
+            let (entry_ordinal, reference) = value;
+            {
+                (*entry_ordinal, reference.byte_offset)
+            }
         },
-        |_| 0,
+        Ord::cmp,
         "sort f3d design sketch 2",
     )?;
 
@@ -954,7 +944,9 @@ fn decode_persistent_references_from_stream(
         ),
     ] {
         let mut cursor = 0;
-        while let Some(offset) = find_from(bytes, name, cursor) {
+        while let Some(offset) =
+            ctx.find_bytes_from(bytes, name, cursor, "find F3D persistent reference")?
+        {
             cursor = offset + name.len();
             let compact_type_offset = offset + name.len();
             let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
@@ -1567,8 +1559,8 @@ pub(crate) fn decode_entity_headers(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 3",
     )?;
     Ok(out)
@@ -1681,8 +1673,8 @@ fn decode_headers_for_indices(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 4",
     )?;
     Ok(out)
@@ -3771,8 +3763,8 @@ pub(crate) fn decode_sketch_surfaces(
     }
     ctx.stable_sort_by(
         &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design sketch 5",
     )?;
     Ok(out)
@@ -3832,7 +3824,12 @@ pub(crate) fn bind_sketch_graph(
         let mut owner_text = ctx.retained_string(owner.len(), "f3d sketch relation owner text")?;
         owner_text.push_str(owner);
         relation.owner_entity_id = Some(
-            cadmpeg_core::text::NonBlankString::new(owner_text).ok_or_else(|| {
+            cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                owner_text,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| {
                 crate::design::text::malformed_design(
                     ctx,
                     format_args!(

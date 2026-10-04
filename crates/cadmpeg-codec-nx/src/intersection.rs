@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -1333,7 +1332,7 @@ pub(crate) fn term_use_records(
             )?;
         }
     }
-    for label in find_iter(stream, b"term_use") {
+    for label in ctx.find_bytes_iter(stream, b"term_use", "scan NX inline term-use records")? {
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
@@ -1451,7 +1450,14 @@ pub(crate) fn support_uv_records(
     }
     let mut label_start = 0;
     while label_start < stream.len() {
-        let Some(relative) = find_iter(&stream[label_start..], b"values").next() else {
+        let Some(relative) = ctx
+            .find_bytes_iter(
+                &stream[label_start..],
+                b"values",
+                "scan NX inline support-UV records",
+            )?
+            .next()
+        else {
             break;
         };
         let label = label_start + relative;

@@ -144,7 +144,7 @@ pub(crate) fn inspect(
                 header,
                 stream,
             };
-            crate::dialect::layers(&evidence)
+            crate::dialect::layers(ctx, &evidence)?
         }
         StreamKind::AcisBinary(header) => {
             let stream = crate::dialect::record_stream_start(bytes, Family::Acis, header);
@@ -161,7 +161,7 @@ pub(crate) fn inspect(
                         .into(),
                 );
             }
-            crate::dialect::layers(&evidence)
+            crate::dialect::layers(ctx, &evidence)?
         }
         StreamKind::Text => {
             // The kernel header is bound here so the evidence can borrow it
@@ -224,10 +224,12 @@ pub(crate) fn inspect(
                 }
             };
             let evidence = StreamEvidence::Text(text);
-            crate::dialect::layers(&evidence)
+            crate::dialect::layers(ctx, &evidence)?
         }
     };
-    let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
+    let losses = crate::dialect::dialect_loss(ctx, &kernel)?
+        .into_iter()
+        .collect();
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched)
             .with_for_decode(ctx, kernel, "collect SAT dialect layers")

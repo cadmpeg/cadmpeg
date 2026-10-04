@@ -140,16 +140,17 @@ pub(super) fn feature_operation_chronological_labels<'a>(
     }
     let mut ordered = ctx.collection_vec(labels.len(), "NX chronological feature labels")?;
     ordered.extend(labels);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered,
-        |left, right| {
-            sections
-                .get(left.section_link.as_str())
-                .cmp(&sections.get(right.section_link.as_str()))
-                .then_with(|| left.section_link.cmp(&right.section_link))
-                .then_with(|| right.source_offset.cmp(&left.source_offset))
+        |value| {
+            let record = *value;
+            (
+                sections.get(record.section_link.as_str()),
+                record.section_link.as_str(),
+                std::cmp::Reverse(record.source_offset),
+            )
         },
-        |label| label.section_link.len(),
+        Ord::cmp,
         "sort NX chronological feature labels",
     )?;
     Ok(ordered)
@@ -3606,20 +3607,20 @@ pub(super) fn canonical_feature_history_links(
     links.retain(|link| link.schema_role == OmSchemaRole::FeatureHistory);
     ctx.stable_sort_by(
         &mut links,
-        |first, second| {
-            first
-                .location
-                .section_offset()
-                .cmp(&second.location.section_offset())
-                .then_with(|| {
-                    first
-                        .location
-                        .source_offset()
-                        .cmp(&second.location.source_offset())
-                })
-                .then_with(|| first.id.cmp(&second.id))
-        },
-        |link| link.id.len(),
+        |value| &value.id,
+        Ord::cmp,
+        "sort NX feature history links",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut links,
+        |value| value.location.source_offset(),
+        Ord::cmp,
+        "sort NX feature history links",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut links,
+        |value| value.location.section_offset(),
+        Ord::cmp,
         "sort NX feature history links",
     )?;
     links.dedup_by_key(|link| link.location.section_offset());
@@ -5769,8 +5770,8 @@ pub(super) fn feature_input_block_identity_groups(
         }
         ctx.stable_sort_by(
             &mut members,
-            |left, right| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
+            |value| &value.source_offset,
+            Ord::cmp,
             "sort NX input block group members",
         )?;
         ctx.reserve_scoped_vec(
@@ -5782,10 +5783,13 @@ pub(super) fn feature_input_block_identity_groups(
         groups.push((data_block, members));
     }
     drop(map_reservation);
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut groups,
-        |(_, left), (_, right)| left[0].source_offset.cmp(&right[0].source_offset),
-        |_| 0,
+        |value| {
+            let (_, left) = value;
+            left[0].source_offset
+        },
+        Ord::cmp,
         "sort NX input block groups",
     )?;
     let mut output = Vec::new();
@@ -6950,8 +6954,8 @@ pub(super) fn feature_sketch_records(
         }
         ctx.stable_sort_by(
             &mut input_blocks,
-            |left, right| left.input_slot.cmp(&right.input_slot),
-            |_| 0,
+            |value| &value.input_slot,
+            Ord::cmp,
             "sort NX sketch input blocks",
         )?;
 
@@ -6970,10 +6974,10 @@ pub(super) fn feature_sketch_records(
             })?;
             payload_references.push(reference);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut payload_references,
-            |left, right| left.position.ordinal().cmp(&right.position.ordinal()),
-            |_| 0,
+            |value| value.position.ordinal(),
+            Ord::cmp,
             "sort NX sketch references",
         )?;
 
@@ -7040,10 +7044,10 @@ pub(super) fn feature_sketch_construction_inputs(
             })?;
             field.push(reference);
         }
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut field,
-            |left, right| left.position.ordinal().cmp(&right.position.ordinal()),
-            |_| 0,
+            |value| value.position.ordinal(),
+            Ord::cmp,
             "sort NX sketch construction references",
         )?;
         let Some((terminal, members)) = field.split_last() else {
@@ -7631,10 +7635,10 @@ fn sorted_payload_refs<'ctx, 'a, T>(
     let (mut references, reservation) =
         ctx.temporary_vec(count, "NX sketch payload record references")?;
     references.extend(source.iter().filter(|record| include(record)));
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut references,
-        |left, right| key(left).cmp(&key(right)),
-        |_| 0,
+        |value| key(value),
+        Ord::cmp,
         "sort NX sketch payload record references",
     )?;
     Ok((references, reservation))
@@ -8140,10 +8144,10 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
     }
     let mut uses = Vec::new();
     for (operation_label, operation_references) in &mut references_by_operation {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             operation_references,
-            |left, right| left.position.ordinal().cmp(&right.position.ordinal()),
-            |_| 0,
+            |value| value.position.ordinal(),
+            Ord::cmp,
             "sort NX preceding named-point references",
         )?;
         let Some((first_reference, first_block)) = operation_references
@@ -8291,14 +8295,20 @@ pub(super) fn feature_sketch_point_uses(
         }
         ctx.stable_sort_by(
             &mut point_block_uses,
-            |left, right| {
-                (left.reference_ordinal, left.source_offset, left.id.as_str()).cmp(&(
-                    right.reference_ordinal,
-                    right.source_offset,
-                    right.id.as_str(),
-                ))
-            },
-            |block_use| block_use.id.len(),
+            |value| &value.id,
+            Ord::cmp,
+            "sort NX sketch point block uses",
+        )?;
+        ctx.stable_sort_by(
+            &mut point_block_uses,
+            |value| &value.source_offset,
+            Ord::cmp,
+            "sort NX sketch point block uses",
+        )?;
+        ctx.stable_sort_by(
+            &mut point_block_uses,
+            |value| &value.reference_ordinal,
+            Ord::cmp,
             "sort NX sketch point block uses",
         )?;
         let mut point_group = None;
@@ -8578,8 +8588,8 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
     }
     ctx.stable_sort_by(
         &mut dependencies,
-        |left, right| left.id.cmp(&right.id),
-        |dependency| dependency.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort NX sketch datum dependencies",
     )?;
     Ok(dependencies)
@@ -8785,8 +8795,8 @@ pub(super) fn feature_parameter_uses(
         }
         ctx.stable_sort_by(
             &mut occurrences,
-            |left, right| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
+            |value| &value.source_offset,
+            Ord::cmp,
             "sort NX parameter use bindings",
         )?;
         ctx.reserve_vec(&mut uses, 1, "NX parameter uses")?;
@@ -8799,14 +8809,20 @@ pub(super) fn feature_parameter_uses(
     }
     ctx.stable_sort_by(
         &mut uses,
-        |left, right| {
-            left.bindings[0]
-                .source_offset
-                .cmp(&right.bindings[0].source_offset)
-                .then_with(|| left.operation_label.cmp(&right.operation_label))
-                .then_with(|| left.expression.cmp(&right.expression))
-        },
-        |item| item.operation_label.len() + item.expression.len(),
+        |value| &value.expression,
+        Ord::cmp,
+        "sort NX parameter uses",
+    )?;
+    ctx.stable_sort_by(
+        &mut uses,
+        |value| &value.operation_label,
+        Ord::cmp,
+        "sort NX parameter uses",
+    )?;
+    ctx.stable_sort_by_key(
+        &mut uses,
+        |value| value.bindings[0].source_offset,
+        Ord::cmp,
         "sort NX parameter uses",
     )?;
     Ok(uses)

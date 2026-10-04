@@ -38,7 +38,6 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
@@ -119,8 +118,8 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables"));
     ctx.stable_sort_by(
         &mut string_table_records,
-        |left, right| left.index.cmp(&right.index),
-        |_| 0,
+        |value| &value.index,
+        Ord::cmp,
         "FreeCAD native string tables sort",
     )?;
     let string_tables = arena!(native::StringTables::try_from(string_table_records));
@@ -746,10 +745,10 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     for (name, mut spans) in logical_by_entry {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut spans,
-            |left, right| left.span.start().cmp(&right.span.start()),
-            |_| 0,
+            |value| value.span.start(),
+            Ord::cmp,
             "fcstd logical spans sort",
         )?;
         let expected = entry_lengths.get(name).copied();
@@ -789,10 +788,10 @@ fn validate_span_chain(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut ordered = spans.iter().collect::<Vec<_>>();
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut ordered,
-        |left, right| left.span.start().cmp(&right.span.start()),
-        |_| 0,
+        |value| value.span.start(),
+        Ord::cmp,
         "FreeCAD archive span chain sort",
     )?;
     let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
@@ -853,7 +852,7 @@ impl CodecBackend for FcstdCodec {
         }
         if container::has_document_markers(ctx, prefix)? {
             Ok(Confidence::High)
-        } else if contains(prefix, b"Document.xml") {
+        } else if ctx.contains_bytes(prefix, b"Document.xml", "detect FreeCAD document marker")? {
             Ok(Confidence::Medium)
         } else {
             Ok(Confidence::Low)
@@ -894,7 +893,7 @@ impl CodecBackend for FcstdCodec {
         let mut gui_losses = Vec::new();
         let mut topology_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
-        let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
+        let primary = dialect::FcstdDialect::classify(ctx, &scan.document, &scan.schema_version)?;
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(
             dialects.try_clone_for_decode(ctx, "copy FreeCAD dialect layers")?,

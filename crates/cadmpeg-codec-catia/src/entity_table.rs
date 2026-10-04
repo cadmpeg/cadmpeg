@@ -799,7 +799,7 @@ trait PacketGrowth {
         value: T,
         operation: &'static str,
     ) -> Result<(), Self::Error>;
-    fn insert<T: Eq + Hash>(
+    fn insert<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,
@@ -829,7 +829,7 @@ impl PacketGrowth for UnchargedPacketGrowth {
         Ok(())
     }
 
-    fn insert<T: Eq + Hash>(
+    fn insert<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,
@@ -873,7 +873,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         self.0.push_vec(values, value, operation)
     }
 
-    fn insert<T: Eq + Hash>(
+    fn insert<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
         &self,
         values: &mut HashSet<T>,
         value: T,
@@ -894,12 +894,7 @@ impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
         operation: &'static str,
     ) -> Result<(), Self::Error> {
         let ctx: &DecodeContext<'_> = self.0;
-        ctx.sort_unstable_by(
-            values,
-            |left, right| key(left).cmp(&key(right)),
-            |_| 0,
-            operation,
-        )
+        ctx.sort_unstable_by_key(values, key, Ord::cmp, operation)
     }
 }
 
@@ -1401,8 +1396,8 @@ fn unique_monotone_run(
         ordered_predecessors.extend(previous.iter().enumerate());
         ctx.stable_sort_by(
             &mut ordered_predecessors,
-            |(_, left), (_, right)| left.identity.entity_id.cmp(&right.identity.entity_id),
-            |_| 0,
+            |value| &value.1.identity.entity_id,
+            Ord::cmp,
             "sort CATIA 7C05 predecessor states",
         )?;
         let mut cumulative = Vec::new();

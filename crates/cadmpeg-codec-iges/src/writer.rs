@@ -1603,8 +1603,8 @@ fn brep_entities(
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut surfaces,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges surfaces sort",
     )?;
     for surface in surfaces {
@@ -1625,7 +1625,7 @@ fn brep_entities(
     }
     let mut edge_curve_indices = BTreeMap::new();
     let mut edges = topology_edge_ids.iter().collect::<Vec<_>>();
-    ctx.stable_sort_by(&mut edges, Ord::cmp, |item| item.len(), "iges edges sort")?;
+    ctx.stable_sort_by(&mut edges, |value| value, Ord::cmp, "iges edges sort")?;
     for edge_id in edges {
         let edge = ir
             .model
@@ -1679,8 +1679,8 @@ fn brep_entities(
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut curves,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges curves sort",
     )?;
     for curve in curves {
@@ -1720,12 +1720,7 @@ fn brep_entities(
         .iter()
         .map(|body| body.id.as_str().to_owned())
         .collect::<Vec<_>>();
-    ctx.stable_sort_by(
-        &mut body_ids,
-        Ord::cmp,
-        std::string::String::len,
-        "iges body_ids sort",
-    )?;
+    ctx.stable_sort_by(&mut body_ids, |value| value, Ord::cmp, "iges body_ids sort")?;
     for body_id in body_ids {
         let body = bodies
             .iter()
@@ -1822,8 +1817,8 @@ fn brep_entities(
         let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
         ctx.stable_sort_by(
             &mut vertex_ids,
+            |value| value,
             Ord::cmp,
-            std::string::String::len,
             "iges vertex_ids sort",
         )?;
         let mut vertex_indices = BTreeMap::new();
@@ -1859,12 +1854,7 @@ fn brep_entities(
         });
 
         let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
-        ctx.stable_sort_by(
-            &mut edge_ids,
-            Ord::cmp,
-            std::string::String::len,
-            "iges edge_ids sort",
-        )?;
+        ctx.stable_sort_by(&mut edge_ids, |value| value, Ord::cmp, "iges edge_ids sort")?;
         let mut edge_indices = BTreeMap::new();
         for (index, edge_id) in edge_ids.iter().enumerate() {
             edge_indices.insert(edge_id.clone(), index);
@@ -2204,8 +2194,8 @@ fn brep_entities(
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut points,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges points sort",
     )?;
     for point in points {
@@ -2470,8 +2460,8 @@ fn topology_entities(
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut surfaces,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges surfaces sort",
     )?;
     for surface in surfaces {
@@ -2485,8 +2475,8 @@ fn topology_entities(
     let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut edges,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges edges sort",
     )?;
     for edge in edges {
@@ -2537,8 +2527,8 @@ fn topology_entities(
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut curves,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges curves sort",
     )?;
     for curve in curves {
@@ -2579,8 +2569,8 @@ fn topology_entities(
     let mut faces = ir.model.faces.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut faces,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges faces sort",
     )?;
     for face in &faces {
@@ -2728,8 +2718,8 @@ fn topology_entities(
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut points,
-        |left, right| left.id.as_str().cmp(right.id.as_str()),
-        |item| item.id.as_str().len(),
+        |value| value.id.as_str(),
+        Ord::cmp,
         "iges points sort",
     )?;
     for point in points {

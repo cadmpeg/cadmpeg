@@ -305,7 +305,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let region_id: RegionId = revolution_identity(ctx, feature_id, "region")?;
         let shell_id: ShellId = revolution_identity(ctx, feature_id, "shell")?;
         let count = profile.len();
-        let mut edges = ctx.alloc_filled(count, None, "creo revolution profile edges")?;
+        let mut edges =
+            ctx.collect_indexed_vec(count, "creo revolution profile edges", |_| Ok(None))?;
         for (index, (entity, curve_geometry)) in profile.iter().zip(vertex_curves).enumerate() {
             let Some(curve_geometry) = curve_geometry else {
                 continue;

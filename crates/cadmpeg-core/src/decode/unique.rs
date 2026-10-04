@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! One-table indexes that exclude every repeated key.
 
-use super::{u64_from_index, DecodeContext, ScopedReservation};
+use super::cost::DecodeCost;
+use super::{DecodeContext, ScopedReservation};
 use crate::CodecError;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -10,65 +11,36 @@ impl DecodeContext<'_> {
     /// Builds a scoped table. Repeated keys become tombstones until the final
     /// in-place removal, so a third occurrence cannot restore a duplicate.
     /// Surviving values are Some; no second table is allocated.
-    pub fn unique_index<K: Eq + Hash, V>(
+    pub fn unique_index<K: Eq + Hash + DecodeCost, V>(
         &self,
         entries: impl IntoIterator<Item = (K, V)>,
-        key_work: impl Fn(&K) -> Result<u64, CodecError>,
         operation: &'static str,
     ) -> Result<(HashMap<K, Option<V>>, ScopedReservation<'_>), CodecError> {
         let mut table = HashMap::<K, Option<V>>::new();
         let mut storage = self.reserve_scoped(0, operation)?;
-        for (key, value) in entries {
-            self.charge_work(1, operation)?;
-            self.charge_work(key_work(&key)?, operation)?;
-            if let Some(previous) = table.get_mut(&key) {
+        let mut entries = entries.into_iter();
+        loop {
+            let Some((key, value)) = self.next_charged(&mut entries, operation)? else {
+                break;
+            };
+            if let Some(previous) = self.get_mut_hash_map(&mut table, &key, operation)? {
                 *previous = None;
                 continue;
             }
-            self.charge_collection_items(1, operation)?;
-            if table.len() == table.capacity() {
-                self.charge_work(u64_from_index(table.capacity()), operation)?;
-                for stored in table.keys() {
-                    self.charge_work(key_work(stored)?, operation)?;
-                }
-                // A hash table reserves at most four buckets per requested
-                // entry, including load-factor rounding. Each bucket holds
-                // its pair and control bytes. The extra 32 bytes cover
-                // alignment and control-group padding. Keep the old and new
-                // tables admitted together while fallible growth rehashes.
-                let required = table
-                    .len()
-                    .checked_add(1)
-                    .and_then(|count| count.checked_mul(4))
-                    .and_then(|count| {
-                        count.checked_mul(
-                            std::mem::size_of::<(K, Option<V>)>()
-                                .max(1)
-                                .checked_add(32)?,
-                        )
-                    })
-                    .ok_or_else(|| {
-                        CodecError::from(self.budget.scoped_size_overflow_limit(operation))
-                    })?;
-                storage.grow(u64_from_index(required))?;
-                table.try_reserve(1).map_err(|_| {
-                    self.budget
-                        .scoped_allocation_failed(u64_from_index(required), operation)
-                })?;
-            }
-            self.charge_work(key_work(&key)?, operation)?;
             // discarded-value: the key was absent before the admitted insertion.
-            let _ = table.insert(key, Some(value));
+            let _ = storage
+                .with_storage(|| self.insert_hash_map(&mut table, key, Some(value), operation))?;
         }
-        self.charge_work(u64_from_index(table.capacity()), operation)?;
-        table.retain(|_, value| value.is_some());
+        self.retain_hash_map(&mut table, |_, value| Ok(value.is_some()), operation)?;
         Ok((table, storage))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     use crate::CodecError;
 
     #[test]
@@ -77,14 +49,10 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
         policy.limits.max_materialized_bytes =
-            super::u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
+            u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, storage) = ctx
-            .unique_index(
-                [(1_u32, 2), (1, 3), (1, 4), (2, 5)],
-                |_| Ok(4),
-                "unique test",
-            )
+            .unique_index([(1_u32, 2), (1, 3), (1, 4), (2, 5)], "unique test")
             .expect("two slots");
         assert_eq!(table.len(), 1);
         assert_eq!(table.get(&2), Some(&Some(5)));
@@ -101,7 +69,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, _storage) = ctx
-            .unique_index([(7_u32, 7)], |_| Ok(4), "unique test")
+            .unique_index([(7_u32, 7)], "unique test")
             .expect("one table slot");
         assert_eq!(table.get(&7), Some(&Some(7)));
     }
@@ -122,10 +90,40 @@ mod tests {
                 _ => panic!("test dimension"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-            assert!(
-                matches!(ctx.unique_index([("long key", 1)], |key| Ok(super::u64_from_index(key.len())), "unique test"),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-            );
+            assert!(matches!(ctx.unique_index([("long key", 1)], "unique test"),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
         }
+    }
+
+    #[test]
+    fn unique_index_charges_shared_lookup_insertion_and_bucket_retention() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two source steps, three three-byte key operations, and three hash bucket visits.
+        policy.limits.max_work_units = 14;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (values, _scope) = ctx
+            .unique_index([(String::from("key"), 7_u8)], "index")
+            .expect("admission");
+        assert_eq!(values.get("key"), Some(&Some(7)));
+        assert_eq!(values.capacity(), 3);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").expect_err("exact work")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(limit.used, 14);
+        policy.limits.max_work_units = 13;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let CodecError::ResourceLimit(first) = ctx
+            .unique_index([(String::from("key"), 7_u8)], "index")
+            .expect_err("bucket refusal")
+        else {
+            panic!("refusal")
+        };
+        let CodecError::ResourceLimit(second) = ctx.charge_work(0, "later").expect_err("fused")
+        else {
+            panic!("refusal")
+        };
+        assert_eq!(first, second);
     }
 }

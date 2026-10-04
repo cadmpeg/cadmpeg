@@ -246,7 +246,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),
         color: None,
@@ -361,7 +361,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     .expect("validate Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("free-vertex-brep".to_string())
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -431,7 +431,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -775,7 +775,7 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),
         color: None,
@@ -872,7 +872,7 @@ fn staged_brep_retained_copies_refuse_before_allocation() {
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),
         color: None,
@@ -978,7 +978,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     .expect("validate Brep with one mesh cache slot");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+        object_id: cadmpeg_core::text::NonBlankString::try_from("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),
         color: None,

@@ -80,8 +80,8 @@ fn partial_compact_assignment_viable(
             }
             ctx.sort_unstable_by(
                 &mut edges,
+                |value| value,
                 Ord::cmp,
-                |_| 0,
                 "catia coordinate relevant edges sort",
             )?;
             edges.dedup();
@@ -188,10 +188,10 @@ fn partial_compact_assignment_viable(
             for (&edge, &points) in &selected {
                 edge_points[edge] = points;
             }
-            let mut compatible = ctx.alloc_filled(
+            let mut compatible = ctx.collect_indexed_vec(
                 closed_components.len(),
-                Vec::new(),
                 "catia_deferred_compatible_rows",
+                |_| Ok(Vec::new()),
             )?;
             for (row, component) in compatible.iter_mut().zip(&closed_components) {
                 let incidence = incidence_cycles(ctx, component, &edge_points)?;
@@ -824,10 +824,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     )?;
                 }
             }
-            ctx.sort_unstable_by(
+            ctx.sort_unstable_by_key(
                 &mut scanned_roots,
-                |left, right| (domains[*left].len(), *left).cmp(&(domains[*right].len(), *right)),
-                |_| 0,
+                |value| (domains[*value].len(), *value),
+                Ord::cmp,
                 "catia_coordinate_closure_scanned_roots_sort",
             )?;
             let partial_scan = scanned_roots.len() < domains.len();
@@ -996,8 +996,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             }
             ctx.sort_unstable_by(
                 &mut point_supports,
-                |left, right| left.0.cmp(&right.0),
-                |_| 0,
+                |value| &value.0,
+                Ord::cmp,
                 "catia_coordinate_closure_point_supports_sort",
             )?;
             let mut uniquely_required = Vec::new();
@@ -1438,8 +1438,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         }
         ctx.sort_unstable_by(
             &mut domain,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_coordinate_closure_domain_points_sort",
         )?;
         ctx.push_vec(&mut domains, domain, "catia_coordinate_closure_domains")?;
@@ -1500,10 +1500,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         )?;
     }
     let mut components = ordered_components;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut components,
-        |left, right| left[0].cmp(&right[0]),
-        |_| 0,
+        |value| value[0],
+        Ord::cmp,
         "catia_coordinate_closure_components_sort",
     )?;
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
@@ -1639,10 +1639,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                         "catia_coordinate_closure_local_edge_faces",
                     )?;
                 }
-                let mut face_edges = ctx.alloc_filled(
+                let mut face_edges = ctx.collect_indexed_vec(
                     boundary_domains.len(),
-                    Vec::new(),
                     "catia_coordinate_closure_face_edges",
+                    |_| Ok(Vec::new()),
                 )?;
                 for (edge, faces) in local_edge_faces.iter().copied().enumerate() {
                     for (rank, face) in faces.into_iter().enumerate() {
@@ -1684,10 +1684,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 "catia_coordinate_closure_local_domains",
             )?;
         }
-        let mut root_edges = ctx.alloc_filled(
+        let mut root_edges = ctx.collect_indexed_vec(
             component.len(),
-            Vec::new(),
             "catia_coordinate_closure_root_edges",
+            |_| Ok(Vec::new()),
         )?;
         for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
             ctx.push_vec(

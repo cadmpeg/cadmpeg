@@ -551,8 +551,8 @@ mod tests {
         cadmpeg_test_support::service_decode_context()
             .stable_sort_by(
                 &mut ordered,
-                |left, right| left.index.cmp(&right.index),
-                |_| 0,
+                |value| &value.index,
+                Ord::cmp,
                 "test string tables sort",
             )
             .unwrap();
@@ -2985,9 +2985,11 @@ pub(crate) enum ExternalDocument {
 
 impl ExternalDocument {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let value = NonBlankString::new(
+        let value = NonBlankString::for_decode(
+            ctx,
             ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?,
-        )
+            "validate nonblank text",
+        )?
         .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
         Ok(match self {
             Self::File(_) => Self::File(value),
@@ -3010,17 +3012,21 @@ impl ExternalDocument {
         }
     }
 
-    fn from_wire(
-        document: Option<String>,
+    fn from_wire<T: TryInto<NonBlankString>>(
+        document: Option<T>,
         attribute: Option<&str>,
     ) -> Result<Option<Self>, String> {
         match (document, attribute) {
             (None, None | Some("file")) => Ok(None),
-            (Some(path), Some("file")) => NonBlankString::new(path)
+            (Some(path), Some("file")) => path
+                .try_into()
+                .ok()
                 .map(Self::File)
                 .map(Some)
                 .ok_or_else(|| "external document file path must not be empty".to_owned()),
-            (Some(name), None) => NonBlankString::new(name)
+            (Some(name), None) => name
+                .try_into()
+                .ok()
                 .map(Self::Name)
                 .map(Some)
                 .ok_or_else(|| "external document name must not be empty".to_owned()),
@@ -3054,9 +3060,11 @@ impl LinkTarget {
             .object
             .as_ref()
             .map(|value| {
-                NonBlankString::new(
+                NonBlankString::for_decode(
+                    ctx,
                     ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?,
-                )
+                    "validate nonblank text",
+                )?
                 .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
             })
             .transpose()?;
@@ -3074,10 +3082,12 @@ impl LinkTarget {
 
     /// Admits a target from a parsed link element, or absence when the element
     /// selects no document, object, or subelement.
-    pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {
+    pub(crate) fn optional_from_wire<T: TryInto<NonBlankString>>(
+        wire: LinkTargetWire<T>,
+    ) -> Result<Option<Self>, String> {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
-        let object = wire.object.and_then(NonBlankString::new);
+        let object = wire.object.and_then(|value| value.try_into().ok());
         if document.is_none() && object.is_none() && wire.subelements.is_empty() {
             return Ok(None);
         }
@@ -3133,10 +3143,10 @@ impl LinkTarget {
 
 /// The persisted link target fields.
 #[derive(Deserialize)]
-pub(crate) struct LinkTargetWire {
-    pub(crate) document: Option<String>,
+pub(crate) struct LinkTargetWire<T = String> {
+    pub(crate) document: Option<T>,
     pub(crate) document_attribute: Option<String>,
-    pub(crate) object: Option<String>,
+    pub(crate) object: Option<T>,
     pub(crate) subelements: Vec<String>,
 }
 
@@ -3161,13 +3171,13 @@ impl Serialize for LinkTarget {
     }
 }
 
-impl TryFrom<LinkTargetWire> for LinkTarget {
+impl<T: TryInto<NonBlankString>> TryFrom<LinkTargetWire<T>> for LinkTarget {
     type Error = String;
 
-    fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: LinkTargetWire<T>) -> Result<Self, Self::Error> {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
-        let object = wire.object.and_then(NonBlankString::new);
+        let object = wire.object.and_then(|value| value.try_into().ok());
         Self::try_new(document, object, wire.subelements)
     }
 }

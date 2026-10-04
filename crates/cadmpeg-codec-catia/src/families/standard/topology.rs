@@ -336,10 +336,10 @@ impl StandardTopologyDraft {
         let Some(edge_vertices) = self.edge_vertices(ctx)? else {
             return Ok(None);
         };
-        let mut domains = ctx.alloc_filled(
+        let mut domains = ctx.collect_indexed_vec(
             self.logical_vertex_count,
-            HashSet::new(),
             "catia standard vertex point domains",
+            |_| Ok(HashSet::new()),
         )?;
         for domain in &mut domains {
             ctx.reserve_set(
@@ -467,6 +467,22 @@ pub(crate) enum EdgeBoundaryLayout {
     InteriorWithFlankingCorners,
     /// Every handle belongs to the trim boundary, including both endpoints.
     CompleteBoundaryRun,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for EdgeBoundaryLayout {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
 }
 
 impl From<EdgeBoundaryLayout> for u64 {
@@ -636,6 +652,22 @@ pub(crate) struct CoedgeUse {
     pub(crate) end_vertex: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for CoedgeUse {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
     pub(crate) packet: TrimPacket,
@@ -717,7 +749,8 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
         return Ok(None);
     };
     let edge_faces = completed_edge_faces.as_slice();
-    let mut face_edges = ctx.alloc_filled(face_count, Vec::new(), "catia standard face edges")?;
+    let mut face_edges =
+        ctx.collect_indexed_vec(face_count, "catia standard face edges", |_| Ok(Vec::new()))?;
     for (edge, &[left, right]) in edge_faces.iter().enumerate() {
         let Some(face) = face_edges.get_mut(left) else {
             return Ok(None);
@@ -968,17 +1001,16 @@ pub(super) fn complete_duplicate_face_slots(
     if unresolved.is_empty() {
         return Ok(Some(completed));
     }
-    let mut degrees = ctx.alloc_filled(
-        face_count,
-        Vec::<(usize, u8)>::new(),
-        "catia standard endpoint degrees",
-    )?;
+    let mut degrees =
+        ctx.collect_indexed_vec(face_count, "catia standard endpoint degrees", |_| {
+            Ok(Vec::<(usize, u8)>::new())
+        })?;
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
         ctx.sort_unstable_by(
             &mut incident,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia standard duplicate edge faces sort",
         )?;
         for &face in if incident[0] == incident[1] {
@@ -1016,8 +1048,8 @@ pub(super) fn complete_duplicate_face_slots(
     };
     ctx.stable_sort_by(
         &mut unresolved,
+        |value| value,
         |left, right| free_faces(left).cmp(&free_faces(right)),
-        |_| 0,
         "catia standard duplicate unresolved edges sort",
     )?;
 
@@ -1136,14 +1168,14 @@ fn duplicate_face_assignments_equivalent(
             let mut points = edge_points[edge];
             ctx.sort_unstable_by(
                 &mut first_points,
+                |value| value,
                 Ord::cmp,
-                |_| 0,
                 "catia_standard_duplicate_first_points_sort",
             )?;
             ctx.sort_unstable_by(
                 &mut points,
+                |value| value,
                 Ord::cmp,
-                |_| 0,
                 "catia_standard_duplicate_points_sort",
             )?;
             if same_row
@@ -1165,14 +1197,14 @@ fn duplicate_face_assignments_equivalent(
         }
         ctx.sort_unstable_by(
             &mut left_faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_standard_duplicate_left_faces_sort",
         )?;
         ctx.sort_unstable_by(
             &mut right_faces,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_standard_duplicate_right_faces_sort",
         )?;
         if left_faces != right_faces {
@@ -1234,10 +1266,10 @@ pub(crate) fn solve_boundary_orientation_constraints(
     edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
     require_paired_uses: bool,
 ) -> Result<Option<Vec<bool>>, CodecError> {
-    let mut constraints = ctx.alloc_filled(
+    let mut constraints = ctx.collect_indexed_vec(
         boundary_count,
-        Vec::<(usize, bool)>::new(),
         "catia standard boundary constraints",
+        |_| Ok(Vec::<(usize, bool)>::new()),
     )?;
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
@@ -1381,10 +1413,10 @@ pub(crate) fn incidence_cycles(
     if at_vertex.iter().any(|edges| edges.len() != 2) {
         return Ok(None);
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut unseen,
-        |left, right| std::cmp::Reverse(left.0).cmp(&std::cmp::Reverse(right.0)),
-        |_| 0,
+        |value| std::cmp::Reverse(value.0),
+        Ord::cmp,
         "catia_incidence_unseen_edges_sort",
     )?;
     while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {

@@ -820,21 +820,20 @@ fn extrude_profile_hierarchy_refuses_depth_limit() {
 
 #[test]
 fn extrude_profile_hierarchy_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let (scope, groups) = extrude_root_fixture();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 386;
-    let arena = DecodeArena::new();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == "f3d Extrude profile hierarchy")
+    // All copied identifiers and child-key scans precede the hierarchy visit.
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d Extrude profile hierarchy",
+        0,
+        |ctx| crate::design::face_resolve::extrude_profile_group_roots(ctx, &scope, &groups),
     );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::WorkUnits
+                && failure.operation == "f3d Extrude profile hierarchy"));
 }
 
 fn extrude_leaf_fixture() -> (
@@ -957,21 +956,24 @@ fn extrude_leaf_hierarchy_refuses_depth_limit() {
 
 #[test]
 fn extrude_leaf_hierarchy_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let (root, groups, operands) = extrude_leaf_fixture();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 1;
-    let arena = DecodeArena::new();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root,
-        &groups, &operands), Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == "f3d Extrude leaf hierarchy")
+    // All copied identifiers and child-key scans precede the hierarchy visit.
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d Extrude leaf hierarchy",
+        0,
+        |ctx| {
+            crate::design::face_resolve::extrude_profile_group_operand_indices(
+                ctx, &root, &groups, &operands,
+            )
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::WorkUnits
+                && failure.operation == "f3d Extrude leaf hierarchy"));
 }
 
 #[test]

@@ -195,8 +195,8 @@ pub(in crate::native) fn material_texture_assets(
     );
     ctx.stable_sort_by(
         &mut entries,
-        |first, second| first.name.cmp(&second.name),
-        |entry| entry.name.len(),
+        |value| &value.name,
+        Ord::cmp,
         "sort NX material texture entries",
     )?;
     let mut assets = Vec::new();

@@ -75,8 +75,9 @@ fn selection_overlap_preserves_each_visit_and_identity_comparison_refusal() {
 
 #[test]
 fn selection_overlap_preserves_every_membership_form() {
-    let native =
-        || cadmpeg_core::text::NonBlankString::new("native").expect("nonblank native selection");
+    let native = || {
+        cadmpeg_core::text::NonBlankString::try_from("native").expect("nonblank native selection")
+    };
     let historical_face = |partial, other_state| {
         let id = HistoricalFaceId::mint("test:model:face#historical").expect("historical face");
         let state = state(if other_state { "other" } else { "same" });

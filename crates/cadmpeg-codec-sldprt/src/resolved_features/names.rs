@@ -54,13 +54,17 @@ fn record_id(
     Ok(id)
 }
 
-pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonBlankString {
+pub(super) fn operand_kind_name(
+    ctx: &DecodeContext<'_>,
+    kind: FeatureInputOperandKind,
+) -> Result<NonBlankString, cadmpeg_core::CodecError> {
     match kind {
-        FeatureInputOperandKind::D6 => cadmpeg_core::nonblank_literal!("d6"),
-        FeatureInputOperandKind::E1 => cadmpeg_core::nonblank_literal!("e1"),
+        FeatureInputOperandKind::D6 => Ok(cadmpeg_core::nonblank_literal!("d6")),
+        FeatureInputOperandKind::E1 => Ok(cadmpeg_core::nonblank_literal!("e1")),
         FeatureInputOperandKind::Native(tag) => {
             let [first, second] = tag.value().to_le_bytes();
             NonBlankString::prefixed(
+                ctx,
                 cadmpeg_core::text::NonWhitespaceChar::hex_digit(first >> 4),
                 format_args!("{:x}{second:02x}", first & 0x0f),
             )

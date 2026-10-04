@@ -866,12 +866,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
-            designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
+            designation: cadmpeg_core::text::NonBlankString::try_from("M3.5x0.6").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),
             )
             .expect("nominal size"),
-            profile: cadmpeg_core::text::NonBlankString::new("GB Metric profile").unwrap(),
+            profile: cadmpeg_core::text::NonBlankString::try_from("GB Metric profile").unwrap(),
             pitch: cadmpeg_ir::scalar::PositiveReal::new(0.06).unwrap(),
             face_group_record_indices: vec![701],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(

@@ -1168,26 +1168,26 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
     }
     ctx.stable_sort_by(
         &mut facts.bodies,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "sort typed Parasolid records",
     )?;
     ctx.stable_sort_by(
         &mut facts.shells,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "sort typed Parasolid records",
     )?;
     ctx.stable_sort_by(
         &mut facts.regions,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "sort typed Parasolid records",
     )?;
     ctx.stable_sort_by(
         &mut facts.faces,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "sort typed Parasolid records",
     )?;
     Ok(facts)

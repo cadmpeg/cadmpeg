@@ -1900,8 +1900,8 @@ fn append_legacy_brep(
     group_roots.extend_from_slice(&roots);
     ctx.sort_unstable_by(
         &mut group_roots,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "Rhino V1 Brep unique roots sort",
     )?;
     group_roots.dedup();

@@ -6546,13 +6546,15 @@ fn display_jt_tessellation_rows(
             tessellations.push((
                 tessellation.with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: required!(cadmpeg_core::text::NonBlankString::new(
+                    object_id: required!(cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
                         (ctx.join_retained(
                             &[&shape_node.id],
                             "",
                             "nx JT tessellation source identity"
                         ))?,
-                    )),
+                        "validate nonblank text"
+                    )?),
                     name: None,
                     color,
                     visible: None,

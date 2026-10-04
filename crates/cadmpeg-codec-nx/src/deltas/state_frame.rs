@@ -29,9 +29,8 @@ impl StateFrames {
         ctx: &DecodeContext<'_>,
         first: ReferenceStateFrame,
     ) -> Result<Self, CodecError> {
-        Ok(Self(ctx.alloc_filled(
-            1,
-            first,
+        Ok(Self(ctx.collect_retained_vec(
+            [first],
             "NX reference state frames",
         )?))
     }

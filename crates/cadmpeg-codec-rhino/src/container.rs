@@ -1546,7 +1546,7 @@ fn insert_source_meta_attribute(
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     let key = ctx.copy_retained_text(key, "Rhino source metadata key")?;
-    let key = NonBlankString::new(key)
+    let key = NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("generated Rhino source metadata key is blank"))?;
     let value = ctx.format_retained(value, "Rhino source metadata value")?;
     ctx.insert_btree_map(attributes, key, value, "Rhino source metadata attributes")?;

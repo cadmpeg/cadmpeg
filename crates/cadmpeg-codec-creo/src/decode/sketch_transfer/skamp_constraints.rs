@@ -56,7 +56,7 @@ fn native_skamp_nonblank(
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, cadmpeg_core::CodecError> {
     let text = ctx.format_retained(format_args!("{value}"), operation)?;
-    cadmpeg_core::text::NonBlankString::new(text)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank native SKAMP field"))
 }
 
@@ -319,7 +319,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         SketchGeometryDefinition::Point { .. }
                     ) || matches!((
                         geometry).definition(),
-                        SketchGeometryDefinition::Native { native_kind } if native_kind == "point"
+                        SketchGeometryDefinition::Native { native_kind } if native_kind.as_str() == "point"
                     )
                 }))
                 .then(|| admitted_entity(ctx, sketch, item.entity_id, &resource_error))
@@ -975,7 +975,7 @@ fn sketch_constraint_loci_compatible_with_policy(
                                 native_kind.as_str(),
                                 "bounded_curve" | "line_or_arc" | "line" | "arc" | "spline"
                             ) || allow_unknown_native_endpoints
-                                && native_kind == "solver_only_section_entity")
+                                && native_kind.as_str() == "solver_only_section_entity")
                 )
             }
             SketchLocus::Center(_) => {
@@ -989,7 +989,7 @@ fn sketch_constraint_loci_compatible_with_policy(
                     SketchGeometryDefinition::Native { native_kind }
                         if matches!(native_kind.as_str(), "circle" | "arc")
                             // A centered type-47 row retains its center on a native line.
-                            || native_line_center_allowed && native_kind == "line"
+                            || native_line_center_allowed && native_kind.as_str() == "line"
                 )
             }
         })
@@ -1668,7 +1668,7 @@ mod tests {
             direction: Point2::new(2.0, 0.0),
         });
         let native_line = with_target(SketchGeometryDefinition::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("reference_line")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("reference_line")
                 .expect("valid test fixture"),
         });
         let arc = with_target(SketchGeometryDefinition::Arc {
@@ -1817,7 +1817,7 @@ mod tests {
         else {
             panic!("a native type-35 relation: {relation:#?}");
         };
-        assert_eq!(native_kind, "creo:skamp:35");
+        assert_eq!(native_kind.as_str(), "creo:skamp:35");
         assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("resource allocation did not fail");
@@ -1866,7 +1866,7 @@ mod tests {
                 !matches!(
                     constraint.definition.kind(),
                     SketchConstraintDefinitionInput::Native { native_kind, .. }
-                        if native_kind == "creo:segtab:verhor"
+                        if native_kind.as_str() == "creo:segtab:verhor"
                 )
             })
             .collect::<Vec<_>>()[..]
@@ -1881,7 +1881,7 @@ mod tests {
         else {
             panic!("type-35 relation on a reference line: {relation:#?}");
         };
-        assert_eq!(native_kind, "creo:skamp:35");
+        assert_eq!(native_kind.as_str(), "creo:skamp:35");
         assert_eq!(
             entities,
             &vec![reference_line.id().clone(), point.id().clone()]
@@ -1913,7 +1913,7 @@ mod tests {
                 matches!(
                     entity.geometry.definition(),
                     SketchGeometryDefinition::Native { native_kind }
-                        if native_kind == "reference_line"
+                        if native_kind.as_str() == "reference_line"
                 )
             })
             .expect("unresolved reference line");
@@ -1942,7 +1942,7 @@ mod tests {
             .find(|entity| {
                 matches!(
                     entity.geometry.definition(),
-                    SketchGeometryDefinition::Native { native_kind } if native_kind == "line"
+                    SketchGeometryDefinition::Native { native_kind } if native_kind.as_str() == "line"
                 )
             })
             .expect("unresolved axis line");

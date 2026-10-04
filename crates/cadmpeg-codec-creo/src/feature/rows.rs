@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::bytes::{contains, find_from, find_in};
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -403,7 +402,12 @@ pub(super) fn row_spans(
             starts.push((offset, id));
         }
     }
-    ctx.sort_unstable_by(&mut starts, Ord::cmp, |_| 0, "creo feature row starts sort")?;
+    ctx.sort_unstable_by(
+        &mut starts,
+        |value| value,
+        Ord::cmp,
+        "creo feature row starts sort",
+    )?;
     // One stream can expose the same feature identifier under conflicting
     // schema classes, but one identifier/class pair is one row.
     let mut seen_ids = BTreeSet::new();
@@ -507,12 +511,14 @@ pub(crate) fn round_replay_scalars(
             if bytes != CR_FLAGS_ANCHOR {
                 continue;
             }
-            let Some(record_end) = find_in(
+            let Some(record_end) = ctx.find_bytes_in(
                 &row.body,
                 MISC_CHOICE_ANCHOR,
                 record_start + 1,
                 row.body.len(),
-            ) else {
+                "find Creo feature row",
+            )?
+            else {
                 continue;
             };
             let Some(separator) = row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end]
@@ -546,8 +552,8 @@ pub(crate) fn round_replay_scalars(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo round replay scalars result ordering",
     )?;
     Ok(result)
@@ -595,7 +601,9 @@ pub(crate) fn choices(
         let mut hits = Vec::new();
         for &label in CHOICE_LABELS {
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, label, from) {
+            while let Some(label_offset) =
+                ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")?
+            {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = label_offset + 1;
@@ -615,8 +623,8 @@ pub(crate) fn choices(
         }
         ctx.stable_sort_by(
             hits.as_mut_slice(),
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "creo choices hits ordering",
         )?;
         for (index, &(header, label_at, label, type_byte)) in hits.iter().enumerate() {
@@ -651,8 +659,8 @@ pub(crate) fn choices(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo choices result ordering",
     )?;
     Ok(result)
@@ -787,8 +795,8 @@ pub(crate) fn choice_fields(
     }
     ctx.stable_sort_by(
         fields.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo choice fields fields ordering",
     )?;
     Ok(fields)
@@ -812,7 +820,9 @@ pub(crate) fn geometry_tables(
     for row in rows {
         for (label, kind) in FIELDS {
             let mut from = 0;
-            while let Some(offset) = find_from(&row.body, label, from) {
+            while let Some(offset) =
+                ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")?
+            {
                 let label_end = offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = offset + 1;
@@ -863,8 +873,8 @@ pub(crate) fn geometry_tables(
     }
     ctx.stable_sort_by(
         tables.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo geometry tables tables ordering",
     )?;
     Ok(tables)
@@ -993,7 +1003,9 @@ pub(crate) fn affected_ids(
     for row in rows {
         for &(label, kind) in FIELDS {
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, label, from) {
+            while let Some(label_offset) =
+                ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")?
+            {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = label_offset + 1;
@@ -1043,8 +1055,8 @@ pub(crate) fn affected_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo affected ids result ordering",
     )?;
     Ok(result)
@@ -1355,7 +1367,9 @@ pub(crate) fn replay_affected_ids(
         };
         let (pair, source_offset) = if let Some(anchor) = anchor {
             let run_start = anchor + ANCHOR_LEN;
-            let Some(term) = find_from(&row.body, TERMINATOR, run_start) else {
+            let Some(term) =
+                ctx.find_bytes_from(&row.body, TERMINATOR, run_start, "find Creo feature row")?
+            else {
                 continue;
             };
             let run = &row.body[run_start..term];
@@ -1396,8 +1410,8 @@ pub(crate) fn replay_affected_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo replay affected ids result ordering",
     )?;
     Ok(result)
@@ -1553,8 +1567,8 @@ pub(crate) fn surface_merge_replay_affected_ids(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo surface merge replay affected ids result ordering",
     )?;
     Ok(result)
@@ -1574,7 +1588,9 @@ pub(crate) fn loop_restore_directions(
     for row in rows {
         for &(label, lane) in FIELDS {
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, label, from) {
+            while let Some(label_offset) =
+                ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")?
+            {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
                     from = label_offset + 1;
@@ -1584,7 +1600,11 @@ pub(crate) fn loop_restore_directions(
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
                     || row.body[label_offset - 1] != 1
-                    || !contains(&row.body[..label_offset - 2], b"lo_restore\0")
+                    || !ctx.contains_bytes(
+                        &row.body[..label_offset - 2],
+                        b"lo_restore\0",
+                        "find Creo loop restore owner",
+                    )?
                 {
                     continue;
                 }
@@ -1604,8 +1624,8 @@ pub(crate) fn loop_restore_directions(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo loop restore directions result ordering",
     )?;
     Ok(result)
@@ -1635,7 +1655,9 @@ pub(crate) fn loop_history_entries(
             continue;
         };
         let table_offset = table.offset - row.body_offset;
-        let Some(label_offset) = find_from(&row.body, LABEL, table_offset) else {
+        let Some(label_offset) =
+            ctx.find_bytes_from(&row.body, LABEL, table_offset, "find Creo feature row")?
+        else {
             continue;
         };
         let label_stream_offset = row.body_offset + label_offset;
@@ -1677,8 +1699,8 @@ pub(crate) fn loop_history_entries(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo loop history entries result ordering",
     )?;
     Ok(result)
@@ -1809,13 +1831,16 @@ pub(crate) fn revolution_extents(
         if row.body.get(schema_end) != Some(&2) {
             continue;
         }
-        let Some(choice_start) = find_in(
-            &row.body,
-            PARAMETER_CHOICE_PREFIX,
-            schema_end + 1,
-            row.body.len().min(64),
-        )
-        .map(|at| at + PARAMETER_CHOICE_PREFIX.len()) else {
+        let Some(choice_start) = ctx
+            .find_bytes_in(
+                &row.body,
+                PARAMETER_CHOICE_PREFIX,
+                schema_end + 1,
+                row.body.len().min(64),
+                "find Creo feature row",
+            )?
+            .map(|at| at + PARAMETER_CHOICE_PREFIX.len())
+        else {
             continue;
         };
         if row
@@ -1833,8 +1858,8 @@ pub(crate) fn revolution_extents(
     }
     ctx.stable_sort_by(
         result.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
+        |value| &value.offset,
+        Ord::cmp,
         "creo revolution extents result ordering",
     )?;
     Ok(result)

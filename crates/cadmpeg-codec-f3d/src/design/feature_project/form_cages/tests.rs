@@ -421,9 +421,9 @@ fn form_serializer_name_refuses_work_limit() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    // The two-offset sort takes its count plus sixteen bytes over three levels at eight units
-    // each, leaving nothing for the serializer name.
-    policy.limits.max_work_units = 2 + 16 * 3 * 8;
+    // Two measuring visits per offset and the three-pass slot and complete-key bound precede the name.
+    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+    policy.limits.max_work_units = 4 + 6 * index_bytes * 3 * 8;
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(

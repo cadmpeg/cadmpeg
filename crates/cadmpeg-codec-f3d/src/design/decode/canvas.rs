@@ -113,8 +113,8 @@ pub(crate) fn project_canvas_images(
     }
     ctx.stable_sort_by(
         &mut assets[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design canvas 1",
     )?;
     Ok(assets)

@@ -8,7 +8,6 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
@@ -72,7 +71,11 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         return Ok(out);
     }
-    if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
+    if !ctx.contains_bytes(
+        payload,
+        &WRAPPED_MAGIC_PREFIX,
+        "find Parasolid wrapper prefix",
+    )? {
         return Ok(out);
     }
 
@@ -95,8 +98,8 @@ pub(crate) fn extract_streams_with_offsets(
     if !out.is_empty() {
         ctx.stable_sort_by(
             &mut out,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             "sort wrapped Parasolid streams",
         )?;
         return Ok(out);
@@ -447,8 +450,16 @@ pub(crate) fn stream_header(
     payload: &[u8],
 ) -> Result<Option<StreamHeader>, CodecError> {
     ctx.charge_work(256, "decode Parasolid stream header")?;
+    let window = payload.len().min(64);
+    let Some(sig) = ctx.find_bytes(
+        &payload[..window],
+        b"PS\0\0",
+        "decode Parasolid stream header",
+    )?
+    else {
+        return Ok(None);
+    };
     let Some((description_bytes, token, schema_end)) = (|| {
-        let sig = parasolid_offset(payload)?;
         let desc_len_at = sig + 4;
         let mut view = View::over_retained(payload);
         view.seek(desc_len_at)?;
@@ -542,12 +553,6 @@ fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
     }
 }
 
-fn parasolid_offset(payload: &[u8]) -> Option<usize> {
-    const SIGNATURE: &[u8] = b"PS\0\0";
-    let window = payload.len().min(64);
-    cadmpeg_core::bytes::find(&payload[..window], SIGNATURE)
-}
-
 /// Test whether the description identifies a partition or deltas body stream.
 pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
     let bytes = header.description.as_bytes();
@@ -630,8 +635,8 @@ pub(crate) fn mesh_polyline_from_header(
     }
     ctx.stable_sort_by(
         &mut candidates,
-        |left, right| right.0.cmp(&left.0),
-        |_| 0,
+        |value| &value.0,
+        |left, right| right.cmp(left),
         "sort Parasolid mesh candidates",
     )?;
     let Some((largest_count, _)) = candidates.first() else {

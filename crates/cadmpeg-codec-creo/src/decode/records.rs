@@ -2365,8 +2365,8 @@ pub(super) fn feature_section_transform_records<'a>(
     }
     ctx.stable_sort_by(
         records.as_mut_slice(),
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "creo feature section transform records records ordering",
     )?;
     records.dedup_by(|left, right| left.id == right.id);
@@ -2379,7 +2379,7 @@ pub(super) fn feature_placement_instruction_records<'a>(
 ) -> Result<Vec<CreoFeaturePlacementInstructionRecord<'a>>, CodecError> {
     let mut records = Vec::new();
     for definition in &scan.features.definitions {
-        for instruction in crate::feature::definitions::placement_instructions(definition) {
+        for instruction in crate::feature::definitions::placement_instructions(ctx, definition)? {
             let id = ctx.format_retained(
                 format_args!(
                     "creo:featdefs:placement_instruction#{}:{}",
@@ -4153,8 +4153,8 @@ pub(super) fn pcurve_endpoint_records(
     }
     ctx.stable_sort_by(
         records.as_mut_slice(),
-        |(_, left), (_, right)| left.cmp(right),
-        |_| 0,
+        |value| &value.1,
+        Ord::cmp,
         "creo pcurve endpoint records records ordering",
     )?;
     Ok(records)

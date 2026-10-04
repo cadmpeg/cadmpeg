@@ -592,7 +592,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         byte_offset: 0,
         state_offset: 100,
         owner_reference: 1,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
             crate::records::identity::Located {
                 value: 0,
@@ -748,14 +748,14 @@ fn single_curve_annotation_projects_parameterized_offset() {
         Point2::new(10.0, -2.0),
     );
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("{stream}:design-parameter#12"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 12,
             source_ordinal: 0,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-2".into(),
                 Some(13),
                 Some(crate::records::identity::Located {
@@ -1126,14 +1126,14 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             .unwrap(),
     };
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 20,
             source_ordinal: 4,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Angular Dimension-4".into(),
                 Some(21),
                 Some(crate::records::identity::Located {

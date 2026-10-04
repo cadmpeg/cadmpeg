@@ -95,6 +95,7 @@ pub(crate) fn resource_refusal_at<T>(
                 ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                 ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
                 ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                 _ => panic!("unsupported resource test dimension"),
             },
             |ctx| {

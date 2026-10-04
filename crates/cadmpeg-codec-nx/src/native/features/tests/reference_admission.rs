@@ -1592,6 +1592,8 @@ fn draft_index_route_refusal(
     let lanes = crate::test_support::with_decode_context_over(
         &input_envelope,
         |policy| {
+            // Admit index key reads and node movement before testing the selected dimension.
+            policy.limits.max_work_units = u64::MAX;
             // Both offset indexes can hold all 7039 records at once.
             let node = 11 * std::mem::size_of::<(String, (&[u8], u64))>()
                 + 16 * std::mem::size_of::<usize>()
@@ -1606,6 +1608,8 @@ fn draft_index_route_refusal(
     let payloads = crate::test_support::with_decode_context_over(
         &input_envelope,
         |policy| {
+            // Admit index key reads and node movement before testing the selected dimension.
+            policy.limits.max_work_units = u64::MAX;
             // Both offset indexes can hold all 7039 records at once.
             let node = 11 * std::mem::size_of::<(String, (&[u8], u64))>()
                 + 16 * std::mem::size_of::<usize>()

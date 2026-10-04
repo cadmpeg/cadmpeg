@@ -77,12 +77,13 @@ fn selection_objects<'history, 'lane>(
         ctx.reserve_vec(&mut objects, 1, operation)?;
         objects.push((name, feature, input_index));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut objects,
-        |(left_name, _, left_index), (right_name, _, right_index)| {
-            (left_name.offset, left_index).cmp(&(right_name.offset, right_index))
+        |value| {
+            let (left_name, _, left_index) = value;
+            (left_name.offset, *left_index)
         },
-        |_| 0,
+        Ord::cmp,
         operation,
     )?;
     Ok(objects)
@@ -449,8 +450,8 @@ pub(super) fn compact_edge_selections(
         selections.extend(interval);
         ctx.sort_unstable_by(
             &mut selections,
-            |left, right| left.0.cmp(&right.0),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "sort SLDPRT compact edge selections",
         )?;
         selections.dedup_by_key(|selection| selection.0);
@@ -1020,8 +1021,8 @@ fn fillet_face_selection_candidates(
     }
     ctx.sort_unstable_by(
         &mut class_bodies,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sort SLDPRT full round fillet class bodies",
     )?;
     class_bodies.dedup();
@@ -1185,12 +1186,13 @@ fn order_surface_candidates(
     for (index, (offset, components)) in candidates.drain(..).enumerate() {
         indexed.push((offset, components, index));
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut indexed,
-        |(left_offset, _, left_index), (right_offset, _, right_index)| {
-            (left_offset, left_index).cmp(&(right_offset, right_index))
+        |value| {
+            let (left_offset, _, left_index) = value;
+            (*left_offset, *left_index)
         },
-        |_| 0,
+        Ord::cmp,
         operation,
     )?;
     for pair in indexed.windows(2) {
@@ -1517,8 +1519,8 @@ fn cosmetic_thread_cylinder_references(
     }
     ctx.sort_unstable_by(
         &mut offsets,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sort SLDPRT cosmetic thread cylinder offsets",
     )?;
     offsets.dedup();
@@ -1566,8 +1568,8 @@ fn cosmetic_thread_component_references(
     }
     ctx.sort_unstable_by(
         &mut classes,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT cosmetic component classes",
     )?;
 
@@ -1764,8 +1766,8 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     }
     ctx.sort_unstable_by(
         &mut markers,
+        |value| value,
         Ord::cmp,
-        |_| 0,
         "sort SLDPRT cosmetic thread cylinder markers",
     )?;
     markers.dedup();
@@ -3009,10 +3011,10 @@ pub(crate) fn generated_surface_identities(
             components,
         });
     }
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut result,
-        |left, right| (left.offset, left.input_index).cmp(&(right.offset, right.input_index)),
-        |_| 0,
+        |value| (value.offset, value.input_index),
+        Ord::cmp,
         "sort SLDPRT generated surface identities",
     )?;
     let lane_key = lane
@@ -3368,8 +3370,8 @@ pub(super) fn variable_fillet_control_references(
     }
     ctx.sort_unstable_by(
         &mut controls,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
+        |value| &value.0,
+        Ord::cmp,
         "sort SLDPRT variable fillet controls",
     )?;
     let mut result = Vec::new();

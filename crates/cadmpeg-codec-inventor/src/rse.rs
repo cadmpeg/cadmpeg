@@ -29,6 +29,22 @@ fn rse_issue_detail(ctx: &DecodeContext<'_>, error: CodecError) -> Result<String
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct StorageBand(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for StorageBand {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl StorageBand {
     fn parse(component: &str) -> Option<Self> {
         let (prefix, digits) = component.split_at_checked(1)?;
@@ -49,6 +65,16 @@ impl StorageBand {
 /// Exact suffix shared by one `RSe` metadata and bulk stream.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SegmentToken(IdentityKey);
+
+impl cadmpeg_core::decode::cost::DecodeCost for SegmentToken {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(self.as_str(), ctx, operation)
+    }
+}
 
 /// Which of the two `RSe` streams a segment name introduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +145,20 @@ pub(crate) struct SegmentPair {
 pub(crate) struct MetaStreamDeclaration {
     pub(crate) marker: String,
     pub(crate) version: u16,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for MetaStreamDeclaration {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.marker, self.version),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl MetaStreamDeclaration {
@@ -483,8 +523,8 @@ impl<'a> RseInventory<'a> {
         }
         ctx.stable_sort_by(
             &mut databases,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             "RSe database descriptor sort",
         )?;
         ctx.charge_collection_items(
@@ -494,7 +534,7 @@ impl<'a> RseInventory<'a> {
         let mut database_descriptors =
             ctx.vector_storage(databases.len(), "admit RSe database descriptors")?;
         for (band, stream_id) in databases {
-            let state = match snapshot.stream_by_id(stream_id) {
+            let state = match snapshot.stream_by_id(ctx, stream_id)? {
                 Some(stream) => match snapshot
                     .open(ctx, stream)
                     .and_then(|view| parse_database(ctx, view.window()))
@@ -525,7 +565,7 @@ impl<'a> RseInventory<'a> {
         // declared, including when they declared nothing or disagreed. What the
         // grammar cannot frame degrades here, which is a structural outcome; the
         // declarations decide the admission, not whether the attempt is made.
-        let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
+        let registry = match snapshot.stream(ctx, "RSeStorage/RSeSegInfo")? {
             None => ParsedState::Absent,
             Some(stream) => match snapshot
                 .open(ctx, stream)
@@ -535,7 +575,7 @@ impl<'a> RseInventory<'a> {
                 Err(error) => ParsedState::Unavailable(rse_issue_detail(ctx, error)?),
             },
         };
-        let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
+        let revisions = match snapshot.stream(ctx, "RSeStorage/RSeDbRevisionInfo")? {
             None => ParsedState::Absent,
             Some(stream) => match snapshot
                 .open(ctx, stream)
@@ -566,7 +606,7 @@ impl<'a> RseInventory<'a> {
             .map(
                 |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
                     let meta = snapshot
-                        .stream_by_id(pair.metadata)
+                        .stream_by_id(ctx, pair.metadata)?
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe metadata stream handle is absent".into())
                         })
@@ -580,7 +620,7 @@ impl<'a> RseInventory<'a> {
                         },
                     };
                     let bulk = snapshot
-                        .stream_by_id(pair.bulk)
+                        .stream_by_id(ctx, pair.bulk)?
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe bulk stream handle is absent".into())
                         })

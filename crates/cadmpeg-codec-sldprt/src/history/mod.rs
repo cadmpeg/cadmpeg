@@ -55,7 +55,9 @@ fn keyed_attributes<'name, 'value>(
             format_args!("{value}"),
             "retain SLDPRT history property value",
         )?;
-        if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
+        if let Some(name) =
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
+        {
             ctx.insert_btree_map(&mut kept, name, value, "index SLDPRT history properties")?;
         }
     }
@@ -366,7 +368,11 @@ pub(crate) fn histories(
                                 format_args!("{value}"),
                                 "retain SLDPRT parameter value",
                             )?;
-                            if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
+                            if let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
+                                ctx,
+                                name,
+                                "validate nonblank text",
+                            )? {
                                 ctx.insert_btree_map(
                                     &mut parameters,
                                     name,

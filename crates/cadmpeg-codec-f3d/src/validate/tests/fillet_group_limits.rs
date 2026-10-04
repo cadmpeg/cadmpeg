@@ -168,14 +168,18 @@ fn add_radius_parameter(
     };
     let owner_index = record_index - 1;
     let base = 10_000 + u64::from(record_index) * 100;
-    let parameter = DesignParameter::try_from(DesignParameterDraft {
+    let parameter = DesignParameter::try_from(DesignParameterDraft::<String> {
         id: format!("f3d:Design/BulkStream.dat:design-parameter#{record_index}"),
         byte_offset: base,
         class_tag: "305".to_owned().try_into().unwrap(),
         record_index,
         source_ordinal: 0,
-        source: DesignParameterSource::new(source_kind.to_owned(), Some(owner_index), None)
-            .unwrap(),
+        source: DesignParameterSource::new::<String>(
+            source_kind.to_owned(),
+            Some(owner_index),
+            None,
+        )
+        .unwrap(),
         expression: format!("{value}"),
         expression_offset: base + 12,
         source_kind_offset: base + 32,

@@ -575,6 +575,22 @@ enum ReferenceRole {
     Surface,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ReferenceRole {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 /// A type-133 parameter restriction over a basis curve.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TrimmedCurve {
@@ -1267,14 +1283,10 @@ impl Graph {
         stream: &[u8],
         mut nodes: Vec<NodeCandidate>,
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut nodes,
-            |left, right| {
-                left.pos()
-                    .cmp(&right.pos())
-                    .then_with(|| left.end().cmp(&right.end()))
-            },
-            |_| 0,
+            |value| (value.pos(), value.end()),
+            |left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)),
             "sort NX topology candidates",
         )?;
         let mut selected = Vec::new();
@@ -1829,7 +1841,7 @@ impl Graph {
                     .and_then(Node::face_fields)
                     .and_then(|face| face.next_face);
             }
-            ctx.sort_unstable_by(&mut faces, Ord::cmp, |_| 0, "sort NX shell faces")?;
+            ctx.sort_unstable_by(&mut faces, |value| value, Ord::cmp, "sort NX shell faces")?;
         }
         Ok(Some(faces))
     }

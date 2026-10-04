@@ -52,7 +52,7 @@ fn native_section_geometry(
 ) -> Result<SketchGeometry, cadmpeg_core::CodecError> {
     let kind = ctx.copy_retained_text(kind, "creo section native geometry kind")?;
     Ok(SketchGeometry::native(
-        cadmpeg_core::text::NonBlankString::new(kind)
+        cadmpeg_core::text::NonBlankString::for_decode(ctx, kind, "validate nonblank text")?
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("native_kind must not be empty"))?,
     ))
 }
@@ -107,9 +107,12 @@ fn placed_source_object(
     )?;
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Creo,
-        object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-        })?,
+        object_id: cadmpeg_core::text::NonBlankString::for_decode(
+            ctx,
+            object_id,
+            "validate nonblank text",
+        )?
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("source object_id must not be empty"))?,
         name: None,
         color: None,
         visible: None,
@@ -181,7 +184,7 @@ pub(super) fn transfer_section_entities(
         if section_degenerate_axis_line(definition, segment) {
             let kind = ctx.copy_retained_text("line", "creo section entity native kind")?;
             return Ok(Some(SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new(kind).ok_or_else(|| {
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, kind, "validate nonblank text")?.ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                 })?,
             )));
@@ -204,7 +207,9 @@ pub(super) fn transfer_section_entities(
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(segment.offset),
             match (geometry.definition(), segment.kind) {
-                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
+                (SketchGeometryDefinition::Native { native_kind }, _)
+                    if native_kind.as_str() == "line" =>
+                {
                     "section_degenerate_axis_line"
                 }
                 (SketchGeometryDefinition::ReferenceLine { .. }, _) => {
@@ -237,7 +242,9 @@ pub(super) fn transfer_section_entities(
         let point_ids = segment.point_ids();
         let reverse = [point_ids[1], point_ids[0]];
         let endpoints = match (geometry.definition(), segment.kind) {
-            (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
+            (SketchGeometryDefinition::Native { native_kind }, _)
+                if native_kind.as_str() == "line" =>
+            {
                 &point_ids[..1]
             }
             (SketchGeometryDefinition::ReferenceLine { .. }, _)
@@ -669,9 +676,16 @@ pub(super) fn transfer_section_entities(
                 format_args!("segment_type:{}", segment.kind),
                 "creo section native geometry kind",
             )?;
-            SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(kind).ok_or_else(
-                || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
-            )?)
+            SketchGeometry::native(
+                cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    kind,
+                    "validate nonblank text",
+                )?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                })?,
+            )
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
@@ -1187,7 +1201,7 @@ mod tests {
             with_policy(&policy, |ctx| native_section_geometry(ctx, "line"))
                 .expect("exact cap admits kind"),
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("line").expect("valid kind")
+                cadmpeg_core::text::NonBlankString::try_from("line").expect("valid kind")
             )
         );
     }
@@ -1197,7 +1211,7 @@ mod tests {
         let geometries = std::collections::BTreeMap::from([(
             7,
             SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("circle").expect("valid kind"),
+                cadmpeg_core::text::NonBlankString::try_from("circle").expect("valid kind"),
             ),
         )]);
         let mut policy = DecodePolicy::service();
@@ -1266,7 +1280,7 @@ mod tests {
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
         let id = SketchEntityId::mint("creo:featdefs:sketch_entity#5:7").expect("valid entity ID");
         let geometry = SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::new("line").expect("valid kind"),
+            cadmpeg_core::text::NonBlankString::try_from("line").expect("valid kind"),
         );
         let entity = || SketchEntity::new(id.clone(), sketch.clone(), geometry.clone());
         let mut policy = DecodePolicy::service();

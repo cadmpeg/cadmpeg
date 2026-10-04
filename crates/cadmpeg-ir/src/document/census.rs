@@ -65,20 +65,6 @@ impl CensusStorage for DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), Self::Error> {
-        let work = key
-            .as_str()
-            .len()
-            .checked_add(1)
-            .and_then(|bytes| {
-                counts
-                    .len()
-                    .checked_add(1)
-                    .and_then(|count| bytes.checked_mul(count))
-            })
-            .ok_or_else(|| {
-                self.refuse_codec_limit("validation census key comparisons", u64::MAX - 1, u64::MAX)
-            })?;
-        self.charge_work(u64_from_index(work), "validation census key comparisons")?;
         self.charge_work(1, operation)?;
         self.insert_btree_map(counts, key, count, operation)?;
         Ok(())
@@ -145,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn census_refuses_retained_nodes_items_and_comparison_work() {
+    fn census_refuses_retained_nodes_items_and_slot_work() {
         let ir = CadIr::empty();
         for dimension in [
             ResourceDimension::RetainedBytes,
@@ -166,14 +152,7 @@ mod tests {
                 panic!("census must retain the caller refusal");
             };
             assert_eq!(limit.dimension, dimension);
-            assert_eq!(
-                limit.operation,
-                if dimension == ResourceDimension::WorkUnits {
-                    "validation census key comparisons"
-                } else {
-                    "validation model census slots"
-                }
-            );
+            assert_eq!(limit.operation, "validation model census slots");
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
             );

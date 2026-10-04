@@ -827,14 +827,14 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             .unwrap(),
     };
     let parameter = crate::records::parameters::DesignParameter::try_from(
-        crate::records::parameters::DesignParameterDraft {
+        crate::records::parameters::DesignParameterDraft::<String> {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
             record_index: 20,
             source_ordinal: 4,
-            source: crate::records::parameters::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-4".into(),
                 Some(21),
                 Some(crate::records::identity::Located {
@@ -1176,7 +1176,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let mut symmetry_parameter = parameter.clone();
     symmetry_parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 "Linear Dimension-6".into(),
                 symmetry_parameter.owner_record_index(),
                 symmetry_parameter.family_discriminator(),
@@ -1271,7 +1271,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     group_parameter.id = format!("{stream}:design-parameter#{}", group_parameter.record_index);
     group_parameter
         .try_set_source(
-            crate::records::parameters::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new::<String>(
                 zero_parameter.source_kind().into(),
                 Some(group_owner.record_index()),
                 zero_parameter.family_discriminator(),

@@ -117,10 +117,10 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let mut operands = sources
         .iter()
         .map(|entity| SketchNativeOperand {
-            native_kind: cadmpeg_core::text::NonBlankString::new("curve")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("curve")
                 .expect("source operand kind is nonempty"),
             field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                name: cadmpeg_core::text::NonBlankString::new("locus")
+                name: cadmpeg_core::text::NonBlankString::try_from("locus")
                     .expect("source field name is nonempty"),
                 role: Some(1),
             }),
@@ -129,10 +129,10 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         })
         .chain(results.iter().map(|entity| {
             SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::new("curve")
+                native_kind: cadmpeg_core::text::NonBlankString::try_from("curve")
                     .expect("source operand kind is nonempty"),
                 field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                    name: cadmpeg_core::text::NonBlankString::new("locus")
+                    name: cadmpeg_core::text::NonBlankString::try_from("locus")
                         .expect("source field name is nonempty"),
                     role: Some(0),
                 }),
@@ -142,10 +142,10 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         }))
         .collect::<Vec<_>>();
     operands.push(SketchNativeOperand {
-        native_kind: cadmpeg_core::text::NonBlankString::new("record")
+        native_kind: cadmpeg_core::text::NonBlankString::try_from("record")
             .expect("source operand kind is nonempty"),
         field: Some(cadmpeg_ir::sketches::NativeOperandField {
-            name: cadmpeg_core::text::NonBlankString::new("owner")
+            name: cadmpeg_core::text::NonBlankString::try_from("owner")
                 .expect("source field name is nonempty"),
             role: Some(0),
         }),
@@ -154,10 +154,10 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     });
     operands.extend(sources.iter().zip(&results).flat_map(|(source, result)| {
         [source, result].map(|entity| SketchNativeOperand {
-            native_kind: cadmpeg_core::text::NonBlankString::new("curve")
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("curve")
                 .expect("source operand kind is nonempty"),
             field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                name: cadmpeg_core::text::NonBlankString::new("return")
+                name: cadmpeg_core::text::NonBlankString::try_from("return")
                     .expect("source field name is nonempty"),
                 role: None,
             }),

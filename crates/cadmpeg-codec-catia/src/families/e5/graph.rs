@@ -722,8 +722,8 @@ pub(crate) fn parse_topology(
         }
         if let Err(error) = ctx.sort_unstable_by(
             &mut vertex_refs,
+            |value| value,
             Ord::cmp,
-            |_| 0,
             "catia_e5_vertex_refs_sort",
         ) {
             return Some(Err(error));
@@ -1693,11 +1693,10 @@ fn solve_absolute_orientation(
             )?;
         }
     }
-    let mut adjacency = ctx.alloc_filled(
-        locations.len(),
-        Vec::<(usize, Sign)>::new(),
-        "catia e5 orientation adjacency",
-    )?;
+    let mut adjacency =
+        ctx.collect_indexed_vec(locations.len(), "catia e5 orientation adjacency", |_| {
+            Ok(Vec::<(usize, Sign)>::new())
+        })?;
     for [(left, left_r), (right, right_r)] in occurrences
         .values()
         .filter_map(|uses| <&[_; 2]>::try_from(uses.as_slice()).ok())

@@ -51,7 +51,7 @@ fn copy_dimension_source_kind(
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
     let text = ctx.copy_retained_text(parameter.source_kind(), operation)?;
-    cadmpeg_core::text::NonBlankString::new(text)
+    cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("validated dimension source kind is blank"))
 }
 
@@ -1592,20 +1592,13 @@ fn project_all_dimension_constraints(
         }
     }
     for records in recipes_by_companion.values_mut() {
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut records[..],
-            |left, right| {
-                let left_key = {
-                    let record = left;
-                    record.recipe_ordinal
-                };
-                let right_key = {
-                    let record = right;
-                    record.recipe_ordinal
-                };
-                left_key.cmp(&right_key)
+            |value| {
+                let record = value;
+                record.recipe_ordinal
             },
-            |_| 0,
+            Ord::cmp,
             "sort f3d design dimensions 1",
         )?;
     }
@@ -2009,8 +2002,8 @@ fn project_all_dimension_constraints(
     }
     ctx.stable_sort_by(
         &mut constraints[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
+        |value| &value.id,
+        Ord::cmp,
         "sort f3d design dimensions 2",
     )?;
     Ok(constraints)
@@ -3269,8 +3262,8 @@ pub(crate) fn bind_offset_dimension_parameters(
         };
         if !native_kind.as_str().starts_with("Linear Dimension")
             || operands.len() != 2
-            || operands[0].native_kind != "null_locus"
-            || operands[1].native_kind != "curve"
+            || operands[0].native_kind.as_str() != "null_locus"
+            || operands[1].native_kind.as_str() != "curve"
         {
             continue;
         }
@@ -3636,7 +3629,7 @@ pub(crate) fn project_spatial_dimension_constraints(
                         .transpose()?;
                     let owner_scoped = (|| -> Result<Option<SpatialSketchConstraintDefinitionInput>, CodecError> {
                         if operands.len() != 1
-                            || operands[0].native_kind != "dimension_companion"
+                            || operands[0].native_kind.as_str() != "dimension_companion"
                             || !operand_field(&operands[0]).is_some_and(|field| {
                                 field == "companion" || field == "companion_payload"
                             })
@@ -3785,8 +3778,8 @@ pub(crate) fn project_spatial_dimension_constraints(
     }
     ctx.stable_sort_by(
         &mut missing[..],
-        |first, second| first.as_str().cmp(second.as_str()),
-        |_| 0,
+        |value| value.as_str(),
+        Ord::cmp,
         "sort f3d design dimensions 3",
     )?;
     for parameter_id in missing {
@@ -4329,11 +4322,13 @@ fn spatial_counted_offset_dimension_definition(
     let owner = operands.get(owner_position)?;
     let returns = operands.get(owner_position + 1..)?;
     if operand_field(owner) != Some("owner")
-        || owner.native_kind != "record"
+        || owner.native_kind.as_str() != "record"
         || operand_role(owner) != Some(0)
-        || loci.iter().any(|operand| operand.native_kind != "curve")
+        || loci
+            .iter()
+            .any(|operand| operand.native_kind.as_str() != "curve")
         || returns.iter().any(|operand| {
-            operand.native_kind != "curve"
+            operand.native_kind.as_str() != "curve"
                 || operand_field(operand) != Some("return")
                 || operand_role(operand).is_some()
         })

@@ -653,9 +653,13 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
         }
     }
     assert!(
-        crate::records::parameters::DesignParameterSource::new(String::new(), Some(2), None)
-            .unwrap_err()
-            .contains("source_kind")
+        crate::records::parameters::DesignParameterSource::new::<String>(
+            String::new(),
+            Some(2),
+            None
+        )
+        .unwrap_err()
+        .contains("source_kind")
     );
 }
 

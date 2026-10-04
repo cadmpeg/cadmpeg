@@ -1860,8 +1860,8 @@ pub(super) fn circle_endpoint_range_choices(
     }
     ctx.stable_sort_by(
         &mut endpoints,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "catia standard circle endpoint angles sort",
     )?;
     let Some(short) = crate::nurbs::canonical_periodic_range(endpoints) else {

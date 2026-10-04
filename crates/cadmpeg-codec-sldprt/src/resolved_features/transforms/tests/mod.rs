@@ -52,8 +52,8 @@ fn sketch_entity(geometry: SketchGeometryDefinition) -> SketchEntity {
 #[test]
 fn a_sketch_entity_without_marker_loci_has_no_marker_kind() {
     let text = sketch_entity(SketchGeometryDefinition::Text {
-        text: cadmpeg_core::text::NonBlankString::new("cadmpeg").unwrap(),
-        font_family: cadmpeg_core::text::NonBlankString::new("sans").unwrap(),
+        text: cadmpeg_core::text::NonBlankString::try_from("cadmpeg").unwrap(),
+        font_family: cadmpeg_core::text::NonBlankString::try_from("sans").unwrap(),
         font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
         height: cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
         width_factor: None,

@@ -847,8 +847,8 @@ where
             source_records.extend(added);
             ctx.stable_sort_by(
                 &mut source_records,
-                |left, right| left.source_range.start.cmp(&right.source_range.start),
-                |_| 0,
+                |value| &value.source_range.start,
+                Ord::cmp,
                 "catia_source_records_sort",
             )?;
         }

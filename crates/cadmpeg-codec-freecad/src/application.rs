@@ -35,8 +35,8 @@ pub(crate) fn matches_native(
         })?;
     ctx.stable_sort_by(
         &mut expected,
-        |left, right| left.id.cmp(&right.id),
-        |record| record.id.len(),
+        |value| &value.id,
+        Ord::cmp,
         "FreeCAD application records sort",
     )?;
     let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
@@ -134,12 +134,10 @@ fn wire_records<'a>(
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     for object in objects {
         let mut owned = by_owner.remove(object.id().as_str()).unwrap_or_default();
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut owned,
-            |left, right| {
-                (left.xml.start(), left.xml.end()).cmp(&(right.xml.start(), right.xml.end()))
-            },
-            |_| 0,
+            |value| (value.xml.start(), value.xml.end()),
+            Ord::cmp,
             "FreeCAD application owner properties sort",
         )?;
         let data = object

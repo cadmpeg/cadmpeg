@@ -712,6 +712,21 @@ pub(super) enum ExpressionUnit {
     Native(String),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ExpressionUnit {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Native(text) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, text), ctx, operation)
+            }
+            _ => Ok(1),
+        }
+    }
+}
+
 const INCH_TO_MILLIMETERS: f64 = 25.4;
 
 impl ExpressionUnit {
@@ -1033,7 +1048,8 @@ impl TryFrom<ExpressionWire> for ParameterFormula {
                 .map(|value| FiniteReal::new(value).ok_or("expression value must be finite"))
                 .transpose()?,
             source_entry: wire.source_entry,
-            source_table: cadmpeg_core::text::NonBlankString::new(wire.source_table)
+            source_table: cadmpeg_core::text::NonBlankString::try_from(wire.source_table)
+                .ok()
                 .ok_or("source_table must not be empty")?,
             source_offset: wire.source_offset,
         })
@@ -5210,8 +5226,8 @@ pub(super) fn data_block_control_handle_pairs(
     for (data_block, mut block_references) in by_block {
         ctx.stable_sort_by(
             &mut block_references,
-            |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
+            |value| &value.0.source_offset,
+            Ord::cmp,
             "sort NX control handle pair references",
         )?;
         let mut at = 0;
@@ -5873,8 +5889,8 @@ pub(super) fn object_record_handle_pairs(
     for (record, mut record_references) in by_record {
         ctx.stable_sort_by(
             &mut record_references,
-            |(left, _), (right, _)| left.source_offset.cmp(&right.source_offset),
-            |_| 0,
+            |value| &value.0.source_offset,
+            Ord::cmp,
             "sort NX record handle references",
         )?;
         let mut at = 0;
@@ -6239,7 +6255,11 @@ pub(super) fn expressions(
                 cadmpeg_core::decode::u64_from_index(table_offset),
                 "NX expression source table",
             )?;
-            let Some(source_table) = cadmpeg_core::text::NonBlankString::new(source_table_text)
+            let Some(source_table) = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                source_table_text,
+                "validate nonblank text",
+            )?
             else {
                 continue;
             };

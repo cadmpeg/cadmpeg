@@ -74,7 +74,23 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
     policy.limits.max_retained_bytes =
         u64::try_from(3 * std::mem::size_of::<FinitePoint3>()).expect("bytes");
     policy.limits.max_collection_items = 3;
+    // Three triangle indexes plus three vertex yields and collector exhaustion cost 7.
     policy.limits.max_work_units = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(limit)) =
+        PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, &ctx)
+    else {
+        panic!("collector exhaustion must refuse at six work units");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.used, 6);
+    assert_eq!(limit.operation, "IR polygonal admitted vertices");
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
+
+    let arena = DecodeArena::new();
+    policy.limits.max_work_units = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let raw = PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, &ctx)
         .expect("exact limits")

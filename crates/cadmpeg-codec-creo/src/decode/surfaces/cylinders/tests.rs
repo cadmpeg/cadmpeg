@@ -1841,7 +1841,8 @@ fn rowless_round_cylinder_identity_preserves_service_geometry() {
             .source_object
             .as_ref()
             .expect("source object")
-            .object_id,
+            .object_id
+            .as_str(),
         "AllFeatur:12"
     );
 }

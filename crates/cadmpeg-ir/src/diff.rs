@@ -910,7 +910,10 @@ mod tests {
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        assert_eq!(result.source.attributes[0].key, "footer_fingerprint");
+        assert_eq!(
+            result.source.attributes[0].key.as_str(),
+            "footer_fingerprint"
+        );
     }
 
     /// A document with no source metadata compares against one that has some
@@ -1056,7 +1059,7 @@ mod tests {
         classify_source(
             &mut right,
             DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80"))
-                .with_instance("embedded/model.3dm"),
+                .with_instance("embedded/model.3dm".to_owned()),
         );
         assert!(!diff(&left, &right).is_empty());
 
@@ -1067,7 +1070,7 @@ mod tests {
             )))
             .with(
                 DialectMatch::residual(cadmpeg_core::dialect_id!("acis:text-acis"))
-                    .with_instance("body.sat"),
+                    .with_instance("body.sat".to_owned()),
             )
             .expect("the test dialect layers have distinct keys"),
             source.attributes,

@@ -299,10 +299,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
             starts.push((start, feature));
         }
         ctx.charge_work(u64_from_index(starts.len()), OPERATION)?;
-        ctx.stable_sort_by(
+        ctx.stable_sort_by_key(
             &mut starts,
-            |left, right| (left.0.is_none(), left.0).cmp(&(right.0.is_none(), right.0)),
-            |_| 0,
+            |value| (value.0.is_none(), value.0),
+            Ord::cmp,
             "sort SLDPRT feature starts",
         )?;
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
@@ -1154,8 +1154,8 @@ fn variable_fillet_radius_groups<'a>(
         }
         ctx.sort_unstable_by(
             &mut ordered_parameters,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             OPERATION,
         )?;
         if ordered_parameters
@@ -1167,12 +1167,7 @@ fn variable_fillet_radius_groups<'a>(
             ctx.reserve_vec(&mut selections_copy, selections.len(), OPERATION)?;
             selections_copy.extend_from_slice(selections);
             let mut selections = selections_copy;
-            ctx.sort_unstable_by(
-                &mut selections,
-                |left, right| left.ordinal.cmp(&right.ordinal),
-                |_| 0,
-                OPERATION,
-            )?;
+            ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
             let mut sample_storage =
                 ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
             let mut points = Vec::new();
@@ -1217,12 +1212,7 @@ fn variable_fillet_radius_groups<'a>(
                 objects.push((name.offset, candidate));
             }
         }
-        ctx.sort_unstable_by(
-            &mut objects,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
         let Some(index) = objects
             .iter()
             .position(|(_, candidate)| candidate.id == feature_ref)
@@ -1315,8 +1305,8 @@ fn variable_fillet_radius_groups<'a>(
         }
         ctx.sort_unstable_by(
             &mut ordered_parameters,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
+            |value| &value.0,
+            Ord::cmp,
             OPERATION,
         )?;
         if ordered_parameters
@@ -1353,12 +1343,7 @@ fn variable_fillet_radius_groups<'a>(
         ctx.reserve_vec(&mut selections_copy, selections.len(), OPERATION)?;
         selections_copy.extend_from_slice(selections);
         let mut selections = selections_copy;
-        ctx.sort_unstable_by(
-            &mut selections,
-            |left, right| left.ordinal.cmp(&right.ordinal),
-            |_| 0,
-            OPERATION,
-        )?;
+        ctx.sort_unstable_by(&mut selections, |value| &value.ordinal, Ord::cmp, OPERATION)?;
         let mut sample_storage = ctx.reserve_scoped(0, "SLDPRT variable radius source samples")?;
         let mut points = Vec::new();
         for (parameter, (_, radius)) in ordered_parameters.into_iter().enumerate() {
@@ -1461,8 +1446,8 @@ fn variable_fillet_radius_groups<'a>(
         groups[0].1.append(&mut unassigned);
         ctx.sort_unstable_by(
             &mut groups[0].1,
-            |left, right| left.ordinal.cmp(&right.ordinal),
-            |_| 0,
+            |value| &value.ordinal,
+            Ord::cmp,
             OPERATION,
         )?;
     } else if !unassigned.is_empty() {
@@ -2232,8 +2217,8 @@ fn full_round_fillet_selection_triple<'a>(
     for mut lane_selections in by_lane.into_values() {
         ctx.sort_unstable_by(
             &mut lane_selections,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             OPERATION,
         )?;
         let [center, side_one, side_two] = lane_selections.as_slice() else {
@@ -2695,8 +2680,8 @@ fn cut_with_surface_selection_pair<'a>(
         }
         ctx.sort_unstable_by(
             &mut lane_selections,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
+            |value| &value.offset,
+            Ord::cmp,
             OPERATION,
         )?;
         let pair = (lane_selections[0], lane_selections[1]);
@@ -2936,8 +2921,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 }
                 ctx.sort_unstable_by(
                     &mut references,
-                    |left, right| left.0.cmp(&right.0),
-                    |reference| reference.0.len(),
+                    |value| &value.0,
+                    Ord::cmp,
                     NATIVE_OPERATION,
                 )?;
                 let native = if references.is_empty() {

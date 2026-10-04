@@ -5,10 +5,12 @@ use crate::decode::DecodeContext;
 use crate::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     collect_hash_map_storage,
     99,
     167,
+    peak = (99, 167 + 99),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_hash_map(
             (0..count).map(|value| (u64::try_from(value).expect("small key"), 0u64)),
@@ -16,10 +18,12 @@ storage_case!(
         )
     }
 );
+// The group growth peak includes the old four-member vector allocation.
 storage_case!(
     push_hash_group_storage,
     171,
     227,
+    peak = (171, 227 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::<u64, Vec<u64>>::new();
         for _ in 0..count {
@@ -30,10 +34,12 @@ storage_case!(
 );
 // The first ordered group has one exact member slot. Its first growth selects
 // four slots, then eight; the map has one 496-byte node admission.
+// The group growth peak includes the old four-member vector allocation.
 storage_case!(
     push_btree_group_storage,
     504,
     560,
+    peak = (504, 560 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = BTreeMap::<u64, Vec<u64>>::new();
         for _ in 0..count {
@@ -61,10 +67,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     reserve_record_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::<u64>::new();
         for _ in 0..count {
@@ -74,10 +82,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     append_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::<u64>::new();
         for _ in 0..count {
@@ -86,10 +96,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     extend_vec_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::<u64>::new();
         for _ in 0..count {
@@ -98,18 +110,22 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     collect_options_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_options(std::iter::repeat_n(Some(0u64), count), "optional storage")
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     collect_fallible_options_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_fallible_options(
             (0..count).map(|_| Ok::<_, CodecError>(Some(0u64))),
@@ -150,10 +166,12 @@ storage_case!(
         )
     }
 );
+// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     copy_retained_set_storage,
     67,
     103,
+    peak = (67, 103 + 67),
     |ctx: &DecodeContext<'_>, count| {
         let values = (0..count)
             .map(|value| u64::try_from(value).expect("small value"))
@@ -169,10 +187,12 @@ storage_case!(
         ctx.collect_retained_texts(std::iter::repeat_n("x", count), "copied text storage")
     }
 );
+// The hash growth peak includes three copied keys and the old buckets before the fourth copy.
 storage_case!(
     insert_string_set_storage,
     132,
     236,
+    peak = (132, 234 + 131),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         for value in &["a", "b", "c", "d", "e"][..count] {
@@ -181,10 +201,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The hash growth peak includes three copied keys and the old buckets before the fourth copy.
 storage_case!(
     collect_string_set_storage,
     132,
     236,
+    peak = (132, 234 + 131),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_string_set(
             ["a", "b", "c", "d", "e"][..count].iter().copied(),
@@ -202,10 +224,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     reserve_vec_limit_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::new();
         for _ in 0..count {
@@ -215,10 +239,12 @@ storage_case!(
         Ok(values)
     }
 );
+// The growth peak includes the eight new u64 slots and four old slots.
 storage_case!(
     reserve_capacity_limit_storage,
     32,
     64,
+    peak = (32, 64 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::new();
         for _ in 0..count {
@@ -267,7 +293,7 @@ storage_case!(
             .expect("bounded count");
         let mut values = super::super::super::ExactVec::new(ctx, bounded, "exact vector storage")?;
         for _ in 0..count {
-            values.push(0u64)?;
+            values.push(ctx, 0u64, "exact vector storage")?;
         }
         values.finish()
     }
@@ -324,10 +350,12 @@ storage_case!(
         )
     }
 );
+// The largest text growth has five live bytes and four old bytes.
 storage_case!(
     append_retained_storage,
     1,
     5,
+    peak = (1, 5 + 4),
     |ctx: &DecodeContext<'_>, count| {
         let mut value = String::new();
         for _ in 0..count {
@@ -336,10 +364,12 @@ storage_case!(
         Ok(value)
     }
 );
+// The largest text growth has five live bytes and four old bytes.
 storage_case!(
     append_formatted_retained_storage,
     1,
     5,
+    peak = (1, 5 + 4),
     |ctx: &DecodeContext<'_>, count| {
         let mut value = String::new();
         for _ in 0..count {
@@ -352,10 +382,12 @@ storage_case!(
         Ok(value)
     }
 );
+// The note-vector growth peak includes four text bytes, eight new slots and four old slots.
 storage_case!(
     push_formatted_retained_storage,
     97,
     197,
+    peak = (97, 196 + 96),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = Vec::new();
         for _ in 0..count {

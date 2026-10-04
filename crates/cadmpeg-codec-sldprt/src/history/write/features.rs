@@ -87,11 +87,13 @@ fn synchronize_feature_input_names(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
-        let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
-            ))
-        })?;
+        let value = cadmpeg_core::text::NonBlankString::try_from(new_name)
+            .ok()
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
+                ))
+            })?;
         requested.push(FeatureInputRename {
             lane: native.feature_input_lanes[*lane_index].id.clone(),
             name_index: *name_index,

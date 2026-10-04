@@ -413,7 +413,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
         native.body_visibilities = vec![crate::records::bodies::BodyVisibility::try_from(
-            crate::records::bodies::BodyVisibilityWire {
+            crate::records::bodies::BodyVisibilityWire::<String> {
                 id: "f3d:design:body-visibility#42".into(),
                 body: visible_body,
                 stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
@@ -918,7 +918,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     let native_id = format!("f3d:{stream}:design-parameter#0");
     f3d_native_mut(&mut source_less).design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: native_id.clone(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
@@ -949,7 +949,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     );
     f3d_native_mut(&mut source_less).design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
-            crate::records::parameters::DesignParameterDraft {
+            crate::records::parameters::DesignParameterDraft::<String> {
                 id: format!("f3d:{stream}:design-parameter#1"),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
@@ -1132,7 +1132,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         .unwrap();
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Step,
-        object_id: cadmpeg_core::text::NonBlankString::new("object-1")
+        object_id: cadmpeg_core::text::NonBlankString::try_from("object-1")
             .expect("nonempty source identity"),
         name: Some("exact carrier".into()),
         color: None,

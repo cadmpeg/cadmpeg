@@ -1281,7 +1281,8 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             .source_object
             .as_ref()
             .expect("required invariant")
-            .object_id,
+            .object_id
+            .as_str(),
         "shape-node"
     );
     assert_eq!(

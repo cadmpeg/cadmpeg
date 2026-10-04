@@ -214,7 +214,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         byte_offset: 30,
         state_offset: 0,
         owner_reference: 42,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("Sketch_42").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(
             vec![20]
                 .into_iter()
@@ -587,7 +587,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             byte_offset: 600,
             state_offset: 70,
             owner_reference: 172,
-            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_172").unwrap()),
+            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_172").unwrap()),
             auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (vec![member]
@@ -749,7 +749,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             ref entities,
             ref operands,
             ..
-        } if native_kind == "horizontal+unknown_bits"
+        } if native_kind.as_str() == "horizontal+unknown_bits"
             && entities.len() == 3
             && entities.iter().all(|entity| entity == &entities[0])
                     && operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
@@ -774,7 +774,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             ref native_kind,
             ref entities,
             ..
-        } if native_kind == "curvature" && entities.len() == 4
+        } if native_kind.as_str() == "curvature" && entities.len() == 4
     ));
     assert!(matches!(
         constraints[5].definition.kind(),
@@ -1030,7 +1030,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 105,
         state_offset: 0,
         owner_reference: 42,
-        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("Sketch_42").unwrap()),
         auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
         rectangular_counted_reference_count: None,
         // Member run order disagrees with semantic order below.

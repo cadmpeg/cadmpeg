@@ -79,7 +79,7 @@ impl FaceEvaluationTolerance {
 
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
-fn collect_index<K: Eq + Hash, V>(
+fn collect_index<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
     items: impl IntoIterator<Item = (K, V)>,
     operation: &'static str,
@@ -713,10 +713,10 @@ pub(crate) fn section_display_faces(
             });
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut faces,
-        |left, right| left.table.start().cmp(&right.table.start()),
-        |_| 0,
+        |value| value.table.start(),
+        Ord::cmp,
         "sort SLDPRT display faces",
     )?;
     for index in 0..faces.len() {
@@ -1208,8 +1208,8 @@ fn approximate_surface_owner(
     }
     ctx.stable_sort_by(
         &mut fits,
-        |left, right| left.1.total_cmp(&right.1),
-        |_| 0,
+        |value| &value.1,
+        f64::total_cmp,
         "sort SLDPRT tessellation surface fits",
     )?;
     let best_deflection = fits[0].1;
@@ -1294,8 +1294,8 @@ fn approximate_trimmed_surface_owner(
     }
     ctx.stable_sort_by(
         &mut fits,
-        |left, right| left.1.total_cmp(&right.1),
-        |_| 0,
+        |value| &value.1,
+        f64::total_cmp,
         "sort SLDPRT tessellation surface fits",
     )?;
     let Some(first) = fits.first() else {
@@ -2670,8 +2670,8 @@ fn circular_interval(
     }
     ctx.stable_sort_by(
         angles,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "sort SLDPRT circular trim angles",
     )?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_CYLINDER_ANGLE);
@@ -3009,8 +3009,8 @@ fn polygon_contains_triangle(
         }
         ctx.stable_sort_by(
             &mut cuts,
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "sort SLDPRT triangle boundary cuts",
         )?;
         for interval in cuts.windows(2) {
@@ -3247,8 +3247,8 @@ fn chordal_hole_constraint(
     }
     ctx.stable_sort_by(
         &mut boundary_angles,
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "sort SLDPRT circular trim angles",
     )?;
     boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);

@@ -469,12 +469,7 @@ pub(super) fn draft_operand_candidates(
             objects.push((name.offset, feature));
         }
     }
-    ctx.sort_unstable_by(
-        &mut objects,
-        |(left, _), (right, _)| left.cmp(right),
-        |_| 0,
-        OPERATION,
-    )?;
+    ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
     let mut candidates = Vec::new();
     for (index, (start, feature)) in objects.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;

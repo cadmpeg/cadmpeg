@@ -485,8 +485,8 @@ fn generator_separates_control_nets(
     }
     ctx.stable_sort_by(
         boundary_angles.as_mut_slice(),
+        |value| value,
         f64::total_cmp,
-        |_| 0,
         "creo generator separates control nets boundary angles ordering",
     )?;
     let tolerance = point_tolerance(first_poles().chain(second_poles())).unwrap_or(f64::INFINITY);
@@ -666,8 +666,8 @@ impl CubicRoots {
     fn sort_and_dedup(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         ctx.stable_sort_by(
             &mut self.values[..self.len],
+            |value| value,
             f64::total_cmp,
-            |_| 0,
             "creo cubic extrusion roots sort",
         )?;
         let mut unique = 0;

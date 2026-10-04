@@ -159,10 +159,10 @@ fn resolve_operand_marker_excluding<'a>(
                     .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
             }),
         )?;
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut points,
-            |left, right| left.offset().cmp(&right.offset()),
-            |_| 0,
+            |value| value.offset(),
+            Ord::cmp,
             "sort SLDPRT scalar operand points",
         )?;
         return Ok(points
@@ -352,10 +352,10 @@ fn resolve_operand_marker_excluding<'a>(
             .copied()
             .filter(|entity| operand_accepts_marker(kind, entity.kind())),
     )?;
-    ctx.sort_unstable_by(
+    ctx.sort_unstable_by_key(
         &mut compatible,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
+        |value| value.offset(),
+        Ord::cmp,
         "sort SLDPRT compatible operand markers",
     )?;
     let mut ordinal_link_graph = false;
@@ -420,8 +420,8 @@ fn resolve_operand_marker_excluding<'a>(
             };
             ctx.sort_unstable_by(
                 &mut indirect,
-                |left, right| left.id().cmp(right.id()),
-                |entity| entity.id().len(),
+                |value| value.id(),
+                Ord::cmp,
                 "sort SLDPRT indirect operand markers",
             )?;
             indirect.dedup_by_key(|entity| entity.id());

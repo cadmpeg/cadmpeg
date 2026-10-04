@@ -187,10 +187,10 @@ impl DialectRecovery {
                 schemas.push(schema);
             }
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut schemas,
-            |left, right| left.value().cmp(&right.value()),
-            |_| 0,
+            |value| value.value(),
+            Ord::cmp,
             "Inventor dialect schema sort",
         )?;
         schemas.dedup();
@@ -201,10 +201,10 @@ impl DialectRecovery {
                 unframed_schemas.push(*schema);
             }
         }
-        ctx.sort_unstable_by(
+        ctx.sort_unstable_by_key(
             &mut unframed_schemas,
-            |left, right| left.value().cmp(&right.value()),
-            |_| 0,
+            |value| value.value(),
+            Ord::cmp,
             "Inventor unframed dialect schema sort",
         )?;
         unframed_schemas.dedup();
@@ -217,8 +217,8 @@ impl DialectRecovery {
         }
         ctx.stable_sort_by(
             &mut meta_streams,
+            |value| value,
             Ord::cmp,
-            |item| item.marker.len(),
             "Inventor dialect metadata sort",
         )?;
         meta_streams.dedup();
@@ -239,8 +239,8 @@ impl DialectRecovery {
         }
         ctx.stable_sort_by(
             &mut unframed_meta_streams,
+            |value| value,
             Ord::cmp,
-            |item| item.marker.len(),
             "Inventor unframed dialect metadata sort",
         )?;
         unframed_meta_streams.dedup();
@@ -349,7 +349,7 @@ impl DialectRecovery {
         } else {
             DialectMatch::unverified(
                 dialect.id(),
-                Grammar::of(&InventorDialect::Cfb3Rse31Meta8.id()),
+                Grammar::of(ctx, &InventorDialect::Cfb3Rse31Meta8.id())?,
             )
         }
         .with_declared(declared))
@@ -580,30 +580,11 @@ fn kernel_layer(
     }
     ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
     ctx.charge_retained(1, "retain Inventor kernel reference width")?;
-    if matches!(family, KernelFamily::Acis)
-        && !cadmpeg_asm::dialect::acis_band_verified(header.metadata.save_format_major())
-    {
-        let recovery =
-            cadmpeg_asm::dialect::nearest_verified_acis(header.metadata.save_format_major());
-        let grammar = recovery
-            .as_str()
-            .split_once(':')
-            .map_or(recovery.as_str(), |(_, grammar)| grammar);
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(grammar.len()),
-            "retain Inventor kernel recovery grammar",
-        )?;
-    }
     let header = match family {
         KernelFamily::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
         KernelFamily::Acis => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
     };
-    Ok(cadmpeg_asm::dialect::classify(header))
-}
-
-/// The total kernel-layer row when the active carrier header does not parse.
-fn unknown_kernel_layer() -> DialectMatch {
-    cadmpeg_asm::dialect::classify(cadmpeg_asm::dialect::KernelHeaderRef::Unknown)
+    cadmpeg_asm::dialect::classify(ctx, header)
 }
 
 /// Classifies a kernel layer only when the active carrier provides kernel
@@ -622,7 +603,10 @@ fn kernel_layer_for_state(
     match state {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => Ok(Some(kernel_layer(ctx, carrier.family, header)?)),
-            Err(_) => Ok(Some(unknown_kernel_layer())),
+            Err(_) => Ok(Some(cadmpeg_asm::dialect::classify(
+                ctx,
+                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+            )?)),
         },
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => Ok(None),
     }
@@ -706,7 +690,7 @@ pub(crate) fn kernel_dialect_loss(
                     "no save format".to_owned()
                 }
             };
-            let message = match matched.using() {
+            let message = match matched.using(ctx)? {
                 Some(using) => ctx.format_retained(format_args!("the active kernel carrier declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"), "retain Inventor kernel dialect loss message")?,
                 None => ctx.format_retained(format_args!("the active kernel carrier declares {declared}; its recovery names no declared save-band grammar as a substitute"), "retain Inventor kernel dialect loss message")?,
             };

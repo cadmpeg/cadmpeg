@@ -13,7 +13,7 @@ fn graph_scopes_equal_names_by_native_unit_label() {
                 expression: formula.into(),
                 value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
                 source_entry: "part".into(),
-                source_table: cadmpeg_core::text::NonBlankString::new("table").unwrap(),
+                source_table: cadmpeg_core::text::NonBlankString::try_from("table").unwrap(),
                 source_offset: 0,
             }
         };

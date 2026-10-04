@@ -588,7 +588,9 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
-        matched.using(),
+        matched
+            .using(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
         Some(cadmpeg_core::dialect_id!("iges:5.3-compressed-ascii"))
     );
     assert_eq!(matched.declared()["representation"], "compressed-ascii");
