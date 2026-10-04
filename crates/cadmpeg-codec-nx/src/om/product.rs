@@ -81,8 +81,15 @@ impl<'a> ProductRecord<'a> {
         };
         let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
         let text_end = text_start.checked_add(text_length)?;
-        let text =
-            propagate_resource!(ProductText::from_wire(ctx, std::str::from_utf8(bytes.get(text_start..text_end)?).ok()?)).ok()?;
+        let text = propagate_resource!(ProductText::from_wire(
+            ctx,
+            propagate_resource!(ctx.validate_utf8(
+                bytes.get(text_start..text_end)?,
+                "NX product text UTF-8 validation",
+            ))
+            .ok()?,
+        ))
+        .ok()?;
         (bytes.get(text_end) == Some(&0)).then_some(Ok(Self { form, text }))
         })().transpose()
     }

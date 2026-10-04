@@ -69,12 +69,13 @@ impl PlaneDescriptor {
         })? else {
             return Ok(None);
         };
-        let identity = ctx.copy_retained(identity, "NX datum plane descriptor identity")?;
-        let label = ctx.copy_retained(label, "NX datum plane descriptor label")?;
-        let (Ok(identity), Ok(label)) = (String::from_utf8(identity), String::from_utf8(label))
-        else {
+        let identity = ctx.validate_utf8(identity, "NX datum plane identity UTF-8 validation")?;
+        let label = ctx.validate_utf8(label, "NX datum plane label UTF-8 validation")?;
+        let (Ok(identity), Ok(label)) = (identity, label) else {
             return Ok(None);
         };
+        let identity = ctx.copy_retained_text(identity, "NX datum plane descriptor identity")?;
+        let label = ctx.copy_retained_text(label, "NX datum plane descriptor label")?;
         Ok(Some(Self {
             identity,
             schema,
@@ -130,6 +131,35 @@ impl PlaneDescriptor {
 #[cfg(test)]
 mod tests {
     use super::PlaneDescriptor;
+
+    #[test]
+    fn plane_descriptor_utf8_refusals_propagate() {
+        let bytes = b"012345678901234567890123456789?A\x00\xff\x02\x01abcd";
+        let descriptor = crate::test_support::with_decode_context(|ctx| {
+            PlaneDescriptor::from_bytes(ctx, bytes)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(descriptor.identity(), "012345678901234567890123456789");
+        assert_eq!(descriptor.label(), "abcd");
+        assert_eq!(descriptor.schema_index(), 0);
+        for (operation, additional) in [
+            ("NX datum plane identity UTF-8 validation", 30),
+            ("NX datum plane label UTF-8 validation", 4),
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                |ctx| PlaneDescriptor::from_bytes(ctx, bytes),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.additional == additional
+            ));
+        }
+    }
 
     #[test]
     fn descriptor_retains_exact_schema_token_width() {

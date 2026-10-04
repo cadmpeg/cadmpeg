@@ -109,7 +109,9 @@ impl FsetReferences<()> {
             let Some(raw) = bytes.get(body_start + 1..selector_end) else {
                 return Ok(None);
             };
-            let Ok(selector) = std::str::from_utf8(raw) else {
+            let Ok(selector) =
+                ctx.validate_utf8(raw, "NX FSET selector UTF-8 validation")?
+            else {
                 return Ok(None);
             };
             let mut at = selector_end;

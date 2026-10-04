@@ -1704,7 +1704,7 @@ fn try_entry(
         )));
     }
 
-    let Ok(value) = std::str::from_utf8(raw) else {
+    let Ok(value) = ctx.validate_utf8(raw, "NX directory name UTF-8 validation")? else {
         return Ok(None);
     };
     let mut name = String::new();

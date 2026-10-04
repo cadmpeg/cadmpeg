@@ -281,7 +281,7 @@ fn color_name_frame<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], offset: usize)
     {
         return None;
     }
-    Some(Ok((std::str::from_utf8(text).ok()?, byte_len)))
+    Some(Ok((propagate_resource!(ctx.validate_utf8(text, "NX color name UTF-8 validation")).ok()?, byte_len)))
     })().transpose()
 }
 
@@ -1492,7 +1492,7 @@ fn operation_label_at<'a>(
     {
         return None;
     }
-    let Ok(value) = std::str::from_utf8(name) else {
+    let Ok(value) = propagate_resource!(ctx.validate_utf8(name, "NX operation label UTF-8 validation")) else {
         return None;
     };
     Some(Ok(OperationLabel { header, value }))
@@ -1583,7 +1583,7 @@ pub(crate) fn operation_payload_text_frames<'a>(
             at += 1;
             continue;
         };
-        let Some(value) = std::str::from_utf8(raw)
+        let Some(value) = ctx.validate_utf8(raw, "NX payload text UTF-8 validation")?
             .ok()
             .map(|value| crate::payload_text::PayloadText::from_wire(ctx, value).map(|value| value.ok()))
             .transpose()?.flatten()
@@ -3082,7 +3082,7 @@ pub(crate) fn expression_declaration_name<'a>(
         if bytes.get(end) != Some(&0) {
             continue;
         }
-        let Ok(value) = std::str::from_utf8(raw) else {
+        let Ok(value) = ctx.validate_utf8(raw, "NX expression parameter UTF-8 validation")? else {
             continue;
         };
         let Some(name) = ParameterName::<_, u32>::parse_wire(ctx, value)? else {
@@ -4027,7 +4027,7 @@ pub(crate) fn string_values<'a>(
             let end = start.checked_add(text_len)?;
             let raw = bytes.get(start..end)?;
             (bytes.get(end) == Some(&0)).then_some(())?;
-            let value = propagate_resource!(PrintableString::from_wire(ctx, std::str::from_utf8(raw).ok()?)).ok()?;
+            let value = propagate_resource!(PrintableString::from_wire(ctx, propagate_resource!(ctx.validate_utf8(raw, "NX printable string UTF-8 validation")).ok()?)).ok()?;
             Some(Ok(StringValue {
                 offset: base_offset + offset,
                 value,
@@ -4068,11 +4068,7 @@ pub(crate) fn uuid_string_values<'a>(
         let Some(raw) = bytes.get(start..end) else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(TEXT_LEN),
-            "parse NX UUID string",
-        )?;
-        let Ok(text) = std::str::from_utf8(raw) else {
+        let Ok(text) = ctx.validate_utf8(raw, "NX UUID text UTF-8 validation")? else {
             continue;
         };
         let Ok(value) = crate::canonical_uuid::CanonicalUuid::from_wire(ctx, text)? else {
@@ -5028,7 +5024,7 @@ fn numeric_expression_at<'a>(
     let Some(raw) = bytes.get(relative..text_end) else {
         return Ok(None);
     };
-    let Ok(text) = std::str::from_utf8(raw) else {
+    let Ok(text) = ctx.validate_utf8(raw, "NX numeric expression UTF-8 validation")? else {
         return Ok(None);
     };
     let Some(text) = text.strip_prefix("(Number [") else {
@@ -5204,7 +5200,11 @@ pub(crate) fn evaluate_constant_expression(
                 (self.at > exponent).then_some(())?;
             }
             (self.at > start).then_some(())?;
-            let text = std::str::from_utf8(&self.bytes[start..self.at]).ok()?;
+            let validated = match self.ctx.validate_utf8(&self.bytes[start..self.at], "NX constant expression UTF-8 validation") {
+                Ok(validated) => validated,
+                Err(error) => { self.failure = Some(error); return None; }
+            };
+            let text = validated.ok()?;
             let parsed = match self.ctx.parse_text::<f64>(text, "NX constant expression decimal parse") {
                 Ok(parsed) => parsed,
                 Err(error) => { self.failure = Some(error); return None; }

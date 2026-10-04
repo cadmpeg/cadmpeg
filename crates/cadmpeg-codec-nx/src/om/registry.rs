@@ -154,7 +154,11 @@ fn registry_declaration_at<'a>(
     }
     Some(Ok(RegistryDeclaration {
         offset: at,
-        name: std::str::from_utf8(raw).ok()?,
+        name: propagate_resource!(ctx.validate_utf8(
+            raw,
+            "NX registry declaration UTF-8 validation",
+        ))
+        .ok()?,
     }))
     })().transpose()
 }

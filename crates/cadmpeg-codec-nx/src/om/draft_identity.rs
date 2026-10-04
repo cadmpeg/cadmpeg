@@ -154,7 +154,10 @@ impl DraftIdentityFrame {
         if len == 0 || tail.get(len) != Some(&b'?') {
             return Ok(None);
         }
-        let Some(text) = std::str::from_utf8(&tail[..len]).ok() else {
+        let Some(text) = ctx
+            .validate_utf8(&tail[..len], "NX draft identity UTF-8 validation")?
+            .ok()
+        else {
             return Ok(None);
         };
         let mut identity = ctx.retained_string(len, "NX draft identity text")?;
