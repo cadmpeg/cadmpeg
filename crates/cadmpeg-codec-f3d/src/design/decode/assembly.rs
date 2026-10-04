@@ -260,11 +260,9 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
             .iter()
             .copied()
             .filter_map(|frame_start| {
-                match exact_indexed_header_at(ctx, bytes, frame_start, frame_record_index) {
-                    Ok(Some(class_tag)) if class_tag == expected_class_tag => Some(Ok(frame_start)),
-                    Ok(Some(_)) | Ok(None) => None,
-                    Err(error) => Some(Err(error)),
-                }
+                (exact_indexed_header_at(bytes, frame_start, frame_record_index)
+                    == Some(expected_class_tag))
+                .then_some(Ok(frame_start))
             });
         let frame_start = match frame_candidates.next() {
             Some(Ok(frame_start)) => frame_start,
@@ -293,16 +291,11 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
                 as_built_421_frame_297::MATRIX_PREFIX_VALUE
             }
         };
-        let paired_class_tag = match exact_indexed_header_at(
-            ctx,
+        let paired_class_tag = exact_indexed_header_at(
             bytes,
             frame_start.checked_add(frame_length)?,
             frame_record_index,
-        ) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        )?;
         if paired_class_tag != generation.frame_paired_class_tag() {
             return None;
         }

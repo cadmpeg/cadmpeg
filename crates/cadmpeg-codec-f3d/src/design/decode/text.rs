@@ -4,21 +4,33 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-/// Validate a borrowed three-digit class tag before making its fixed-size copy.
+/// Copy a borrowed three-digit class tag into retained storage. Text that is
+/// not three ASCII digits is no class tag; the test reads at most three bytes.
 pub(in crate::design::decode) fn class_tag_from_view(
     ctx: &DecodeContext<'_>,
     value: &str,
-) -> Result<Result<crate::records::references::DesignClassTag, String>, CodecError> {
-    if value.len() != 3
-        || !ctx
-            .admit_iter(value.as_bytes(), "validate F3D class tag digits")?
-            .all(|byte| byte.is_ascii_digit())
-    {
-        return Ok(Err("class_tag must contain three ASCII digits".into()));
+) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
+    let Some(digits) = value.as_bytes().first_chunk::<3>() else {
+        return Ok(None);
+    };
+    if value.len() != 3 || !digits.iter().all(u8::is_ascii_digit) {
+        return Ok(None);
     }
     Ok(crate::records::references::DesignClassTag::try_from(
         ctx.copy_retained_text(value, "copy F3D class tag")?,
-    ))
+    )
+    .ok())
+}
+
+/// Copy a class tag that an indexed-header read already validated as three
+/// ASCII digits into retained storage.
+pub(in crate::design::decode) fn retain_class_tag(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<crate::records::references::DesignClassTag, CodecError> {
+    crate::records::references::DesignClassTag::try_from(ctx.copy_retained_text(value, operation)?)
+        .map_err(CodecError::Malformed)
 }
 
 /// Compose a native scope and record suffix under the retained text budget.
@@ -346,22 +358,9 @@ mod tests {
             assert_eq!(
                 class_tag_from_view(&cadmpeg_test_support::service_decode_context(), value)
                     .unwrap(),
-                crate::records::references::DesignClassTag::try_from(value.to_owned())
+                crate::records::references::DesignClassTag::try_from(value.to_owned()).ok()
             );
         }
-    }
-    #[test]
-    fn borrowed_class_tag_refuses_work_before_digit_validation() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(class_tag_from_view(&ctx, "123"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "validate F3D class tag digits"
-                    && limit.additional == 3));
     }
 
     #[test]

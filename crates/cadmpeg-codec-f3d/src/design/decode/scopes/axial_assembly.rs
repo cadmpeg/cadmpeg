@@ -11,6 +11,7 @@ use super::work_geometry::ScopePlacementFrame;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
+use crate::design::decode::text::retain_class_tag;
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
@@ -189,22 +190,22 @@ pub(super) fn bind_axial_assembly_operand_targets(
     Ok(())
 }
 
-struct AxialComponentOperand {
+struct AxialComponentOperand<'bytes> {
     construction_record_index: u32,
-    construction_class_tag: String,
+    construction_class_tag: &'bytes str,
     construction_byte_offset: u64,
     construction_transform_offset: u64,
     axis_record_index_offsets: [u64; 2],
-    construction_paired_class_tag: String,
+    construction_paired_class_tag: &'bytes str,
     construction_paired_byte_offset: u64,
     selectors: Box<[DesignAssemblyAxialSelectorIdentity; 2]>,
 }
 
-struct ExactIndexedRecordPair {
+struct ExactIndexedRecordPair<'bytes> {
     record_index: u32,
-    class_tag: String,
+    class_tag: &'bytes str,
     byte_offset: usize,
-    paired_class_tag: String,
+    paired_class_tag: &'bytes str,
     paired_byte_offset: usize,
 }
 
@@ -216,40 +217,48 @@ fn exact_assembly_axial_operand_target(
     frame: &DesignAssemblyOperandFrame,
     scopes: &[DesignParameterScope],
 ) -> Result<Option<DesignAssemblyAxialOperandTarget>, CodecError> {
-    let component = exact_assembly_axial_component_operand(ctx, bytes, records, assembly, frame)?
-        .and_then(|component| {
-            let role = &component.selectors[0].occurrence_role;
-            let mut matches = scopes.iter().filter(|scope| {
-                scope.kind() == scope::DesignFeatureKind::ComponentInsert
-                    && scope
-                        .component_insert_construction()
-                        .is_some_and(|construction| {
-                            construction
-                                .neutron_role
-                                .eq_ignore_ascii_case(role.as_str())
-                        })
-            });
-            let component_insert = matches.next()?;
-            if matches.next().is_some() {
-                return None;
+    let component =
+        match exact_assembly_axial_component_operand(ctx, bytes, records, assembly, frame)? {
+            Some(component) => {
+                let role = &component.selectors[0].occurrence_role;
+                let mut matches = scopes.iter().filter(|scope| {
+                    scope.kind() == scope::DesignFeatureKind::ComponentInsert
+                        && scope
+                            .component_insert_construction()
+                            .is_some_and(|construction| {
+                                construction
+                                    .neutron_role
+                                    .eq_ignore_ascii_case(role.as_str())
+                            })
+                });
+                match (matches.next(), matches.next()) {
+                    (Some(component_insert), None) => Some(
+                        DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                            component_insert_scope_record_index: component_insert.record_index,
+                            construction_record_index: component.construction_record_index,
+                            construction_class_tag: retain_class_tag(
+                                ctx,
+                                component.construction_class_tag,
+                                "copy F3D axial assembly construction class tag",
+                            )?,
+                            construction_byte_offset: component.construction_byte_offset,
+                            construction_transform_offset: component.construction_transform_offset,
+                            axis_record_index_offsets: component.axis_record_index_offsets,
+                            construction_paired_class_tag: retain_class_tag(
+                                ctx,
+                                component.construction_paired_class_tag,
+                                "copy F3D axial assembly construction class tag",
+                            )?,
+                            construction_paired_byte_offset: component
+                                .construction_paired_byte_offset,
+                            selectors: component.selectors,
+                        },
+                    ),
+                    _ => None,
+                }
             }
-            Some(
-                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                    component_insert_scope_record_index: component_insert.record_index,
-                    construction_record_index: component.construction_record_index,
-                    construction_class_tag: component.construction_class_tag.try_into().ok()?,
-                    construction_byte_offset: component.construction_byte_offset,
-                    construction_transform_offset: component.construction_transform_offset,
-                    axis_record_index_offsets: component.axis_record_index_offsets,
-                    construction_paired_class_tag: component
-                        .construction_paired_class_tag
-                        .try_into()
-                        .ok()?,
-                    construction_paired_byte_offset: component.construction_paired_byte_offset,
-                    selectors: component.selectors,
-                },
-            )
-        });
+            None => None,
+        };
     let mut origins = scopes.iter().filter(|scope| {
         scope.kind() == scope::DesignFeatureKind::JointOrigin
             && scope.record_index == frame.reference_record_index
@@ -267,13 +276,13 @@ fn exact_assembly_axial_operand_target(
     })
 }
 
-fn exact_assembly_axial_component_operand(
+fn exact_assembly_axial_component_operand<'bytes>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &'bytes [u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
-) -> Result<Option<AxialComponentOperand>, CodecError> {
+) -> Result<Option<AxialComponentOperand<'bytes>>, CodecError> {
     if !matches!(scope.frame_length(), 705 | 772) {
         return Ok(None);
     }
@@ -311,28 +320,20 @@ fn exact_assembly_axial_component_operand(
     Ok(candidate)
 }
 
-fn exact_assembly_axial_component_operand_at(
+fn exact_assembly_axial_component_operand_at<'bytes>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &'bytes [u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
     start: usize,
-) -> Result<Option<AxialComponentOperand>, CodecError> {
+) -> Result<Option<AxialComponentOperand<'bytes>>, CodecError> {
     (|| {
         let construction_class_tag =
-            match exact_indexed_header_at(ctx, bytes, start, frame.reference_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
         let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
         let construction_paired_class_tag =
-            match exact_indexed_header_at(ctx, bytes, paired_at, frame.reference_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
         let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
         if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
             return None;
@@ -481,17 +482,9 @@ fn exact_assembly_axial_selector(
             return None;
         };
         let selector_class_tag =
-            match exact_indexed_header_at(ctx, bytes, selector_at, selector_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
         let selector_paired_class_tag =
-            match exact_indexed_header_at(ctx, bytes, selector_paired_at, selector_record_index) {
-                Ok(Some(class_tag)) => class_tag,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
         if bytes.get(
             selector_at.checked_add(axial_selector::ZERO_RUN_11)?
                 ..selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?,
@@ -560,11 +553,7 @@ fn exact_assembly_axial_selector(
         let (Some(role_at), None) = (role_offsets.next(), role_offsets.next()) else {
             return None;
         };
-        let role_class_tag = match exact_indexed_header_at(ctx, bytes, role_at, role_record_index) {
-            Ok(Some(class_tag)) => class_tag,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
         if bytes.get(
             role_at.checked_add(axial_role::ZERO_RUN_10)?
                 ..role_at.checked_add(axial_role::CONSTANT_ONE)?,
@@ -586,14 +575,42 @@ fn exact_assembly_axial_selector(
 
         Some(Ok(DesignAssemblyAxialSelectorIdentity {
             axis_record_index,
-            axis_class_tag: axis.class_tag.try_into().ok()?,
+            axis_class_tag: match retain_class_tag(
+                ctx,
+                axis.class_tag,
+                "copy F3D axial selector class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
-            axis_paired_class_tag: axis.paired_class_tag.try_into().ok()?,
+            axis_paired_class_tag: match retain_class_tag(
+                ctx,
+                axis.paired_class_tag,
+                "copy F3D axial selector class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             axis_paired_byte_offset: u64::try_from(axis.paired_byte_offset).ok()?,
             selector_record_index,
-            selector_class_tag: selector_class_tag.try_into().ok()?,
+            selector_class_tag: match retain_class_tag(
+                ctx,
+                selector_class_tag,
+                "copy F3D axial selector class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             selector_byte_offset: u64::try_from(selector_at).ok()?,
-            selector_paired_class_tag: selector_paired_class_tag.try_into().ok()?,
+            selector_paired_class_tag: match retain_class_tag(
+                ctx,
+                selector_paired_class_tag,
+                "copy F3D axial selector class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             selector_paired_byte_offset: u64::try_from(selector_paired_at).ok()?,
             nested_record_index,
             nested_record_index_offset: u64::try_from(nested_record_index_offset).ok()?,
@@ -613,7 +630,14 @@ fn exact_assembly_axial_selector(
             external_link_name_offset: external.link_name_offset,
             external_version: external.version,
             role_record_index,
-            role_class_tag: role_class_tag.try_into().ok()?,
+            role_class_tag: match retain_class_tag(
+                ctx,
+                role_class_tag,
+                "copy F3D axial selector class tag",
+            ) {
+                Ok(class_tag) => class_tag,
+                Err(error) => return Some(Err(error)),
+            },
             role_byte_offset: u64::try_from(role_at).ok()?,
             occurrence_role,
             occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
@@ -622,31 +646,36 @@ fn exact_assembly_axial_selector(
     .transpose()
 }
 
-fn exact_paired_indexed_record_between(
+/// The only two headers of `record_index` in `start..end`. The ascending
+/// offsets are bisected to the first header at or after `start`.
+fn exact_paired_indexed_record_between<'bytes>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &'bytes [u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     start: usize,
     end: usize,
-) -> Result<Option<ExactIndexedRecordPair>, CodecError> {
-    let mut offsets = records
-        .offsets(record_index)
-        .iter()
-        .copied()
-        .filter(|offset| *offset >= start && *offset < end);
-    let (Some(primary_at), Some(paired_at), None) =
-        (offsets.next(), offsets.next(), offsets.next())
-    else {
+) -> Result<Option<ExactIndexedRecordPair<'bytes>>, CodecError> {
+    let offsets = records.offsets(record_index);
+    let first = ctx.partition_point(
+        offsets,
+        |offset| Ok(*offset < start),
+        "find F3D axial assembly paired record",
+    )?;
+    let Some(rest) = offsets.get(first..) else {
         return Ok(None);
     };
-    let class_tag = match exact_indexed_header_at(ctx, bytes, primary_at, record_index)? {
-        Some(class_tag) => class_tag,
-        None => return Ok(None),
+    let Some(&[primary_at, paired_at]) = rest.first_chunk::<2>() else {
+        return Ok(None);
     };
-    let paired_class_tag = match exact_indexed_header_at(ctx, bytes, paired_at, record_index)? {
-        Some(class_tag) => class_tag,
-        None => return Ok(None),
+    if paired_at >= end || rest.get(2).is_some_and(|next| *next < end) {
+        return Ok(None);
+    }
+    let Some(class_tag) = exact_indexed_header_at(bytes, primary_at, record_index) else {
+        return Ok(None);
+    };
+    let Some(paired_class_tag) = exact_indexed_header_at(bytes, paired_at, record_index) else {
+        return Ok(None);
     };
     Ok(Some(ExactIndexedRecordPair {
         record_index,

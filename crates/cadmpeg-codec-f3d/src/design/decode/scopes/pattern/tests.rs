@@ -98,7 +98,7 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
     ));
     let header_error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D indexed record headers",
+        "find F3D indexed record header",
         0,
         |ctx| exact_pattern_identity_wrapper(ctx, &bytes, &records, record_index),
     );
@@ -106,7 +106,7 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
         header_error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "scan F3D indexed record headers"
+                && limit.operation == "find F3D indexed record header"
     ));
     bytes[identity_offset - 1] = 1;
     let malformed_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
@@ -1501,27 +1501,29 @@ fn rectangular_pattern_instance_collections_refuse_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let (bytes, records, scope, construction) = rectangular_instance_fixture();
-    for (limit, operation) in [
-        (2, "f3d rectangular pattern record indices"),
-        (11, "f3d rectangular pattern reference starts"),
-        (14, "f3d rectangular pattern candidate groups"),
-        (15, "f3d rectangular pattern transform candidates"),
-        (18, "f3d rectangular pattern candidate run"),
-        (21, "f3d rectangular pattern matching runs"),
-        (22, "f3d rectangular pattern instances"),
+    for operation in [
+        "f3d rectangular pattern record indices",
+        "f3d rectangular pattern reference starts",
+        "f3d rectangular pattern candidate groups",
+        "f3d rectangular pattern transform candidates",
+        "f3d rectangular pattern candidate run",
+        "f3d rectangular pattern matching runs",
+        "f3d rectangular pattern instances",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::exact_rectangular_pattern_instances(
-            &ctx,
-            &bytes,
-            &records,
-            &scope,
-            &construction,
-        )
-        .unwrap_err();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| {
+                super::exact_rectangular_pattern_instances(
+                    ctx,
+                    &bytes,
+                    &records,
+                    &scope,
+                    &construction,
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
@@ -1743,11 +1745,11 @@ fn rectangular_pattern_search_preserves_work_refusals() {
     let (bytes, records, scope, construction) = rectangular_instance_fixture();
     let mut scan_work = u64_from_index(scope.reference_members().len() + 3);
     for index in [100, 120, 130] {
-        let start = records.first_at_or_after(0, index).unwrap();
+        let start = records.first_offset(index).unwrap();
         let end = scope
             .reference_members()
             .values()
-            .filter_map(|index| records.first_at_or_after(0, *index))
+            .filter_map(|index| records.first_offset(*index))
             .filter(|offset| *offset > start)
             .min()
             .unwrap();

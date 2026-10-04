@@ -1404,9 +1404,7 @@ fn legacy_component_insert_candidate_scan_refuses_work() {
             return;
         }
         let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let relation_at = records
-            .first_at_or_after(0, 20)
-            .expect("legacy relation header");
+        let relation_at = records.first_offset(20).expect("legacy relation header");
         let carrier_at = *records.offsets(10).first().expect("legacy carrier header");
         let expected = u64_from_index(bytes.get(carrier_at + 11..relation_at).unwrap_or(&[]).len());
         let error = crate::test_support::resource_refusal_at(

@@ -41,7 +41,7 @@ fn exact_fixed_fillet_parameters(
 
 #[test]
 fn fixed_fillet_refuses_scalar_group_and_intermediate_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let mut bytes = Vec::new();
     for (record_index, ordinal, value) in [
@@ -80,20 +80,20 @@ fn fixed_fillet_refuses_scalar_group_and_intermediate_collection_limits() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    for (limit, operation) in [
-        (0, "f3d fixed Fillet scalar lanes"),
-        (5, "f3d fixed Fillet groups"),
-        (6, "f3d fixed Fillet intermediate rows"),
+    for operation in [
+        "f3d fixed Fillet scalar lanes",
+        "f3d fixed Fillet groups",
+        "f3d fixed Fillet intermediate rows",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = exact_fixed_fillet_parameters_with_ctx(&ctx, &bytes, &records, &scope);
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| exact_fixed_fillet_parameters_with_ctx(ctx, &bytes, &records, &scope),
+        );
         assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
         ));

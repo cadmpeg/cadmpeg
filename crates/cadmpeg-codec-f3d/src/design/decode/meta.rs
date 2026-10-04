@@ -474,10 +474,7 @@ fn record_header_class_tag(
     if !indexed_matches && !named_matches {
         return Ok(None);
     }
-    match crate::design::decode::text::class_tag_from_view(ctx, class_tag)? {
-        Ok(class_tag) => Ok(Some(class_tag)),
-        Err(_) => Ok(None),
-    }
+    crate::design::decode::text::class_tag_from_view(ctx, class_tag)
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -921,9 +918,8 @@ fn parse_feature_timeline_record(
             return Ok(None);
         }
     };
-    let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag)? {
-        Ok(class_tag) => class_tag,
-        Err(_) => return Ok(None),
+    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(ctx, class_tag)? else {
+        return Ok(None);
     };
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
         return Ok(None);

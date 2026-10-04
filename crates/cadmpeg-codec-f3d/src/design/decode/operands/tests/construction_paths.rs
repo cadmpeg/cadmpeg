@@ -526,35 +526,6 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     }
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);
-    let utf8_refusal = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D legacy Loft paired class tag",
-        0,
-        |ctx| {
-            parse_loft_legacy_body_carrier(
-                ctx,
-                &class_322,
-                &scope,
-                &crate::records::decal::DesignRecordHeader {
-                    id: "header-322".into(),
-                    record_index: 100,
-                    class_tag: crate::records::references::DesignClassTag::try_from(
-                        "322".to_owned(),
-                    )
-                    .unwrap(),
-                    byte_offset: 0,
-                },
-            )
-            .map(|_| ())
-        },
-    );
-    assert!(matches!(
-        utf8_refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D legacy Loft paired class tag"
-                && limit.additional == 3
-    ));
     let refusal = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "copy F3D legacy Loft paired class tag",

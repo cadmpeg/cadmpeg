@@ -1612,19 +1612,20 @@ fn parameter_source_rejects_missing_or_unexpected_owner() {
 }
 
 #[test]
-fn parameter_owner_parser_propagates_class_tag_work_refusal() {
+fn parameter_owner_parser_propagates_class_tag_retained_refusal() {
     let frame = parameter_owner_frame();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D class tag digits",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D class tag",
         0,
         |ctx| parse_parameter_owner(ctx, &frame).map(|_| ()),
     );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "validate F3D class tag digits"
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && refusal.operation == "copy F3D class tag"
+                && refusal.additional == 3
     ));
 }
 
@@ -1761,18 +1762,18 @@ fn design_parameter_text_fields_refuse_each_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
-    let mut charged = 0usize;
-    for field in ["1", "AlongDistance", "mm", "d71"] {
-        charged += field.len();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_design_parameter(&ctx, &payload).err().unwrap();
+    for (skip, field) in ["1", "AlongDistance", "mm", "d71"].into_iter().enumerate() {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "f3d Design UTF-16 text",
+            skip,
+            |ctx| super::parse_design_parameter(ctx, &payload),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text")
+                && refusal.operation == "f3d Design UTF-16 text"
+                && refusal.additional == u64::try_from(field.len()).unwrap())
         );
     }
     let parsed =

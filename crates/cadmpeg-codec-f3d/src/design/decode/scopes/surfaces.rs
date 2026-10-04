@@ -257,8 +257,8 @@ fn exact_construction_operand_group(
             continue;
         }
         let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
         let header = RecordFrame {

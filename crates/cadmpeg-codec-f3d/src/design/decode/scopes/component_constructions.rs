@@ -95,7 +95,7 @@ pub(super) fn exact_derived_instance_construction(
         let transform = rigid_transform_at(bytes, transform_offset)?;
 
         let relation_record_index = *scope.reference_members().values().next()?;
-        let relation_at = records.first_at_or_after(0, relation_record_index)?;
+        let relation_at = records.first_offset(relation_record_index)?;
         let (relation_kind, _) =
             lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
         if relation_at >= start
@@ -378,7 +378,7 @@ pub(super) fn exact_component_insert_construction(
                 }
                 _ => return None,
             };
-        let relation_at = records.first_at_or_after(0, relation_record_index)?;
+        let relation_at = records.first_offset(relation_record_index)?;
         let (carrier_record_index, placements) = if scope.frame_length() == 404 {
             if relation_at >= start
                 || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
@@ -779,7 +779,10 @@ fn exact_component_insert_class_426_relation<'a>(
             bytes,
             relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX,
         )?;
-        let child_at = records.first_at_or_after(paired_at + 11, child_record_index)?;
+        let child_at = match records.first_at_or_after(ctx, paired_at + 11, child_record_index) {
+            Ok(child_at) => child_at?,
+            Err(error) => return Some(Err(error)),
+        };
         let child_end = child_at + component_insert_relation_child_393::LEN;
         let (child_class, child_after_tag) =
             lp_ascii_filtered_view(bytes, child_at, 3..=3, u8::is_ascii_digit)?;
@@ -1378,7 +1381,7 @@ pub(super) fn exact_copy_paste_component_operation(
         let copied_transform_offset = source_transform_offset.checked_add(156)?;
         let source_transform = rigid_transform_at(bytes, source_transform_offset)?;
         let copied_transform = rigid_transform_at(bytes, copied_transform_offset)?;
-        let relation_at = records.first_at_or_after(0, relation_record_index)?;
+        let relation_at = records.first_offset(relation_record_index)?;
         if relation_at >= start
             || (match next_indexed_record_offset(ctx, bytes, relation_at + 1) {
                 Ok(Some(value)) => value,

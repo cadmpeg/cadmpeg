@@ -797,8 +797,8 @@ pub(in crate::design) fn parse_parameter_owner(
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
         let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error.into())),
         };
         if after_tag != indexed_header::RECORD_INDEX
@@ -961,8 +961,8 @@ fn parse_legacy_parameter_owner_68(
             return None;
         }
         let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
         Some(Ok(ParsedParameterOwner {
@@ -1038,8 +1038,8 @@ fn parse_legacy_parameter_owner_88(
             return None;
         }
         let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
         Some(Ok(ParsedParameterOwner {
@@ -1170,8 +1170,8 @@ fn parse_parameter_companion(
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
         let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
         if prefix.len() != companion_prefix::LEN

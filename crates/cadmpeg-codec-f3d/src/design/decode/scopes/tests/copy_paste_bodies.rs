@@ -123,7 +123,7 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
 
 #[test]
 fn design_scope_reference_vectors_refuse_each_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
@@ -137,27 +137,29 @@ fn design_scope_reference_vectors_refuse_each_limit() {
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
-    for (cap, operation) in [
-        (1, "f3d Design scope reference members"),
-        (3, "f3d Design scope reference offsets"),
-        (5, "f3d Design scope located references"),
+    for operation in [
+        "f3d Design scope reference members",
+        "f3d Design scope reference offsets",
+        "f3d Design scope located references",
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
-            &ctx,
-            &bytes,
-            &records,
-            header.record_index,
-            &header.class_tag,
-            header.byte_offset,
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| {
+                crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+                    ctx,
+                    &bytes,
+                    &records,
+                    header.record_index,
+                    &header.class_tag,
+                    header.byte_offset,
+                )
+            },
         );
         assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(failure)
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
         ));

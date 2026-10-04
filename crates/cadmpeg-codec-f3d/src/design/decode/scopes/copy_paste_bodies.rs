@@ -35,7 +35,11 @@ pub(super) fn exact_copy_paste_bodies_operation(
         let search_at = usize::try_from(scope.paired_byte_offset())
             .ok()?
             .checked_add(1)?;
-        let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
+        let body_group_at = match records.first_at_or_after(ctx, search_at, body_group_record_index)
+        {
+            Ok(body_group_at) => body_group_at?,
+            Err(error) => return Some(Err(error)),
+        };
         let (body_group_class_tag, body_group_after_tag) =
             lp_ascii_filtered_view(bytes, body_group_at, 3..=3, u8::is_ascii_digit)?;
         let body_group_after_index = body_group_after_tag.checked_add(4)?;
@@ -99,7 +103,10 @@ pub(super) fn exact_copy_paste_bodies_operation(
                 }
             }
         }
-        let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
+        let relation_at = match records.first_at_or_after(ctx, search_at, relation_record_index) {
+            Ok(relation_at) => relation_at?,
+            Err(error) => return Some(Err(error)),
+        };
         let (relation_class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
         let after_index = after_tag.checked_add(4)?;
@@ -170,14 +177,14 @@ pub(super) fn exact_copy_paste_bodies_operation(
         }
         let body_group_class_tag =
             match crate::design::decode::text::class_tag_from_view(ctx, body_group_class_tag) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
         let relation_class_tag =
             match crate::design::decode::text::class_tag_from_view(ctx, relation_class_tag) {
-                Ok(Ok(class_tag)) => class_tag,
-                Ok(Err(_)) => return None,
+                Ok(Some(class_tag)) => class_tag,
+                Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
         Some(DesignCopyPasteBodiesOperation::try_new_charged(

@@ -130,8 +130,8 @@ fn exact_component_occurrence(
             _ => return None,
         };
         let class_tag = match crate::design::decode::text::class_tag_from_view(ctx, class_tag) {
-            Ok(Ok(class_tag)) => class_tag,
-            Ok(Err(_)) => return None,
+            Ok(Some(class_tag)) => class_tag,
+            Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
         let byte_offset = u64::try_from(start).ok()?;
@@ -390,7 +390,7 @@ mod tests {
         indexed_header(&mut seed, *b"333", 21);
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
-            "scan F3D indexed record headers",
+            "find F3D indexed record header",
             0,
             |ctx| {
                 exact_component_occurrence(ctx, &seed, 0, "f3d:Design/BulkStream.dat").map(|_| ())
@@ -400,7 +400,7 @@ mod tests {
             error,
             cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "scan F3D indexed record headers"
+                    && refusal.operation == "find F3D indexed record header"
         ));
     }
 

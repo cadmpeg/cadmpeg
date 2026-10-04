@@ -930,12 +930,15 @@ fn coil_face_selection_refuses_header_and_recipe_id_limits() {
                 && failure.operation == "f3d Coil face recipe ID"
     ));
 
-    policy.limits.max_retained_bytes = refusal_cap + 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let placement = exact_coil_placement(&ctx, &bytes, &records, &scope, &recipes)
-        .unwrap()
-        .expect("admitted Coil face placement");
+    let placement = exact_coil_placement(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        &scope,
+        &recipes,
+    )
+    .unwrap()
+    .expect("admitted Coil face placement");
     assert!(
         matches!(placement.selection, DesignCoilSelection::FaceRecipe { recipe_id, .. } if recipe_id == recipes[0].id)
     );
