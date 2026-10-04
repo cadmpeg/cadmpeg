@@ -1173,13 +1173,13 @@ impl Parser<'_, '_, '_> {
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
             {
-                return Self::err_at(record.span.start, "unresolved instance reference");
+                return Self::err_at(self.budget, record.span.start, "unresolved instance reference");
             }
             if value_refs
                 .iter()
                 .any(|id| !external_value_reference_ids.contains(id))
             {
-                return Self::err_at(record.span.start, "unresolved value instance reference");
+                return Self::err_at(self.budget, record.span.start, "unresolved value instance reference");
             }
         }
         if let Some(message) = class3_restriction {
@@ -1269,7 +1269,7 @@ impl Parser<'_, '_, '_> {
                 .windows(2)
                 .any(|window| window[0] == window[1])
             {
-                return Self::err_at(start, "duplicate complex partial name");
+                return Self::err_at(self.budget, start, "duplicate complex partial name");
             }
             if !parts
                 .windows(2)
@@ -1470,12 +1470,12 @@ impl Parser<'_, '_, '_> {
         self.last_end
     }
     fn err<T>(&self, message: &str) -> Result<T, ParseError> {
-        Self::err_at(self.current_offset(), message)
+        Self::err_at(self.budget, self.current_offset(), message)
     }
-    fn err_at<T>(offset: usize, message: &str) -> Result<T, ParseError> {
+    fn err_at<T>(ctx: &DecodeContext<'_>, offset: usize, message: &str) -> Result<T, ParseError> {
         Err(ParseError::Syntax {
             offset,
-            message: message.into(),
+            message: ctx.copy_retained_text(message, "STEP parser error message")?,
         })
     }
 }
@@ -1650,7 +1650,7 @@ fn validate_header(
         )? {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
-        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
+        let Some(identifier) = AdmittedSchemaIdentifier::admit(budget, identifier)? else {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
         budget
@@ -2453,7 +2453,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                             "step_cyclic_anchor_error_text",
                         )
                         .map_err(ResolveError::Resource)?;
-                    return Err(message.into());
+                    return Err(ResolveError::Syntax(message));
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
 

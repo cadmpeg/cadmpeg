@@ -126,6 +126,12 @@ impl std::fmt::Display for LexError {
 
 impl std::error::Error for LexError {}
 
+impl From<CodecError> for LexError {
+    fn from(error: CodecError) -> Self {
+        Self { offset: 0, message: String::new(), resource: Some(error) }
+    }
+}
+
 impl LexError {
     pub(crate) fn into_codec_error(self) -> CodecError {
         match self.resource {
@@ -226,7 +232,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 let comment_start = at;
                 at += 2;
                 let Some(end) = self.input[at..].windows(2).position(|w| w == b"*/") else {
-                    return Err(Self::error(comment_start, "unterminated comment"));
+                    return Err(self.error(comment_start, "unterminated comment")?);
                 };
                 at += end + 2;
                 boundary_allowed = true;
@@ -267,7 +273,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             at += 1;
             boundary_allowed = false;
         }
-        Err(Self::error(start, "unterminated signature section"))
+        Err(self.error(start, "unterminated signature section")?)
     }
 
     fn validate_signature_payload(&self, start: usize, end: usize) -> Result<(), LexError> {
@@ -290,10 +296,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             if let Some(separator_end) = self.print_control_end(start + relative) {
                 if separator_end > end {
-                    return Err(Self::error(
+                    return Err(self.error(
                         start + relative,
                         "invalid SIGNATURE base64 character",
-                    ));
+                    )?);
                 }
                 trailing_separator |= saw_content;
                 relative = separator_end - start;
@@ -306,42 +312,42 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                     .windows(2)
                     .position(|window| window == b"*/")
                 else {
-                    return Err(Self::error(comment_start, "unterminated comment"));
+                    return Err(self.error(comment_start, "unterminated comment")?);
                 };
                 trailing_separator |= saw_content;
                 relative = comment_body + comment_end + 2 - start;
                 continue;
             }
             if trailing_separator {
-                return Err(Self::error(
+                return Err(self.error(
                     start + relative,
                     "invalid SIGNATURE base64 character",
-                ));
+                )?);
             }
             saw_content = true;
             let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
             if finished || (padding != 0 && is_alphabet) {
-                return Err(Self::error(
+                return Err(self.error(
                     start + relative,
                     "invalid SIGNATURE base64 padding",
-                ));
+                )?);
             }
             if is_alphabet {
                 quantum_len += 1;
             } else if byte == b'=' {
                 if quantum_len < 2 || padding == 2 {
-                    return Err(Self::error(
+                    return Err(self.error(
                         start + relative,
                         "invalid SIGNATURE base64 padding",
-                    ));
+                    )?);
                 }
                 padding += 1;
                 quantum_len += 1;
             } else {
-                return Err(Self::error(
+                return Err(self.error(
                     start + relative,
                     "invalid SIGNATURE base64 character",
-                ));
+                )?);
             }
             if quantum_len == 4 {
                 finished = padding != 0;
@@ -351,16 +357,16 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             relative += 1;
         }
         if !saw_content {
-            return Err(Self::error(
+            return Err(self.error(
                 start,
                 "SIGNATURE section has empty base64 content",
-            ));
+            )?);
         }
         if quantum_len != 0 {
-            return Err(Self::error(
+            return Err(self.error(
                 end,
                 "SIGNATURE base64 content has incomplete quantum",
-            ));
+            )?);
         }
         Ok(())
     }
@@ -372,10 +378,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             if let Some(end) = self.print_control_end(self.at) {
                 if !self.allow_print_controls {
-                    return Err(Self::error(
+                    return Err(self.error(
                         self.at,
                         "print control directive is not allowed in this section",
-                    ));
+                    )?);
                 }
                 self.at = end;
                 continue;
@@ -390,7 +396,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             let start = self.at;
             self.at += 2;
             let Some(end) = self.input[self.at..].windows(2).position(|w| w == b"*/") else {
-                return Err(Self::error(start, "unterminated comment"));
+                return Err(self.error(start, "unterminated comment")?);
             };
             self.at += end + 2;
         }
@@ -432,7 +438,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
             b if b.is_ascii_alphabetic() || b == b'_' => TokenKind::Name(self.name()?),
-            _ => return Err(Self::error(start, "unexpected byte")),
+            _ => return Err(self.error(start, "unexpected byte")?),
         };
         Ok(Token {
             kind,
@@ -468,7 +474,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .get(self.at)
             .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
         {
-            return Err(Self::error(start, "tag name has no identifier"));
+            return Err(self.error(start, "tag name has no identifier")?);
         }
         self.at += 1;
         while self.input.get(self.at).is_some_and(|byte| {
@@ -489,7 +495,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .get(self.at)
             .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
         {
-            return Err(Self::error(start, "user-defined name has no identifier"));
+            return Err(self.error(start, "user-defined name has no identifier")?);
         }
         Ok(TokenKind::UserName(self.name()?))
     }
@@ -513,9 +519,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 let value = raw
                     .parse::<u64>()
                     .ok()
-                    .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
+                    .map_or_else(|| Err(self.error(start, "instance name is out of range")?), Ok)?;
                 if value == 0 {
-                    return Err(Self::error(start, "instance name must not be zero"));
+                    return Err(self.error(start, "instance name must not be zero")?);
                 }
                 match prefix {
                     OccurrencePrefix::Entity => Ok(TokenKind::Instance(value)),
@@ -540,7 +546,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                     OccurrencePrefix::Value => Ok(TokenKind::ConstantValue(name)),
                 }
             }
-            _ => Err(Self::error(start, "occurrence name has no identifier")),
+            _ => Err(self.error(start, "occurrence name has no identifier")?),
         }
     }
 
@@ -591,14 +597,14 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             let parsed = raw
                 .parse::<f64>()
-                .map_err(|_| Self::error(start, "invalid real"))?;
+                .or_else(|_| Err(self.error(start, "invalid real")?))?;
             FiniteReal::new(parsed)
                 .map(TokenKind::Real)
-                .ok_or_else(|| Self::error(start, "real exceeds finite binary64 range"))
+                .map_or_else(|| Err(self.error(start, "real exceeds finite binary64 range")?), Ok)
         } else {
             raw.parse()
                 .map(TokenKind::Integer)
-                .map_err(|_| Self::error(start, "invalid integer"))
+                .or_else(|_| Err(self.error(start, "invalid integer")?))
         }
     }
 
@@ -616,7 +622,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
         self.skip_ignored();
         if self.input.get(self.at) != Some(&b'.') {
-            return Err(Self::error(start, "unterminated enumeration"));
+            return Err(self.error(start, "unterminated enumeration")?);
         }
         let (mut name, _) = self.normalized(name_start, self.at, LiteralStorage::Retained)?;
         name.make_ascii_uppercase();
@@ -630,7 +636,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         let mut bytes = Vec::new();
         loop {
             if self.at - start + 1 > MAX_STORED_STRING_OCTETS {
-                return Err(Self::error(start, "string exceeds maximum stored length"));
+                return Err(self.error(start, "string exceeds maximum stored length")?);
             }
             match self.input.get(self.at).copied() {
                 Some(b'\'') => {
@@ -648,10 +654,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 Some(b'\\') => {
                     if let Some(end) = self.print_control_end(self.at) {
                         if !self.allow_print_controls {
-                            return Err(Self::error(
+                            return Err(self.error(
                                 self.at,
                                 "print control directive is not allowed in this section",
-                            ));
+                            )?);
                         }
                         let directive = if self
                             .match_exact_ignoring_controls(self.at, b"\\N\\")
@@ -672,7 +678,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                     self.extend_string_bytes(&mut bytes, &[byte], start)?;
                     self.at += 1;
                 }
-                None => return Err(Self::error(start, "unterminated string")),
+                None => return Err(self.error(start, "unterminated string")?),
             }
         }
     }
@@ -693,10 +699,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                     break;
                 };
                 if !self.allow_print_controls {
-                    return Err(Self::error(
+                    return Err(self.error(
                         self.at,
                         "print control directive is not allowed in this section",
-                    ));
+                    )?);
                 }
                 self.at = after_print_control;
             } else {
@@ -704,7 +710,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
         }
         if self.input.get(self.at) != Some(&b'"') {
-            return Err(Self::error(start, "invalid binary literal"));
+            return Err(self.error(start, "invalid binary literal")?);
         }
         let _temporary = self
             .budget
@@ -726,35 +732,35 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 cursor += 1;
             } else if byte == b'\\' {
                 let Some(end) = self.print_control_end(cursor) else {
-                    return Err(Self::error(cursor, "invalid binary literal"));
+                    return Err(self.error(cursor, "invalid binary literal")?);
                 };
                 cursor = end;
             } else {
-                return Err(Self::error(cursor, "invalid binary literal"));
+                return Err(self.error(cursor, "invalid binary literal")?);
             }
         }
         let Some((&indicator, digits)) = raw.split_first() else {
-            return Err(Self::error(
+            return Err(self.error(
                 start,
                 "binary literal has no unused-bit indicator",
-            ));
+            )?);
         };
         let unused_bits = indicator.nibble();
         if unused_bits > 3 {
-            return Err(Self::error(
+            return Err(self.error(
                 start,
                 "binary unused-bit indicator exceeds three",
-            ));
+            )?);
         }
         if digits.is_empty() && unused_bits != 0 {
-            return Err(Self::error(start, "empty binary payload has unused bits"));
+            return Err(self.error(start, "empty binary payload has unused bits")?);
         }
         if unused_bits != 0
             && digits
                 .last()
                 .is_some_and(|digit| digit.nibble() & ((1 << unused_bits) - 1) != 0)
         {
-            return Err(Self::error(start, "unused binary bits are not zero"));
+            return Err(self.error(start, "unused binary bits are not zero")?);
         }
         let packed_len = digits.len().div_ceil(2);
         let _packed_temporary = if matches!(self.literal_storage, LiteralStorage::Transient) {
@@ -800,10 +806,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 break;
             }
             if self.print_control_end(self.at).is_some() {
-                return Err(Self::error(
+                return Err(self.error(
                     self.at,
                     "print control directive is not allowed in a resource",
-                ));
+                )?);
             }
             if !byte.is_ascii_control() {
                 value_len += 1;
@@ -811,7 +817,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'>') {
-            return Err(Self::error(start, "unterminated resource token"));
+            return Err(self.error(start, "unterminated resource token")?);
         }
         let _temporary = self
             .budget
@@ -834,7 +840,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
         }
         let value = String::from_utf8(value)
-            .map_err(|_| Self::error(content, "resource token is not UTF-8"))?;
+            .or_else(|_| Err(self.error(content, "resource token is not UTF-8")?))?;
         self.at += 1;
         Ok(TokenKind::Resource(value))
     }
@@ -930,12 +936,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         Some(at)
     }
 
-    fn error(offset: usize, message: &str) -> LexError {
-        LexError {
+    fn error(&self, offset: usize, message: &str) -> Result<LexError, CodecError> {
+        Ok(LexError {
             offset,
-            message: message.into(),
+            message: self.budget.copy_retained_text(message, "STEP lexer error message")?,
             resource: None,
-        }
+        })
     }
 
     fn resource_error(offset: usize, error: CodecError) -> LexError {

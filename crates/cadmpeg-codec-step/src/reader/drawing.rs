@@ -291,7 +291,7 @@ pub(super) fn decode(
         ctx.insert_btree_map(
             &mut stored_parameters,
             cadmpeg_core::nonblank_literal!("source_type"),
-            name.into(),
+            ctx.copy_retained_text(name, "STEP drawing source type")?,
             "step_drawing_stored_parameters",
         )?;
         for (index, value) in parameters.iter().enumerate() {
@@ -335,7 +335,7 @@ pub(super) fn decode(
                 ),
                 object: ctx.copy_retained_text(identity.as_str(), "step_drawing_object_copy")?,
                 kind: drawing_kind(name),
-                runtime_type: name.into(),
+                runtime_type: ctx.copy_retained_text(name, "STEP drawing runtime type")?,
                 order,
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
                 relationships,

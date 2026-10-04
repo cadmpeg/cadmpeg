@@ -20,7 +20,8 @@ enum Admitted {
 }
 
 fn admitted(identifier: &str) -> Admitted {
-    let Some(admitted) = AdmittedSchemaIdentifier::admit(identifier.to_owned()) else {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let Some(admitted) = AdmittedSchemaIdentifier::admit(&ctx, identifier.to_owned()).expect("schema text resources admitted") else {
         return Admitted::Rejected;
     };
     assert_eq!(
@@ -108,7 +109,8 @@ fn classifier_admits_in_range_object_identifiers() {
 
 #[test]
 fn admitted_identifiers_keep_numeric_components_with_named_roots() {
-    let admitted = AdmittedSchemaIdentifier::admit("AP242 { iso 0 10303 442 4 1 4 }".to_owned())
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let admitted = AdmittedSchemaIdentifier::admit(&ctx, "AP242 { iso 0 10303 442 4 1 4 }".to_owned()).expect("schema text resources admitted")
         .expect("named ISO root is admitted");
     crate::test_support::with_service_context(admitted.text().as_bytes(), |_, ctx| {
         assert_eq!(
@@ -182,11 +184,28 @@ fn split_separates_the_schema_name_from_the_object_identifier() {
 
 #[test]
 fn admitted_schema_identifiers_expose_only_proved_text_and_diagnostics() {
-    assert!(AdmittedSchemaIdentifier::admit("!".to_owned()).is_none());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(AdmittedSchemaIdentifier::admit(&ctx, "!".to_owned()).expect("schema text resources admitted").is_none());
     let identifier =
-        AdmittedSchemaIdentifier::admit("AP242 { 1 40 }".to_owned()).expect("recoverable OID");
+        AdmittedSchemaIdentifier::admit(&ctx, "AP242 { 1 40 }".to_owned()).expect("schema text resources admitted").expect("recoverable OID");
     assert_eq!(identifier.text(), "AP242 { 1 40 }");
     assert_eq!(identifier.out_of_range(), Some(("AP242", "40")));
-    let valid = AdmittedSchemaIdentifier::admit("AP242 { 1 39 }".to_owned()).expect("valid OID");
+    let valid = AdmittedSchemaIdentifier::admit(&ctx, "AP242 { 1 39 }".to_owned()).expect("schema text resources admitted").expect("valid OID");
     assert_eq!(valid.out_of_range(), None);
+}
+
+#[test]
+fn schema_identifier_copy_refusal_stays_error() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let input = "AP242 { 1 40 }";
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let result = crate::test_support::with_policy_context(input.as_bytes(), &policy, |_, ctx| {
+        AdmittedSchemaIdentifier::admit(ctx, input.to_owned())
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "STEP admit text copy"));
 }

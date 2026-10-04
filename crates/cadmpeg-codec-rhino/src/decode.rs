@@ -1411,7 +1411,7 @@ impl<'a> DecodeContext<'a> {
         let feature = Feature {
             id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             ordinal: cadmpeg_core::decode::u64_from_index(hatch.source_range.start),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            name: (!identity.name.is_empty()).then(|| ctx.copy_retained_text(&identity.name, "Rhino decode_hatch text copy")).transpose()?,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
@@ -1539,7 +1539,7 @@ impl<'a> DecodeContext<'a> {
             format_args!("construction"),
             construction,
         )?;
-        let name = (!identity.name.is_empty()).then(|| identity.name.clone());
+        let name = (!identity.name.is_empty()).then(|| ctx.copy_retained_text(&identity.name, "Rhino decode_polyedge text copy")).transpose()?;
         let feature = Feature {
             id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             ordinal: cadmpeg_core::decode::u64_from_index(source_order),
@@ -1658,7 +1658,7 @@ impl<'a> DecodeContext<'a> {
         let feature = Feature {
             id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             ordinal: cadmpeg_core::decode::u64_from_index(detail.source_range.start),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            name: (!identity.name.is_empty()).then(|| ctx.copy_retained_text(&identity.name, "Rhino decode_detail text copy")).transpose()?,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties,
@@ -1815,7 +1815,7 @@ impl<'a> DecodeContext<'a> {
         let feature = Feature {
             id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             ordinal: cadmpeg_core::decode::u64_from_index(cage.source_range.start),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            name: (!identity.name.is_empty()).then(|| ctx.copy_retained_text(&identity.name, "Rhino decode_cage text copy")).transpose()?,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: properties,
@@ -1897,7 +1897,7 @@ impl<'a> DecodeContext<'a> {
             self.expand.ctx(),
             &morph,
             key.as_str(),
-            (!identity.name.is_empty()).then(|| identity.name.clone()),
+            (!identity.name.is_empty()).then(|| self.expand.ctx().copy_retained_text(&identity.name, "Rhino decode_morph text copy")).transpose()?,
             self.expand.ctx().copy_retained_text(
                 self.session.unknowns()[source_order].id().as_str(),
                 "Rhino source native reference copy",
@@ -2028,7 +2028,7 @@ impl<'a> DecodeContext<'a> {
         let feature = Feature {
             id: feature_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
             ordinal: cadmpeg_core::decode::u64_from_index(construction.source_range.start),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            name: (!identity.name.is_empty()).then(|| ctx.copy_retained_text(&identity.name, "Rhino decode_curve_on_surface text copy")).transpose()?,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties,
@@ -2370,7 +2370,7 @@ impl<'a> DecodeContext<'a> {
             .definitions
             .is_ambiguous(reference.definition_id())
         {
-            return Err(self.expand.ctx().format_retained(format_args!("definition {} is duplicated", reference.definition_id()), "Rhino expand_reference_inner text")?.into());
+            return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition {} is duplicated", reference.definition_id()), "Rhino expand_reference_inner text")?));
         }
         let definitions = self.scan.definitions.definitions();
         let definition = self
@@ -2381,32 +2381,29 @@ impl<'a> DecodeContext<'a> {
         if matches!(definition.kind, crate::instances::DefinitionKind::Linked)
             && definition.members.is_empty()
         {
-            return Err(self.expand.ctx().format_retained(format_args!(
+            return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!(
                 "linked external definition {} has no local members",
                 definition.id()
-            ), "Rhino expand_reference_inner text")?
-            .into());
+            ), "Rhino expand_reference_inner text")?));
         }
         if matches!(definition.kind, crate::instances::DefinitionKind::Unset) {
-            return Err(self.expand.ctx().format_retained(format_args!("definition {} has unset type", definition.id()), "Rhino expand_reference_inner text")?.into());
+            return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition {} has unset type", definition.id()), "Rhino expand_reference_inner text")?));
         }
         if !instance_members_are_unique(self.expand.ctx(), &definition.members)? {
-            return Err(self.expand.ctx().format_retained(format_args!(
+            return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!(
                 "definition {} contains duplicate member UUIDs",
                 definition.id()
-            ), "Rhino expand_reference_inner text")?
-            .into());
+            ), "Rhino expand_reference_inner text")?));
         }
         if stack.contains(&definition.id()) {
-            return Err(self.expand.ctx().format_retained(format_args!("definition cycle reaches {}", definition.id()), "Rhino expand_reference_inner text")?.into());
+            return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition cycle reaches {}", definition.id()), "Rhino expand_reference_inner text")?));
         }
         let binding = self.unit_binding();
         let crate::settings::UnitBinding::Millimeters(scale) = binding else {
-            return Err(self.expand.ctx().format_retained(format_args!(
+            return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!(
                 "document has no physical millimetre binding ({})",
                 binding.label()
-            ), "Rhino expand_reference_inner text")?
-            .into());
+            ), "Rhino expand_reference_inner text")?));
         };
         let local = crate::instances::scale_translation(reference.transform(), scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
@@ -2439,10 +2436,10 @@ impl<'a> DecodeContext<'a> {
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
                 ObjectReference::Missing => {
-                    return Err(self.expand.ctx().format_retained(format_args!("definition member {member_id} is missing"), "Rhino expand_reference_inner text")?.into());
+                    return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition member {member_id} is missing"), "Rhino expand_reference_inner text")?));
                 }
                 ObjectReference::Ambiguous => {
-                    return Err(self.expand.ctx().format_retained(format_args!("definition member {member_id} is ambiguous"), "Rhino expand_reference_inner text")?.into());
+                    return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition member {member_id} is ambiguous"), "Rhino expand_reference_inner text")?));
                 }
             };
             let member = &self.scan.objects[member_order];
@@ -2477,7 +2474,7 @@ impl<'a> DecodeContext<'a> {
             let after =
                 ModelCheckpoint::capture(&self.session.document().model, self.expand.ctx())?;
             if before.0.same_state(&after.0, self.expand.ctx())? {
-                return Err(self.expand.ctx().format_retained(format_args!("definition member {member_id} did not decode"), "Rhino expand_reference_inner text")?.into());
+                return Err(ReferenceFailure::Semantic(self.expand.ctx().format_retained(format_args!("definition member {member_id} did not decode"), "Rhino expand_reference_inner text")?));
             }
             let transformed = self.transform_new_entities(&before.0, transform, scratch)?;
             self.expand.ctx().charge_work(
@@ -3501,12 +3498,12 @@ impl<'a> DecodeContext<'a> {
                     body: body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     shells: vec![shell_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
                 });
-                self.session.document_mut()?.model.bodies.push(body(
+                self.session.document_mut()?.model.bodies.push(body(ctx, 
                     identity,
                     body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     vec![region_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?],
                     &association,
-                ));
+                )?);
                 self.annotate_point_topology(
                     &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
                 )?;
@@ -3630,12 +3627,12 @@ impl<'a> DecodeContext<'a> {
                     body: body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     shells: vec![shell_id],
                 });
-                self.session.document_mut()?.model.bodies.push(body(
+                self.session.document_mut()?.model.bodies.push(body(ctx, 
                     identity,
                     body_id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     vec![region_id],
                     &association,
-                ));
+                )?);
                 let point_prefix = ctx.format_retained(format_args!("rhino:object:point#{key}."), "Rhino commit_geometry text")?;
                 for point in self
                     .session
@@ -3787,7 +3784,8 @@ impl<'a> DecodeContext<'a> {
                 },
                 |error| Ok(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_procedural_surface text")?)),
             )?;
-            let key = IdentityKey::try_new(key.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_procedural_surface text")?)))?;
+            let mut key_text_storage = ctx.reserve_scoped(0, "Rhino commit_procedural_surface text copy")?;
+            let key = IdentityKey::try_new(key_text_storage.with_storage(|| ctx.copy_retained_text(key, "Rhino commit_procedural_surface text copy"))?).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_procedural_surface text")?)))?;
             let surface_id = {
                 let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
                 copied_storage.with_storage(|| {
@@ -4604,7 +4602,8 @@ fn stage_extrusion_caps(
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
 ) -> Result<String, CandidateError> {
-    let key = IdentityKey::try_new(key.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino stage_extrusion_caps text")?)))?;
+    let mut key_text_storage = ctx.reserve_scoped(0, "Rhino stage_extrusion_caps text copy")?;
+    let key = IdentityKey::try_new(key_text_storage.with_storage(|| ctx.copy_retained_text(key, "Rhino stage_extrusion_caps text copy"))?).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino stage_extrusion_caps text")?)))?;
     let body_id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
         copied_storage.with_storage(|| {
@@ -5295,7 +5294,8 @@ fn stage_brep_carriers(
                 surface: crate::surfaces::DecodedSurface::Typed { geometry, derived },
             }) => {
                 let plane_parameterization = geometry.plane_parameterization();
-                let surface_key = match IdentityKey::try_new(key.to_owned()) {
+                let mut key_text_storage = ctx.reserve_scoped(0, "Rhino stage_brep_carriers text copy")?;
+                let surface_key = match IdentityKey::try_new(key_text_storage.with_storage(|| ctx.copy_retained_text(key, "Rhino stage_brep_carriers text copy"))?) {
                     Ok(key) => key,
                     Err(error) => {
                         child_cause = Some(expand.ctx().format_retained(
@@ -5421,7 +5421,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         scale,
         mesh_budget,
     } = input;
-    let key = IdentityKey::try_new(key.to_owned())
+    let mut key_text_storage = expand.ctx().reserve_scoped(0, "Rhino stage_brep text copy")?;
+    let key = IdentityKey::try_new(key_text_storage.with_storage(|| expand.ctx().copy_retained_text(key, "Rhino stage_brep text copy"))?)
         .or_else(|error| Err(crate::curves::GeometryError::unpositioned(expand.ctx().format_retained(format_args!("{error}"), "Rhino Brep identity error")?)))?;
     let raw = brep.raw();
     let resolved = brep.resolved();
@@ -6244,7 +6245,8 @@ fn stage_brep_procedural_surface(
     definition: crate::surfaces::DecodedProceduralSurface,
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
-    let key = IdentityKey::try_new(context.key.to_owned())
+    let mut source_key_storage = context.ctx.reserve_scoped(0, "Rhino stage_brep_procedural_surface text copy")?;
+    let key = IdentityKey::try_new(source_key_storage.with_storage(|| context.ctx.copy_retained_text(context.key, "Rhino stage_brep_procedural_surface text copy"))?)
         .or_else(|error| Err(crate::curves::GeometryError::unpositioned(context.ctx.format_retained(format_args!("{}", error), "Rhino stage_brep_procedural_surface text")?)))?;
     let definition = definition.into_definition(
         |child_index, _, child| {
@@ -6367,7 +6369,8 @@ fn stage_curve_tree(
             )
         }
     };
-    let key = IdentityKey::try_new(key.to_owned())
+    let mut key_text_storage = ctx.reserve_scoped(0, "Rhino stage_curve_tree text copy")?;
+    let key = IdentityKey::try_new(key_text_storage.with_storage(|| ctx.copy_retained_text(key, "Rhino stage_curve_tree text copy"))?)
         .or_else(|error| Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)))?;
     let id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -6379,7 +6382,7 @@ fn stage_curve_tree(
                 } else {
                     key.try_clone_for_decode(ctx, "Rhino temporary identity key")?
                         .then(cadmpeg_ir::identity_key!("."))
-                        .then(IdentityKey::try_new(path.to_owned()).or_else(|error| {
+                        .then(IdentityKey::try_new(ctx.copy_retained_text(path, "Rhino stage_curve_tree text copy")?).or_else(|error| {
                             Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)
                         )})?)
                 },
@@ -6407,7 +6410,7 @@ fn stage_curve_tree(
             procedure_key_copy_storage
                 .with_storage(|| key.try_clone_for_decode(ctx, "Rhino temporary identity key"))?
                 .then(cadmpeg_ir::identity_key!("."))
-                .then(IdentityKey::try_new(path.to_owned()).or_else(|error| {
+                .then(IdentityKey::try_new(procedure_key_copy_storage.with_storage(|| ctx.copy_retained_text(path, "Rhino stage_curve_tree text copy"))?).or_else(|error| {
                     Err(crate::curves::GeometryError::unpositioned(ctx.format_retained(format_args!("{}", error), "Rhino stage_curve_tree text")?)
                 )})?)
         };
@@ -7002,7 +7005,8 @@ fn commit_curve_tree(
             )
         }
     };
-    let key = IdentityKey::try_new(source.key.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?;
+    let mut source_key_storage = ctx.reserve_scoped(0, "Rhino commit_curve_tree text copy")?;
+    let key = IdentityKey::try_new(source_key_storage.with_storage(|| ctx.copy_retained_text(source.key, "Rhino commit_curve_tree text copy"))?).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?;
     let mut curve_key_copy_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
     let curve_key = if source.path == "root" {
         curve_key_copy_storage
@@ -7011,7 +7015,7 @@ fn commit_curve_tree(
         curve_key_copy_storage
             .with_storage(|| key.try_clone_for_decode(ctx, "Rhino temporary identity key"))?
             .then(cadmpeg_ir::identity_key!("."))
-            .then(IdentityKey::try_new(source.path.to_owned()).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?)
+            .then(IdentityKey::try_new(curve_key_copy_storage.with_storage(|| ctx.copy_retained_text(source.path, "Rhino commit_curve_tree text copy"))?).or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_curve_tree text")?)))?)
     };
     let id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -7416,21 +7420,21 @@ fn color(value: [u8; 4]) -> Color {
     Color::from_rgba8(value[0], value[1], value[2], value[3]).invert_alpha()
 }
 
-fn body(
+fn body(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
     identity: &crate::objects::SourceIdentity,
     id: cadmpeg_ir::ids::BodyId,
     regions: Vec<cadmpeg_ir::ids::RegionId>,
     association: &SourceObjectAssociation,
-) -> Body {
-    Body {
+) -> Result<Body, cadmpeg_core::CodecError> {
+    Ok(Body {
         id,
         kind: BodyKind::General,
         regions,
         transform: None,
-        name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+        name: (!identity.name.is_empty()).then(|| ctx.copy_retained_text(&identity.name, "Rhino body text copy")).transpose()?,
         color: association.color,
         visible: association.visible,
-    }
+    })
 }
 
 fn loss_provenance(

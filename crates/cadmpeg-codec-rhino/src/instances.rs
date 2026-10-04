@@ -502,7 +502,7 @@ fn unit_detail<'a>(
     }
     payload.skip_remaining()?;
     UnitDetail::new(unit, meters_per_unit, custom_name)
-        .map_err(|message| FramingError::structural(payload.position(), message))
+        .or_else(|message| Err(FramingError::structural(payload.position(), ctx.copy_retained_text(message, "Rhino instance unit invariant message")?)))
 }
 
 fn model_component(
