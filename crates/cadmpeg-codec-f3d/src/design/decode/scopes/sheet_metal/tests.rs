@@ -63,7 +63,6 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         });
 
         let operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-            &cadmpeg_test_support::service_decode_context(),
             &frame.bytes,
             0,
             frame.paired_at,
@@ -74,7 +73,6 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         .expect("fixed Hem operation");
         let located_references = located_reference_run(&references);
         let located_operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-            &cadmpeg_test_support::service_decode_context(),
             &frame.bytes,
             0,
             frame.paired_at,
@@ -122,7 +120,6 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
     frame.bytes[at + 2..at + 6].copy_from_slice(&304u32.to_le_bytes());
     assert!(
         crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-            &cadmpeg_test_support::service_decode_context(),
             &frame.bytes,
             0,
             frame.paired_at,
@@ -134,7 +131,6 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
     );
     assert!(
         crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-            &cadmpeg_test_support::service_decode_context(),
             &frame.bytes,
             0,
             frame.paired_at,
@@ -151,7 +147,6 @@ fn hem_scope_reads_the_rolled_owner_layout() {
     let references = [708, 717, 720, 724, 775, 788, 790, 793];
     let frame = rolled_hem_frame();
     let operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &frame.bytes,
         0,
         frame.paired_at,
@@ -170,7 +165,6 @@ fn hem_scope_reads_the_rolled_owner_layout() {
     assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 160);
     let located_operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &frame.bytes,
         0,
         frame.paired_at,
@@ -187,7 +181,6 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
     let references = [703, 706, 708, 717, 720, 724, 775, 777, 780];
     let frame = teardrop_hem_frame();
     let operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &frame.bytes,
         0,
         frame.paired_at,
@@ -207,7 +200,6 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
     assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 170);
     let located_operation = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &frame.bytes,
         0,
         frame.paired_at,
@@ -235,7 +227,6 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
 
     assert!(
         crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-            &cadmpeg_test_support::service_decode_context(),
             &frame.bytes,
             0,
             frame.paired_at,
@@ -319,227 +310,11 @@ fn teardrop_hem_frame() -> HemFrame {
     }
 }
 
-#[test]
-fn hem_scope_admits_reference_sources_before_collecting_each_form() {
-    let gap_references = [240, 243, 251, 254, 301, 304, 308, 311];
-    let gap_frame = hem_frame(&HemFixture {
-        header_shift: 0,
-        wrapper: 308,
-        settings: 311,
-        gap_owner: 301,
-        length_owner: 304,
-        aggregate_group: 240,
-        edge_group: 251,
-        bend_radius: 0.25,
-    });
-    assert_hem_reference_collection_refusals(
-        &gap_frame,
-        &gap_references,
-        &source_kinds(&[(301, "HemGap"), (304, "HemLength")]),
-        HemCandidate::GapLength,
-        0,
-        "scan F3D gap-length Hem reference source",
-        "collect F3D gap-length Hem references",
-        8,
-    );
-
-    let rolled_references = [708, 717, 720, 724, 775, 788, 790, 793];
-    let rolled_frame = rolled_hem_frame();
-    assert_hem_reference_collection_refusals(
-        &rolled_frame,
-        &rolled_references,
-        &source_kinds(&[(775, "HemRadius"), (788, "HemAngle")]),
-        HemCandidate::Rolled,
-        4,
-        "scan F3D rolled Hem reference source",
-        "collect F3D rolled Hem references",
-        8,
-    );
-
-    let teardrop_references = [703, 706, 708, 717, 720, 724, 775, 777, 780];
-    let teardrop_frame = teardrop_hem_frame();
-    assert_hem_reference_collection_refusals(
-        &teardrop_frame,
-        &teardrop_references,
-        &source_kinds(&[(703, "HemGap"), (706, "HemLength"), (775, "HemRadius")]),
-        HemCandidate::Teardrop,
-        4,
-        "scan F3D teardrop Hem reference source",
-        "collect F3D teardrop Hem references",
-        9,
-    );
-}
-
-#[derive(Clone, Copy)]
-enum HemCandidate {
-    GapLength,
-    Rolled,
-    Teardrop,
-}
-
-fn parse_hem_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    frame: &HemFrame,
-    references: &crate::records::identity::ReferenceRun<u32>,
-    candidate: HemCandidate,
-    header_shift: usize,
-) -> Result<
-    Option<crate::records::feature::sheet_metal::DesignHemOperation>,
-    cadmpeg_core::CodecError,
-> {
-    use crate::design::decode::scopes::sheet_metal::{
-        hem_gap_length_operation_at, hem_gap_length_radius_operation_at,
-        hem_radius_angle_operation_at,
-    };
-
-    match candidate {
-        HemCandidate::GapLength => hem_gap_length_operation_at(
-            ctx,
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            references,
-            header_shift,
-        ),
-        HemCandidate::Rolled => hem_radius_angle_operation_at(
-            ctx,
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            references,
-            header_shift,
-        ),
-        HemCandidate::Teardrop => hem_gap_length_radius_operation_at(
-            ctx,
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            references,
-            header_shift,
-        ),
-    }
-}
-
-fn assert_hem_reference_collection_refusals(
-    frame: &HemFrame,
-    reference_values: &[u32],
-    kinds: &impl Fn(u32, &str) -> Result<bool, cadmpeg_core::CodecError>,
-    candidate: HemCandidate,
-    header_shift: usize,
-    source_operation: &'static str,
-    collect_operation: &'static str,
-    source_work: u64,
-) {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let references = reference_run(reference_values);
-    let success = crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-        &cadmpeg_test_support::service_decode_context(),
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        &references,
-        kinds,
-    );
-    assert!(matches!(success, Ok(Some(_))));
-
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::design::decode::scopes::sheet_metal::exact_hem_operation(
-            ctx,
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            &references,
-            kinds,
-        )
-        .map(|_| ())
-    };
-
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        source_operation,
-        0,
-        |ctx| decode(ctx),
-    );
-    // Source work counts every reference admitted before candidate parsing.
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == source_operation
-                && failure.additional == source_work
-    ));
-
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        collect_operation,
-        0,
-        |ctx| decode(ctx),
-    );
-    // Collector work counts its first admitted output step.
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == collect_operation
-                && failure.additional == 1
-    ));
-
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems,
-        collect_operation,
-        0,
-        |ctx| decode(ctx),
-    );
-    // Collection storage counts the first admitted reference slot.
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == collect_operation
-                && failure.additional == 1
-    ));
-
-    // The public dispatcher tries earlier candidates. Test scoped storage
-    // through this exact private candidate so an earlier temporary pool cannot
-    // consume the monotone MaterializedBytes ceiling first.
-    for located in [false, true] {
-        let references = if located {
-            located_reference_run(reference_values)
-        } else {
-            reference_run(reference_values)
-        };
-        let success = crate::test_support::with_decode_context(|ctx| {
-            parse_hem_candidate(ctx, frame, &references, candidate, header_shift)
-        })
-        .expect("service admission");
-        assert!(success.is_some(), "the exact Hem candidate is valid");
-
-        let refusal = crate::test_support::resource_refusal_at(
-            ResourceDimension::MaterializedBytes,
-            collect_operation,
-            0,
-            |ctx| parse_hem_candidate(ctx, frame, &references, candidate, header_shift).map(|_| ()),
-        );
-        // Each scoped pool first reserves four u32 slots.
-        let minimum_bytes = std::mem::size_of::<u32>()
-            .checked_mul(4)
-            .expect("four u32 reference slots");
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::MaterializedBytes
-                    && failure.operation == collect_operation
-                    && failure.additional == u64::try_from(minimum_bytes).expect("u32 slot bytes fit")
-        ));
-    }
-}
-
-mod contains {
+mod to_object {
     use super::write_marked_reference;
 
     #[test]
-    fn edge_flange_to_object_membership_propagates_work_refusal() {
+    fn edge_flange_to_object_keeps_fixed_frame_references_outside_the_table() {
         use crate::layout::edge_flange_fixed_operation_section as edge_flange;
         use crate::layout::edge_flange_to_object_fixed_operation_section as to_object;
 
@@ -588,15 +363,9 @@ mod contains {
             .copy_from_slice(&1u32.to_le_bytes());
         write_marked_reference(&mut bytes, COMMON + to_object::EDGE_GROUP_REFERENCE, 108);
 
-        let context = cadmpeg_test_support::service_decode_context();
-        let Ok(Some(operation)) = super::super::edge_flange_to_object_operation_at(
-            &context,
-            &bytes,
-            0,
-            576,
-            &REFERENCES,
-            0,
-        ) else {
+        let Some(operation) =
+            super::super::edge_flange_to_object_operation_at(&bytes, 0, 576, &REFERENCES, 0)
+        else {
             panic!("valid ToObject frame must produce an operation");
         };
         assert_eq!(operation.height_owner_record_index, 103);
@@ -611,27 +380,165 @@ mod contains {
                 reference_record_indices: [9001, 9002],
             }
         ));
+    }
+}
 
+mod binding {
+    use super::{hem_frame, HemFixture};
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::feature::sheet_metal::DesignHemParameterOwners;
+    use crate::records::parameters::{DesignParameter, DesignParameterOwner};
+
+    const STREAM: &str = "f3d:Design/BulkStream.dat";
+    const REFERENCES: [u32; 8] = [240, 243, 251, 254, 301, 304, 308, 311];
+
+    fn owner(
+        stream: &str,
+        scope_record_index: u32,
+        record_index: u32,
+        parameter_record_index: u32,
+    ) -> DesignParameterOwner {
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                .unwrap(),
+            record_index,
+            scope_record_index,
+            local_ordinal: 0,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 40,
+            parameter_record_index,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: record_index + 2,
+        })
+        .unwrap()
+    }
+
+    fn parameter(stream: &str, record_index: u32, source_kind: &str) -> DesignParameter {
+        DesignParameter::try_from(crate::records::parameters::DesignParameterDraft::<String> {
+            id: format!("{stream}:design-parameter#{record_index}"),
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                .unwrap(),
+            record_index,
+            source_ordinal: 0,
+            source: crate::records::parameters::DesignParameterSource::new::<String>(
+                source_kind.into(),
+                Some(0),
+                None,
+            )
+            .unwrap(),
+            expression: "1".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
+            unit: Some(crate::records::identity::RecordedValue {
+                value: "mm".into(),
+                offset: 70,
+            }),
+            name: source_kind.into(),
+            name_offset: 80,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 90,
+        })
+        .unwrap()
+    }
+
+    fn hem_scope() -> DesignParameterScope {
+        let mut scope =
+            DesignParameterScope::empty(&format!("{STREAM}:scope#12"), DesignFeatureKind::Hem, 12);
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 494;
+                draft.paired_byte_offset = 494;
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(REFERENCES.to_vec());
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    }
+
+    fn bound_owners(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        bytes: &[u8],
+        parameters: &[DesignParameter],
+        owners: &[DesignParameterOwner],
+    ) -> Result<Option<DesignHemParameterOwners>, cadmpeg_core::CodecError> {
+        let mut scope = hem_scope();
+        super::super::bind_hem_operation_from_parameters(
+            ctx, bytes, &mut scope, parameters, owners,
+        )?;
+        Ok(match scope.payload() {
+            crate::records::feature::scope::DesignScopePayload::Hem(operation) => operation
+                .as_ref()
+                .map(|operation| operation.parameter_owners),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn hem_scope_binds_the_owners_whose_stream_parameters_name_the_form() {
+        let frame = hem_frame(&HemFixture {
+            header_shift: 0,
+            wrapper: 308,
+            settings: 311,
+            gap_owner: 301,
+            length_owner: 304,
+            aggregate_group: 240,
+            edge_group: 251,
+            bend_radius: 0.25,
+        });
+        // A parameter in another stream does not bind.
+        let parameters = [
+            parameter(STREAM, 302, "HemGap"),
+            parameter("f3d:Design/Other.dat", 305, "HemRadius"),
+            parameter(STREAM, 305, "HemLength"),
+        ];
+        // An owner of another scope and an owner in another stream do not bind.
+        let owners = [
+            owner(STREAM, 13, 301, 302),
+            owner("f3d:Design/Other.dat", 12, 304, 305),
+            owner(STREAM, 12, 301, 302),
+            owner(STREAM, 12, 304, 305),
+        ];
+        let bound = crate::test_support::with_decode_context(|ctx| {
+            bound_owners(ctx, &frame.bytes, &parameters, &owners)
+        })
+        .unwrap();
+        assert_eq!(
+            bound,
+            Some(DesignHemParameterOwners::GapLength {
+                gap_owner_record_index: 301,
+                length_owner_record_index: 304,
+            })
+        );
+
+        let misnamed = [
+            parameter(STREAM, 302, "HemGap"),
+            parameter(STREAM, 305, "HemAngle"),
+        ];
+        let bound = crate::test_support::with_decode_context(|ctx| {
+            bound_owners(ctx, &frame.bytes, &misnamed, &owners)
+        })
+        .unwrap();
+        assert_eq!(bound, None);
+
+        // Each visited owner is admitted before its test.
         let refusal = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "search F3D sheet-metal ToObject reference members",
+            "find F3D Hem parameter owners",
             0,
-            |ctx| {
-                super::super::edge_flange_to_object_operation_at(
-                    ctx,
-                    &bytes,
-                    0,
-                    576,
-                    &REFERENCES,
-                    0,
-                )
-            },
+            |ctx| bound_owners(ctx, &frame.bytes, &parameters, &owners),
         );
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "search F3D sheet-metal ToObject reference members"
+                    && limit.operation == "find F3D Hem parameter owners"
                     && limit.additional == 1
         ));
     }
