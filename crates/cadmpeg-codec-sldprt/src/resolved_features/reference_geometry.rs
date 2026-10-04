@@ -1927,7 +1927,10 @@ pub(crate) fn enrich_history_sketch_block_references(
     let mut temporary_storage =
         ctx.reserve_scoped(0, "SLDPRT reference_geometry temporary storage")?;
 
-    for history in histories {
+    for history_index in
+        ctx.admit_iter(&(0..histories.len()), "scan SLDPRT sketch-block histories")?
+    {
+        let history = &mut histories[history_index];
         let mut by_source = HashMap::<u32, Option<(usize, NativeClassKind)>>::new();
         for (feature_index, feature) in ctx
             .admit_iter(&history.features, "scan SLDPRT sketch block features")?
@@ -2528,7 +2531,11 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
-    for history in histories.iter_mut() {
+    for history_index in ctx.admit_iter(
+        &(0..histories.len()),
+        "apply SLDPRT legacy reference-axis histories",
+    )? {
+        let history = &mut histories[history_index];
         let triads = legacy_reference_axis_triads(ctx, &history.features)?;
         for ReferenceAxisTriad(axes, pairs) in
             ctx.admit_iter(&triads, "apply SLDPRT legacy reference axis triads")?
@@ -2553,48 +2560,58 @@ pub(crate) fn enrich_history_reference_axes(
         Err(_) => return Ok(()),
     };
     let plane_frames = sketch_plane_frames(ctx, &projected, histories)?;
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        if native_object_class(feature.input_class.as_deref().unwrap_or_default())
-            != NativeClassKind::ReferenceAxis
-            || feature.properties.contains_key("Origin")
-            || feature.properties.contains_key("Direction")
+    for history_index in ctx.admit_iter(
+        &(0..histories.len()),
+        "scan SLDPRT reference-axis histories",
+    )? {
+        let feature_count = histories[history_index].features.len();
+        for feature_index in
+            ctx.admit_iter(&(0..feature_count), "scan SLDPRT reference-axis features")?
         {
-            continue;
+            let feature = &mut histories[history_index].features[feature_index];
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
+                != NativeClassKind::ReferenceAxis
+                || feature.properties.contains_key("Origin")
+                || feature.properties.contains_key("Direction")
+            {
+                continue;
+            }
+            let Some([first, second]) = feature.properties.get("Planes").and_then(|planes| {
+                let mut sources = planes.split(',').map(str::parse::<u32>);
+                let pair = [sources.next()?.ok()?, sources.next()?.ok()?];
+                sources.next().is_none().then_some(pair)
+            }) else {
+                continue;
+            };
+            let Some(frame) = plane_frames
+                .get(&first)
+                .zip(plane_frames.get(&second))
+                .and_then(|(first, second)| {
+                    plane_intersection_axis_frame(first.as_tuple(), second.as_tuple())
+                })
+            else {
+                continue;
+            };
+            insert_reference_axis_property(
+                ctx,
+                feature,
+                cadmpeg_core::nonblank_literal!("Origin"),
+                format_args!("{}mm,{}mm,{}mm", frame.0.x, frame.0.y, frame.0.z),
+            )?;
+            insert_reference_axis_property(
+                ctx,
+                feature,
+                cadmpeg_core::nonblank_literal!("Direction"),
+                format_args!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
+            )?;
         }
-        let Some([first, second]) = feature.properties.get("Planes").and_then(|planes| {
-            let mut sources = planes.split(',').map(str::parse::<u32>);
-            let pair = [sources.next()?.ok()?, sources.next()?.ok()?];
-            sources.next().is_none().then_some(pair)
-        }) else {
-            continue;
-        };
-        let Some(frame) = plane_frames
-            .get(&first)
-            .zip(plane_frames.get(&second))
-            .and_then(|(first, second)| {
-                plane_intersection_axis_frame(first.as_tuple(), second.as_tuple())
-            })
-        else {
-            continue;
-        };
-        insert_reference_axis_property(
-            ctx,
-            feature,
-            cadmpeg_core::nonblank_literal!("Origin"),
-            format_args!("{}mm,{}mm,{}mm", frame.0.x, frame.0.y, frame.0.z),
-        )?;
-        insert_reference_axis_property(
-            ctx,
-            feature,
-            cadmpeg_core::nonblank_literal!("Direction"),
-            format_args!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
-        )?;
     }
 
-    for history in histories {
+    for history_index in ctx.admit_iter(
+        &(0..histories.len()),
+        "complete SLDPRT reference-axis histories",
+    )? {
+        let history = &mut histories[history_index];
         let mut completions = Vec::new();
         let triads = legacy_reference_axis_triads(ctx, &history.features)?;
         for ReferenceAxisTriad(indices, _) in

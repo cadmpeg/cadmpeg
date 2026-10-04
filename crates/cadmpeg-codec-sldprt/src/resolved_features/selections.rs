@@ -4462,21 +4462,25 @@ pub(super) fn coordinate_marker_local_links(
 ) -> Result<Option<(Vec<u16>, u16)>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "decode SLDPRT coordinate marker links";
     ctx.charge_work(512, OPERATION)?;
-    let parsed = (|| {
-        let legacy_geometry_linked_point = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
-            == Some(LEGACY_SKETCH_MARKER)
-            && marker_native_code(payload, offset) == Some(1)
-            && marker_is_geometry_locus(payload, offset);
-        if legacy_geometry_linked_point {
-            let (_, links) = linked_profile_point(payload, offset)?;
-            let selector = links.first()?.0;
-            return Some(([links[0].1, links[1].1], 2, selector));
-        }
-        if marker_coordinates(payload, offset).is_none()
+    let legacy_geometry_linked_point = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+        == Some(LEGACY_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(1)
+        && marker_is_geometry_locus(payload, offset);
+    let parsed = if legacy_geometry_linked_point {
+        let Some((_, links)) = linked_profile_point(payload, offset) else {
+            return Ok(None);
+        };
+        let Some(selector) = links.first().map(|link| link.0) else {
+            return Ok(None);
+        };
+        Some(([links[0].1, links[1].1], 2, selector))
+    } else {
+        if marker_coordinates(ctx, payload, offset)?.is_none()
             && !counted_legacy_profile_line_layout(payload, offset)
         {
-            return None;
+            return Ok(None);
         }
+        (|| {
         let mut links = [0; 2];
         let mut selector = None;
         for index in 0..=2 {
@@ -4502,7 +4506,8 @@ pub(super) fn coordinate_marker_local_links(
             links[index] = View::u16_le_at(cell, 2)?;
         }
         None
-    })();
+        })()
+    };
     let Some((local_ids, count, selector)) = parsed else {
         return Ok(None);
     };

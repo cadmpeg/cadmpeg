@@ -8,6 +8,9 @@ use std::num::NonZeroU16;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
+use crate::resolved_features::markers::{
+    marker_coordinates, standard_marker_result, StandardMarkerAdmission,
+};
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -1394,8 +1397,10 @@ fn resolved_feature_payload(
     }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
-        entity
-            .validate_against_payload(&lane.native_payload)
+        standard_marker_result(entity.validate_against_payload(
+            &StandardMarkerAdmission,
+            &lane.native_payload,
+        ))
             .map_err(|error| {
                 CodecError::malformed(format_args!(
                     "feature-input lane {} entity {}: {error}",
@@ -1437,8 +1442,12 @@ fn resolved_feature_payload(
             state.copy_from_slice(&value.get().to_le_bytes());
         }
         if let Some(coordinates) = entity.coordinates_m {
-            if crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
-                .is_none()
+            if standard_marker_result(marker_coordinates(
+                &StandardMarkerAdmission,
+                &lane.native_payload,
+                offset,
+            ))
+            .is_none()
             {
                 return Err(CodecError::NotImplemented(
                     "feature-input marker does not carry editable coordinate fields".into(),

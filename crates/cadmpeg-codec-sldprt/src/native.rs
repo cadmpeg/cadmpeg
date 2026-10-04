@@ -456,10 +456,9 @@ impl SldprtNative {
                     )?,
                 ));
             };
-            entities.push(
-                crate::records::SketchInputEntity::try_from_wire(wire, payload)
-                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?,
-            );
+            let entity = crate::records::SketchInputEntity::try_from_wire(ctx, wire, payload)?
+                .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
+            entities.push(entity);
         }
         if let Some(record) = classes
             .iter()

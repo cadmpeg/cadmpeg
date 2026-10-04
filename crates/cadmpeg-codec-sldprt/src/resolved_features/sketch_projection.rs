@@ -668,8 +668,14 @@ fn orient_closed_profile_by_topology(
             )
         })?;
     }
-    for (use_, reversed) in profile.iter_mut().zip(orientations) {
-        use_.reversed = reversed;
+    for (index, reversed) in ctx
+        .admit_iter(
+            &(0..profile.len()),
+            "apply SLDPRT sketch profile orientations",
+        )?
+        .zip(ctx.admit_iter(&orientations, "apply SLDPRT sketch profile orientations")?)
+    {
+        profile[index].reversed = *reversed;
     }
     Ok(())
 }

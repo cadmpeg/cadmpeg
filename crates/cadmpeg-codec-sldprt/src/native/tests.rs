@@ -1355,9 +1355,13 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
         .expect("first marker local id");
     lane.sketch_entities[1] = lane.sketch_entities[1]
         .with_test_identity(lane.sketch_entities[1].object_index(), Some(local_id));
-    let local_id_offset = crate::resolved_features::markers::marker_local_id_offset(
-        &lane.native_payload,
-        usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+    let marker_admission = crate::resolved_features::markers::StandardMarkerAdmission;
+    let local_id_offset = crate::resolved_features::markers::standard_marker_result(
+        crate::resolved_features::markers::marker_local_id_offset(
+            &marker_admission,
+            &lane.native_payload,
+            usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+        ),
     )
     .expect("local id offset");
     lane.native_payload[local_id_offset..local_id_offset + 4]
