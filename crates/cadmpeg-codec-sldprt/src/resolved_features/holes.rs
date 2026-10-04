@@ -5103,18 +5103,10 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT feature input sketch frame";
-    // The bound covers index scans, two component windows and fixed-width overlap probes.
-    const WORK_PER_BYTE: u64 = 1024;
-    let work = u64_from_index(payload.len())
-        .checked_mul(WORK_PER_BYTE)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
-
     let reference = plane_index
-        .profile_source(context_start, start, end)
+        .profile_source(ctx, context_start, start, end)?
         .and_then(|source| plane_frames.get(&source).copied());
-    let component = compact_profile_component_plane_frame(payload, context_start, start, end);
+    let component = compact_profile_component_plane_frame(ctx, payload, context_start, start, end)?;
     let explicit = || -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
         let Some(object) = payload.get(start..end) else {
             return Ok(None);
