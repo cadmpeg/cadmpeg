@@ -6426,7 +6426,11 @@ fn derive_reference_signature_cohorts(
             continue;
         }
         let ordinal =
-            if let Some(next) = next_ordinal_by_graph.get_mut(entity.object_graph.as_str()) {
+            if let Some(next) = ctx.get_mut_hash_map(
+                &mut next_ordinal_by_graph,
+                entity.object_graph.as_str(),
+                "catia_native_cohort_ordinal_lookup",
+            )? {
                 *next = next.checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("catia_native_cohort_ordinal", u64::MAX, u64::MAX)
                 })?;
