@@ -67,3 +67,17 @@ pub fn collection_growth(
     // replacement: push_vec
     values.push(byte); // finding: uncharged_decode_allocation
 }
+
+impl DecodeContext {
+    pub fn strip_prefix<'a>(&self, bytes: &'a [u8], _prefix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
+    pub fn strip_suffix<'a>(&self, bytes: &'a [u8], _suffix: &[u8], _operation: &str) -> Result<Option<&'a [u8]>, ()> { Ok(Some(bytes)) }
+}
+pub fn byte_queries(ctx: &DecodeContext, bytes: &[u8], pattern: &[u8]) -> Result<(), ()> {
+    // replacement: strip_prefix
+    let _value = bytes.strip_prefix(pattern); // finding: uncharged_decode_work
+    // replacement: strip_suffix
+    let _value = bytes.strip_suffix(pattern); // finding: uncharged_decode_work
+    let _value = ctx.strip_prefix(bytes, pattern, "prefix")?;
+    let _value = ctx.strip_suffix(bytes, pattern, "suffix")?;
+    Ok(())
+}
