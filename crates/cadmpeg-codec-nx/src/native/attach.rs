@@ -978,11 +978,11 @@ fn ensure_rm_color_appearance(
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(appearances.len()),
+    if let Some(id) = ctx.get_btree_map(
+        appearances,
+        &definition.id,
         "NX RM appearance reuse lookup",
-    )?;
-    if let Some(id) = appearances.get(&definition.id) {
+    )? {
         return id.try_clone_for_decode(ctx, "NX decoded IR value copy");
     }
     let identity_reservation = ctx.reserve_scoped(

@@ -126,6 +126,18 @@ fn rm_appearance_name_copy_preserves_text() {
 }
 
 #[test]
+fn rm_appearance_reuse_lookup_refuses_work() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX RM appearance reuse lookup",
+        |cap| rm_appearance_result(|policy| policy.limits.max_work_units = cap, true, "Iron Gray"),
+    );
+    assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        && limit.operation == "NX RM appearance reuse lookup"), "{error:?}");
+}
+
+#[test]
 fn rm_appearance_name_copy_refuses_work() {
     let name = "x".repeat(8192);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
