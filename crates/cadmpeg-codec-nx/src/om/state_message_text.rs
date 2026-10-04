@@ -39,8 +39,8 @@ impl StateMessageText<&str> {
         ctx: &DecodeContext<'_>,
     ) -> Result<StateMessageText<String>, CodecError> {
         let text = self.as_str();
-        let mut owned = ctx.retained_string(text.len(), "NX state message text")?;
-        owned.push_str(text);
+        let mut owned = String::new();
+        ctx.append_retained(&mut owned, text, "NX state message text")?;
         Ok(StateMessageText(
             PrintableString::new(owned).map_err(CodecError::malformed)?,
             self.1,
@@ -78,6 +78,38 @@ impl<'de> Deserialize<'de> for StateMessageText<String> {
 #[cfg(test)]
 mod tests {
     use super::StateMessageText;
+
+    #[test]
+    fn message_text_copy_preserves_resource_refusals() {
+        for retained in [false, true] {
+            crate::test_support::with_decode_context_over(
+                b"NX",
+                |policy| {
+                    if retained {
+                        policy.limits.max_retained_bytes = 1;
+                    } else {
+                        policy.limits.max_work_units = 1;
+                    }
+                },
+                |ctx| {
+                    let error = StateMessageText::new("NX").unwrap().into_owned(ctx).unwrap_err();
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                        panic!("text copy must return the resource refusal");
+                    };
+                    assert_eq!(limit.operation, "NX state message text");
+                    assert_eq!(
+                        limit.dimension,
+                        if retained {
+                            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        } else {
+                            cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        }
+                    );
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                },
+            );
+        }
+    }
 
     #[test]
     fn message_text_derives_length_and_preserves_spaces() {
