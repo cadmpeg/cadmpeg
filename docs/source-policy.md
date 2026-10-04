@@ -413,6 +413,11 @@ by mutation. Scoped text uses the same operation inside
 Range receipts identify the range kind and each bound. Truncation consumes
 the receipt for the same vector's removed suffix and cutoff.
 
+A scoped storage receipt names its live reservation local. Moving that
+reservation into another owner invalidates the local receipt. Keep the
+reservation local through raw allocation and growth, then transfer the lease
+to its returned owner. A wrapper does not establish a new storage receipt.
+
 The operation table gives the core method for each listed shape. A replacement
 message names an operation; it does not establish a missing implementation or
 cost bound. Unknown custom conversions, callbacks, builders and external
