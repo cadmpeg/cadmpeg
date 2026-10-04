@@ -1687,6 +1687,7 @@ fn shared_pole_conversion_refuses_before_visits_and_keeps_order() {
         }
     }
 
+    // Two-pole lanes cost three probes; a 2x2 grid costs three row and six pole probes.
     for shape in 0..4 {
         let grid = shape >= 2;
         let mut cases = vec![
@@ -1701,8 +1702,13 @@ fn shared_pole_conversion_refuses_before_visits_and_keeps_order() {
                 (ResourceDimension::WorkUnits, 2, 1),
                 (ResourceDimension::WorkUnits, 3, 2),
                 (ResourceDimension::WorkUnits, 4, 2),
-                (ResourceDimension::WorkUnits, 5, 3),
+                (ResourceDimension::WorkUnits, 5, 2),
+                (ResourceDimension::WorkUnits, 6, 3),
+                (ResourceDimension::WorkUnits, 7, 4),
+                (ResourceDimension::WorkUnits, 8, 4),
             ]);
+        } else {
+            cases.push((ResourceDimension::WorkUnits, 2, 2));
         }
         for (dimension, cap, completed) in cases {
             let visits = Cell::new(0);
@@ -1768,12 +1774,13 @@ fn shared_pole_conversion_refuses_before_visits_and_keeps_order() {
             };
             assert_eq!(visits.get(), completed);
             assert_eq!(limit.dimension, dimension);
-            let operation =
-                if grid && (dimension != ResourceDimension::WorkUnits || cap == 0 || cap == 3) {
-                    "IR NURBS admitted grid rows"
-                } else {
-                    "IR NURBS admitted poles"
-                };
+            let rows_refused =
+                dimension != ResourceDimension::WorkUnits || matches!(cap, 0 | 4 | 8);
+            let operation = if grid && rows_refused {
+                "IR NURBS admitted grid rows"
+            } else {
+                "IR NURBS admitted poles"
+            };
             assert_eq!(limit.operation, operation);
             drop(storage);
             assert!(
