@@ -10,7 +10,10 @@ mod native_admission;
 mod presentation_admission;
 mod property_admission;
 
-use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
+use super::{
+    built_in_property_name, known_property_set_fmtid, normalize_property_name, preview_bytes,
+    push_hex, MetadataProjection,
+};
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
@@ -39,6 +42,52 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
     );
     assert!(known_property_set_fmtid("Design Tracking Properties").is_some());
     assert!(built_in_property_name("Unknown Set", 5).is_none());
+}
+
+#[test]
+fn property_name_normalization_admits_scans_and_retained_output() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        normalize_property_name(&ctx, "Part Number 42").expect("normalized name"),
+        "partnumber42"
+    );
+    assert_eq!(
+        normalize_property_name(&ctx, "Étage #1").expect("normalized Unicode name"),
+        "étage1"
+    );
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        normalize_property_name(&ctx, "Name"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "normalize Inventor property name"
+    ));
+}
+
+#[test]
+fn hexadecimal_digit_append_refuses_before_mutation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut text = String::new();
+    assert!(matches!(
+        push_hex(&ctx, &mut text, 0xaf),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "format Inventor byte as hexadecimal"
+    ));
+    assert!(text.is_empty());
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    push_hex(&ctx, &mut text, 0xaf).expect("admitted hexadecimal digits");
+    assert_eq!(text, "af");
 }
 
 #[test]

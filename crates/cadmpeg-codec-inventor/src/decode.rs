@@ -728,7 +728,9 @@ fn decode_container<'a>(
         },
     )?;
     if geometry_transferred {
-        for product in &mut ir.model.product_definitions {
+        let product_indices = 0..ir.model.product_definitions.len();
+        for index in ctx.admit_iter(&product_indices, "visit Inventor product definitions")? {
+            let product = &mut ir.model.product_definitions[index];
             product.bodies = ctx.collect_indexed_vec(
                 body_ids.len(),
                 "collect Inventor product body ids",
@@ -785,7 +787,9 @@ fn decode_container<'a>(
             }
         })
     })?;
-    for face in &mut ir.model.faces {
+    let face_indices = 0..ir.model.faces.len();
+    for index in ctx.admit_iter(&face_indices, "visit Inventor faces")? {
+        let face = &mut ir.model.faces[index];
         if face.color.is_none() {
             face.color = ctx
                 .get_hash_map(&face_colors, &face.id, "access Inventor decode records")?
@@ -801,10 +805,9 @@ fn decode_container<'a>(
         ))?;
     }
     let loss = dialect_loss(ctx, &matched, &recovery)?;
-    if loss.is_some() {
-        ctx.charge_collection_items(1, "collect Inventor dialect loss")?;
+    if let Some(loss) = loss {
+        ctx.push_vec(&mut losses, loss, "collect Inventor dialect loss")?;
     }
-    losses.extend(loss);
     if let Some(kernel) = ir
         .source
         .as_ref()
@@ -816,10 +819,9 @@ fn decode_container<'a>(
         })
     {
         let loss = kernel_dialect_loss(ctx, kernel)?;
-        if loss.is_some() {
-            ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
+        if let Some(loss) = loss {
+            ctx.push_vec(&mut losses, loss, "collect Inventor kernel dialect loss")?;
         }
-        losses.extend(loss);
     }
     if !ctx.container_only()
         && !matches!(document_kind, DocumentKind::Assembly)
@@ -1447,7 +1449,7 @@ fn retained_hex(
     })?;
     let mut output = ctx.retained_string(len, operation)?;
     for byte in ctx.admit_iter(bytes, "visit Inventor decode items")? {
-        push_hex(&mut output, *byte);
+        push_hex(ctx, &mut output, *byte)?;
     }
     Ok(output)
 }
@@ -2626,29 +2628,37 @@ impl MetadataProjection {
 }
 
 fn normalize_property_name(ctx: &DecodeContext<'_>, name: &str) -> Result<String, CodecError> {
-    let normalized_len = ctx
-        .admit_iter(name, "normalize Inventor property name")?
-        .filter(|character| character.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .try_fold(0_usize, |len, character| {
-            len.checked_add(character.len_utf8())
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "Inventor normalized property name length",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(normalized_len),
-        "retain Inventor normalized property name",
-    )?;
-    Ok(ctx
-        .admit_iter(name, "normalize Inventor property name output")?
-        .filter(|character| character.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect())
+    let mut normalized_len = 0_usize;
+    for character in ctx.admit_iter(name, "normalize Inventor property name")? {
+        if character.is_alphanumeric() {
+            for lower in character.to_lowercase() {
+                ctx.charge_work(1, "measure Inventor normalized property name")?;
+                normalized_len = normalized_len
+                    .checked_add(lower.len_utf8())
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "Inventor normalized property name length",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+            }
+        }
+    }
+    let mut normalized =
+        ctx.retained_string(normalized_len, "retain Inventor normalized property name")?;
+    for character in ctx.admit_iter(name, "normalize Inventor property name output")? {
+        if character.is_alphanumeric() {
+            for lower in character.to_lowercase() {
+                ctx.push_retained_char(
+                    &mut normalized,
+                    lower,
+                    "retain Inventor normalized property name",
+                )?;
+            }
+        }
+    }
+    Ok(normalized)
 }
 
 fn property_set_name(
@@ -2917,9 +2927,22 @@ const HEX_DIGITS: [char; 16] = [
 ];
 
 /// Appends `byte` as two lowercase hexadecimal digits.
-pub(crate) fn push_hex(out: &mut String, byte: u8) {
-    out.push(HEX_DIGITS[usize::from(byte >> 4)]);
-    out.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
+pub(crate) fn push_hex(
+    ctx: &DecodeContext<'_>,
+    out: &mut String,
+    byte: u8,
+) -> Result<(), CodecError> {
+    ctx.push_retained_char(
+        out,
+        HEX_DIGITS[usize::from(byte >> 4)],
+        "format Inventor byte as hexadecimal",
+    )?;
+    ctx.push_retained_char(
+        out,
+        HEX_DIGITS[usize::from(byte & 0x0f)],
+        "format Inventor byte as hexadecimal",
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
