@@ -42,25 +42,27 @@ pub(in crate::families) struct B5Vertices {
 impl B5Vertices {
     /// Admit vertex tables and references that select existing rows.
     pub(in crate::families) fn try_new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         raw: Vec<FinitePoint3>,
         logical: Vec<B5LogicalVertex>,
         edges: BTreeMap<u32, [B5VertexRef; 2]>,
-    ) -> Result<Self, &'static str> {
-        raw.len()
-            .checked_add(logical.len())
-            .ok_or("vertex table count overflow")?;
-        if edges
-            .values()
-            .flatten()
-            .any(|vertex| !Self::in_range(*vertex, raw.len(), logical.len()))
-        {
-            return Err("edge_vertices references a missing vertex row");
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if raw.len().checked_add(logical.len()).is_none() {
+            return Ok(None);
         }
-        Ok(Self {
+        for (_, vertices) in ctx.admit_iter(&edges, "catia_b5_vertex_binding_admission")? {
+            if ctx
+                .admit_iter(vertices, "catia_b5_vertex_binding_admission")?
+                .any(|vertex| !Self::in_range(*vertex, raw.len(), logical.len()))
+            {
+                return Ok(None);
+            }
+        }
+        Ok(Some(Self {
             raw,
             logical,
             edges,
-        })
+        }))
     }
 
     fn in_range(vertex: B5VertexRef, raw_count: usize, logical_count: usize) -> bool {
@@ -132,33 +134,69 @@ mod tests {
             object_id: 10,
             point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
         }];
-        assert!(B5Vertices::try_new(
+        crate::test_support::with_service_context(|ctx| {
+            assert!(B5Vertices::try_new(
+                ctx,
+                vec![crate::test_support::test_b5::point([0.0; 3])],
+                logical.clone(),
+                BTreeMap::from([(1, [B5VertexRef::Raw(1); 2])])
+            )
+            .expect("service vertex admission budget")
+            .is_none());
+            assert!(B5Vertices::try_new(
+                ctx,
+                vec![crate::test_support::test_b5::point([0.0; 3])],
+                logical.clone(),
+                BTreeMap::from([(1, [B5VertexRef::Logical(1); 2])])
+            )
+            .expect("service vertex admission budget")
+            .is_none());
+            let mut vertices = B5Vertices::try_new(
+                ctx,
+                vec![crate::test_support::test_b5::point([0.0; 3])],
+                logical,
+                BTreeMap::from([(1, [B5VertexRef::Raw(0), B5VertexRef::Logical(0)])]),
+            )
+            .expect("service vertex admission budget")
+            .expect("vertex references select existing rows");
+            let original = vertices.clone();
+            assert!(vertices
+                .insert_edge(1, [B5VertexRef::Logical(1); 2])
+                .is_err());
+            assert_eq!(vertices, original);
+            assert_eq!(vertices.edge_points(1), Some([[0.0; 3], [1.0, 0.0, 0.0]]));
+            assert_eq!(
+                vertices.edges()[&1].map(|vertex| vertex.combined_index(vertices.raw_points().len())),
+                [0, 1]
+            );
+        });
+    }
+
+    #[test]
+    fn vertex_binding_admission_propagates_endpoint_scan_refusal() {
+        crate::test_support::with_work_limit(2, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = B5Vertices::try_new(
+                ctx,
+                vec![crate::test_support::test_b5::point([0.0; 3])],
+                Vec::new(),
+                BTreeMap::from([(1, [B5VertexRef::Raw(0); 2])]),
+            ) else {
+                panic!("endpoint scan must refuse");
+            };
+            assert_eq!(limit.operation, "catia_b5_vertex_binding_admission");
+            assert_eq!(limit.used, 1);
+            assert_eq!(limit.additional, 2);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+        // One edge-map entry and two endpoint references.
+        let vertices = crate::test_support::with_work_limit(3, |ctx| B5Vertices::try_new(
+            ctx,
             vec![crate::test_support::test_b5::point([0.0; 3])],
-            logical.clone(),
-            BTreeMap::from([(1, [B5VertexRef::Raw(1); 2])])
-        )
-        .is_err());
-        assert!(B5Vertices::try_new(
-            vec![crate::test_support::test_b5::point([0.0; 3])],
-            logical.clone(),
-            BTreeMap::from([(1, [B5VertexRef::Logical(1); 2])])
-        )
-        .is_err());
-        let mut vertices = B5Vertices::try_new(
-            vec![crate::test_support::test_b5::point([0.0; 3])],
-            logical,
-            BTreeMap::from([(1, [B5VertexRef::Raw(0), B5VertexRef::Logical(0)])]),
-        )
-        .expect("vertex references select existing rows");
-        let original = vertices.clone();
-        assert!(vertices
-            .insert_edge(1, [B5VertexRef::Logical(1); 2])
-            .is_err());
-        assert_eq!(vertices, original);
-        assert_eq!(vertices.edge_points(1), Some([[0.0; 3], [1.0, 0.0, 0.0]]));
-        assert_eq!(
-            vertices.edges()[&1].map(|vertex| vertex.combined_index(vertices.raw_points().len())),
-            [0, 1]
-        );
+            Vec::new(),
+            BTreeMap::from([(1, [B5VertexRef::Raw(0); 2])]),
+        ))
+        .expect("one edge and two endpoints fit the work budget")
+        .expect("valid vertex bindings");
+        assert_eq!(vertices.edge_points(1), Some([[0.0; 3]; 2]));
     }
 }

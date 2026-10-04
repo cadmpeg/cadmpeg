@@ -393,11 +393,12 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             Vec::new(),
             Vec::new(),
             BTreeMap::new(),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),

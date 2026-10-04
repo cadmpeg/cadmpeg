@@ -641,14 +641,15 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             Vec::new(),
             vec![B5LogicalVertex {
                 object_id: 50,
                 point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             }],
             BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -755,7 +756,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             Vec::new(),
             vec![
                 B5LogicalVertex {
@@ -776,7 +777,8 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
                 (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
                 (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
             ]),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
@@ -913,7 +915,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             Vec::new(),
             vec![
                 B5LogicalVertex {
@@ -934,7 +936,8 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                 (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
                 (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
             ]),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
@@ -1455,14 +1458,15 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             vec![[0.0; 3], [1.0, 0.0, 0.0]]
                 .into_iter()
                 .map(crate::test_support::test_b5::point)
                 .collect(),
             Vec::new(),
             BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])]),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1604,11 +1608,12 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             Vec::new(),
             Vec::new(),
             BTreeMap::new(),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1727,7 +1732,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+        vertices: crate::test_support::with_service_context(|ctx| crate::families::b5::graph::vertex_refs::B5Vertices::try_new(ctx,
             Vec::new(),
             vec![
                 B5LogicalVertex {
@@ -1740,7 +1745,8 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                 },
             ],
             BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])]),
-        )
+        ))
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
         vertex_tolerances: BTreeMap::new(),
