@@ -11,6 +11,7 @@ extern crate rustc_span;
 extern crate rustc_type_ir;
 
 mod allocation;
+mod bounds;
 mod callback;
 mod callee;
 mod conversion;

@@ -53,14 +53,26 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 self.constant_count(operands.first()?, seen)
             }
             ExprKind::Path(ref path) => match self.typeck.qpath_res(path, expression.hir_id) {
-                Res::Def(rustc_hir::def::DefKind::Const { .. }, definition) => self
-                    .tcx
-                    .const_eval_poly(definition)
-                    .ok()?
-                    .try_to_scalar()
-                    .and_then(|scalar| {
-                        u64::try_from(scalar.to_bits(scalar.size()).discard_err()?).ok()
-                    }),
+                Res::Def(
+                    rustc_hir::def::DefKind::Const { .. }
+                    | rustc_hir::def::DefKind::AssocConst { .. },
+                    definition,
+                ) => {
+                    let integer = self.expr_ty(expression);
+                    if !matches!(integer.kind(), ty::Int(_) | ty::Uint(_)) {
+                        return None;
+                    }
+                    let scalar = self.tcx.const_eval_poly(definition).ok()?.try_to_scalar()?;
+                    let bits = scalar.to_bits(scalar.size()).discard_err()?;
+                    if matches!(integer.kind(), ty::Int(_)) {
+                        let sign = scalar.size().bits().checked_sub(1)?;
+                        let mask = 1u128.checked_shl(u32::try_from(sign).ok()?)?;
+                        if bits & mask != 0 {
+                            return None;
+                        }
+                    }
+                    u64::try_from(bits).ok()
+                }
                 _ => self
                     .initializer(expression)
                     .and_then(|init| self.constant_count(init, seen)),
