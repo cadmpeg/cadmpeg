@@ -4643,12 +4643,18 @@ pub(super) fn profile_axis_for_relation(
 }
 
 fn qualified_point_loci<'a>(
+    ctx: &DecodeContext<'_>,
     marker_id: &str,
     loci_by_marker: &'a HashMap<String, Vec<SketchLocus>>,
-) -> Option<&'a [SketchLocus]> {
-    loci_by_marker.iter().find_map(|(key, loci)| {
-        (key.strip_suffix(":qualified-point") == Some(marker_id)).then_some(loci.as_slice())
-    })
+) -> Result<Option<&'a [SketchLocus]>, cadmpeg_core::CodecError> {
+    for (key, loci) in loci_by_marker {
+        if ctx.strip_suffix(key, ":qualified-point", "strip SLDPRT qualified point suffix")?
+            == Some(marker_id)
+        {
+            return Ok(Some(loci.as_slice()));
+        }
+    }
+    Ok(None)
 }
 
 pub(super) fn marker_point_locus(
@@ -4659,7 +4665,7 @@ pub(super) fn marker_point_locus(
 ) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker point locus";
     charge_profile_marker_lookup(ctx, marker_id, markers_by_id, loci_by_marker, OPERATION)?;
-    if let Some(loci) = qualified_point_loci(marker_id, loci_by_marker) {
+    if let Some(loci) = qualified_point_loci(ctx, marker_id, loci_by_marker)? {
         if let Some(locus) = unique_locus(ctx, loci)? {
             return Ok(Some(locus));
         }
@@ -4758,7 +4764,7 @@ fn qualified_or_linked_point_locus(
         }
     }
     charge_profile_marker_lookup(ctx, marker_id, markers_by_id, loci_by_marker, OPERATION)?;
-    if let Some(loci) = qualified_point_loci(marker_id, loci_by_marker) {
+    if let Some(loci) = qualified_point_loci(ctx, marker_id, loci_by_marker)? {
         return unique_locus(ctx, loci);
     }
     let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? else {

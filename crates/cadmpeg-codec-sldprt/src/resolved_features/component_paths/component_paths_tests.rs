@@ -192,3 +192,34 @@ fn dissected_profile_propagates_ordinal_work_refusal() {
         &feature,
     ).unwrap());
 }
+
+#[test]
+fn dissected_profile_suffix_propagates_work_refusal() {
+    let feature = Feature {
+        id: "profile".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: None,
+        ordinal: 0,
+        name: "Sketch<1>".into(),
+        kind: String::new(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::from([(
+            cadmpeg_core::nonblank_const!("Description"),
+            "Sketch<1>".into(),
+        )]),
+        text: None,
+        content: Vec::new(),
+    };
+    crate::test_support::work_refusal_at("strip SLDPRT dissected profile ordinal suffix", |ctx| {
+        super::is_dissected_profile_feature(ctx, &feature)
+    });
+    assert!(super::is_dissected_profile_feature(
+        &cadmpeg_test_support::service_decode_context(),
+        &feature,
+    ).unwrap());
+}
