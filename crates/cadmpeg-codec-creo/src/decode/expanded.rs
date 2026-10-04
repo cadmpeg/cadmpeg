@@ -316,7 +316,7 @@ pub(super) fn fc05_circle_records<'a>(
             point_count: record.point_count,
             max_residual: record.max_residual,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)
@@ -343,7 +343,7 @@ pub(super) fn fc05_cylinder_cap_pair_records<'a>(
             parameter_sign: record.parameter_sense.as_i8(),
             cap_ordinates_row_frame: &record.cap_ordinates_row_frame,
             offset: record.offset,
-            source_section: source_section_ref(scan, record.offset),
+            source_section: source_section_ref(ctx, scan, record.offset)?,
         });
     }
     Ok(records)

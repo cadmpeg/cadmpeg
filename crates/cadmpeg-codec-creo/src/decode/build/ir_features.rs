@@ -386,12 +386,10 @@ pub(super) fn emit_model_features(
             operation.feature_id,
             &prototype_feature_dependencies,
         )?;
-        let operation_section = scan
-            .framing
-            .sections
-            .iter()
-            .find(|section| section.contains(operation.offset))
-            .map_or("MdlStatus", |section| section.name());
+        let operation_section = match scan.framing.sections.iter().find(|section| section.contains(operation.offset)) {
+            Some(section) => section.name(ctx)?,
+            None => "MdlStatus",
+        };
         let name = current_operation
             .filter(|operation| operation.display_name_stored())
             .and_then(|operation| {

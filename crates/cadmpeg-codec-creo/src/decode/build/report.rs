@@ -90,12 +90,12 @@ pub(in super::super) fn build_report(
         }
     }
 
-    let geom_sections = scan
-        .framing
-        .sections
-        .iter()
-        .filter(|s| s.role() == SectionRole::PsbGeometry)
-        .count();
+    let mut geom_sections = 0usize;
+    for section in &scan.framing.sections {
+        if section.role(ctx)? == SectionRole::PsbGeometry {
+            geom_sections = geom_sections.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo geometry section count", u64::MAX, u64::MAX))?;
+        }
+    }
     let placed_frames = scan
         .planes
         .local_systems

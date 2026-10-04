@@ -650,16 +650,17 @@ pub(in crate::decode) fn geometry_section_record(
     scan: &ContainerScan,
     offset: usize,
 ) -> Result<Option<UnknownId>, cadmpeg_core::CodecError> {
-    let Some(section) = scan
-        .framing
-        .sections
-        .iter()
-        .filter(|section| section.role() == SectionRole::PsbGeometry)
-        .find(|section| section.contains(offset))
-    else {
+    let mut selected = None;
+    for section in &scan.framing.sections {
+        if section.role(ctx)? == SectionRole::PsbGeometry && section.contains(offset) {
+            selected = Some(section);
+            break;
+        }
+    }
+    let Some(section) = selected else {
         return Ok(None);
     };
-    let Some(namespace) = crate::identity::section_namespace(section.name()) else {
+    let Some(namespace) = crate::identity::section_namespace(section.name(ctx)?) else {
         return Ok(None);
     };
     crate::identity::compose_checked(

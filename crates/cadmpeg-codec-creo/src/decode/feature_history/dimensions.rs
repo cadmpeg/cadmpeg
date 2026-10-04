@@ -86,32 +86,38 @@ fn push_feature_source_parameter(
 
 #[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     external_id: u32,
-) -> Option<ParameterId> {
-    Some(ParameterId::compose(
+) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
+    let Some(key) = sketch_identity_key(ctx, sketch)? else {
+        return Ok(None);
+    };
+    Ok(Some(ParameterId::compose(
         &crate::identity::FEATDEFS_PARAMETER,
-        sketch_identity_key(sketch)?.colon(external_id),
-    ))
+        key.colon(external_id),
+    )))
 }
 
 #[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_row_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     external_id: u32,
     occurrence: Option<usize>,
-) -> Option<ParameterId> {
-    occurrence.map_or_else(
-        || feature_dimension_parameter_id(sketch, external_id),
-        |occurrence| {
-            Some(ParameterId::compose(
+) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
+    match occurrence {
+        None => feature_dimension_parameter_id(ctx, sketch, external_id),
+        Some(occurrence) => {
+            let Some(key) = sketch_identity_key(ctx, sketch)? else {
+                return Ok(None);
+            };
+            Ok(Some(ParameterId::compose(
                 &crate::identity::FEATDEFS_PARAMETER,
-                sketch_identity_key(sketch)?
-                    .colon(external_id)
-                    .colon(occurrence + 1),
-            ))
-        },
-    )
+                key.colon(external_id).colon(occurrence + 1),
+            )))
+        }
+    }
 }
 
 fn feature_dimension_parameter_row_id_admitted(
@@ -127,7 +133,7 @@ fn feature_dimension_parameter_row_id_admitted(
         ctx.format_retained(
             format_args!(
                 "creo:featdefs:parameter#{}:{external_id}:{ordinal}",
-                sketch_identity_scope(sketch),
+                sketch_identity_scope(ctx, sketch)?,
             ),
             "creo dimension parameter identity",
         )?
@@ -135,7 +141,7 @@ fn feature_dimension_parameter_row_id_admitted(
         ctx.format_retained(
             format_args!(
                 "creo:featdefs:parameter#{}:{external_id}",
-                sketch_identity_scope(sketch),
+                sketch_identity_scope(ctx, sketch)?,
             ),
             "creo dimension parameter identity",
         )?
@@ -145,26 +151,26 @@ fn feature_dimension_parameter_row_id_admitted(
 
 #[cfg(test)]
 pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     table: &'a crate::feature::definitions::FeatureDimensionTable,
     ordinal: usize,
-) -> Option<(
+) -> Result<Option<(
     &'a crate::feature::definitions::FeatureDimension,
     ParameterId,
-)> {
-    feature_dimension_table_complete(table).then_some(())?;
-    let dimension = table.rows.get(ordinal)?;
-    (table
+)>, cadmpeg_core::CodecError> {
+    if !feature_dimension_table_complete(table) { return Ok(None); }
+    let Some(dimension) = table.rows.get(ordinal) else { return Ok(None); };
+    if !(table
         .rows
         .iter()
         .filter(|candidate| candidate.external_id == dimension.external_id)
         .count()
-        == 1)
-        .then_some(())?;
-    Some((
-        dimension,
-        feature_dimension_parameter_id(sketch, dimension.external_id)?,
-    ))
+        == 1) { return Ok(None); }
+    let Some(parameter) = feature_dimension_parameter_id(ctx, sketch, dimension.external_id)? else {
+        return Ok(None);
+    };
+    Ok(Some((dimension, parameter)))
 }
 
 pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
@@ -232,7 +238,7 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
             let text = ctx.format_retained(
                 format_args!(
                     "creo:featdefs:parameter#{}:{}",
-                    crate::decode::sketch_ids::sketch_identity_scope(&sketch),
+                    crate::decode::sketch_ids::sketch_identity_scope(ctx, &sketch)?,
                     dimension.external_id,
                 ),
                 "creo planned dimension parameter identity",
@@ -352,7 +358,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
             ctx.format_retained(
                 format_args!(
                     "d{}_{}_{}",
-                    sketch_identity_scope(sketch),
+                    sketch_identity_scope(ctx, sketch)?,
                     external_id,
                     occurrence + 1
                 ),
@@ -360,7 +366,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
             )?
         } else {
             ctx.format_retained(
-                format_args!("d{}_{}", sketch_identity_scope(sketch), external_id),
+                format_args!("d{}_{}", sketch_identity_scope(ctx, sketch)?, external_id),
                 "creo dimension parameter name",
             )?
         };

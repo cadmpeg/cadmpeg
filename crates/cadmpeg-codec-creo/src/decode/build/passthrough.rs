@@ -30,14 +30,15 @@ pub(super) fn preserve_passthrough_sections(
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut unknowns = Vec::new();
-    for section in scan.framing.sections.iter().filter(|section| {
-        section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
-    }) {
+    for section in &scan.framing.sections {
+        if !(section.role(ctx)? == SectionRole::PsbGeometry || section.role(ctx)? == SectionRole::Thumbnail) {
+            continue;
+        }
         let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
             return Err(CodecError::malformed(ctx.format_retained(
                 format_args!(
                     "creo section `{}` declares the region {}..{}, past the scanned file length {}",
-                    section.name(),
+                    section.name(ctx)?,
                     section.offset(),
                     section.end(),
                     scan.framing.data.len(),
@@ -53,9 +54,9 @@ pub(super) fn preserve_passthrough_sections(
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
-        let (bytes, offset, tag, exactness) = if section.role() == SectionRole::Thumbnail {
+        let (bytes, offset, tag, exactness) = if section.role(ctx)? == SectionRole::Thumbnail {
             if raw_is_compressed {
-                let Some(expanded) = container::expanded_section_for(scan, section) else {
+                let Some(expanded) = container::expanded_section_for(ctx, scan, section)? else {
                     continue;
                 };
                 let Some(marker_offset) = expanded
@@ -95,7 +96,7 @@ pub(super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let namespace = crate::identity::section_namespace(section.name())
+        let namespace = crate::identity::section_namespace(section.name(ctx)?)
             .ok_or_else(|| CodecError::malformed("invalid Creo passthrough section namespace"))?;
         let id = crate::identity::compose_checked::<UnknownId>(
             ctx,
@@ -107,7 +108,7 @@ pub(super) fn preserve_passthrough_sections(
             ctx,
             annotations,
             &id,
-            section.name(),
+            section.name(ctx)?,
             cadmpeg_core::decode::u64_from_index(offset),
             tag,
             exactness,
@@ -123,12 +124,11 @@ pub(super) fn preserve_passthrough_sections(
     Ok(unknowns)
 }
 
-fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
-    scan.framing
-        .sections
-        .iter()
-        .find(|section| section.contains(offset))
-        .map_or("legacy_ascii", |section| section.name())
+fn legacy_source_stream<'a>(ctx: &DecodeContext<'_>, scan: &'a ContainerScan<'_>, offset: usize) -> Result<&'a str, CodecError> {
+    match scan.framing.sections.iter().find(|section| section.contains(offset)) {
+        Some(section) => section.name(ctx),
+        None => Ok("legacy_ascii"),
+    }
 }
 
 fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
@@ -148,7 +148,7 @@ where
             ctx,
             annotations,
             record.id(),
-            legacy_source_stream(scan, record.offset),
+            legacy_source_stream(ctx, scan, record.offset)?,
             cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             Exactness::ByteExact,
@@ -177,7 +177,7 @@ pub(super) fn emit_legacy_arenas(
                 ctx,
                 annotations,
                 record.id(),
-                legacy_source_stream(scan, record.offset),
+                legacy_source_stream(ctx, scan, record.offset)?,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
                 Exactness::ByteExact,
@@ -287,7 +287,7 @@ pub(super) fn emit_legacy_arenas(
                     ctx,
                     annotations,
                     record.id(),
-                    legacy_source_stream(scan, record.offset),
+                    legacy_source_stream(ctx, scan, record.offset)?,
                     cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,

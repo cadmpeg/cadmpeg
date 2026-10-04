@@ -80,3 +80,85 @@ fn parent_feature_arrays_reject_truncated_counts_and_entries() {
         assert!(matches!(error, CodecError::Malformed(_)));
     }
 }
+
+#[test]
+fn legacy_toc_count_prefix_refuses_work() {
+    let bytes = b"\n@Toc 1 0\n0 1 ->\n@entry 2 10\n1 2 [1]\n";
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo legacy TOC count prefix",
+        |ctx| super::super::legacy_toc_sections(ctx, bytes, 0),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy TOC count prefix"));
+}
+
+#[test]
+fn feature_identity_family_prefix_refuses_work() {
+    let row = crate::feature::rows::FeatureRow {
+        feature_id: 87,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
+        stream_offset: 0, body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0, offset: 0,
+    };
+    let reference = crate::feature::operations::FeatureReferenceName {
+        feature_id: 87, name_bytes: b"Datum Plane id 87".to_vec(),
+        own_reference_id: 10, reference_type: 1, offset: 0,
+    };
+    let structural = std::collections::BTreeSet::new();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo feature identity family prefix",
+        |ctx| super::super::feature_row_has_model_identity(ctx, &row, &structural, &[], std::slice::from_ref(&reference)),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo feature identity family prefix"));
+}
+
+#[test]
+fn feature_identity_ordinal_prefix_refuses_work() {
+    let row = crate::feature::rows::FeatureRow {
+        feature_id: 87,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
+        stream_offset: 0, body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0, offset: 0,
+    };
+    let reference = crate::feature::operations::FeatureReferenceName {
+        feature_id: 87, name_bytes: b"Datum Plane id 87".to_vec(),
+        own_reference_id: 10, reference_type: 1, offset: 0,
+    };
+    let structural = std::collections::BTreeSet::new();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo feature identity ordinal prefix",
+        |ctx| super::super::feature_row_has_model_identity(ctx, &row, &structural, &[], std::slice::from_ref(&reference)),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo feature identity ordinal prefix"));
+}
+
+#[test]
+fn feature_identity_datum_prefix_refuses_work() {
+    let row = crate::feature::rows::FeatureRow {
+        feature_id: 87,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
+        stream_offset: 0, body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0, offset: 0,
+    };
+    let reference = crate::feature::operations::FeatureReferenceName {
+        feature_id: 87, name_bytes: b"DTM87".to_vec(),
+        own_reference_id: 10, reference_type: 1, offset: 0,
+    };
+    let structural = std::collections::BTreeSet::new();
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo feature identity datum prefix",
+        |ctx| super::super::feature_row_has_model_identity(ctx, &row, &structural, &[], std::slice::from_ref(&reference)),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo feature identity datum prefix"));
+}

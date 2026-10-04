@@ -862,7 +862,7 @@ pub(super) fn transfer_section_entities(
                     namespace.format(),
                     namespace.scope(),
                     namespace.kind(),
-                    sketch_identity_scope(sketch_id)
+                    sketch_identity_scope(ctx, sketch_id)?
                 ),
                 "creo saved spline entity identity",
             )?;
@@ -878,7 +878,7 @@ pub(super) fn transfer_section_entities(
                 namespace.format(),
                 namespace.scope(),
                 namespace.kind(),
-                sketch_identity_scope(sketch_id)
+                sketch_identity_scope(ctx, sketch_id)?
             ),
             "creo saved spline curve identity",
         )?;
@@ -1010,7 +1010,7 @@ pub(super) fn transfer_section_entities(
                         ctx,
                         format_args!(
                             "FeatDefs:section#{}:{suffix}",
-                            sketch_identity_scope(sketch_id)
+                            sketch_identity_scope(ctx, sketch_id)?
                         ),
                     )?),
                 },
@@ -1060,7 +1060,7 @@ pub(super) fn transfer_section_entities(
                         ctx,
                         format_args!(
                             "FeatDefs:section#{}:{suffix}",
-                            sketch_identity_scope(sketch_id)
+                            sketch_identity_scope(ctx, sketch_id)?
                         ),
                     )?),
                 },
@@ -1110,7 +1110,7 @@ pub(super) fn transfer_section_entities(
                         ctx,
                         format_args!(
                             "FeatDefs:section#{}:{suffix}",
-                            sketch_identity_scope(sketch_id)
+                            sketch_identity_scope(ctx, sketch_id)?
                         ),
                     )?),
                 },
@@ -1144,7 +1144,7 @@ pub(super) fn transfer_section_entities(
                             ctx,
                             format_args!(
                                 "FeatDefs:section#{}:{external_id}",
-                                sketch_identity_scope(sketch_id)
+                                sketch_identity_scope(ctx, sketch_id)?
                             ),
                         )?,
                         None => placed_source_object(

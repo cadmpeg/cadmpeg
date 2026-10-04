@@ -82,7 +82,7 @@ fn saved_profile_entity_identity_refuses_retained_limit() {
             .expect("identity resources");
         assert_eq!(
             checked,
-            crate::decode::sketch_ids::sketch_entity_id(&sketch, 30)
+            crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 30).expect("test identity scope resources")
         );
     });
 }

@@ -34,29 +34,20 @@ pub(super) fn source_section(
     offset: usize,
 ) -> Result<String, CodecError> {
     ctx.copy_retained_text(
-        source_section_ref(scan, offset),
+        source_section_ref(ctx, scan, offset)?,
         "creo expression source section",
     )
 }
 
-pub(super) fn source_section_ref<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
-    scan.framing
-        .sections
-        .iter()
-        .find(|section| section.contains(offset))
-        .map_or_else(
-            || {
-                if matches!(
-                    scan.framing.layout,
-                    crate::container::Layout::LegacyAscii(_)
-                ) {
-                    "legacy_ascii"
-                } else {
-                    "unknown"
-                }
-            },
-            |section| section.name(),
-        )
+pub(super) fn source_section_ref<'a>(ctx: &DecodeContext<'_>, scan: &'a ContainerScan<'_>, offset: usize) -> Result<&'a str, CodecError> {
+    match scan.framing.sections.iter().find(|section| section.contains(offset)) {
+        Some(section) => section.name(ctx),
+        None => Ok(if matches!(scan.framing.layout, crate::container::Layout::LegacyAscii(_)) {
+            "legacy_ascii"
+        } else {
+            "unknown"
+        }),
+    }
 }
 
 pub(super) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
@@ -376,7 +367,11 @@ pub(super) fn design_constraint_transfer_coverage(
             }
             _ => None,
         };
-        let native_kind = match native_kind_text.and_then(|kind| kind.strip_prefix(native_kind_prefix)) {
+        let native_kind_suffix = match native_kind_text {
+            Some(kind) => ctx.strip_prefix(kind, native_kind_prefix, "creo native constraint kind prefix")?,
+            None => None,
+        };
+        let native_kind = match native_kind_suffix {
             Some(kind) => ctx.parse_text::<u32>(kind, "creo scalar text parsing")?.ok(),
             None => None,
         };
@@ -455,10 +450,12 @@ pub(super) fn curve_transfer_coverage(
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         )
     }) {
-        let Some(digits) = curve.source_object.as_ref()
+        let Some(source) = curve.source_object.as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
         else {
+            continue;
+        };
+        let Some(digits) = ctx.strip_prefix(source.object_id.as_str(), "VisibGeom:", "creo coverage identity prefix")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -473,10 +470,12 @@ pub(super) fn curve_transfer_coverage(
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         )
     }) {
-        let Some(digits) = curve.source_object.as_ref()
+        let Some(source) = curve.source_object.as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
         else {
+            continue;
+        };
+        let Some(digits) = ctx.strip_prefix(source.object_id.as_str(), "VisibGeom:", "creo coverage identity prefix")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -541,10 +540,12 @@ pub(super) fn surface_transfer_coverage(
     }
     let mut transferred = Vec::new();
     for surface in surfaces {
-        let Some(digits) = surface.source_object.as_ref()
+        let Some(source) = surface.source_object.as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
         else {
+            continue;
+        };
+        let Some(digits) = ctx.strip_prefix(source.object_id.as_str(), "VisibGeom:", "creo coverage identity prefix")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -566,10 +567,12 @@ pub(super) fn surface_transfer_coverage(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
         )
     }) {
-        let Some(digits) = surface.source_object.as_ref()
+        let Some(source) = surface.source_object.as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-            .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
         else {
+            continue;
+        };
+        let Some(digits) = ctx.strip_prefix(source.object_id.as_str(), "VisibGeom:", "creo coverage identity prefix")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
@@ -649,4 +652,6 @@ mod tests {
             Err(CodecError::Malformed(_))
         ));
     }
+    mod prefixes;
+
 }

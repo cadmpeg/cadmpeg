@@ -837,3 +837,17 @@ fn corner_envelopes_reject_incomplete_or_inconsistent_source_joins() {
     )
     .is_none());
 }
+
+#[test]
+fn counterbore_surface_identity_prefix_refuses_work() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo counterbore surface identity prefix",
+        |ctx| super::unique_model_surface_geometries(ctx, &ir),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo counterbore surface identity prefix"));
+}

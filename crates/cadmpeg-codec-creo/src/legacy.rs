@@ -816,7 +816,7 @@ impl Persistence {
         }
         let mut first = None;
         for element_id in elements {
-            let offset = match element_id.strip_prefix("creo:legacy_ascii:object#") {
+            let offset = match ctx.strip_prefix(element_id, "creo:legacy_ascii:object#", "creo legacy unit object prefix")? {
                 Some(digits) => ctx.parse_text::<usize>(digits, "creo scalar text parsing")?.ok(),
                 None => None,
             };
@@ -914,7 +914,7 @@ pub(crate) fn line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
 pub(crate) fn parse_declaration<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, line: &'a [u8]) -> Result<Option<(u32, &'a str, LegacyTypeCode)>, cadmpeg_core::CodecError> {
     let line = { let Some(value) = ctx.validate_utf8(line, "creo legacy declaration UTF-8 validation")?.ok() else { return Ok(None); }; value };
     let mut fields = line.split_ascii_whitespace();
-    let name = { let Some(value) = { let Some(value) = fields.next() else { return Ok(None); }; value }.strip_prefix('@') else { return Ok(None); }; value };
+    let name = { let Some(value) = ctx.strip_prefix({ let Some(value) = fields.next() else { return Ok(None); }; value }, "@", "creo legacy declaration name prefix")? else { return Ok(None); }; value };
     if name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_graphic()) {
         return Ok(None);
     }
@@ -966,8 +966,7 @@ fn compact_real(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> 
 fn signed_integer(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<Option<i32>, cadmpeg_core::CodecError> {
     let text = { let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
     if text.is_empty()
-        || !text
-            .strip_prefix('-')
+        || !ctx.strip_prefix(text, "-", "creo signed integer sign prefix")?
             .unwrap_or(text)
             .bytes()
             .all(|byte| byte.is_ascii_digit())
