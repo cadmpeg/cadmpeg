@@ -932,8 +932,13 @@ pub(in crate::native) fn feature_pattern_references(
             if failure.is_some() {
                 return;
             }
-            let Some(decoded) = PatternReferences::read(record.payload_view()) else {
-                return;
+            let decoded = match PatternReferences::read(ctx, record.payload_view()) {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let layout = decoded.layout();
             for (ordinal, reference) in decoded.into_references().into_iter().enumerate() {

@@ -445,7 +445,7 @@ fn order_expression_dependencies(
     reservation.grow(cadmpeg_core::decode::u64_from_index(emitted_bytes))?;
     let mut emitted = ctx.alloc_filled(count, false, "NX expression dependency order")?;
     let mut order = Vec::new();
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "NX order expression dependencies range traversal")? {
         let mut ready = None;
         for (index, expression) in expressions.iter().enumerate() {
             ctx.charge_work(1, "NX expression dependency candidate")?;

@@ -1030,7 +1030,7 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
     ];
     let record =
         crate::om::operation_record::OperationPayload::new(&payload, 200, "HOLE PACKAGE").unwrap();
-    let lane = hole_package_construction_group_lane(record).unwrap();
+    let lane = crate::test_support::with_decode_context(|ctx| hole_package_construction_group_lane(ctx, record)).unwrap().unwrap();
     assert_eq!(lane.offset, 1);
     assert_eq!(lane.selector.get(), 0x46);
     assert_eq!(lane.branch.get(), 0x11);
@@ -1051,14 +1051,14 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
 
     let mut mismatched_branch = payload;
     mismatched_branch[17] = 0x12;
-    assert!(hole_package_construction_group_lane(
+    assert!(crate::test_support::with_decode_context(|ctx| hole_package_construction_group_lane(ctx,
         crate::om::operation_record::OperationPayload::new(
             &mismatched_branch,
             record.payload_offset(),
             record.name()
         )
         .unwrap()
-    )
+    )).unwrap()
     .is_none());
 }
 

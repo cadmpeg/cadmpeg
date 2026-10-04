@@ -27,7 +27,7 @@ enum Body {
 }
 
 impl ProjectedCurveReferences {
-    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
+    pub(crate) fn read(ctx: &cadmpeg_core::decode::DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let bytes = record.payload();
         let read_token = |at: &mut usize| {
             let token = PayloadIndexToken::read(bytes.get(*at..)?)?;
@@ -91,21 +91,23 @@ impl ProjectedCurveReferences {
         let marker = match record.name() {
             "CPROJ" => &[1, 2][..],
             "CPROJ_CMB" => &CMB_PREFIX[..],
-            _ => return None,
+            _ => return Ok(None),
         };
-        super::unique_candidate(
-            bytes
+        Ok({
+let Some(candidate_end_0) = bytes
                 .len()
-                .checked_sub(marker.len())
-                .into_iter()
-                .flat_map(|last| 0..=last)
+                .checked_sub(marker.len()) else { return Ok(None); };
+let mut candidates = ctx.admit_iter(&(0..=candidate_end_0), "NX projected curve reference candidate search")?
                 .filter_map(|start| {
                     if bytes.get(start..start + marker.len()) != Some(marker) {
                         return None;
                     }
                     decode(start)
-                }),
-        )
+                });
+let first = candidates.next();
+let second = candidates.next();
+if second.is_none() { first } else { None }
+})
     }
 
     pub(crate) fn into_references(self) -> Vec<PayloadObjectReference<PayloadIndexToken>> {

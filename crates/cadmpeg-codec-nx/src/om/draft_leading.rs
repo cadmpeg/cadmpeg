@@ -131,10 +131,6 @@ pub(crate) fn scan(
     if record.name() != "DRAFT" || record.payload().get(..PREFIX.len()) != Some(&PREFIX) {
         return Ok(None);
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX draft leading indices",
-    )?;
     let mut at = PREFIX.len();
     if record.payload().get(at) != Some(&0x01) {
         return Ok(None);
@@ -148,7 +144,7 @@ pub(crate) fn scan(
     at += 2;
     let member_count = usize::from(declared_count - 1);
     let mut scan_at = at;
-    for _ in 1..declared_count {
+    for _ in ctx.admit_iter(&(1..declared_count), "scan NX draft leading indices")? {
         let Some(token) = LocatedCompactIndex::read(record.payload(), scan_at) else {
             return Ok(None);
         };
@@ -159,7 +155,7 @@ pub(crate) fn scan(
     }
     let operation = "NX draft leading index members";
     let mut indices = ctx.collection_vec(member_count, operation)?;
-    for _ in 1..declared_count {
+    for _ in ctx.admit_iter(&(1..declared_count), "scan NX draft leading indices")? {
         let Some(token) = LocatedCompactIndex::read(record.payload(), at) else {
             return Ok(None);
         };

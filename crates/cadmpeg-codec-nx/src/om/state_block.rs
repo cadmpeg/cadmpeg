@@ -166,7 +166,6 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     }
 
     let scanned = end - start;
-    ctx.charge_work(u64_from_index(scanned), "scan NX state block")?;
     let path_bytes = scanned
         .checked_mul(std::mem::size_of::<(usize, OperationStatePath)>())
         .ok_or_else(|| ctx.refuse_codec_limit("nx state paths", 0, u64_from_index(scanned)))?;
@@ -186,7 +185,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     let Some(last_pair) = end.checked_sub(1) else {
         return Ok(None);
     };
-    for at in start..last_pair {
+    for at in ctx.admit_iter(&(start..last_pair), "scan NX state block")? {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
             ctx.reserve_vec(&mut opaque_lane_starts, 1, "nx opaque state lanes")?;
             opaque_lane_starts.push(at);
@@ -195,7 +194,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
 
     let mut status_paths = Vec::new();
     let mut message_paths = Vec::new();
-    for at in (start..end).rev() {
+    for at in ctx.admit_iter(&(start..end), "scan NX state block")?.rev() {
         if let Some(message) = OperationStateMessage::read(ctx, bytes, at, base_offset)? {
             let next = message.end_offset() - base_offset;
             if next > at && next <= end {

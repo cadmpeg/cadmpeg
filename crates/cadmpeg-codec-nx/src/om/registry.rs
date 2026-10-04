@@ -262,7 +262,7 @@ fn field_registry_start(ctx: &DecodeContext<'_>, bytes: &[u8], at: usize, end: u
             return None;
         }
         let probe_end = candidate.checked_add(FIELD_START_PROBE_LIMIT)?.min(end);
-        for probe in candidate..probe_end {
+        for probe in propagate_resource!(ctx.admit_iter(&(candidate..probe_end), "NX field registry start range traversal").map_err(CodecError::from)) {
             if propagate_resource!(registry_declaration_at(ctx, bytes, probe, end, b"UGS::")).is_some() {
                 return None;
             }
@@ -283,14 +283,10 @@ pub(super) fn type_registry<'a>(
     start: usize,
     end: usize,
 ) -> Result<TypeRegistry<'a>, CodecError> {
-    let span = end
+    end
         .checked_sub(start)
         .ok_or_else(|| ctx.refuse_codec_limit("nx type registry range", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(span),
-        "nx type registry scan",
-    )?;
-    for at in start..end {
+    for at in ctx.admit_iter(&(start..end), "nx type registry scan")? {
         if registry_declaration_at(ctx, bytes, at, end, b"UGS::")?.is_some() {
             if let Some(registry) = complete_type_registry_at(ctx, bytes, at, end)? {
                 return Ok(registry);
@@ -330,16 +326,15 @@ fn legacy_type_definitions<'a>(
             at += 1;
         }
     }
-    for index in out
+    if let Some(range_end) = out
         .len()
-        .checked_sub(1)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
+        .checked_sub(1) {
+            for index in ctx.admit_iter(&(0..range_end), "NX legacy type definitions range traversal")? {
         let tail_start = out[index].offset + out[index].name.len() + 1;
         let tail_end = out[index + 1].offset;
         out[index].registry_tail = &bytes[tail_start..tail_end];
     }
+        }
     Ok(out)
 }
 
@@ -355,7 +350,7 @@ pub(super) fn field_definitions<'a>(
         .checked_add(256)
         .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
         .min(end);
-    while let Some((definition, at)) = (search..limit)
+    while let Some((definition, at)) = ctx.admit_iter(&(search..limit), "NX field registry candidate search")?
         .find_map(|at| match field_definition_at(ctx, bytes, at, end) {
             Ok(Some(definition)) => Some(Ok((definition, at))),
             Ok(None) => None,
@@ -371,7 +366,7 @@ pub(super) fn field_definitions<'a>(
         ctx.reserve_vec(&mut out, 1, "nx field definitions")?;
         out.push(definition);
     }
-    bound_field_registry_tails(bytes, &mut out);
+    bound_field_registry_tails(ctx, bytes, &mut out)?;
     Ok(out)
 }
 
@@ -392,21 +387,19 @@ pub(super) fn all_field_definitions<'a>(
             at += 1;
         }
     }
-    bound_field_registry_tails(bytes, &mut out);
+    bound_field_registry_tails(ctx, bytes, &mut out)?;
     Ok(out)
 }
 
-fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {
-    for index in definitions
-        .len()
-        .checked_sub(1)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
+fn bound_field_registry_tails<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) -> Result<(), CodecError> {
+    if let Some(last) = definitions.len().checked_sub(1) {
+        for index in ctx.admit_iter(&(0..last), "NX field registry tail traversal")? {
         let tail_start = definitions[index].offset + definitions[index].name.len() + 1;
         let tail_end = definitions[index + 1].offset;
         definitions[index].registry_tail = &bytes[tail_start..tail_end];
+        }
     }
+    Ok(())
 }
 
 fn field_definition_at<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], at: usize, end: usize) -> Result<Option<FieldDefinition<'a>>, CodecError> {

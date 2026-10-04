@@ -106,7 +106,7 @@ pub(in crate::native) fn feature_projected_curve_references(
     container: &Container,
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        Ok(crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
+        Ok(crate::om::projected_references::ProjectedCurveReferences::read(ctx, record)?.and_then(|field| {
             field
                 .into_references()
                 .into_iter()

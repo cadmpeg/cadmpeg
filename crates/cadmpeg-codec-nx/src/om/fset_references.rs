@@ -137,7 +137,7 @@ impl FsetReferences<()> {
             return Ok(None);
         };
         let mut candidate = None;
-        for start in 0..last {
+        for start in ctx.admit_iter(&(0..last), "NX FSET reference candidate search")? {
             let Some(next) = decode(start)? else { continue; };
             if candidate.is_some() {
                 return Ok(None);

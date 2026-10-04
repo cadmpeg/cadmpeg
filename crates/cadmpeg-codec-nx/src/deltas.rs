@@ -1107,7 +1107,7 @@ fn inline_schema_declaration(
         let Some(body) = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len()) else {
             return Ok(None);
         };
-        let Some(shape) = attdef_list_shape(stream, body) else {
+        let Some(shape) = attdef_list_shape(ctx, stream, body)? else {
             return Ok(None);
         };
         if shape.end > gap_end {
@@ -1210,7 +1210,7 @@ fn inline_schema_declaration(
             let marker = IntersectionMarker::try_from(*stream.get(at)?).ok()?;
             at = at.checked_add(1)?;
             if let Some((linked_references, state_references, state_end)) =
-                type_38_reference_lanes(stream, at, ReferenceLaneForm::TwoLinks)
+                propagate_resource!(type_38_reference_lanes(ctx, stream, at, ReferenceLaneForm::TwoLinks))
             {
                 let (numeric_values, end) = if stream
                     .get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
@@ -1243,7 +1243,7 @@ fn inline_schema_declaration(
                 }));
             }
             let (linked_references, state_references, end) =
-                type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
+                propagate_resource!(type_38_reference_lanes(ctx, stream, at, ReferenceLaneForm::OneLink))?;
             (end <= gap_end).then_some(())?;
             return Some(Ok(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
@@ -1358,21 +1358,22 @@ fn inline_schema_declaration(
     Ok(parsed)
 }
 
-fn type_38_reference_lanes(
+fn type_38_reference_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     form: ReferenceLaneForm,
-) -> Option<(Vec<NonNullXmt>, Vec<NonNullXmt>, usize)> {
+) -> Result<Option<(Vec<NonNullXmt>, Vec<NonNullXmt>, usize)>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     let (linked_count, state_count) = form.counts();
     let mut at = offset;
     let mut linked_references = Vec::new();
-    for _ in 0..linked_count {
+    for _ in propagate_resource!(ctx.admit_iter(&(0..linked_count), "NX type 38 linked reference traversal").map_err(CodecError::from)) {
         let reference = read_status_one_reference(stream, &mut at)?;
         let reference = NonNullXmt::try_from(reference).ok()?;
         linked_references.push(reference);
     }
     let mut state_references = Vec::new();
-    for _ in 0..state_count {
+    for _ in propagate_resource!(ctx.admit_iter(&(0..state_count), "NX type 38 state reference traversal").map_err(CodecError::from)) {
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
         (stream.get(at) == Some(&0)).then_some(())?;
@@ -1381,7 +1382,10 @@ fn type_38_reference_lanes(
         state_references.push(reference);
     }
     (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
-    Some((linked_references, state_references, at))
+    (Some((linked_references, state_references, at))).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 fn type_41_schema_state(
@@ -1434,11 +1438,7 @@ fn inline_body_state(
     offset: usize,
     gap_end: usize,
 ) -> Result<Option<InlineBodyState>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(gap_end - offset),
-        "scan NX inline BODY state",
-    )?;
-    let next_header = ((offset + 1)..gap_end).find(|candidate| {
+    let next_header = ctx.admit_iter(&((offset + 1)..gap_end), "scan NX inline BODY state")?.find(|candidate| {
         [
             BODY_SCHEMA_HEADER,
             REGION_SCHEMA_HEADER,
@@ -2357,7 +2357,7 @@ fn current_revision_scopes(
 
     let mut scopes = Vec::new();
     let mut scopes_reservation = ctx.reserve_scoped(0, "NX current revision scopes")?;
-    for run in 0..run_starts.len() {
+    for run in ctx.admit_iter(&(0..run_starts.len()), "NX current revision scopes range traversal")? {
         let next_run_start = run_starts.get(run + 1).copied();
         // `run_starts` opens at zero, ascends strictly, and every pushed
         // element is under `snapshot_revisions.len()`, so each run holds at
@@ -2532,7 +2532,7 @@ fn consume_fixed(
     let Some(candidate) = candidate else {
         return Ok(None);
     };
-    let shadows_type_101 = (candidate.offset + 1..candidate.end)
+    let shadows_type_101 = ctx.admit_iter(&(candidate.offset + 1..candidate.end), "NX fixed delta shadow search")?
         .any(|offset| type_101_shape(stream, offset).is_some_and(|(_, end)| end > candidate.end));
     if shadows_type_101 {
         return Ok(None);
@@ -2828,13 +2828,15 @@ fn consume_attdef_list(
 ) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
-        let direct = attdef_list_shape(stream, offset.checked_add(2)?);
+        let direct = propagate_resource!(attdef_list_shape(ctx, stream, offset.checked_add(2)?));
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-        let escaped = escaped_marker
-            .then(|| attdef_list_shape(stream, offset.checked_add(3)?))
-            .flatten();
-        select_enveloped_layout(escaped_marker, direct, escaped)
-    })();
+        let escaped = if escaped_marker {
+            propagate_resource!(attdef_list_shape(ctx, stream, offset.checked_add(3)?))
+        } else {
+            None
+        };
+        select_enveloped_layout(escaped_marker, direct, escaped).map(Ok)
+    })().transpose()?;
     let Some(shape) = parsed else {
         return Ok(None);
     };
@@ -2982,7 +2984,8 @@ struct AttdefListShape {
     end: usize,
 }
 
-fn attdef_list_shape(stream: &[u8], body: usize) -> Option<AttdefListShape> {
+fn attdef_list_shape(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], body: usize) -> Result<Option<AttdefListShape>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     let slot_count_value = View::u32_be_at(stream, body)?;
     let slot_count = usize::try_from(slot_count_value).ok()?;
     (slot_count > 0).then_some(())?;
@@ -3001,7 +3004,7 @@ fn attdef_list_shape(stream: &[u8], body: usize) -> Option<AttdefListShape> {
     (stream.get(at) == Some(&1)).then_some(())?;
     at += 1;
     let references_start = at;
-    for index in 0..slot_count {
+    for index in propagate_resource!(ctx.admit_iter(&(0..slot_count), "NX attdef slot validation").map_err(CodecError::from)) {
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
         (stream.get(at) == Some(&1)).then_some(())?;
@@ -3012,13 +3015,16 @@ fn attdef_list_shape(stream: &[u8], body: usize) -> Option<AttdefListShape> {
             (reference == 1).then_some(())?;
         }
     }
-    Some(AttdefListShape {
+    (Some(AttdefListShape {
         xmt,
         slot_count: slot_count_value,
         active_count: active_count_value,
         references_start,
         end: at,
-    })
+    })).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 fn materialize_attdef_list(
@@ -3031,7 +3037,7 @@ fn materialize_attdef_list(
     })?;
     let mut references = ctx.collection_vec(count, "NX ATTDEF references")?;
     let mut at = shape.references_start;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "NX materialize attdef list range traversal")? {
         let Some((reference, consumed)) = read_xmt(stream, at) else {
             return Ok(None);
         };
@@ -3341,10 +3347,7 @@ fn type_45_layout(
             let parsed: Option<Result<_, CodecError>> = (|| {
                 let end = data_at.checked_add(value_count.checked_mul(8)?)?;
                 let raw = stream.get(data_at..end)?;
-                propagate_resource!(
-                    ctx.charge_work(u64_from_index(value_count), "validate NX type-45 lane")
-                );
-                (0..value_count)
+                propagate_resource!(ctx.admit_iter(&(0..value_count), "validate NX type-45 lane").map_err(CodecError::from))
                     .all(|i| {
                         View::f64_be_at(raw, i * 8).is_some_and(|value| {
                             value.is_finite() && (value == 0.0 || value.is_normal())

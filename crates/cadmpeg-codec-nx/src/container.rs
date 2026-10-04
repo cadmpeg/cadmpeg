@@ -786,7 +786,7 @@ impl<'a> Container<'a> {
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
         ctx.reserve_capacity(&mut object_ids, count, "retain NX FastLoad object IDs")?;
-        for ordinal in 0..count {
+        for ordinal in ctx.admit_iter(&(0..count), "NX parse rmfastload object id table range traversal")? {
             let offset = ids_start + ordinal * 4;
             let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
                 CodecError::Malformed("FastLoad object ID span is inconsistent".into())
@@ -854,13 +854,9 @@ fn locate_extref_string_table(
         let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "nx external reference string table entries",
-        )?;
         let valid = (|| -> Result<Option<usize>, CodecError> {
             let mut pos = start;
-            for _ in 0..count {
+            for _ in ctx.admit_iter(&(0..count), "nx external reference string table entries")? {
                 let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
                     return Ok(None);
                 };
@@ -907,7 +903,7 @@ fn parse_extref_string_table(
     };
     let mut out = ctx.collection_vec(count, "nx external reference string table")?;
     let mut pos = start;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "NX parse extref string table range traversal")? {
         let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
             return Ok(None);
         };
@@ -973,7 +969,7 @@ fn parse_extref_records(
             return Ok(None);
         }
         let handle_token_count = count - 1;
-        for handle_index in 0..handle_token_count {
+        for handle_index in ctx.admit_iter(&(0..handle_token_count), "NX parse extref records range traversal")? {
             let token = handle_set::LEN + handle_index * 5;
             if bytes.get(token) != Some(&0xe0) || View::u32_be_at(bytes, token + 1).is_none() {
                 return Ok(None);
@@ -981,7 +977,7 @@ fn parse_extref_records(
         }
         let mut handles =
             ctx.collection_vec(handle_token_count, "nx external reference handles")?;
-        for handle_index in 0..handle_token_count {
+        for handle_index in ctx.admit_iter(&(0..handle_token_count), "NX parse extref records range traversal")? {
             let token = handle_set::LEN + handle_index * 5;
             let Some(handle) = View::u32_be_at(bytes, token + 1) else {
                 return Ok(None);
@@ -1656,7 +1652,7 @@ fn directory_region(
     let mut entries = Vec::new();
     ctx.reserve_capacity(&mut entries, capacity, "retain NX directory entries")?;
     let mut at = entries_offset;
-    for ordinal in 0..count {
+    for ordinal in ctx.admit_iter(&(0..count), "NX directory region range traversal")? {
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
             return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} is truncated or malformed"

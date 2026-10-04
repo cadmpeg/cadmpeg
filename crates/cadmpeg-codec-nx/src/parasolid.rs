@@ -517,18 +517,10 @@ fn field_names_record_at(
         let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
         // Each reference requires at least two source bytes.
         (count <= bytes.len().checked_sub(at)? / 2).then_some(())?;
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "read NX field-name references"
-        ));
         let mut probe = at;
-        for _ in 0..count {
+        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "read NX field-name references").map_err(CodecError::from)) {
             NonNullXmt::try_from(read_xmt(bytes, &mut probe)?).ok()?;
         }
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "materialize NX field-name references"
-        ));
         let mut name_xmts = Vec::new();
         propagate_resource!(ctx.reserve_scoped_vec(
             payloads,
@@ -536,7 +528,7 @@ fn field_names_record_at(
             count,
             "NX field-name reference lanes"
         ));
-        for _ in 0..count {
+        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "materialize NX field-name references").map_err(CodecError::from)) {
             name_xmts.push(NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?);
         }
         Some(Ok(FieldNamesRecord {
@@ -563,7 +555,7 @@ pub(crate) fn entity_51_records<'ctx>(
     let mut payloads = ctx.reserve_scoped(0, "NX entity-51 reference lanes")?;
     let mut offset = 0;
     while offset < bytes.len() {
-        let Some(frame) = entity_51_frame_at(bytes, offset) else {
+        let Some(frame) = entity_51_frame_at(ctx, bytes, offset)? else {
             offset += 1;
             continue;
         };
@@ -595,7 +587,7 @@ pub(crate) fn entity_51_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Result<Option<Entity51Record>, CodecError> {
-    let Some(frame) = entity_51_frame_at(bytes, offset) else {
+    let Some(frame) = entity_51_frame_at(ctx, bytes, offset)? else {
         return Ok(None);
     };
     let mut payloads = ctx.reserve_scoped(0, "NX entity-51 reference lanes")?;
@@ -628,7 +620,8 @@ impl Entity51Frame {
     }
 }
 
-fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
+fn entity_51_frame_at(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], offset: usize) -> Result<Option<Entity51Frame>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -643,8 +636,8 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     (1..=0x20).contains(&flags).then_some(())?;
     let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
     let references_at = at;
-    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, reference_count)?;
-    Some(Entity51Frame {
+    let (end, shared_terminal) = propagate_resource!(entity_51_reference_end(ctx, bytes, &mut at, reference_count))?;
+    (Some(Entity51Frame {
         offset,
         end,
         xmt,
@@ -653,7 +646,10 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
         references_at,
         reference_count,
         shared_terminal,
-    })
+    })).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 fn entity_51_record_from_frame(
@@ -663,10 +659,6 @@ fn entity_51_record_from_frame(
     payloads: &mut ScopedReservation<'_>,
 ) -> Result<Option<Entity51Record>, CodecError> {
     let parsed: Option<Result<_, CodecError>> = (|| {
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(frame.reference_count),
-            "materialize NX entity-51 references"
-        ));
         let mut at = frame.references_at;
         let prefixed = bytes.get(at) == Some(&1);
         let mut leading_references = [0; 5];
@@ -684,7 +676,7 @@ fn entity_51_record_from_frame(
             frame.reference_count.checked_sub(5)?,
             "NX entity-51 reference lanes"
         ));
-        for _ in 5..frame.reference_count {
+        for _ in propagate_resource!(ctx.admit_iter(&(5..frame.reference_count), "NX entity 51 record from frame range traversal").map_err(CodecError::from)) {
             if prefixed {
                 matches!(bytes.get(at), Some(0 | 1)).then_some(())?;
                 at += 1;
@@ -704,22 +696,26 @@ fn entity_51_record_from_frame(
     parsed.transpose()
 }
 
-fn entity_51_reference_end(bytes: &[u8], at: &mut usize, count: usize) -> Option<(usize, bool)> {
+fn entity_51_reference_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], at: &mut usize, count: usize) -> Result<Option<(usize, bool)>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     if bytes.get(*at) == Some(&1) {
         let mut prefixed_at = *at;
-        for _ in 0..count {
+        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX entity 51 reference validation").map_err(CodecError::from)) {
             matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
             prefixed_at += 1;
             read_xmt(bytes, &mut prefixed_at)?;
         }
         matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
         *at = prefixed_at + 1;
-        return Some((*at, true));
+        return (Some((*at, true))).map(Ok);
     }
-    for _ in 0..count {
+    for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX entity 51 reference validation").map_err(CodecError::from)) {
         read_xmt(bytes, at)?;
     }
-    Some((*at, false))
+    (Some((*at, false))).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 #[derive(Debug, Clone, Copy)]

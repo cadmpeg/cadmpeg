@@ -172,18 +172,22 @@ fn operation_state_group_row_at(
     }
 }
 
-pub(super) fn operation_state_group_end_at(
+pub(super) fn operation_state_group_end_at(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<usize> {
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
     let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
     let member_count = count.member_row_count();
-    for _ in 0..member_count {
+    for _ in propagate_resource!(ctx.admit_iter(&(0..member_count), "NX operation-state group validation").map_err(cadmpeg_core::CodecError::from)) {
         cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
     }
-    (cursor <= end).then_some(cursor)
+    ((cursor <= end).then_some(cursor)).map(Ok)
+
+    })();
+    parsed.transpose()
 }
 
 pub(super) fn operation_state_group_at(
@@ -196,7 +200,7 @@ pub(super) fn operation_state_group_at(
     let Some((opener, count, mut cursor)) = operation_state_group_header_at(bytes, at) else {
         return Ok(None);
     };
-    let Some(group_end) = operation_state_group_end_at(bytes, at, end, base_offset) else {
+    let Some(group_end) = operation_state_group_end_at(ctx, bytes, at, end, base_offset)? else {
         return Ok(None);
     };
     let Some(offset) = base_offset.checked_add(at) else {
@@ -206,11 +210,9 @@ pub(super) fn operation_state_group_at(
         return Ok(None);
     }
     let member_count = count.member_row_count();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(member_count);
     let operation = "NX operation-state group rows";
-    ctx.charge_work(count_u64, operation)?;
     let mut rows = ctx.collection_vec(member_count, operation)?;
-    for _ in 0..member_count {
+    for _ in ctx.admit_iter(&(0..member_count), operation)? {
         let Some((row, row_end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
             return Ok(None);
         };

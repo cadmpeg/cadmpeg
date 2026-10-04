@@ -61,12 +61,9 @@ pub(crate) fn extrude_profile_references(
     if record.name() != "EXTRUDE" {
         return Ok(None);
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX extrude profile references",
-    )?;
     let mut shape = None;
-    for start in record.payload().len().checked_sub(6).into_iter().flat_map(|last| 0..last) {
+    if let Some(range_end) = record.payload().len().checked_sub(6) {
+            for start in ctx.admit_iter(&(0..range_end), "NX extrude profile references range traversal")? {
         if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
             || record.payload().get(start + 3) != Some(&0x01) { continue; }
         if let Some(candidate) = extrude_profile_reference_shape(ctx, record, start)? {
@@ -74,6 +71,7 @@ pub(crate) fn extrude_profile_references(
             shape = Some(candidate);
         }
     }
+        }
     let Some((start, count, references_start, witness_start)) = shape else {
         return Ok(None);
     };
@@ -81,7 +79,7 @@ pub(crate) fn extrude_profile_references(
 
     let mut references = ctx.collection_vec(count, "NX extrude profile references")?;
     let mut at = references_start;
-    for _ in 0..count {
+    for _ in ctx.admit_iter(&(0..count), "NX extrude profile references range traversal")? {
         let Some(token) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
             return Ok(None);
         };
@@ -115,7 +113,7 @@ fn extrude_profile_reference_shape(
     }
     let references_start = start + 5;
     let mut at = references_start;
-    for _ in 1..count {
+    for _ in propagate_resource!(ctx.admit_iter(&(1..count), "NX extrude profile reference shape range traversal").map_err(CodecError::from)) {
         let token = PayloadIndexToken::read(record.payload().get(at..)?)?;
         at += token.raw().len();
     }

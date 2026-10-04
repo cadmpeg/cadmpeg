@@ -56,17 +56,21 @@ impl<'a> MsbBitReader<'a> {
         Self { bytes, bit: 0 }
     }
 
-    fn read(&mut self, count: u8) -> Option<u32> {
+    fn read(&mut self, ctx: &DecodeContext<'_>, count: u8) -> Result<Option<u32>, CodecError> {
+        let parsed: Option<Result<_, CodecError>> = (|| {
         if count > 32 {
             return None;
         }
         let mut value = 0u32;
-        for _ in 0..count {
+        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "decode JT bit field").map_err(CodecError::from)) {
             let byte = *self.bytes.get(self.bit / 8)?;
             value = (value << 1) | u32::from((byte >> (7 - self.bit % 8)) & 1);
             self.bit += 1;
         }
-        Some(value)
+        Some(Ok(value))
+
+        })();
+        parsed.transpose()
     }
 
     fn finish_zero_padding(self) -> Option<usize> {
@@ -439,7 +443,7 @@ fn decode_vertex_texture_coordinates_inner(
         let (mut components, _components_reservation) =
             propagate_resource!(ctx.temporary_vec(component_count, "nx JT decoded vector"));
         if expected_bits == 0 {
-            for _ in 0..component_count {
+            for _ in propagate_resource!(ctx.admit_iter(&(0..component_count), "NX decode vertex texture coordinates inner range traversal").map_err(CodecError::from)) {
                 let (exponents, exponent_len) =
                     propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
                 cursor = cursor.checked_add(exponent_len)?;
@@ -456,7 +460,7 @@ fn decode_vertex_texture_coordinates_inner(
         } else {
             let (mut ranges, _ranges_reservation) =
                 propagate_resource!(ctx.temporary_vec(component_count, "nx JT decoded vector"));
-            for _ in 0..component_count {
+            for _ in propagate_resource!(ctx.admit_iter(&(0..component_count), "NX decode vertex texture coordinates inner range traversal").map_err(CodecError::from)) {
                 let minimum = View::f32_le_at(bytes, cursor)?;
                 let maximum = View::f32_le_at(bytes, cursor + 4)?;
                 let bits = *bytes.get(cursor + 8)?;
@@ -493,10 +497,10 @@ fn decode_vertex_texture_coordinates_inner(
         let hash = read_u32(bytes, cursor)?;
         cursor = cursor.checked_add(4)?;
         let mut values = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
-        for index in 0..count {
+        for index in propagate_resource!(ctx.admit_iter(&(0..count), "NX decode vertex texture coordinates inner range traversal").map_err(CodecError::from)) {
             let mut value =
                 propagate_resource!(ctx.collection_vec(component_count, "nx JT decoded vector"));
-            for component in 0..component_count {
+            for component in propagate_resource!(ctx.admit_iter(&(0..component_count), "NX decode vertex texture coordinates inner range traversal").map_err(CodecError::from)) {
                 value.push(components.get(component)?.get(index).copied()?);
             }
             values.push(value);
@@ -543,7 +547,7 @@ fn decode_vertex_colors_inner(
         let colors = if expected_bits == 0 {
             let (mut components, _components_reservation) =
                 propagate_resource!(ctx.temporary_vec(component_count, "nx JT decoded vector"));
-            for _ in 0..component_count {
+            for _ in propagate_resource!(ctx.admit_iter(&(0..component_count), "NX decode vertex colors inner range traversal").map_err(CodecError::from)) {
                 let (exponents, exponent_len) =
                     propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
                 cursor = cursor.checked_add(exponent_len)?;
@@ -562,7 +566,7 @@ fn decode_vertex_colors_inner(
                 ))?);
             }
             let mut colors = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
-            for index in 0..count {
+            for index in propagate_resource!(ctx.admit_iter(&(0..count), "NX decode vertex colors inner range traversal").map_err(CodecError::from)) {
                 colors.push([
                     *components.first()?.get(index)?,
                     *components.get(1)?.get(index)?,
@@ -635,7 +639,7 @@ fn decode_vertex_colors_inner(
                 });
             }
             let mut colors = propagate_resource!(ctx.collection_vec(count, "nx JT decoded vector"));
-            for index in 0..count {
+            for index in propagate_resource!(ctx.admit_iter(&(0..count), "NX decode vertex colors inner range traversal").map_err(CodecError::from)) {
                 let first = *components.first()?.get(index)?;
                 let second = *components.get(1)?.get(index)?;
                 let third = *components.get(2)?.get(index)?;
@@ -815,7 +819,7 @@ fn decode_vertex_coordinates_inner(
         cursor = cursor.checked_add(4)?;
         let mut points =
             propagate_resource!(ctx.collection_vec(vertex_count, "nx JT decoded vector"));
-        for index in 0..vertex_count {
+        for index in propagate_resource!(ctx.admit_iter(&(0..vertex_count), "NX decode vertex coordinates inner range traversal").map_err(CodecError::from)) {
             points.push([
                 *components.first()?.get(index)?,
                 *components.get(1)?.get(index)?,
@@ -924,10 +928,10 @@ fn parse_probability_context<'a>(
     let decoded: Option<Result<_, CodecError>> = (|| {
         let entry_count = usize::from(View::u16_be_at(bytes, 0)?);
         let mut bits = MsbBitReader::new(bytes.get(2..)?);
-        let symbol_bits = u8::try_from(bits.read(6)?).ok()?;
-        let occurrence_bits = u8::try_from(bits.read(6)?).ok()?;
-        let value_bits = u8::try_from(bits.read(6)?).ok()?;
-        let minimum = bits.read(32)?.cast_signed();
+        let symbol_bits = u8::try_from(propagate_resource!(bits.read(ctx, 6))?).ok()?;
+        let occurrence_bits = u8::try_from(propagate_resource!(bits.read(ctx, 6))?).ok()?;
+        let value_bits = u8::try_from(propagate_resource!(bits.read(ctx, 6))?).ok()?;
+        let minimum = propagate_resource!(bits.read(ctx, 32))?.cast_signed();
         if symbol_bits > 32 || occurrence_bits > 32 || value_bits > 32 {
             return None;
         }
@@ -943,17 +947,13 @@ fn parse_probability_context<'a>(
         // its entries. An all-zero-width context cannot produce a nonzero
         // arithmetic frequency table and is therefore malformed.
         (entry_bits > 0 && entry_count <= available_bits / entry_bits).then_some(())?;
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry_count),
-            "parse JT probability context",
-        ));
         let (mut entries, reservation) =
             propagate_resource!(ctx.temporary_vec(entry_count, "nx JT decoded vector"));
-        for _ in 0..entry_count {
-            let symbol = i32::try_from(i64::from(bits.read(symbol_bits)?).checked_sub(2)?).ok()?;
-            let occurrence_count = bits.read(occurrence_bits)?;
+        for _ in propagate_resource!(ctx.admit_iter(&(0..entry_count), "parse JT probability context").map_err(CodecError::from)) {
+            let symbol = i32::try_from(i64::from(propagate_resource!(bits.read(ctx, symbol_bits))?).checked_sub(2)?).ok()?;
+            let occurrence_count = propagate_resource!(bits.read(ctx, occurrence_bits))?;
             // wrapping-exception: JT Int32 predictor and packet integer addition is modulo 2^32
-            let value = (bits.read(value_bits)?.cast_signed()).wrapping_add(minimum);
+            let value = (propagate_resource!(bits.read(ctx, value_bits))?.cast_signed()).wrapping_add(minimum);
             entries.push(ProbabilityEntry {
                 symbol,
                 occurrence_count,
@@ -973,25 +973,33 @@ struct CodeBits<'a> {
 }
 
 impl CodeBits<'_> {
-    fn read(&mut self, count: u8) -> Option<u32> {
+    fn read(&mut self, ctx: &DecodeContext<'_>, count: u8) -> Result<Option<u32>, CodecError> {
+        let parsed: Option<Result<_, CodecError>> = (|| {
         let end = self.bit.checked_add(usize::from(count))?;
         if end > self.bit_len {
             return None;
         }
         let mut value = 0;
-        for _ in 0..count {
+        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "decode JT bit field").map_err(CodecError::from)) {
             value = (value << 1) | u32::from(self.next()?);
         }
-        Some(value)
+        Some(Ok(value))
+
+        })();
+        parsed.transpose()
     }
 
-    fn read_signed(&mut self, count: u8) -> Option<i32> {
-        let raw = self.read(count)?;
-        Some(match count {
+    fn read_signed(&mut self, ctx: &DecodeContext<'_>, count: u8) -> Result<Option<i32>, CodecError> {
+        let parsed: Option<Result<_, CodecError>> = (|| {
+        let raw = propagate_resource!(self.read(ctx, count))?;
+        Some(Ok(match count {
             0 => 0,
             32 => raw.cast_signed(),
             _ => (raw << (32 - count)).cast_signed() >> (32 - count),
-        })
+        }))
+
+        })();
+        parsed.transpose()
     }
 
     fn next(&mut self) -> Option<u16> {
@@ -1058,7 +1066,7 @@ fn decode_arithmetic<'a>(
         let mut high = u16::MAX;
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
-        for _ in 0..value_count {
+        for _ in propagate_resource!(ctx.admit_iter(&(0..value_count), "NX decode arithmetic range traversal").map_err(CodecError::from)) {
             let range = u32::from(high.checked_sub(low)?) + 1;
             let scaled = ((u32::from(code.checked_sub(low)?) + 1) * total - 1) / range;
             let mut cumulative = 0u32;
@@ -1120,24 +1128,16 @@ fn decode_bitlength<'ctx>(
             1,
             MAX_ARITHMETIC_VALUES,
         )?;
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(value_count),
-            "decode JT bitlength symbols",
-        ));
-        propagate_resource!(ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(code_bit_len),
-            "decode JT bitlength code bits",
-        ));
         let (mut values, reservation) =
             propagate_resource!(ctx.temporary_vec(value_count, "nx JT decoded vector"));
-        if bits.read(1)? == 0 {
-            let minimum_bits = u8::try_from(bits.read(6)?).ok()?;
-            let maximum_bits = u8::try_from(bits.read(6)?).ok()?;
+        if propagate_resource!(bits.read(ctx, 1))? == 0 {
+            let minimum_bits = u8::try_from(propagate_resource!(bits.read(ctx, 6))?).ok()?;
+            let maximum_bits = u8::try_from(propagate_resource!(bits.read(ctx, 6))?).ok()?;
             if minimum_bits > 32 || maximum_bits > 32 {
                 return None;
             }
-            let minimum = bits.read_signed(minimum_bits)?;
-            let maximum = bits.read_signed(maximum_bits)?;
+            let minimum = propagate_resource!(bits.read_signed(ctx, minimum_bits))?;
+            let maximum = propagate_resource!(bits.read_signed(ctx, maximum_bits))?;
             if maximum < minimum {
                 return None;
             }
@@ -1147,8 +1147,8 @@ fn decode_bitlength<'ctx>(
             } else {
                 u8::try_from(u32::BITS - span.leading_zeros()).ok()?
             };
-            for _ in 0..value_count {
-                let code = bits.read(width)?;
+            for _ in propagate_resource!(ctx.admit_iter(&(0..value_count), "decode JT bitlength symbols").map_err(CodecError::from)) {
+                let code = propagate_resource!(bits.read(ctx, width))?;
                 let value = i64::from(minimum) + i64::from(code);
                 if value > i64::from(maximum) {
                     return None;
@@ -1156,9 +1156,9 @@ fn decode_bitlength<'ctx>(
                 values.push(i32::try_from(value).ok()?);
             }
         } else {
-            let mean = bits.read_signed(32)?;
-            let delta_bits = u8::try_from(bits.read(3)?).ok()?;
-            let run_bits = u8::try_from(bits.read(3)?).ok()?;
+            let mean = propagate_resource!(bits.read_signed(ctx, 32))?;
+            let delta_bits = u8::try_from(propagate_resource!(bits.read(ctx, 3))?).ok()?;
+            let run_bits = u8::try_from(propagate_resource!(bits.read(ctx, 3))?).ok()?;
             if delta_bits == 0 || run_bits == 0 {
                 return None;
             }
@@ -1167,7 +1167,7 @@ fn decode_bitlength<'ctx>(
             let mut width = 0i32;
             while values.len() < value_count {
                 loop {
-                    let delta = bits.read_signed(delta_bits)?;
+                    let delta = propagate_resource!(bits.read_signed(ctx, delta_bits))?;
                     width = width.checked_add(delta)?;
                     if !(0..=32).contains(&width) {
                         return None;
@@ -1176,13 +1176,13 @@ fn decode_bitlength<'ctx>(
                         break;
                     }
                 }
-                let run = usize::try_from(bits.read(run_bits)?).ok()?;
+                let run = usize::try_from(propagate_resource!(bits.read(ctx, run_bits))?).ok()?;
                 if run == 0 || values.len().checked_add(run)? > value_count {
                     return None;
                 }
-                for _ in 0..run {
+                for _ in propagate_resource!(ctx.admit_iter(&(0..run), "decode JT bitlength symbols").map_err(CodecError::from)) {
                     // wrapping-exception: JT Int32 predictor and packet integer addition is modulo 2^32
-                    values.push(mean.wrapping_add(bits.read_signed(u8::try_from(width).ok()?)?));
+                    values.push(mean.wrapping_add(propagate_resource!(bits.read_signed(ctx, u8::try_from(width).ok()?))?));
                 }
             }
         }

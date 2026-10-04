@@ -120,7 +120,6 @@ pub(crate) fn scan<'a>(
     bytes: &'a [u8],
 ) -> Result<Vec<NameField<&'a str, usize, ()>>, CodecError> {
     let mut fields = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX name fields")?;
     if bytes.first() == Some(&3) {
         if let Some(value) = name_text(ctx, bytes, 1)? {
             ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
@@ -130,12 +129,10 @@ pub(crate) fn scan<'a>(
             });
         }
     }
-    for start in bytes
+    if let Some(range_end) = bytes
         .len()
-        .checked_sub(5)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
+        .checked_sub(5) {
+            for start in ctx.admit_iter(&(0..range_end), "scan NX name fields")? {
         if bytes[start] != 0x66 {
             continue;
         }
@@ -158,6 +155,7 @@ pub(crate) fn scan<'a>(
             value,
         });
     }
+        }
     Ok(fields)
 }
 
