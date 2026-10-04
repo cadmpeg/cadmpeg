@@ -448,7 +448,7 @@ pub(super) fn compact_edge_selections(
             Ord::cmp,
             "sort SLDPRT compact edge selections",
         )?;
-        selections.dedup_by_key(|selection| selection.0);
+        ctx.dedup_by_key(&mut selections, |selection| Ok(selection.0), "deduplicate SLDPRT compact edge selection offsets")?;
         let mut feature_selections = Vec::new();
         for (offset, local_edge_ids) in selections {
             ctx.charge_work(1, OPERATION)?;

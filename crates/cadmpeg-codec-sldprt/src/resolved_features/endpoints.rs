@@ -6062,7 +6062,7 @@ pub(super) fn unique_arc_center_marker(
     });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     ctx.sort_unstable_by(&mut centers, |value| &value.0, Ord::cmp, OPERATION)?;
-    centers.dedup_by_key(|(center, _)| *center);
+    ctx.dedup_by_key(&mut centers, |(center, _)| Ok(*center), "deduplicate SLDPRT unique arc center cells")?;
     let [(_, center)] = centers.as_slice() else {
         return Ok(None);
     };
