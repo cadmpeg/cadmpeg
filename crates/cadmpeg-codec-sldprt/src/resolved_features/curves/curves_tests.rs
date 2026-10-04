@@ -1817,3 +1817,5 @@ fn linked_semicircle_refuses_work_at_minimum_admission() {
 mod collection_storage;
 
 mod rectangles;
+
+mod resource_operations;

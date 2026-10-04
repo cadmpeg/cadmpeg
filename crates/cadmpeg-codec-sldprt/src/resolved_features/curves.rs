@@ -1711,7 +1711,7 @@ fn ordered_tolerant_rectangle_corners(
         f64::total_cmp,
         "sldprt tolerant rectangle u sort",
     )?;
-    u.dedup_by(|left, right| same_dimension_length(*left, *right));
+    ctx.dedup_by(&mut u, |left, right| Ok(same_dimension_length(*left, *right)), "deduplicate SLDPRT tolerant rectangle u coordinates")?;
     let mut v = storage.with_storage(|| ctx.collect_vec(
         points.iter().map(|point| point.v),
         "collect SLDPRT tolerant rectangle v coordinates",
