@@ -1205,11 +1205,12 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Visits, copies and key comparisons use 28 units; insertions move four passes through 1+2 bounded nodes.
+        // Two visits, four one-byte copies and two one-key comparisons use 8 units;
+        // insertions move four passes through 1+2 bounded nodes.
         let node_bytes = 22 * std::mem::size_of::<String>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<String>();
-        let work = 28 + 4 * 3 * crate::decode::u64_from_index(node_bytes);
+        let work = 8 + 4 * 3 * crate::decode::u64_from_index(node_bytes);
         policy.limits.max_work_units = work;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(
