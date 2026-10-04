@@ -290,12 +290,7 @@ pub(in crate::native) fn attach_expression_parameters(
             let mut dependencies = Vec::new();
             if ordinal < ordered_count {
                 for name in crate::native::om::expression_parameter_names(&expression.expression) {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(parameter_ids.len()),
-                        "NX parameter dependency lookup",
-                    )?;
-                    let Some([candidate]) = parameter_ids
-                        .get(&(name, &expression.unit))
+                    let Some([candidate]) = ctx.get_btree_map(&parameter_ids, &(name, &expression.unit), "NX parameter dependency lookup")?
                         .map(Vec::as_slice)
                     else {
                         continue;
@@ -354,7 +349,9 @@ pub(in crate::native) fn attach_expression_parameters(
             if let Some(declaration) = expression
                 .declaration
                 .as_deref()
-                .and_then(|id| declaration_index.get(id))
+                .map(|id| ctx.get_btree_map(&declaration_index, id, "NX admitted map lookup"))
+                .transpose()?
+                .flatten()
             {
                 insert_parameter_property(
                     ctx,
@@ -378,8 +375,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     .derived(ctx, id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
-            for (consumer_ordinal, parameter_use) in uses_by_expression
-                .get(expression.id.as_str())
+            for (consumer_ordinal, parameter_use) in ctx.get_btree_map(&uses_by_expression, expression.id.as_str(), "NX admitted map lookup")?
                 .into_iter()
                 .flatten()
                 .enumerate()

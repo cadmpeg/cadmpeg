@@ -620,7 +620,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
             let side = sides[&surface];
             for neighbor in &adjacent[&surface] {
                 ctx.charge_work(1, "NX blend support bipartition")?;
-                match sides.get(neighbor) {
+                match ctx.get_btree_map(&sides, neighbor, "NX admitted map lookup")? {
                     Some(neighbor_side) if *neighbor_side == side => return Ok(None),
                     Some(_) => {}
                     None => {
@@ -2139,7 +2139,7 @@ pub(super) fn primary_hole_outputs(
     let mut outputs = BTreeMap::new();
     for template in templates {
         ctx.charge_work(1, "NX primary hole output scan")?;
-        let Some(object_index) = body_references.get(template.operation_label.as_str()) else {
+        let Some(object_index) = ctx.get_btree_map(body_references, template.operation_label.as_str(), "NX admitted map lookup")? else {
             continue;
         };
         let bodies =
@@ -2485,7 +2485,9 @@ pub(super) fn hole_package_projection(
         let Some(body) = group
             .members
             .first()
-            .and_then(|member| outputs.get(&member.operation_label))
+            .map(|member| ctx.get_btree_map(outputs, &member.operation_label, "NX hole package first output lookup"))
+            .transpose()?
+            .flatten()
             .and_then(|bodies| bodies.as_slice().first().filter(|_| bodies.len() == 1))
         else {
             continue;
@@ -2494,25 +2496,35 @@ pub(super) fn hole_package_projection(
             cadmpeg_core::decode::u64_from_index(group.members.len()),
             "NX hole package output lookup",
         )?;
-        if group.members.iter().any(|member| !matches!(outputs.get(&member.operation_label).map(Vec::as_slice), Some([candidate]) if candidate == body))
-        {
+        let mut complete_outputs = true;
+        for member in group.members.iter() {
+            if !matches!(ctx.get_btree_map(outputs, &member.operation_label, "NX hole package member output lookup")?.map(Vec::as_slice), Some([candidate]) if candidate == body) {
+                complete_outputs = false;
+                break;
+            }
+        }
+        if !complete_outputs {
             continue;
         }
         let Some(diameter) = group
             .members
             .first()
             .map(|member| &member.operation_label)
-            .and_then(|operation| diameters.get(operation))
+            .map(|operation| ctx.get_btree_map(diameters, operation, "NX hole package first diameters lookup"))
+            .transpose()?
+            .flatten()
             .copied()
         else {
             continue;
         };
-        if group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .any(|operation| diameters.get(operation).copied() != Some(diameter))
-        {
+        let mut complete_diameters = true;
+        for member in group.members.iter() {
+            if ctx.get_btree_map(diameters, &member.operation_label, "NX hole package member diameters lookup")?.copied() != Some(diameter) {
+                complete_diameters = false;
+                break;
+            }
+        }
+        if !complete_diameters {
             continue;
         }
         if !requests_chamfer && !requests_no_treatment {
@@ -2523,17 +2535,21 @@ pub(super) fn hole_package_projection(
                 .members
                 .first()
                 .map(|member| &member.operation_label)
-                .and_then(|operation| chamfers.get(operation))
+                .map(|operation| ctx.get_btree_map(chamfers, operation, "NX hole package first chamfers lookup"))
+                .transpose()?
+                .flatten()
                 .copied()
             else {
                 continue;
             };
-            if group
-                .members
-                .iter()
-                .map(|member| &member.operation_label)
-                .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
-            {
+            let mut complete_chamfers = true;
+            for member in group.members.iter() {
+                if ctx.get_btree_map(chamfers, &member.operation_label, "NX hole package member chamfers lookup")?.copied() != Some(chamfer) {
+                    complete_chamfers = false;
+                    break;
+                }
+            }
+            if !complete_chamfers {
                 continue;
             }
             Some(chamfer)
@@ -3737,7 +3753,7 @@ pub(super) fn hole_operations_by_body(
     if related == operations.len() {
         let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
         for operation in operations {
-            let Some([body]) = outputs.get(operation).map(Vec::as_slice) else {
+            let Some([body]) = ctx.get_btree_map(outputs, operation, "NX admitted map lookup")?.map(Vec::as_slice) else {
                 return Ok(None);
             };
             if !operations_by_body.contains_key(body) {

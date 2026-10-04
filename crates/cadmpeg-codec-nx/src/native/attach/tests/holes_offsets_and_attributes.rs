@@ -1409,22 +1409,24 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
         ),
     ]);
 
-    assert_eq!(
-        preceding_operation_dependency("csys", 2, &positions, &features),
-        Some(&FeatureId::mint("nx:test:feature#csys").expect("identity grammar"))
-    );
-    assert_eq!(
-        preceding_operation_dependency("consumer", 2, &positions, &features),
-        None
-    );
-    assert_eq!(
-        preceding_operation_dependency("later", 2, &positions, &features),
-        None
-    );
-    assert_eq!(
-        preceding_operation_dependency("missing", 2, &positions, &features),
-        None
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            preceding_operation_dependency(ctx, "csys", 2, &positions, &features).unwrap(),
+            Some(&FeatureId::mint("nx:test:feature#csys").expect("identity grammar"))
+        );
+        assert_eq!(
+            preceding_operation_dependency(ctx, "consumer", 2, &positions, &features).unwrap(),
+            None
+        );
+        assert_eq!(
+            preceding_operation_dependency(ctx, "later", 2, &positions, &features).unwrap(),
+            None
+        );
+        assert_eq!(
+            preceding_operation_dependency(ctx, "missing", 2, &positions, &features).unwrap(),
+            None
+        );
+    });
 }
 
 mod topology_attributes;
