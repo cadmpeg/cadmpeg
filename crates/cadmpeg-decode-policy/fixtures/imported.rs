@@ -85,3 +85,19 @@ pub fn imported_key_proof(
     let _wrong = cadmpeg_core::wrong_lookup(ctx, values, key, other)?; // finding: uncharged_decode_work
     Ok(())
 }
+
+pub fn imported_string_write_char(
+    _ctx: &cadmpeg_core::DecodeContext,
+    output: &mut String,
+    character: char,
+) -> std::fmt::Result {
+    cadmpeg_core::generic_write_char(output, character) // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn imported_string_write_str(
+    _ctx: &cadmpeg_core::DecodeContext,
+    output: &mut String,
+    suffix: &str,
+) -> std::fmt::Result {
+    cadmpeg_core::generic_write_str(output, suffix) // finding: uncharged_decode_allocation
+}
