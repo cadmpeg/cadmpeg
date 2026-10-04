@@ -12,7 +12,9 @@ pub(in crate::design::decode) fn class_tag_from_view(
     if value.len() != 3 || !ctx.admit_iter(value.as_bytes(), "validate F3D class tag digits")?.all(|byte| byte.is_ascii_digit()) {
         return Ok(Err("class_tag must contain three ASCII digits".into()));
     }
-    Ok(crate::records::references::DesignClassTag::try_from(value.to_owned()))
+    Ok(crate::records::references::DesignClassTag::try_from(
+        ctx.copy_retained_text(value, "copy F3D class tag")?,
+    ))
 }
 
 /// Compose a native scope and record suffix under the retained text budget.
@@ -305,6 +307,25 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "validate F3D class tag digits"
                     && limit.additional == 3));
+    }
+
+    #[test]
+    fn borrowed_class_tag_refuses_retained_text_before_copy() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "copy F3D class tag",
+            0,
+            |ctx| class_tag_from_view(ctx, "123").map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "copy F3D class tag"
+                    && limit.additional == 3
+        ));
     }
 
     #[test]
