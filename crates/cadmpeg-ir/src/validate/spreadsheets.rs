@@ -47,11 +47,11 @@ pub(super) fn check_spreadsheets(
                 )?;
                 continue;
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(sheet.feature.as_str().len()),
+            if !ctx.equal(
+                &parameter.owner.as_ref().map(|owner| owner.as_str()),
+                &Some(sheet.feature.as_str()),
                 "compare spreadsheet parameter owner",
-            )?;
-            if parameter.owner.as_ref() != Some(&sheet.feature) {
+            )? {
                 record_finding(
                     ctx,
                     findings,
@@ -166,5 +166,28 @@ mod tests {
             );
         }
         ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn spreadsheet_owner_comparison_admits_both_identity_lengths() {
+        let mut ir = parameter_fixture();
+        ir.model.parameters[0].owner = Some(crate::features::FeatureId::mint(
+            format!("test:model:feature#{}", "x".repeat(20_000)),
+        ).unwrap());
+        ir.model.spreadsheets.push(serde_json::from_value(serde_json::json!({
+            "id": "test:model:spreadsheet#sheet", "feature": "test:model:feature#missing",
+            "cells": [{"address": "A1", "parameter": "test:model:parameter#cell"}]
+        })).unwrap());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 10_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) = check_spreadsheets(&ctx, &ir, &mut findings) else {
+            panic!("owner comparison must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare spreadsheet parameter owner");
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
     }
 }
