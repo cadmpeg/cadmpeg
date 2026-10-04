@@ -7652,7 +7652,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for LinearTermination {
                 operation,
             ),
             Self::ToFace { face, offset } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                &(0u8, face, offset.map(|value| value.get())),
+                &(0u8, face, offset.map(Length::get)),
                 ctx,
                 operation,
             ),
