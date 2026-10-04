@@ -1276,21 +1276,18 @@ impl DecodeContext<'_> {
         self.tree_node_bytes::<K, V>(nodes, operation)
     }
 
-    // An insertion can split every node on its path and add a new root.
-    // The path has at most log2(len) + 1 nodes since every level branches.
+    // An insertion can split every node on its path and add a new root; a
+    // removal can rebalance every node on its path. The path has at most the
+    // tree's height in nodes.
     fn tree_mutation_bytes<K, V>(
         &self,
         len: usize,
         operation: &'static str,
     ) -> Result<u64, ResourceLimit> {
-        let nodes = if len == 0 {
-            1
-        } else {
-            usize::try_from(len.ilog2())
-                .map_err(|_| self.retained_size_overflow_limit(operation))?
-                .checked_add(2)
-                .ok_or_else(|| self.retained_size_overflow_limit(operation))?
-        };
+        let nodes = usize::try_from(Self::tree_height(len))
+            .ok()
+            .and_then(|height| height.checked_add(1))
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.tree_node_bytes::<K, V>(nodes, operation)
     }
 

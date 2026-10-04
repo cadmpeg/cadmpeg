@@ -568,39 +568,39 @@ mod tests {
         ];
         let archive_name_bytes = archive_name_lengths.iter().copied().sum::<usize>();
         let archive_entry_count = archive_name_lengths.len();
-        // Core charges four mutation passes and two key comparisons per new
-        // B-tree key.
-        let btree_insert_work = |key_size: usize,
-                                 value_size: usize,
-                                 key_alignment: usize,
-                                 value_alignment: usize| {
-            archive_name_lengths
-                .iter()
-                .enumerate()
-                .map(|(len, key_bytes)| {
-                    let alignment = key_alignment
-                        .max(value_alignment)
-                        .max(std::mem::align_of::<usize>());
-                    let nodes = if len == 0 {
-                        1
-                    } else {
-                        usize::try_from(len.ilog2()).expect("fixture tree height fits usize") + 2
-                    };
-                    let node_bytes = (key_size + value_size) * 11
-                        + 16 * std::mem::size_of::<usize>()
-                        + 2 * alignment;
-                    let tree_mutation_work = 4 * node_bytes * nodes;
-                    let comparisons = if len == 0 {
-                        0
-                    } else {
-                        11 * (usize::try_from(len.ilog2()).expect("fixture tree height fits usize")
-                            + 1)
-                    };
-                    let key_comparison_work = 2 * *key_bytes * comparisons;
-                    tree_mutation_work + key_comparison_work
-                })
-                .sum::<usize>()
+        // A B-tree of h levels holds at least 2 * 6^(h-1) - 1 entries.
+        let tree_height = |len: usize| {
+            let mut height = 0;
+            let mut minimum = 1;
+            while len >= minimum {
+                height += 1;
+                minimum = 2 * 6_usize.pow(height) - 1;
+            }
+            usize::try_from(height).expect("fixture tree height fits usize")
         };
+        // A key search compares at most eleven keys per level and at most every key.
+        let tree_comparisons = |len: usize| (11 * tree_height(len)).min(len);
+        // Core charges four mutation passes over the search path and a new
+        // root, and two key searches, per new B-tree key.
+        let btree_insert_work =
+            |key_size: usize, value_size: usize, key_alignment: usize, value_alignment: usize| {
+                archive_name_lengths
+                    .iter()
+                    .enumerate()
+                    .map(|(len, key_bytes)| {
+                        let alignment = key_alignment
+                            .max(value_alignment)
+                            .max(std::mem::align_of::<usize>());
+                        let nodes = tree_height(len) + 1;
+                        let node_bytes = (key_size + value_size) * 11
+                            + 16 * std::mem::size_of::<usize>()
+                            + 2 * alignment;
+                        let tree_mutation_work = 4 * node_bytes * nodes;
+                        let key_comparison_work = 2 * *key_bytes * tree_comparisons(len);
+                        tree_mutation_work + key_comparison_work
+                    })
+                    .sum::<usize>()
+            };
         let archive_tree_work = btree_insert_work(
             std::mem::size_of::<&[u8]>(),
             std::mem::size_of::<()>(),
@@ -622,10 +622,7 @@ mod tests {
         let archive_snapshot_work = cadmpeg_core::decode::u64_from_index(
             archive_tree_work + 3 * archive_name_bytes + 3 * archive_entry_count,
         );
-        let archive_map_comparisons = 11
-            * (usize::try_from(archive_entry_count.ilog2())
-                .expect("fixture tree height fits usize")
-                + 1);
+        let archive_map_comparisons = tree_comparisons(archive_entry_count);
         // The schema lookup is inside its calibrated load; two instance opens
         // each look up one key in the three-entry Protein name map.
         let instance_open_lookup_work = cadmpeg_core::decode::u64_from_index(
