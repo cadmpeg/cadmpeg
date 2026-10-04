@@ -882,7 +882,10 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         [97, 175, 312]
     );
     assert_eq!(
-        surface_merge_quilt_ids(&[], std::slice::from_ref(&replay), 416),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            surface_merge_quilt_ids(ctx, &[], std::slice::from_ref(&replay), 416)
+        })
+        .expect("service profile admits surface merge quilt records"),
         Some([103, 192, 329].as_slice())
     );
     let wrong_class = crate::feature::entity::FeatureEntityTable::new(
@@ -1508,7 +1511,7 @@ fn geometry_signal_excludes_opaque_carriers() {
         source_object: None,
     });
 
-    assert!(!has_transferred_geometry(&ir));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
 
     let _attached = ir.model.add_procedural_surface(
         &cadmpeg_ir::document::admission::StandardAdmission,
@@ -1530,7 +1533,7 @@ fn geometry_signal_excludes_opaque_carriers() {
         ),
     );
 
-    assert!(has_transferred_geometry(&ir));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
 }
 
 #[test]

@@ -146,12 +146,9 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
-) -> Result<
-    impl ExactSizeIterator<Item = (usize, Vec<[f64; 2]>)> + std::fmt::Debug,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Vec<(usize, Vec<[f64; 2]>)>, cadmpeg_core::CodecError> {
     let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
-        return Ok(Vec::new().into_iter());
+        return Ok(Vec::new());
     };
     let mut profiles = Vec::new();
     for (profile_index, profile) in sketch.profiles.iter().enumerate() {
@@ -233,7 +230,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         ctx.reserve_vec(&mut profiles, 1, "creo connected profile rows")?;
         profiles.push((profile_index, vertices));
     }
-    Ok(profiles.into_iter())
+    Ok(profiles)
 }
 
 pub(in super::super) fn oriented_arc_parameterization(

@@ -40,14 +40,20 @@ pub(in super::super) fn feature_dependencies(
         )
     })?;
     let mut dependencies = Vec::new();
-    for dependency in native {
+    for dependency in ctx
+        .admit_iter(&native, "creo external feature dependency IDs")?
+        .copied()
+    {
         let text = ctx.format_retained(
             format_args!("creo:model:feature#{dependency}"),
             "creo feature dependency IDs",
         )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
-        if ir.model.features.iter().any(|feature| feature.id == id) {
+        if ctx
+            .admit_iter(&ir.model.features, "creo dependency feature lookup")?
+            .any(|feature| feature.id == id)
+        {
             ctx.reserve_vec(&mut dependencies, 1, "creo feature dependencies")?;
             dependencies.push(id);
         }
@@ -87,14 +93,16 @@ pub(in super::super) fn native_feature_dependency_ids(
         feature_output_surface_dependencies(ctx, entity_tables, surface_rows, feature_id)
     })?;
     let mut dependencies = Vec::new();
-    for dependency in parents
-        .into_iter()
-        .chain(current_feature_recipe_parent(operations, feature_id))
-        .chain(prototype_dependencies.iter().copied())
-        .chain(merged)
-        .chain(entity_dependencies)
-        .chain(surface_dependencies)
-        .chain(transition_dependencies)
+    let recipe_parent = current_feature_recipe_parent(operations, feature_id);
+    for dependency in ctx
+        .admit_iter(&parents, "creo native parent dependency IDs")?
+        .copied()
+        .chain(recipe_parent)
+        .chain(ctx.admit_iter(prototype_dependencies, "creo prototype dependency IDs")?.copied())
+        .chain(ctx.admit_iter(&merged, "creo surface merge dependency IDs")?.copied())
+        .chain(ctx.admit_iter(&entity_dependencies, "creo entity dependency IDs")?.copied())
+        .chain(ctx.admit_iter(&surface_dependencies, "creo output surface dependency IDs")?.copied())
+        .chain(ctx.admit_iter(&transition_dependencies, "creo surface transition dependency IDs")?.copied())
     {
         if !dependencies.contains(&dependency) {
             ctx.reserve_vec(&mut dependencies, 1, "creo native feature dependencies")?;
@@ -112,33 +120,39 @@ pub(in super::super) fn feature_output_surface_dependencies(
 ) -> Result<Vec<u32>, CodecError> {
     let mut owned_storage = ctx.reserve_scoped(0, "Creo owned dependency entities")?;
     let mut owned_entities = BTreeSet::new();
-    for entry in tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.table_class_id == 67)
-        .flat_map(|table| &table.entries)
-        .filter(|entry| entry.source_entity_id() == Some(feature_id))
-    {
-        owned_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut owned_entities,
-                entry.entity_id,
-                "creo output surface owned entity nodes",
-            )
-        })?;
+    for table in ctx.admit_iter(tables, "creo output surface ownership tables")? {
+        if table.feature_id != feature_id || table.table_class_id != 67 {
+            continue;
+        }
+        for entry in ctx.admit_iter(&table.entries, "creo output surface ownership entries")? {
+            if entry.source_entity_id() != Some(feature_id) {
+                continue;
+            }
+            owned_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut owned_entities,
+                    entry.entity_id,
+                    "creo output surface owned entity nodes",
+                )
+            })?;
+        }
     }
     let mut dependencies = Vec::new();
-    for entry in tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.table_class_id == 100)
-        .flat_map(|table| &table.entries)
-        .filter(|entry| owned_entities.contains(&entry.entity_id))
-    {
-        let Some(row) = crate::surface::unique_surface_row(surface_rows, entry.class_id()) else {
+    for table in ctx.admit_iter(tables, "creo output surface dependency tables")? {
+        if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
-        };
-        if row.feature_id != feature_id && !dependencies.contains(&row.feature_id) {
-            ctx.reserve_vec(&mut dependencies, 1, "creo output surface dependencies")?;
-            dependencies.push(row.feature_id);
+        }
+        for entry in ctx.admit_iter(&table.entries, "creo output surface dependency entries")? {
+            if !owned_entities.contains(&entry.entity_id) {
+                continue;
+            }
+            let Some(row) = crate::surface::unique_surface_row(surface_rows, entry.class_id()) else {
+                continue;
+            };
+            if row.feature_id != feature_id && !dependencies.contains(&row.feature_id) {
+                ctx.reserve_vec(&mut dependencies, 1, "creo output surface dependencies")?;
+                dependencies.push(row.feature_id);
+            }
         }
     }
     Ok(dependencies)
@@ -150,12 +164,12 @@ pub(in super::super) fn feature_entity_dependencies(
     feature_id: u32,
 ) -> Result<Vec<u32>, CodecError> {
     let mut dependencies = Vec::new();
-    for table in tables {
+    for table in ctx.admit_iter(tables, "creo feature entity dependency tables")? {
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
-        for entry in &table.entries {
-            let Some(producer) = unique_feature_entity_producer(tables, entry.entity_id) else {
+        for entry in ctx.admit_iter(&table.entries, "creo feature entity dependency entries")? {
+            let Some(producer) = unique_feature_entity_producer(ctx, tables, entry.entity_id)? else {
                 continue;
             };
             if producer == feature_id {
@@ -171,122 +185,131 @@ pub(in super::super) fn feature_entity_dependencies(
 }
 
 fn unique_feature_entity_producer(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
-) -> Option<u32> {
+) -> Result<Option<u32>, CodecError> {
     let mut producer = None;
-    for table in tables {
-        if table
-            .entries
-            .iter()
+    for table in ctx.admit_iter(tables, "creo unique feature producer tables")? {
+        if ctx
+            .admit_iter(&table.entries, "creo unique feature producer entries")?
             .any(|entry| entry.class_id() == 200 && entry.entity_id == entity_id)
         {
             match producer {
-                Some(owner) if owner != table.feature_id => return None,
+                Some(owner) if owner != table.feature_id => return Ok(None),
                 None => producer = Some(table.feature_id),
                 _ => {}
             }
         }
     }
-    producer
+    Ok(producer)
 }
 
 fn unique_preceding_feature_entity_producer(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
     consumer_offset: usize,
-) -> Option<u32> {
+) -> Result<Option<u32>, CodecError> {
     let mut producer = None;
-    for table in tables {
-        for entry in &table.entries {
+    for table in ctx.admit_iter(tables, "creo preceding feature producer tables")? {
+        for entry in ctx.admit_iter(&table.entries, "creo preceding feature producer entries")? {
             if entry.class_id() == 200
                 && entry.entity_id == entity_id
                 && entry.offset < consumer_offset
             {
                 if producer.is_some() {
-                    return None;
+                    return Ok(None);
                 }
                 producer = Some(table.feature_id);
             }
         }
     }
-    producer
+    Ok(producer)
 }
 
-fn agreed_surface_merge_replay_quilt_ids(
-    records: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
+fn agreed_surface_merge_replay_quilt_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
-) -> Option<&[u32]> {
-    agreed_ids(
-        records
-            .iter()
+) -> Result<Option<&'a [u32]>, CodecError> {
+    Ok(agreed_ids(
+        ctx.admit_iter(records, "creo surface merge replay ID records")?
             .filter(|record| record.feature_id == feature_id)
             .map(|record| record.quilt_ids.as_slice()),
-    )
+    ))
 }
 
 pub(in super::super) fn surface_merge_quilt_ids<'a>(
+    ctx: &DecodeContext<'_>,
     affected_ids: &'a [crate::feature::rows::FeatureAffectedIds],
     replay: &'a [crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
-) -> Option<&'a [u32]> {
+) -> Result<Option<&'a [u32]>, CodecError> {
     if let Some(ids) = agreed_feature_affected_ids(
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Quilts,
     ) {
-        return (!ids.is_empty()).then_some(ids);
+        return Ok((!ids.is_empty()).then_some(ids));
     }
     if has_feature_affected_ids(
+        ctx,
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Quilts,
-    ) {
-        return None;
+    )? {
+        return Ok(None);
     }
-    agreed_surface_merge_replay_quilt_ids(replay, feature_id).filter(|ids| !ids.is_empty())
+    Ok(agreed_surface_merge_replay_quilt_ids(ctx, replay, feature_id)?.filter(|ids| !ids.is_empty()))
 }
 
 pub(super) fn surface_merge_quilt_state_offset(
+    ctx: &DecodeContext<'_>,
     affected_ids: &[crate::feature::rows::FeatureAffectedIds],
     replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
     quilt_ids: &[u32],
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
     if let Some(ids) = agreed_feature_affected_ids(
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Quilts,
     ) {
-        return (ids == quilt_ids)
-            .then(|| {
-                affected_ids
-                    .iter()
-                    .filter(|record| {
-                        record.feature_id == feature_id
-                            && record.kind == crate::feature::rows::AffectedIdKind::Quilts
-                            && record.ids == quilt_ids
-                    })
-                    .map(|record| record.offset)
-                    .min()
+        if ids != quilt_ids {
+            return Ok(None);
+        }
+        let offset = ctx
+            .admit_iter(affected_ids, "creo surface merge affected ID offsets")?
+            .filter(|record| {
+                record.feature_id == feature_id
+                    && record.kind == crate::feature::rows::AffectedIdKind::Quilts
+                    && record.ids == quilt_ids
             })
-            .flatten();
+            .map(|record| record.offset)
+            .min();
+        return Ok(offset);
     }
     if has_feature_affected_ids(
+        ctx,
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Quilts,
-    ) {
-        return None;
+    )? {
+        return Ok(None);
     }
-    let ids = agreed_surface_merge_replay_quilt_ids(replay, feature_id)?;
-    (ids == quilt_ids).then(|| {
-        replay
-            .iter()
-            .filter(|record| record.feature_id == feature_id && record.quilt_ids == quilt_ids)
-            .map(|record| record.offset)
-            .min()
-    })?
+    let Some(ids) = agreed_surface_merge_replay_quilt_ids(ctx, replay, feature_id)? else {
+        return Ok(None);
+    };
+    if ids != quilt_ids {
+        return Ok(None);
+    }
+    let offset = ctx
+        .admit_iter(replay, "creo surface merge replay ID offsets")?
+        .filter(|record| record.feature_id == feature_id && record.quilt_ids == quilt_ids)
+        .map(|record| record.offset)
+        .min();
+    Ok(offset)
 }
 
 pub(in super::super) fn surface_merge_entity_dependencies(
@@ -296,18 +319,18 @@ pub(in super::super) fn surface_merge_entity_dependencies(
     tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
 ) -> Result<Vec<u32>, CodecError> {
-    let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
+    let Some(ids) = surface_merge_quilt_ids(ctx, affected_ids, replay, feature_id)? else {
         return Ok(Vec::new());
     };
     let Some(consumer_offset) =
-        surface_merge_quilt_state_offset(affected_ids, replay, feature_id, ids)
+        surface_merge_quilt_state_offset(ctx, affected_ids, replay, feature_id, ids)?
     else {
         return Ok(Vec::new());
     };
     let mut dependencies = Vec::new();
-    for &entity_id in ids {
+    for entity_id in ctx.admit_iter(ids, "creo surface merge quilt IDs")?.copied() {
         let Some(owner) =
-            unique_preceding_feature_entity_producer(tables, entity_id, consumer_offset)
+            unique_preceding_feature_entity_producer(ctx, tables, entity_id, consumer_offset)?
         else {
             continue;
         };
@@ -320,13 +343,15 @@ pub(in super::super) fn surface_merge_entity_dependencies(
 }
 
 pub(in super::super) fn has_feature_affected_ids(
+    ctx: &DecodeContext<'_>,
     records: &[crate::feature::rows::FeatureAffectedIds],
     feature_id: u32,
     kind: crate::feature::rows::AffectedIdKind,
-) -> bool {
-    records
-        .iter()
+) -> Result<bool, CodecError> {
+    Ok(ctx
+        .admit_iter(records, "creo feature affected ID records")?
         .any(|record| record.feature_id == feature_id && record.kind == kind)
+    )
 }
 
 fn agreed_feature_parent_ids(
@@ -337,7 +362,7 @@ fn agreed_feature_parent_ids(
     let mut strong_emitted = false;
     let mut parent_emitted = false;
     let mut ids = Vec::new();
-    for record in records.iter().filter(|record| {
+    for record in ctx.admit_iter(records, "creo agreed feature parent records")?.filter(|record| {
         record.feature_id == feature_id
             && matches!(
                 record.kind,
@@ -367,7 +392,8 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut dependencies = BTreeMap::new();
-    for (prototype, row, _) in unique_surface_prototype_associations(ctx, scan)? {
+    let associations = unique_surface_prototype_associations(ctx, scan)?;
+    for (prototype, row, _) in ctx.admit_iter(&associations, "creo surface prototype associations")? {
         let prototype = prototype.record();
         let mut fields = prototype
             .parameters
@@ -398,7 +424,7 @@ pub(in super::super) fn add_surface_prototype_feature_dependencies(
     producer: u32,
     consumers: &[u32],
 ) -> Result<(), CodecError> {
-    for &consumer in consumers {
+    for consumer in ctx.admit_iter(consumers, "creo prototype dependency consumers")?.copied() {
         if consumer == 0 || consumer == producer {
             continue;
         }
@@ -419,28 +445,28 @@ pub(in super::super) fn add_surface_prototype_feature_dependencies(
     Ok(())
 }
 
-pub(in super::super) fn agreed_feature_replay_geometry_ids(
-    records: &[crate::feature::rows::FeatureReplayAffectedIds],
+pub(in super::super) fn agreed_feature_replay_geometry_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
-) -> Option<&[u32]> {
-    agreed_ids(
-        records
-            .iter()
+) -> Result<Option<&'a [u32]>, CodecError> {
+    Ok(agreed_ids(
+        ctx.admit_iter(records, "creo replay geometry ID records")?
             .filter(|record| record.feature_id == feature_id)
             .map(|record| record.geometry_ids.as_slice()),
-    )
+    ))
 }
 
-pub(in super::super) fn agreed_feature_replay_edge_ids(
-    records: &[crate::feature::rows::FeatureReplayAffectedIds],
+pub(in super::super) fn agreed_feature_replay_edge_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
-) -> Option<&[u32]> {
-    agreed_ids(
-        records
-            .iter()
+) -> Result<Option<&'a [u32]>, CodecError> {
+    Ok(agreed_ids(
+        ctx.admit_iter(records, "creo replay edge ID records")?
             .filter(|record| record.feature_id == feature_id)
             .map(|record| record.edge_ids.as_slice()),
-    )
+    ))
 }
 
 pub(in super::super) fn reconcile_feature_links(
@@ -451,7 +477,10 @@ pub(in super::super) fn reconcile_feature_links(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "Creo feature reconciliation storage")?;
     let mut output_updates = Vec::new();
-    for (index, feature) in ir.model.features.iter().enumerate() {
+    for (index, feature) in
+        ctx.admit_iter(&ir.model.features, "creo feature reconciliation output features")?
+            .enumerate()
+    {
         let Some(feature_id) = feature
             .id
             .as_str()
@@ -471,7 +500,7 @@ pub(in super::super) fn reconcile_feature_links(
         output_updates.push((index, outputs));
     }
     let mut emitted = BTreeSet::new();
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "creo emitted feature identities")? {
         if emitted.contains(&feature.id) {
             continue;
         }
@@ -505,7 +534,7 @@ pub(in super::super) fn reconcile_feature_links(
             pending = updates.next();
         }
         let mut native_dependencies = Vec::new();
-        for dependency in lookup_storage.with_storage(|| {
+        let native_dependency_ids = lookup_storage.with_storage(|| {
             native_feature_dependency_ids(
                 ctx,
                 &scan.features.affected_ids,
@@ -520,7 +549,11 @@ pub(in super::super) fn reconcile_feature_links(
                         .map_or(&[], Vec::as_slice),
                 ),
             )
-        })? {
+        })?;
+        for dependency in ctx
+            .admit_iter(&native_dependency_ids, "creo reconciled native dependency IDs")?
+            .copied()
+        {
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",
@@ -539,7 +572,9 @@ pub(in super::super) fn reconcile_feature_links(
             feature_generated_dependencies(ctx, feature.evaluation.definition())
         })?;
         let mut generated_ids = Vec::new();
-        for dependency in generated_dependencies {
+        for dependency in ctx
+            .admit_iter(&generated_dependencies, "creo reconciled generated dependency references")?
+        {
             let id = IrFeatureId::mint(ctx.copy_retained_text(
                 dependency.as_str(),
                 "creo reconciled generated dependency IDs",
@@ -583,9 +618,8 @@ pub(in super::super) fn reconcile_feature_links(
             }
         }
     }
-    for (child, parent) in regeneration_edges {
-        ir.model
-            .set_feature_regeneration_parent(ctx, &child, &parent)?;
+    for (child, parent) in ctx.admit_iter(&regeneration_edges, "creo feature regeneration edges")? {
+        ir.model.set_feature_regeneration_parent(ctx, child, parent)?;
     }
     let mut remaining = Vec::new();
     lookup_storage.with_storage(|| {
@@ -606,14 +640,31 @@ pub(in super::super) fn reconcile_feature_links(
     })?;
     let mut preceding = BTreeSet::new();
     while !remaining.is_empty() {
-        let Some(position) = remaining.iter().position(|index| {
+        let mut position = None;
+        for (candidate_position, index) in ctx
+            .admit_iter(&remaining, "creo remaining feature order search")?
+            .enumerate()
+        {
             let feature = &ir.model.features[*index];
-            feature
-                .dependencies
-                .iter()
+            let mut ready = true;
+            for required in ctx
+                .admit_iter(
+                    feature.dependencies.as_slice(),
+                    "creo feature ordering dependencies",
+                )?
                 .chain(ir.model.feature_parent(&feature.id))
-                .all(|required| !emitted.contains(required) || preceding.contains(required))
-        }) else {
+            {
+                if emitted.contains(required) && !preceding.contains(required) {
+                    ready = false;
+                    break;
+                }
+            }
+            if ready {
+                position = Some(candidate_position);
+                break;
+            }
+        }
+        let Some(position) = position else {
             break;
         };
         let index = remaining.remove(position);
@@ -627,7 +678,11 @@ pub(in super::super) fn reconcile_feature_links(
         ordered.push(index);
     }
     ordered.extend(remaining);
-    for (ordinal, index) in ordered.into_iter().enumerate() {
+    for (ordinal, index) in ctx
+        .admit_iter(&ordered, "creo ordered feature ordinal assignment")?
+        .copied()
+        .enumerate()
+    {
         ir.model.features[index].ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
     }
     Ok(())
@@ -656,14 +711,14 @@ pub(in super::super) fn feature_generated_dependencies<'a>(
         _ => None,
     };
     if let Some(FaceSelection::Generated { faces, .. }) = face_selection {
-        for face in faces {
+        for face in ctx.admit_iter(&**faces, "creo generated feature face references")? {
             push_unique(&face.feature)?;
         }
     }
     let mut visit_selection =
         |selection: &'a EdgeSelection| -> Result<(), cadmpeg_core::CodecError> {
             if let EdgeSelection::Generated { edges, .. } = selection {
-                for edge in edges {
+                for edge in ctx.admit_iter(&**edges, "creo generated feature edge references")? {
                     push_unique(&edge.feature)?;
                 }
             }
@@ -671,12 +726,12 @@ pub(in super::super) fn feature_generated_dependencies<'a>(
         };
     match definition {
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { groups }) => {
-            for group in groups {
+            for group in ctx.admit_iter(groups.as_slice(), "creo generated fillet edge groups")? {
                 visit_selection(&group.edges)?;
             }
         }
         IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer { groups, .. }) => {
-            for group in groups {
+            for group in ctx.admit_iter(groups.as_slice(), "creo generated chamfer edge groups")? {
                 visit_selection(&group.edges)?;
             }
         }
@@ -693,7 +748,7 @@ pub(in super::super) fn reconciled_dependencies(
     emitted: &BTreeSet<IrFeatureId>,
 ) -> Result<Vec<IrFeatureId>, CodecError> {
     let mut dependencies = Vec::new();
-    for dependency in established {
+    for dependency in ctx.admit_iter(established, "creo established feature dependencies")? {
         if !emitted.contains(dependency)
             || dependency == feature_id
             || dependencies.contains(dependency)

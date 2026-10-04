@@ -117,17 +117,33 @@ pub(in crate::decode) fn counterbore_dimensions(
     let [first_source, second_source] = sources.as_slice() else {
         return Ok(None);
     };
-    let source_span = |ids: &Vec<u32>| {
-        let [first_id, second_id] = ids.as_slice() else {
-            return None;
+    let source_span = |ids: &[u32]| -> Result<Option<[[Option<PositiveLength>; 2]; 3]>, CodecError> {
+        let [first_id, second_id] = ids else {
+            return Ok(None);
         };
-        let envelope = |id: &u32| {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *id)?;
-            unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope()
+        let Some(first_row) = crate::surface::unique_surface_row(&scan.surfaces.rows, *first_id)
+        else {
+            return Ok(None);
         };
-        paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
+        let Some(first_record) = unique_surface_parameter_record(ctx, scan, first_row)? else {
+            return Ok(None);
+        };
+        let Some(first) = first_record.type24_terminal_corner_envelope() else {
+            return Ok(None);
+        };
+        let Some(second_row) = crate::surface::unique_surface_row(&scan.surfaces.rows, *second_id)
+        else {
+            return Ok(None);
+        };
+        let Some(second_record) = unique_surface_parameter_record(ctx, scan, second_row)? else {
+            return Ok(None);
+        };
+        let Some(second) = second_record.type24_terminal_corner_envelope() else {
+            return Ok(None);
+        };
+        Ok(paired_corner_envelope_axis_spans(first, second))
     };
-    let source_spans = [source_span(first_source), source_span(second_source)];
+    let source_spans = [source_span(first_source)?, source_span(second_source)?];
     if source_spans.iter().any(Option::is_some) {
         Ok(counterbore_envelope_dimension_values(
             dimension_tables(),
@@ -477,20 +493,33 @@ fn counterbore_source_corner_envelopes(
 ) -> Result<Option<Vec<SourceCornerEnvelopes>>, CodecError> {
     let mut envelopes = Vec::new();
     for ids in sources {
-        let candidate = (|| {
+        let candidate = (|| -> Result<Option<SourceCornerEnvelopes>, CodecError> {
             let [first_id, second_id] = ids.as_slice() else {
-                return None;
+                return Ok(None);
             };
-            let envelope = |id| {
-                let row = crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
-                unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope()
+            let Some(first_row) = crate::surface::unique_surface_row(&scan.surfaces.rows, *first_id)
+            else {
+                return Ok(None);
             };
-            Some(SourceCornerEnvelopes {
-                first: envelope(*first_id)?,
-                second: envelope(*second_id)?,
-            })
+            let Some(first_record) = unique_surface_parameter_record(ctx, scan, first_row)? else {
+                return Ok(None);
+            };
+            let Some(first) = first_record.type24_terminal_corner_envelope() else {
+                return Ok(None);
+            };
+            let Some(second_row) = crate::surface::unique_surface_row(&scan.surfaces.rows, *second_id)
+            else {
+                return Ok(None);
+            };
+            let Some(second_record) = unique_surface_parameter_record(ctx, scan, second_row)? else {
+                return Ok(None);
+            };
+            let Some(second) = second_record.type24_terminal_corner_envelope() else {
+                return Ok(None);
+            };
+            Ok(Some(SourceCornerEnvelopes { first, second }))
         })();
-        let Some(candidate) = candidate else {
+        let Some(candidate) = candidate? else {
             return Ok(None);
         };
         ctx.reserve_vec(
@@ -921,90 +950,121 @@ fn counterbore_source_boundary_circle(
         &scan.curves.topology_rows,
         |row| row.id,
     )?;
-    Ok((|| {
-        let boundary_for = |cylinder_id| {
-            exactly_one(unique_edges.iter().copied().filter_map(|edge| {
-                (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
-                let cylinder = std::num::NonZeroU32::new(cylinder_id)?;
-                let other = match edge.faces {
-                    [Some(left), Some(right)] if left == cylinder => right.get(),
-                    [Some(left), Some(right)] if right == cylinder => left.get(),
-                    _ => return None,
-                };
-                let plane = crate::surface::unique_surface_row(&scan.surfaces.rows, other)?;
-                (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
-                let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
-                    crate::identity::matches_numbered_identity(
-                        curve.id.as_str(),
-                        "creo:visibgeom:curve#",
-                        edge.id,
-                    )
-                }))?;
-                let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-                    source_carriers.curve_geometry(curve).solved()
-                else {
-                    return None;
-                };
-                let center = circle_curve.center().get();
-                let candidate = circle_curve.radius().get();
-                ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
-                let axis = unit_length(*circle_curve.frame().axis());
-                let plane = reconciled_model_plane(&local_planes, ir, source_carriers, other)?;
-                let normal = normalize(plane.normal)?;
-                let alignment = axis
-                    .iter()
-                    .zip(normal)
-                    .map(|(left, right)| left * right)
-                    .sum::<f64>()
-                    .abs();
-                let distance = [
-                    center.x - plane.origin[0],
-                    center.y - plane.origin[1],
-                    center.z - plane.origin[2],
-                ]
+    let boundary_for = |cylinder_id| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
+        let Some(cylinder) = std::num::NonZeroU32::new(cylinder_id) else {
+            return Ok(None);
+        };
+        let mut boundary = None;
+        for edge in unique_edges.iter().copied() {
+            if edge.feature_id != feature_id || edge.type_byte != 0 {
+                continue;
+            }
+            let other = match edge.faces {
+                [Some(left), Some(right)] if left == cylinder => right.get(),
+                [Some(left), Some(right)] if right == cylinder => left.get(),
+                _ => continue,
+            };
+            let Some(plane_row) = crate::surface::unique_surface_row(&scan.surfaces.rows, other)
+            else {
+                continue;
+            };
+            if plane_row.kind != crate::surface::SurfaceKind::Plane {
+                continue;
+            }
+            let Some(curve) = exactly_one(ir.model.curves.iter().filter(|curve| {
+                crate::identity::matches_numbered_identity(
+                    curve.id.as_str(),
+                    "creo:visibgeom:curve#",
+                    edge.id,
+                )
+            })) else {
+                continue;
+            };
+            let Some(SolvedCurveGeometry::Circle(circle_curve)) =
+                source_carriers.curve_geometry(curve).solved()
+            else {
+                continue;
+            };
+            let center = circle_curve.center().get();
+            let candidate = circle_curve.radius().get();
+            if !((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY) {
+                continue;
+            }
+            let axis = unit_length(*circle_curve.frame().axis());
+            let Some(plane) =
+                reconciled_model_plane(ctx, &local_planes, ir, source_carriers, other)?
+            else {
+                continue;
+            };
+            let Some(normal) = normalize(plane.normal) else {
+                continue;
+            };
+            let alignment = axis
                 .iter()
                 .zip(normal)
-                .map(|(delta, normal)| delta * normal)
+                .map(|(left, right)| left * right)
                 .sum::<f64>()
                 .abs();
-                let scale = [
-                    center.x,
-                    center.y,
-                    center.z,
-                    plane.origin[0],
-                    plane.origin[1],
-                    plane.origin[2],
-                    radius,
-                ]
-                .into_iter()
-                .map(f64::abs)
-                .fold(1.0, f64::max);
-                ((alignment - 1.0).abs() <= EPS_COUNTERBORE_GEOMETRY
-                    && distance <= EPS_COUNTERBORE_GEOMETRY * scale)
-                    .then_some(())?;
-                Some((other, center, axis))
-            }))
-        };
-        let mut boundaries = cylinder_ids.iter().copied().map(boundary_for);
-        let first = boundaries.next()??;
-        for candidate in boundaries {
-            let candidate = candidate?;
-            if !(candidate.0 == first.0
-                && candidate.1 == first.1
-                && candidate
-                    .2
-                    .iter()
-                    .zip(first.2)
-                    .map(|(left, right)| left * right)
-                    .sum::<f64>()
-                    .abs()
-                    >= 1.0 - EPS_COUNTERBORE_GEOMETRY)
+            let distance = [
+                center.x - plane.origin[0],
+                center.y - plane.origin[1],
+                center.z - plane.origin[2],
+            ]
+            .iter()
+            .zip(normal)
+            .map(|(delta, normal)| delta * normal)
+            .sum::<f64>()
+            .abs();
+            let scale = [
+                center.x,
+                center.y,
+                center.z,
+                plane.origin[0],
+                plane.origin[1],
+                plane.origin[2],
+                radius,
+            ]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+            if !((alignment - 1.0).abs() <= EPS_COUNTERBORE_GEOMETRY
+                && distance <= EPS_COUNTERBORE_GEOMETRY * scale)
             {
-                return None;
+                continue;
             }
+            if boundary.is_some() {
+                return Ok(None);
+            }
+            boundary = Some((other, center, axis));
         }
-        Some(first)
-    })())
+        Ok(boundary)
+    };
+    let mut boundaries = cylinder_ids.iter().copied().map(boundary_for);
+    let Some(first_boundary) = boundaries.next() else {
+        return Ok(None);
+    };
+    let Some(first) = first_boundary? else {
+        return Ok(None);
+    };
+    for candidate in boundaries {
+        let Some(candidate) = candidate? else {
+            return Ok(None);
+        };
+        if !(candidate.0 == first.0
+            && candidate.1 == first.1
+            && candidate
+                .2
+                .iter()
+                .zip(first.2)
+                .map(|(left, right)| left * right)
+                .sum::<f64>()
+                .abs()
+                >= 1.0 - EPS_COUNTERBORE_GEOMETRY)
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(first))
 }
 
 pub(in crate::decode) fn counterbore_source_patch_geometries(

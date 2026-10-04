@@ -88,7 +88,9 @@ pub(in super::super) fn feature_plane_equations(
     }
     let mut equations = Vec::new();
     for id in ids {
-        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, id) else {
+        let Some(plane) =
+            reconciled_model_plane(ctx, &local_planes, ir, source_carriers, id)?
+        else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut equations, 1, "creo feature plane equations")?;
@@ -378,14 +380,19 @@ pub(in super::super) fn generated_cap_plane_extent(
         return Ok(None);
     };
     let local_planes = placed_planes(ctx, scan)?;
-    let plane = |surface_id: u32| {
-        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
-        (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
-            .then_some(())?;
-        reconciled_model_plane(&local_planes, ir, source_carriers, surface_id)
+    let plane = |surface_id: u32| -> Result<Option<PlaneEquation>, CodecError> {
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
+            return Ok(None);
+        };
+        if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane {
+            return Ok(None);
+        }
+        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)
     };
-    Ok(plane(start_id)
-        .zip(plane(end_id))
+    let start = plane(start_id)?;
+    let end = plane(end_id)?;
+    Ok(start
+        .zip(end)
         .and_then(|(start, end)| ordered_parallel_cap_extent(start, end)))
 }
 

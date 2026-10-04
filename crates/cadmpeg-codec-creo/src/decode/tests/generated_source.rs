@@ -159,45 +159,56 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         )
         .expect("valid ConeSurface fixture"),
     ));
+    crate::decode::with_test_decode_ctx(|ctx| {
     assert_eq!(
-        analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cone,),
+        analytic_surface_id_for_feature(ctx, &rows, std::slice::from_ref(&table), 17, 10, &cone)?,
         Some(42)
     );
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
+            ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             10,
             &cone,
-        ),
+        )?,
         None
     );
     assert_eq!(
-        analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cylinder,),
+        analytic_surface_id_for_feature(
+            ctx,
+            &rows,
+            std::slice::from_ref(&table),
+            17,
+            10,
+            &cylinder,
+        )?,
         None
     );
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
+            ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             8,
             &cylinder,
-        ),
+        )?,
         Some(41)
     );
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
+            ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             9,
             &cylinder,
-        ),
+        )?,
         None
     );
     let mut first_table = table.clone();
@@ -207,13 +218,13 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     second_table.entries = vec![table.entries[2].clone()];
     second_table.mark_surface_ids([second_table.entries[0].entity_id]);
     assert_eq!(
-        generated_surface_id_for_feature(&[first_table.clone(), second_table], 17, 9),
+        generated_surface_id_for_feature(ctx, &[first_table.clone(), second_table], 17, 9)?,
         Some(43)
     );
     first_table.entries[0].payload =
         crate::feature::entity::EntryPayload::Source { entity: Some(9) };
     assert_eq!(
-        generated_surface_id_for_feature(&[first_table, table.clone()], 17, 9),
+        generated_surface_id_for_feature(ctx, &[first_table, table.clone()], 17, 9)?,
         None
     );
     let mut wrong_class = table.clone();
@@ -221,7 +232,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
     assert_eq!(
-        generated_surface_id_for_feature(&[wrong_class], 17, 9),
+        generated_surface_id_for_feature(ctx, &[wrong_class], 17, 9)?,
         None
     );
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
@@ -236,13 +247,14 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     ));
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
+            ctx,
             &rows,
             std::slice::from_ref(&table),
             17,
             &order,
             9,
             &torus,
-        ),
+        )?,
         Some(43)
     );
     assert_eq!(
@@ -269,19 +281,21 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         Some(&[crate::surface::SurfaceKind::Cylinder][..])
     );
     assert!(section_entity_is_generated_profile(
+        ctx,
         true,
         Some(17),
         8,
         &[crate::surface::SurfaceKind::Cylinder],
         std::slice::from_ref(&table),
         &rows,
-    ));
+    )?);
     let mut extrusion_rows = rows.clone();
     extrusion_rows[2] = row(
         43,
         crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
     );
     assert!(section_entity_is_generated_profile(
+        ctx,
         true,
         Some(17),
         9,
@@ -291,16 +305,18 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         ],
         std::slice::from_ref(&table),
         &extrusion_rows,
-    ));
+    )?);
     assert!(!section_entity_is_generated_profile(
+        ctx,
         true,
         Some(17),
         9,
         &[crate::surface::SurfaceKind::Spline],
         std::slice::from_ref(&table),
         &extrusion_rows,
-    ));
+    )?);
     assert!(!section_entity_is_generated_profile(
+        ctx,
         false,
         Some(17),
         9,
@@ -310,15 +326,19 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         ],
         std::slice::from_ref(&table),
         &extrusion_rows,
-    ));
+    )?);
     assert!(!section_entity_is_generated_profile(
+        ctx,
         true,
         Some(17),
         10,
         &[crate::surface::SurfaceKind::Cylinder],
         &[table],
         &rows,
-    ));
+    )?);
+    Ok::<(), cadmpeg_core::CodecError>(())
+    })
+    .expect("service limits admit generated source lookups");
 }
 
 #[test]

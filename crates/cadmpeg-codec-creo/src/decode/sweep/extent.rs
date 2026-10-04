@@ -535,7 +535,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     SolvedSurfaceGeometry::Plane(_),
                 )) => {
                     let Some(plane) =
-                        reconciled_model_plane(&local_planes, ir, source_carriers, row.id)
+                        reconciled_model_plane(ctx, &local_planes, ir, source_carriers, row.id)?
                     else {
                         return Ok(None);
                     };
@@ -808,7 +808,13 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                         SolvedSurfaceGeometry::Plane(_),
                     )) => Some(
-                        match reconciled_model_plane(&local_planes, ir, source_carriers, row.id) {
+                        match reconciled_model_plane(
+                            ctx,
+                            &local_planes,
+                            ir,
+                            source_carriers,
+                            row.id,
+                        )? {
                             Some(plane) => plane,
                             None => return Ok(None),
                         },
@@ -1075,7 +1081,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
                 let Some(plane) =
-                    reconciled_model_plane(&local_planes, ir, source_carriers, row.id)
+                    reconciled_model_plane(ctx, &local_planes, ir, source_carriers, row.id)?
                 else {
                     return Ok(None);
                 };

@@ -18,6 +18,33 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::FiniteVector;
 
+#[test]
+fn pattern_coverage_refuses_before_composite_stage_traversal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::patterns::{
+        CompositePattern, PatternKind, PatternStage, PatternTransform, StagePatternKind,
+    };
+
+    let pattern: PatternKind = PatternKind::new(PatternTransform::Composite {
+        stages: CompositePattern::new(vec![
+            PatternStage { pattern: Box::new(StagePatternKind::UNRESOLVED) },
+            PatternStage { pattern: Box::new(StagePatternKind::UNRESOLVED) },
+        ]).expect("composite stages"),
+    }).expect("composite pattern");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let error = super::pattern_kind_has_unresolved_operands(&ctx, &pattern)
+        .expect_err("stage traversal exceeds work limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo pattern composite stage traversal"));
+    assert!(crate::decode::with_test_decode_ctx(|ctx|
+        super::pattern_kind_has_unresolved_operands(ctx, &pattern)
+    ).expect("service stage traversal admitted"));
+}
+
 fn retained_boundary_sweep(
     expected: &[&str],
     mut run: impl for<'a> FnMut(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
@@ -1054,4 +1081,44 @@ fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
         panic!("source reference ellipse changed family");
     };
     assert_eq!(source_ellipse.major_radius().get(), 2.0);
+}
+
+#[test]
+fn display_strip_position_and_normal_sources_refuse_work_before_projection() {
+    let mut scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    let unshaded = crate::test_support::assert_work_boundaries(
+        &["creo display tessellation position rows"],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            transfer_display_tessellations(
+                ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )?;
+            Ok(ir)
+        },
+    );
+    assert_eq!(unshaded.model.tessellations[0].vertices().len(), 3);
+    assert_eq!(unshaded.model.tessellations[0].vertices()[0].get(), Point3::new(25.4, 0.0, 0.0));
+    scan.primitives.triangle_strips[0] = crate::decode::with_test_decode_ctx(|ctx| {
+        PrimitiveTriangleStrip::new(
+            ctx,
+            0,
+            scan.primitives.triangle_strips[0].positions().copied().collect(),
+            Some(vec![FiniteVector::new([0.0, 0.0, 1.0]).expect("finite normal"); 3]),
+            vec![3],
+        )
+    }).expect("service").expect("shaded strip");
+    let shaded = crate::test_support::assert_work_boundaries(
+        &["creo display tessellation shaded position rows", "creo display tessellation normal rows", "creo display shaded position assembly"],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            transfer_display_tessellations(
+                ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )?;
+            Ok(ir)
+        },
+    );
+    assert_eq!(shaded.model.tessellations[0].vertices().len(), 3);
+    assert_eq!(shaded.model.tessellations[0].vertex_normals().len(), 3);
+    assert_eq!(shaded.model.tessellations[0].vertices()[0].get(), Point3::new(25.4, 0.0, 0.0));
+    assert!(matches!(shaded.model.tessellations[0].mesh(), cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }));
 }

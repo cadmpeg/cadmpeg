@@ -853,7 +853,7 @@ pub(super) fn sketch_nurbs_curve(
     else {
         return Ok(None);
     };
-    Ok(valid_positive_nurbs_curve(&nurbs).map(|()| nurbs))
+    Ok(valid_positive_nurbs_curve(ctx, &nurbs)?.map(|()| nurbs))
 }
 
 pub(super) fn oriented_sketch_nurbs_curve(

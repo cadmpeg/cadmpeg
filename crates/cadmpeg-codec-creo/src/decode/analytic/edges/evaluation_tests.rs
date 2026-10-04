@@ -153,3 +153,41 @@ fn degree_one_parameter_search_propagates_evaluator_refusal() {
         u64::MAX,
     );
 }
+
+fn point_pair_alignment_refusal_at(operation: &'static str) -> CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let point = |coordinates: [f64; 3]| {
+                cadmpeg_ir::features::FinitePoint3::new(coordinates.into())
+                    .expect("finite point fixture")
+            };
+            super::point_pair_alignments(
+                &ctx,
+                [point([0.0, 0.0, 0.0]), point([1.0, 0.0, 0.0])],
+                [point([0.0, 1.0, 0.0]), point([1.0, 1.0, 0.0])],
+            )
+        },
+    )
+}
+
+#[test]
+fn point_pair_alignment_refuses_mapped_point_coordinates() {
+    let error = point_pair_alignment_refusal_at("creo mapped edge point coordinates");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo mapped edge point coordinates"));
+}
+
+#[test]
+fn point_pair_alignment_refuses_target_point_coordinates() {
+    let error = point_pair_alignment_refusal_at("creo target edge point coordinates");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo target edge point coordinates"));
+}

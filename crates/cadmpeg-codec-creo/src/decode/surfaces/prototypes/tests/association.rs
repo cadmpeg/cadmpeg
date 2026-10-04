@@ -22,7 +22,7 @@ fn prototype_uses_the_preceding_same_family_row() {
     ];
 
     assert_eq!(
-        first_instance_surface_row(&rows, 100, 300, 150, crate::surface::SurfaceKind::Plane)
+        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(ctx, &rows, 100, 300, 150, crate::surface::SurfaceKind::Plane)).expect("prototype row selection")
             .map(|row| row.id),
         Some(10)
     );
@@ -33,7 +33,7 @@ fn prototype_before_frame_rows_uses_the_following_same_family_row() {
     let rows = [row(100, 10, crate::surface::SurfaceKind::Plane)];
 
     assert_eq!(
-        first_instance_surface_row(&rows, 100, 300, 50, crate::surface::SurfaceKind::Plane)
+        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(ctx, &rows, 100, 300, 50, crate::surface::SurfaceKind::Plane)).expect("prototype row selection")
             .map(|row| row.id),
         Some(10)
     );
@@ -47,9 +47,30 @@ fn prototype_after_a_different_family_uses_the_following_family_row() {
     ];
 
     assert_eq!(
-        first_instance_surface_row(&rows, 100, 300, 150, crate::surface::SurfaceKind::Plane),
+        crate::decode::with_test_decode_ctx(|ctx| first_instance_surface_row(ctx, &rows, 100, 300, 150, crate::surface::SurfaceKind::Plane)).expect("prototype row selection"),
         Some(&rows[1])
     );
+}
+
+#[test]
+fn prototype_row_selection_refuses_before_preceding_scan() {
+    let rows = [row(100, 10, crate::surface::SurfaceKind::Plane)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = first_instance_surface_row(
+        &ctx,
+        &rows,
+        100,
+        300,
+        150,
+        crate::surface::SurfaceKind::Plane,
+    )
+    .expect_err("row selection needs work");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo preceding prototype row selection"));
 }
 
 fn association_result(limit: u64) -> Result<usize, CodecError> {

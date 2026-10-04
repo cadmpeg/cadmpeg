@@ -245,7 +245,10 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
 #[test]
 fn closed_extrusion_reaches_brep_admission() {
     let (scan, mut ir) = admitted_extrusion_fixture();
-    assert!(super::feature_allows_additive_linear_extrusion(&scan, 7));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::feature_allows_additive_linear_extrusion(ctx, &scan, 7)
+    })
+    .expect("service profile admits extrusion recipe lookup"));
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| super::feature_is_first_material_operation(
             ctx, &scan, 7

@@ -864,3 +864,17 @@ fn numerical_followup_equal_length_tangency_states_its_off_axis_root() {
         );
     }
 }
+
+#[test]
+fn coordinate_variable_scan_refuses_before_unique_variable_node() {
+    let equations = [SectionEquationFixture::point_value(7, SectionAxis::U, 2.0)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = super::admitted_coordinate_variables(&ctx, &equations, &[])
+        .expect_err("equation admission precedes variable insertion");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "creo coordinate variable equations"));
+}

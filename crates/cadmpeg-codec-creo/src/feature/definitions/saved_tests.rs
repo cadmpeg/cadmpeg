@@ -1871,3 +1871,17 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
 }
 
 mod variable_coordinates;
+
+#[test]
+fn placement_instruction_projection_refuses_before_byte_traversal() {
+    let payload = b"place_instruction_ptrs\0\xf8\x03\xf7\x0b\xfb\xe3\
+            \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6";
+    let rows = crate::test_support::assert_work_boundaries(
+        &["creo placement instruction byte traversal"],
+        |ctx| Ok(placement_instruction_rows(ctx, payload, 1000)?.collect::<Vec<_>>()),
+    );
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].kind, 20_127);
+    assert_eq!(rows[0].offset, 1029);
+    assert_eq!(rows[0].geometry1_id, Some(2));
+}

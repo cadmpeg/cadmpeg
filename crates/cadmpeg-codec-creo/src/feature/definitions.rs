@@ -2341,7 +2341,8 @@ fn placement_instruction_rows<'a>(
 ) -> Result<impl Iterator<Item = FeaturePlacementInstruction> + use<'a>, CodecError> {
     let table_class =
         named_array_class(ctx, payload, b"place_instruction_ptrs\0", 0, payload.len())?;
-    Ok((0..payload.len()).filter_map(move |marker| {
+    Ok(ctx.admit_iter(payload, "creo placement instruction byte traversal")?
+        .enumerate().filter_map(move |(marker, _)| {
         let table_class = table_class?;
         if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
             return None;

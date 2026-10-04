@@ -402,17 +402,21 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
-) -> Option<[[Option<PositiveLength>; 2]; 3]> {
-    let [first, second] = simple_drilled_hole_corner_envelopes(scan, table)?;
-    paired_corner_envelope_axis_spans(first, second)
+) -> Result<Option<[[Option<PositiveLength>; 2]; 3]>, CodecError> {
+    let Some([first, second]) = simple_drilled_hole_corner_envelopes(ctx, scan, table)? else {
+        return Ok(None);
+    };
+    Ok(paired_corner_envelope_axis_spans(first, second))
 }
 
 fn simple_drilled_hole_corner_envelopes(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
-) -> Option<[[[f64; 3]; 2]; 2]> {
+) -> Result<Option<[[[f64; 3]; 2]; 2]>, CodecError> {
     let feature_id = table.feature_id;
     let mut envelopes = table
         .surface_ids_iter()
@@ -421,16 +425,35 @@ fn simple_drilled_hole_corner_envelopes(
                 .filter(|row| row.feature_id == feature_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         })
-        .map(|row| unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope());
-    let first = envelopes.next()??;
-    let second = envelopes.next()??;
-    envelopes.next().is_none().then_some([first, second])
+        .map(|row| -> Result<Option<[[f64; 3]; 2]>, CodecError> {
+            Ok(unique_surface_parameter_record(ctx, scan, row)?
+                .and_then(crate::surface::SurfaceParameterRecord::type24_terminal_corner_envelope))
+        });
+    let Some(first) = envelopes.next() else {
+        return Ok(None);
+    };
+    let Some(first) = first? else {
+        return Ok(None);
+    };
+    let Some(second) = envelopes.next() else {
+        return Ok(None);
+    };
+    let Some(second) = second? else {
+        return Ok(None);
+    };
+    let Some(third) = envelopes.next() else {
+        return Ok(Some([first, second]));
+    };
+    // discarded-value: A third matching row makes the two-corner form invalid.
+    let _ = third?;
+    Ok(None)
 }
 
 fn simple_drilled_hole_cone_terminal_points(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
-) -> Option<[[f64; 3]; 2]> {
+) -> Result<Option<[[f64; 3]; 2]>, CodecError> {
     let feature_id = table.feature_id;
     let mut points = table
         .surface_ids_iter()
@@ -439,43 +462,74 @@ fn simple_drilled_hole_cone_terminal_points(
                 .filter(|row| row.feature_id == feature_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
         })
-        .map(|row| {
-            let record = unique_surface_parameter_record(scan, row)?;
-            (record.boundary == crate::surface::SurfaceBodyBoundary::CompoundClose
-                && record.scalar_tokens.len() == 7)
-                .then_some(())?;
-            Some([
-                record.scalar_tokens[4]
-                    .value
-                    .filter(|value| value.is_finite())?,
-                record.scalar_tokens[5]
-                    .value
-                    .filter(|value| value.is_finite())?,
-                record.scalar_tokens[6]
-                    .value
-                    .filter(|value| value.is_finite())?,
-            ])
+        .map(|row| -> Result<Option<[f64; 3]>, CodecError> {
+            let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
+                return Ok(None);
+            };
+            if record.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose
+                || record.scalar_tokens.len() != 7
+            {
+                return Ok(None);
+            }
+            let Some(x) = record.scalar_tokens[4]
+                .value
+                .filter(|value| value.is_finite())
+            else {
+                return Ok(None);
+            };
+            let Some(y) = record.scalar_tokens[5]
+                .value
+                .filter(|value| value.is_finite())
+            else {
+                return Ok(None);
+            };
+            let Some(z) = record.scalar_tokens[6]
+                .value
+                .filter(|value| value.is_finite())
+            else {
+                return Ok(None);
+            };
+            Ok(Some([x, y, z]))
         });
-    let first = points.next()??;
-    let second = points.next()??;
-    points.next().is_none().then_some([first, second])
+    let Some(first) = points.next() else {
+        return Ok(None);
+    };
+    let Some(first) = first? else {
+        return Ok(None);
+    };
+    let Some(second) = points.next() else {
+        return Ok(None);
+    };
+    let Some(second) = second? else {
+        return Ok(None);
+    };
+    let Some(third) = points.next() else {
+        return Ok(Some([first, second]));
+    };
+    // discarded-value: A third matching row makes the two-point form invalid.
+    let _ = third?;
+    Ok(None)
 }
 
 pub(in crate::decode) fn simple_drilled_hole_placement(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
     diameter: f64,
     depth: f64,
-) -> Option<(Point3, Vector3)> {
-    let corners = simple_drilled_hole_corner_envelopes(scan, table)?;
-    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth).or_else(|| {
-        clipped_drilled_hole_placement_from_cone_points(
-            corners,
-            simple_drilled_hole_cone_terminal_points(scan, table)?,
-            diameter,
-            depth,
-        )
-    })
+) -> Result<Option<(Point3, Vector3)>, CodecError> {
+    let Some(corners) = simple_drilled_hole_corner_envelopes(ctx, scan, table)? else {
+        return Ok(None);
+    };
+    if let Some(placement) = drilled_hole_placement_from_corner_envelopes(corners, diameter, depth) {
+        return Ok(Some(placement));
+    }
+    let Some(points) = simple_drilled_hole_cone_terminal_points(ctx, scan, table)? else {
+        return Ok(None);
+    };
+    Ok(clipped_drilled_hole_placement_from_cone_points(
+        corners, points, diameter, depth,
+    ))
 }
 
 pub(in crate::decode) fn simple_drilled_hole_axis_placement(

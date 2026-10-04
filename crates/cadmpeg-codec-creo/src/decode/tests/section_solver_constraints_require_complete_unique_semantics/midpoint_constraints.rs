@@ -392,7 +392,8 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
         offset: 84,
     });
     synchronize_skamp_count(&mut midpoint_definition);
-    assert!(section_skamp_is_circular(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| section_skamp_is_circular(
+        ctx,
         &midpoint_definition,
         &midpoint_definition
             .relations
@@ -400,7 +401,8 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
             .expect("relations")
             .skamps()[0]
             .items[1],
-    ));
+    ))
+    .expect("admitted circular classification"));
     assert_eq!(
         *(section_skamp_constraints(
             &midpoint_definition,
